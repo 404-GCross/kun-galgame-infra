@@ -371,6 +371,12 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
+                                        "name": "logo_hash",
+                                        "required": true,
+                                        "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                                        "type": "string"
+                                      },
+                                      {
                                         "name": "work_count",
                                         "required": true,
                                         "format": "int64",
@@ -949,6 +955,12 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
+                                        "name": "logo_hash",
+                                        "required": true,
+                                        "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                                        "type": "string"
+                                      },
+                                      {
                                         "name": "work_count",
                                         "required": true,
                                         "format": "int64",
@@ -1517,6 +1529,12 @@ export const docsModel: DocsModel = {
                                       },
                                       {
                                         "name": "lang",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "logo_hash",
+                                        "required": true,
+                                        "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
                                         "type": "string"
                                       },
                                       {
@@ -2725,6 +2743,12 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "logo_hash",
+                                  "required": true,
+                                  "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                                  "type": "string"
+                                },
+                                {
                                   "name": "work_count",
                                   "required": true,
                                   "format": "int64",
@@ -2959,6 +2983,12 @@ export const docsModel: DocsModel = {
                                 }
                               ]
                             }
+                          },
+                          {
+                            "name": "logo_hash",
+                            "required": true,
+                            "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                            "type": "string"
                           },
                           {
                             "name": "next_offset",
@@ -3546,6 +3576,12 @@ export const docsModel: DocsModel = {
                                     }
                                   ]
                                 }
+                              },
+                              {
+                                "name": "logo_hash",
+                                "required": true,
+                                "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                                "type": "string"
                               },
                               {
                                 "name": "next_offset",
@@ -4431,6 +4467,12 @@ export const docsModel: DocsModel = {
                                           }
                                         ]
                                       }
+                                    },
+                                    {
+                                      "name": "logo_hash",
+                                      "required": true,
+                                      "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                                      "type": "string"
                                     },
                                     {
                                       "name": "next_offset",
@@ -7317,6 +7359,12 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
+                                        "name": "logo_hash",
+                                        "required": true,
+                                        "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                                        "type": "string"
+                                      },
+                                      {
                                         "name": "work_count",
                                         "required": true,
                                         "format": "int64",
@@ -7886,6 +7934,12 @@ export const docsModel: DocsModel = {
                                 },
                                 {
                                   "name": "lang",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "logo_hash",
+                                  "required": true,
+                                  "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
                                   "type": "string"
                                 },
                                 {
@@ -8986,6 +9040,12 @@ export const docsModel: DocsModel = {
                                       },
                                       {
                                         "name": "lang",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "logo_hash",
+                                        "required": true,
+                                        "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
                                         "type": "string"
                                       },
                                       {

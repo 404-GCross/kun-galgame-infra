@@ -37,6 +37,10 @@ func getJSON(t *testing.T, app *fiber.App, url string) (int, map[string]any) {
 	return resp.StatusCode, body
 }
 
+// fixtureLogoHash is the seeded label's brand logo (wave 170) — a content hash
+// in the image service, from which a consumer builds the CDN URL.
+const fixtureLogoHash = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+
 // seedReadFixture wipes the read-relevant tables and inserts one fully-formed
 // work: release (dlsite RJTEST anchor) + official/kana titles + circle label
 // (attribution edge) + a voice credit (with character) + a scenario credit
@@ -60,7 +64,7 @@ func seedReadFixture(t *testing.T, db *gorm.DB) int64 {
 		EntityType: model.EntityTypeRelease, EntityID: rel.ID, SourceID: dlsite, ExternalID: "RJTEST",
 		LinkKind: model.LinkKindExact, MatchedBy: "rule:test",
 	}).Error)
-	label := model.CatalogLabel{DisplayName: "テスト社団", Kind: model.LabelKindDoujinCircle, Lang: "ja"}
+	label := model.CatalogLabel{DisplayName: "テスト社団", Kind: model.LabelKindDoujinCircle, Lang: "ja", LogoHash: fixtureLogoHash}
 	require.NoError(t, db.Create(&label).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkLabel{WorkID: work.ID, LabelID: label.ID, Kind: model.WorkLabelKindCircle, SourceID: &dlsite}).Error)
 
@@ -254,7 +258,10 @@ func TestEntitySearch(t *testing.T) {
 	if n == 0 {
 		t.Skip("catalog_credit_names empty — run reindex-catalog")
 	}
-	app := readApp(nil, catsearch.NewIndexer(client))
+	// The read service is wired too: since wave 170 the label hits are hydrated
+	// with their logo hash from Postgres (the index carries none), so this
+	// endpoint needs both halves exactly as the live server wires them.
+	app := readApp(service.NewReadService(openCatalogTestDB(t)), catsearch.NewIndexer(client))
 
 	// "麻枝" → the two 麻枝准 rows (bangumi + eg).
 	code, body := getJSON(t, app, "/api/v1/catalog/search/entities?q=%E9%BA%BB%E6%9E%9D&type=names&locale=ja&limit=5")
@@ -295,11 +302,55 @@ func TestWorkByIDAndLabelWorks(t *testing.T) {
 	data := body["data"].(map[string]any)
 	assert.EqualValues(t, 1, data["total"])
 	assert.EqualValues(t, workID, data["items"].([]any)[0].(map[string]any)["work_id"])
+	// wave 170: the head carries the brand logo, loaded by the raw-SQL head
+	// query — the field is only there if the column made it into the SELECT.
+	assert.Equal(t, fixtureLogoHash, data["label"].(map[string]any)["logo_hash"])
 
 	// A missing label id now 404s (step 20: aligned with names/characters →works,
 	// step 19 finding ②; previously this returned 200 + label:null).
 	code, _ = getJSON(t, app, "/api/v1/catalog/labels/99999999/works")
 	assert.Equal(t, 404, code)
+}
+
+// TestLabelLogoHashes covers the entity-search hydration source (wave 170): the
+// hits come from Meilisearch, which knows no logo hash, so the label ids of one
+// page are read back from Postgres. A label with no logo, a soft-deleted one and
+// an unknown id are all ABSENT from the map — the caller then reads "".
+func TestLabelLogoHashes(t *testing.T) {
+	db := openCatalogTestDB(t)
+	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
+	seedReadFixture(t, db)
+
+	var withLogo int64
+	db.Raw("SELECT id FROM catalog_label LIMIT 1").Scan(&withLogo)
+	noLogo := model.CatalogLabel{DisplayName: "ロゴ無し", Kind: model.LabelKindDoujinCircle, Lang: "ja"}
+	require.NoError(t, db.Create(&noLogo).Error)
+	dead := model.CatalogLabel{DisplayName: "合併済み", Kind: model.LabelKindDoujinCircle, Lang: "ja", LogoHash: fixtureLogoHash}
+	require.NoError(t, db.Create(&dead).Error)
+	require.NoError(t, db.Delete(&dead).Error) // soft delete
+
+	got, err := service.NewReadService(db).LabelLogoHashes(t.Context(), []int64{withLogo, noLogo.ID, dead.ID, 99999999})
+	require.NoError(t, err)
+	assert.Equal(t, map[int64]string{withLogo: fixtureLogoHash}, got)
+
+	// An empty id list never touches the database.
+	got, err = service.NewReadService(db).LabelLogoHashes(t.Context(), nil)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+// TestLabelLogosSkipsNonLabelHits asserts the entity-search hydration is keyed
+// on the hit's entity_type: a page with no label hit issues no query at all
+// (the ReadService is nil here — a lookup would panic).
+func TestLabelLogosSkipsNonLabelHits(t *testing.T) {
+	s := &S2SServer{}
+	got, err := s.labelLogos(t.Context(), []catsearch.EntityDoc{
+		{ID: "n1", EntityType: "credit_name"},
+		{ID: "c2", EntityType: "character"},
+		{ID: "w3", EntityType: "work"},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
 // TestStats asserts the dashboard aggregate against the seeded fixture.

@@ -103,8 +103,9 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 		ID          int64
 		DisplayName string
 		Kind        int16
+		LogoHash    string
 	}
-	q := `SELECT id, display_name, kind FROM catalog_label WHERE ` +
+	q := `SELECT id, display_name, kind, logo_hash FROM catalog_label WHERE ` +
 		strings.Join(where, " AND ") + ` ORDER BY id ASC LIMIT ?`
 	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&rows).Error; err != nil {
 		return dto.PublicLabelsListData{}, err
@@ -123,6 +124,7 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 	for i, r := range rows {
 		out.Items[i] = dto.PublicLabelListItem{
 			ID: r.ID, DisplayName: r.DisplayName, Kind: labelKindKey(r.Kind), WorkCount: counts[r.ID],
+			LogoHash: r.LogoHash,
 		}
 	}
 	if out.Total, err = s.taxonomyTotal(ctx, "catalog_label", filterWhere, filterArgs); err != nil {

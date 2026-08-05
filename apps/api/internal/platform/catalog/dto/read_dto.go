@@ -398,6 +398,11 @@ type EntitySearchHit struct {
 	Kind          *int16   `json:"kind,omitempty" doc:"label kind (labels only)"`
 	PersonID      *int64   `json:"person_id,omitempty" doc:"credit-name → person link (names only; absent = orphan)"`
 	ContentRating *int16   `json:"content_rating,omitempty" doc:"works only (wave 105): 0=all_ages 1=sensitive 2=r18"`
+	// LogoHash is the brand logo's content hash in the image service (labels
+	// only, wave 170) — the same currency as a work cover's image_hash. It is
+	// hydrated from Postgres by id, NOT carried by the search index. Absent =
+	// the label has no logo (or the hit is not a label).
+	LogoHash string `json:"logo_hash,omitempty" doc:"labels only: brand logo content hash in the image service; absent = none"`
 }
 
 // --- entity reverse-lookups (step 19: names/{id}/works & characters/{id}/works) ---

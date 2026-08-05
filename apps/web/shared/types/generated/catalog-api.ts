@@ -1053,6 +1053,8 @@ export interface components {
              */
             kind?: number;
             latin?: string;
+            /** @description labels only: brand logo content hash in the image service; absent = none */
+            logo_hash?: string;
             name: string;
             /**
              * Format: int64
@@ -1424,6 +1426,8 @@ export interface components {
              * @description label kind (0=game_brand … 4=doujin_circle …)
              */
             kind: number;
+            /** @description brand logo content hash in the image service; "" = none */
+            logo_hash: string;
         };
         LabelWorkRow: {
             /** Format: int32 */

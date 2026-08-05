@@ -287,6 +287,10 @@ type LabelAttribution struct {
 	// Loaded for the public face's labels[].lang (A2-1e); the S2S face maps its
 	// DTO field by field and is unaffected.
 	Lang string
+	// LogoHash is the label's brand logo in the image service (wave 170) —
+	// the same content-hash currency as a work cover's image_hash. "" = the
+	// label has no logo. Loaded for the public face's labels[].logo_hash.
+	LogoHash string
 }
 
 // WorkByAnchor resolves a work via any of its external anchors (work- or
@@ -393,7 +397,7 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	// The DETAIL grain of the attribution query — loadWorkLabels is the same
 	// query at page grain, including the l.deleted_at gate (see its comment for
 	// why a surviving edge is not proof of a surviving label).
-	if err := db.Raw(`SELECT wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind, l.lang
+	if err := db.Raw(`SELECT wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind, l.lang, l.logo_hash
 		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id AND l.deleted_at IS NULL
 		WHERE wl.work_id = ? ORDER BY wl.kind, l.display_name`, workID).Scan(&detail.Labels).Error; err != nil {
 		return nil, err
@@ -831,6 +835,10 @@ type LabelHead struct {
 	// for the public face's labels/{id}.lang (A2-1e). The S2S face maps its DTO
 	// field by field and is unaffected.
 	Lang string `gorm:"column:lang"`
+	// LogoHash is the label's brand logo in the image service (wave 170),
+	// the same content-hash currency as a work cover's image_hash: the
+	// consumer builds the CDN URL from it. "" = this label has no logo.
+	LogoHash string `gorm:"column:logo_hash"`
 }
 
 // LabelWorks returns a label's own identity plus the works attributed to it
@@ -846,7 +854,7 @@ type LabelHead struct {
 func (s *ReadService) LabelWorks(ctx context.Context, labelID int64, limit, offset int) (head *LabelHead, items []LabelWork, total int64, err error) {
 	db := s.db.WithContext(ctx)
 	var h LabelHead
-	if err = db.Raw(`SELECT id, display_name, kind, lang FROM catalog_label
+	if err = db.Raw(`SELECT id, display_name, kind, lang, logo_hash FROM catalog_label
 		WHERE id = ? AND deleted_at IS NULL`, labelID).Scan(&h).Error; err != nil {
 		return nil, nil, 0, err
 	}

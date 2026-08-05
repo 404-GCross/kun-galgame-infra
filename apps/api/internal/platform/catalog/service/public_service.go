@@ -520,6 +520,7 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 		rec.Labels = append(rec.Labels, dto.PublicWorkLabel{
 			ID: l.LabelID, DisplayName: l.DisplayName,
 			LabelKind: labelKindKey(l.LabelKind), Kind: workLabelKindKey(l.Kind), Lang: l.Lang,
+			LogoHash: l.LogoHash,
 		})
 	}
 }
@@ -793,6 +794,7 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks, nsfw boo
 	}
 	l := dto.PublicLabel{
 		ID: head.ID, DisplayName: head.DisplayName, Kind: labelKindKey(head.Kind), Lang: head.Lang,
+		LogoHash: head.LogoHash,
 	}
 	// work_count is the browse lane's number for this one row (A2-1e) — the
 	// SAME nsfw-aware, live-claim aggregate, so a detail page and the list it was

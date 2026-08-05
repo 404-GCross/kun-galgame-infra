@@ -53,7 +53,7 @@ func seedTaxonomy(t *testing.T, db *gorm.DB) (labelID, tagID, engineID int64) {
 		`UPDATE catalog_work SET site = 'galgame_wiki', product_work_id = 9350, claim_state = ? WHERE id = ?`,
 		model.ClaimStateLive, ids[0]).Error)
 
-	label := model.CatalogLabel{DisplayName: "Wire Brand", Kind: model.LabelKindGameBrand}
+	label := model.CatalogLabel{DisplayName: "Wire Brand", Kind: model.LabelKindGameBrand, LogoHash: fixtureLogoHash}
 	require.NoError(t, db.Create(&label).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkLabel{
 		WorkID: ids[0], LabelID: label.ID, Kind: model.WorkLabelKindBrand,
@@ -163,6 +163,9 @@ func TestTaxonomyItemsCarryWorkCount(t *testing.T) {
 	assert.Equal(t, "Wire Brand", row["display_name"])
 	assert.Equal(t, "game_brand", row["kind"])
 	assert.EqualValues(t, 1, row["work_count"])
+	// wave 170: the 会社 browse row carries the brand logo hash, always present
+	// (a label with no logo reports "" rather than omitting the key).
+	assert.Equal(t, fixtureLogoHash, row["logo_hash"])
 	assert.Nil(t, body["data"].(map[string]any)["next_cursor"])
 
 	code, body = getJSON(t, app, "/v1/catalog/tags")

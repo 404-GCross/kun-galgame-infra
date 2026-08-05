@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"api/internal/platform/catalog/dto"
@@ -378,6 +379,13 @@ func (s *S2SServer) searchWorks(ctx context.Context, in *searchWorksInput) (*sea
 
 // ---- entity search ----
 
+// entityTypeLabel is the label documents' entity_type, and "b" their document
+// id prefix (cmd/reindex-catalog writes both).
+const (
+	entityTypeLabel  = "label"
+	labelDocIDPrefix = "b"
+)
+
 type searchInput struct {
 	Q      string `query:"q" doc:"Search text; empty returns the most-credited entities"`
 	Type   string `query:"type" enum:"names,characters,labels,works" doc:"Which entity index to search (works: wave 105 — LIVE galgame registry works, r18 verbatim on this face)"`
@@ -402,15 +410,54 @@ func (s *S2SServer) searchEntities(ctx context.Context, in *searchInput) (*searc
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
+	// Label hits carry their brand logo (wave 170). The index does not know the
+	// hash, so the page's ids are hydrated from Postgres in one query rather
+	// than the documents being reshaped.
+	logos, err := s.labelLogos(ctx, res.Hits)
+	if err != nil {
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
 	resp := dto.EntitySearchResponse{Total: res.Total}
 	for _, d := range res.Hits {
 		resp.Items = append(resp.Items, dto.EntitySearchHit{
 			ID: d.ID, EntityType: d.EntityType, Name: d.Name(), Latin: d.Latin,
 			Sources: d.Sources, Popularity: d.Popularity, Kind: d.Kind, PersonID: d.PersonID,
-			ContentRating: d.ContentRating,
+			ContentRating: d.ContentRating, LogoHash: logos[d.ID],
 		})
 	}
 	return &searchOutput{Body: okEnvelope(resp)}, nil
+}
+
+// labelLogos maps the LABEL hits of one search page to their logo hashes, keyed
+// by the hit's prefixed document id ("b{id}"). Non-label hits and labels
+// without a logo are absent, so the caller reads "". No label hit on the page
+// means no query at all.
+func (s *S2SServer) labelLogos(ctx context.Context, hits []catsearch.EntityDoc) (map[string]string, error) {
+	docIDs := make(map[int64]string, len(hits))
+	ids := make([]int64, 0, len(hits))
+	for _, d := range hits {
+		if d.EntityType != entityTypeLabel {
+			continue
+		}
+		id, err := strconv.ParseInt(strings.TrimPrefix(d.ID, labelDocIDPrefix), 10, 64)
+		if err != nil {
+			continue
+		}
+		docIDs[id] = d.ID
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	byID, err := s.read.LabelLogoHashes(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(byID))
+	for id, hash := range byID {
+		out[docIDs[id]] = hash
+	}
+	return out, nil
 }
 
 // ---- stats (dashboard) ----
@@ -492,7 +539,7 @@ func (s *S2SServer) labelWorks(ctx context.Context, in *labelWorksInput) (*label
 		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
 	}
 	resp := dto.LabelWorksResponse{Total: total}
-	resp.Label = &dto.LabelHead{ID: head.ID, DisplayName: head.DisplayName, Kind: head.Kind}
+	resp.Label = &dto.LabelHead{ID: head.ID, DisplayName: head.DisplayName, Kind: head.Kind, LogoHash: head.LogoHash}
 	for _, w := range items {
 		resp.Items = append(resp.Items, dto.LabelWorkRow{
 			WorkID: w.WorkID, DisplayName: w.DisplayName, MediumID: w.MediumID,

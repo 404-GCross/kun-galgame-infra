@@ -330,6 +330,10 @@ func TestEngineDescriptionAndAliases(t *testing.T) {
 	}
 }
 
+// supplyLogoHash is the fixture label's brand logo (wave 170) — an image-service
+// content hash, the same currency as a work cover's image_hash.
+const supplyLogoHash = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+
 // TestLabelAliasesLangAndWorkCount covers the label-record completions plus the
 // labels[] lang on both the detail face and the list include= block.
 func TestLabelAliasesLangAndWorkCount(t *testing.T) {
@@ -343,7 +347,8 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 		claimLive(t, id, int64(9330+i))
 	}
 	labelID := addWorkLabel(t, w.ID, "みるくそふと", model.LabelKindGameBrand, model.WorkLabelKindBrand)
-	if err := testDB.Exec(`UPDATE catalog_label SET lang = 'ja' WHERE id = ?`, labelID).Error; err != nil {
+	if err := testDB.Exec(`UPDATE catalog_label SET lang = 'ja', logo_hash = ? WHERE id = ?`,
+		supplyLogoHash, labelID).Error; err != nil {
 		t.Fatalf("stamp label lang: %v", err)
 	}
 	if err := testDB.Create(&model.CatalogWorkLabel{
@@ -368,6 +373,10 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 	if rec.Lang != "ja" {
 		t.Fatalf("label lang = %q, want ja", rec.Lang)
 	}
+	// wave 170: the brand logo hash rides the same record.
+	if rec.LogoHash != supplyLogoHash {
+		t.Fatalf("label logo_hash = %q, want %q", rec.LogoHash, supplyLogoHash)
+	}
 	// The display name is excluded and the duplicate spelling collapses.
 	if len(rec.Aliases) != 1 || rec.Aliases[0] != "Milk Soft" {
 		t.Fatalf("label aliases = %+v, want [Milk Soft]", rec.Aliases)
@@ -391,6 +400,9 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 	if len(detail.Labels) != 1 || detail.Labels[0].Lang != "ja" {
 		t.Fatalf("detail labels = %+v, want lang ja", detail.Labels)
 	}
+	if detail.Labels[0].LogoHash != supplyLogoHash {
+		t.Fatalf("detail label logo_hash = %q, want %q", detail.Labels[0].LogoHash, supplyLogoHash)
+	}
 	page, err := svc.WorksList(t.Context(),
 		WorksListFilter{Sort: "id", Include: ParseWorksListInclude("labels")}, "", 50)
 	if err != nil {
@@ -402,6 +414,9 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 		}
 		if len(it.Labels) != 1 || it.Labels[0].Lang != "ja" {
 			t.Fatalf("list labels = %+v, want lang ja", it.Labels)
+		}
+		if it.Labels[0].LogoHash != supplyLogoHash {
+			t.Fatalf("list label logo_hash = %q, want %q", it.Labels[0].LogoHash, supplyLogoHash)
 		}
 	}
 }

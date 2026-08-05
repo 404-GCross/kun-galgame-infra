@@ -80,7 +80,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 - `type` ∈ `names|characters|labels`(单选;非法 → Huma enum 校验 422);
 - **`locale` ∈ `zh|ja|en` → 服务端映射 Meili 查询语言**(`zh→cmn`/`ja→jpn`/`en→默认管线`;不变量 2:消费者只传粗粒度 UI locale,**服务端钉查询语言,绝不透传任意 Meili 参数**);
 - `limit` cap 20;空 `q` → 按 popularity 返回热门。
-- 响应条目:id(前缀 n/c/b)· entity_type · name(分桶取非空)· latin · sources · popularity · kind(label)· person_id(名义,缺省=孤儿)。
+- 响应条目:id(前缀 n/c/b)· entity_type · name(分桶取非空)· latin · sources · popularity · kind(label)· person_id(名义,缺省=孤儿)· **`logo_hash`(仅 label,wave 170:厂牌 logo 在图床的内容哈希,与作品封面 `image_hash` 同币种,消费端据此拼 CDN URL;缺省=该 label 无 logo)**。**该哈希不在搜索索引里**——命中页的 label id 回 Postgres 单查一次补水(索引设置与文档一概不动)。
 
 ### 2.7 内部浏览器三端点(D-02,同 Basic S2S 读面)
 
@@ -88,7 +88,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 - `GET /catalog/stats`:仪表盘全部计数**单端点单往返**——works 矩阵(medium × 认领态 × status)、实体计数(**孤儿名义单列**,person=0 如实)、credits 按 source、归属边 by kind、**refs source × tier 交叉表**(身份质量一张表)、队列水位(candidates/proposals by status、probable refs、rejections)、**src_llm bid 判定**(same/different/unsure/deterministic;src_llm 缺表则该段空)、**新鲜度 = 各 source 锚 max(created_at)**(诚实近似,不加簿记)。⚠️ **本端点是内部遥测,不上公开面**:队列水位/LLM 判定/锚交叉表/新鲜度/孤儿与 claim 态矩阵描述的是「注册表如何被治理」。产品面要的「目录有多大」由 **公开面 `GET /v1/catalog/stats`(149b)** 单独回答——**另一套 DTO、另一组 SQL**(LIVE works 按 medium + 身份族存量,r18 计入),见 [developer-platform/02 §3.2](../developer-platform/02-public-api.md)。
 - `GET /catalog/works/{id}`:与 2.4 by-anchor 同 bundle,入口换 catalog id;404 同义。
-- `GET /catalog/labels/{id}/works`:厂牌反查(经归属边),返回 label 自身信息(`label`:id/名/kind)+ offset 分页作品列表(cap 50)+ total,页面直达即自足。**被合并掉的 label(软删除 + 留下 catalog_redirect)与不存在的 id 同义 → 404**;旧 id 的去向走 §2.1 resolve / §2.2 redirects。公开面 `GET /v1/catalog/labels/{id}` 在同一情形下更进一步:**301 + `Location` + 信封 `code=12` 且 `data.current_id` 给出幸存者 id**(绝不在旧 id 下 200 出幸存者内容)。
+- `GET /catalog/labels/{id}/works`:厂牌反查(经归属边),返回 label 自身信息(`label`:id/名/kind/**`logo_hash`**——wave 170:厂牌 logo 在图床的内容哈希,与作品封面 `image_hash` 同币种,空串=无 logo)+ offset 分页作品列表(cap 50)+ total,页面直达即自足。**被合并掉的 label(软删除 + 留下 catalog_redirect)与不存在的 id 同义 → 404**;旧 id 的去向走 §2.1 resolve / §2.2 redirects。公开面 `GET /v1/catalog/labels/{id}` 在同一情形下更进一步:**301 + `Location` + 信封 `code=12` 且 `data.current_id` 给出幸存者 id**(绝不在旧 id 下 200 出幸存者内容)。
 
 ### 2.8 `GET /catalog/works/search?q=&medium_id=&limit=` — 作品标题搜索(只读)
 

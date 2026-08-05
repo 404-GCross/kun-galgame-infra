@@ -96,6 +96,10 @@ type LabelHead struct {
 	ID          int64  `json:"id"`
 	DisplayName string `json:"display_name"`
 	Kind        int16  `json:"kind" doc:"label kind (0=game_brand … 4=doujin_circle …)"`
+	// LogoHash is the brand logo's content hash in the image service — the
+	// same currency as a work cover's image_hash, so the consumer builds the
+	// CDN URL from it the same way. Empty string = this label has no logo.
+	LogoHash string `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = none"`
 }
 
 type LabelWorkRow struct {

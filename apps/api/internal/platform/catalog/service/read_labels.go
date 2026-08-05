@@ -28,9 +28,10 @@ func (s *ReadService) loadWorkLabels(ctx context.Context, workIDs []int64) (map[
 		LabelKind   int16  `gorm:"column:label_kind"`
 		Kind        int16  `gorm:"column:kind"`
 		Lang        string `gorm:"column:lang"`
+		LogoHash    string `gorm:"column:logo_hash"`
 	}
 	if err := s.db.WithContext(ctx).Raw(`
-		SELECT wl.work_id, wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind, l.lang
+		SELECT wl.work_id, wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind, l.lang, l.logo_hash
 		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id AND l.deleted_at IS NULL
 		WHERE wl.work_id IN ?
 		ORDER BY wl.work_id, wl.kind, l.display_name`, workIDs).Scan(&rows).Error; err != nil {
@@ -38,8 +39,38 @@ func (s *ReadService) loadWorkLabels(ctx context.Context, workIDs []int64) (map[
 	}
 	for _, r := range rows {
 		out[r.WorkID] = append(out[r.WorkID], LabelAttribution{
-			LabelID: r.LabelID, DisplayName: r.DisplayName, LabelKind: r.LabelKind, Kind: r.Kind, Lang: r.Lang,
+			LabelID: r.LabelID, DisplayName: r.DisplayName, LabelKind: r.LabelKind, Kind: r.Kind,
+			Lang: r.Lang, LogoHash: r.LogoHash,
 		})
+	}
+	return out, nil
+}
+
+// LabelLogoHashes reads catalog_label.logo_hash for a set of label ids in ONE
+// query (wave 170). Labels without a logo — and ids that do not resolve to a
+// live label — are absent from the map, so a caller that ranges over its own
+// ids reads "" for them.
+//
+// This exists because the entity-search hits come from Meilisearch, whose label
+// documents carry no logo hash: hydrating the handful of hits from Postgres by
+// id keeps the index (settings AND documents) out of the wave entirely.
+func (s *ReadService) LabelLogoHashes(ctx context.Context, labelIDs []int64) (map[int64]string, error) {
+	out := make(map[int64]string, len(labelIDs))
+	if len(labelIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		ID       int64  `gorm:"column:id"`
+		LogoHash string `gorm:"column:logo_hash"`
+	}
+	// Raw SQL bypasses GORM soft-delete, so deleted_at is filtered explicitly.
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT id, logo_hash FROM catalog_label
+		WHERE id IN ? AND deleted_at IS NULL AND logo_hash <> ''`, labelIDs).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.ID] = r.LogoHash
 	}
 	return out, nil
 }

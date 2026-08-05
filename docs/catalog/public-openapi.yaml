@@ -1157,6 +1157,9 @@ components:
           type:
             - array
             - "null"
+        logo_hash:
+          description: brand logo content hash in the image service; "" = this label has no logo
+          type: string
         next_offset:
           format: int64
           type: integer
@@ -1181,6 +1184,7 @@ components:
         - kind
         - aliases
         - work_count
+        - logo_hash
         - refs
         - intros
         - links
@@ -1221,6 +1225,9 @@ components:
         kind:
           description: game_brand|bunko|publisher|anime_studio|doujin_circle|group|other
           type: string
+        logo_hash:
+          description: brand logo content hash in the image service; "" = this label has no logo
+          type: string
         work_count:
           format: int64
           type: integer
@@ -1229,6 +1236,7 @@ components:
         - display_name
         - kind
         - work_count
+        - logo_hash
       type: object
     PublicLabelWork:
       additionalProperties: false
@@ -2156,6 +2164,9 @@ components:
           type: string
         lang:
           type: string
+        logo_hash:
+          description: brand logo content hash in the image service; "" = this label has no logo
+          type: string
         work_count:
           format: int64
           type: integer
@@ -2165,6 +2176,7 @@ components:
         - label_kind
         - kind
         - work_count
+        - logo_hash
       type: object
     PublicWorkLink:
       additionalProperties: false

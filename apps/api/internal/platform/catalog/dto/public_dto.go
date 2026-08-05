@@ -397,6 +397,12 @@ type PublicLabel struct {
 	// number of works this caller would page through via
 	// works?label_id=&claim_state=live — the call an entity page makes (146).
 	WorkCount int `json:"work_count"`
+	// LogoHash is the brand logo's content hash in the image service (wave
+	// 170) — the same currency as a work cover's image_hash, so a consumer
+	// builds the CDN URL from it the same way. ALWAYS present (never
+	// omitempty): "" is the real answer "this label has no logo", and a
+	// missing key would be indistinguishable from a consumer's parse failure.
+	LogoHash string `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
 	// Refs are the EXACT identity anchors (doc 106 G4); links stays the
 	// separate non-identity web-presence projection — the two never mix.
 	Refs       []PublicCatalogRef `json:"refs"`
@@ -607,6 +613,10 @@ type PublicWorkLabel struct {
 	// consumer's own parse failure — which is how the deprecated face's
 	// permanent "+ 0" got shipped in the first place.
 	WorkCount int `json:"work_count"`
+	// LogoHash — see PublicLabel.LogoHash. Always present for the same reason
+	// WorkCount is: the chip is an addressable identity and "" is a real
+	// answer.
+	LogoHash string `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
 }
 
 // PublicWorkEngine is one engine attribution on a work (A2-1e) — the id side
@@ -853,6 +863,9 @@ type PublicLabelListItem struct {
 	DisplayName string `json:"display_name"`
 	Kind        string `json:"kind" doc:"game_brand|bunko|publisher|anime_studio|doujin_circle|group|other"`
 	WorkCount   int    `json:"work_count"`
+	// LogoHash — see PublicLabel.LogoHash. Always present: the 会社 browse
+	// list renders the logo beside the name, and "" is the real "no logo".
+	LogoHash string `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
 }
 
 // PublicLabelsListData is the keyset label-list envelope. next_cursor is null

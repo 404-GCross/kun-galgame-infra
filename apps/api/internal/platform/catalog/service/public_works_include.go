@@ -313,6 +313,7 @@ func publicWorkLabels(rows []LabelAttribution) []dto.PublicWorkLabel {
 		out = append(out, dto.PublicWorkLabel{
 			ID: l.LabelID, DisplayName: l.DisplayName,
 			LabelKind: labelKindKey(l.LabelKind), Kind: workLabelKindKey(l.Kind), Lang: l.Lang,
+			LogoHash: l.LogoHash,
 		})
 	}
 	return out

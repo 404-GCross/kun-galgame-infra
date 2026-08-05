@@ -1147,6 +1147,9 @@ components:
           type: integer
         latin:
           type: string
+        logo_hash:
+          description: "labels only: brand logo content hash in the image service; absent = none"
+          type: string
         name:
           type: string
         person_id:
@@ -1809,10 +1812,14 @@ components:
           description: label kind (0=game_brand … 4=doujin_circle …)
           format: int32
           type: integer
+        logo_hash:
+          description: brand logo content hash in the image service; "" = none
+          type: string
       required:
         - id
         - display_name
         - kind
+        - logo_hash
       type: object
     LabelWorkRow:
       additionalProperties: false
