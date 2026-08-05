@@ -151,6 +151,31 @@ presets:
       - image/webp
       - image/gif
 
+  # Catalog LABEL brand logos / circle avatars (wave 170,
+  # internal/jobs/labellogos), written to catalog_label.logo_hash.
+  #
+  # fit `inside`, NOT `cover`: a brand logo is whatever shape its designer made
+  # it — a wide wordmark, a square circle avatar, a tall crest. Cover-cropping a
+  # wordmark to a square box cuts the brand's own name in half, which is the one
+  # thing a logo may not survive. `inside` shrinks to fit and keeps the aspect,
+  # so every shape renders whole (same reasoning as character_figure).
+  #
+  # Uploaded under site_key "catalog"; the catalog client's
+  # image_allowed_presets MUST list `catalog_logo` or every upload is 403'd.
+  catalog_logo:
+    variants:
+      - name: "mini"
+        width: 360
+        height: 360
+        fit: inside
+        format: webp
+        quality: 80
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+      - image/gif
+
   # Topic / inline post images. Main image only; no extra variants.
   topic:
     variants: []
