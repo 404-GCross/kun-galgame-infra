@@ -97,11 +97,11 @@ const confirmToggle = async () => {
     </div>
 
     <template v-else-if="matrix">
-      <AdminPermissionLegend
+      <PermissionLegend
         :manages-permissions="matrix.manages_permissions"
       />
 
-      <AdminPermissionMatrix
+      <PermissionMatrix
         v-for="domain in matrix.domains"
         :key="domain.name"
         :domain="domain"
@@ -109,13 +109,13 @@ const confirmToggle = async () => {
         @toggle="askToggle"
       />
 
-      <AdminPermissionAuditList
+      <PermissionAuditList
         :entries="auditEntries"
         :has-error="Boolean(auditError)"
         @retry="refreshAudit"
       />
 
-      <AdminPermissionConfirmModal
+      <PermissionConfirmModal
         v-model:open="confirmOpen"
         :row="pendingRow"
         :role="pendingRole"
