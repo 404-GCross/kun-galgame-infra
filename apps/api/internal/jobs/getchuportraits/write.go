@@ -77,6 +77,12 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, apply bool) 
 		case stderrors.Is(err, imageclient.ErrModerationRejected):
 			out.rejected++
 			slog.Warn("image rejected by moderation", "slot", r.slot.Name, "character", c.CharacterID, "getchu", c.GetchuID, "file", c.File)
+		case stderrors.Is(err, imageclient.ErrMIMEDenied):
+			// The source shipped a format this preset does not take (Getchu has
+			// a handful of .gif character images). Counted as rejected, not an
+			// error: nothing is broken and no re-run will change it.
+			out.rejected++
+			slog.Warn("format not accepted by preset", "slot", r.slot.Name, "character", c.CharacterID, "getchu", c.GetchuID, "file", c.File)
 		default:
 			out.errors++
 			slog.Warn("upload character image", "slot", r.slot.Name, "character", c.CharacterID, "getchu", c.GetchuID, "file", c.File, "err", err)
@@ -123,7 +129,11 @@ func (r *runner) upload(ctx context.Context, path, filename string) (*imageclien
 		if err == nil {
 			return res, nil
 		}
-		if stderrors.Is(err, imageclient.ErrQuotaExceeded) || stderrors.Is(err, imageclient.ErrModerationRejected) {
+		// Quota, moderation and a rejected format are all TERMINAL verdicts —
+		// retrying sends identical bytes for an identical answer.
+		if stderrors.Is(err, imageclient.ErrQuotaExceeded) ||
+			stderrors.Is(err, imageclient.ErrModerationRejected) ||
+			stderrors.Is(err, imageclient.ErrMIMEDenied) {
 			return nil, err
 		}
 		lastErr = err
