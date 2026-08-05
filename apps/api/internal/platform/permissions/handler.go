@@ -31,8 +31,8 @@ func (h *Handler) Register(admin fiber.Router) {
 	g := admin.Group("/permissions")
 	g.Get("/matrix", h.Matrix)
 	g.Get("/audit", h.Audit)
-	g.Post("/overrides", h.Grant)
-	g.Delete("/overrides", h.Revoke)
+	g.Post("/overrides", h.Add)
+	g.Delete("/overrides", h.Remove)
 
 	slog.Info("permission console registered under /api/v1/admin/permissions/*")
 }
@@ -66,39 +66,57 @@ func (h *Handler) Audit(c fiber.Ctx) error {
 	return response.Success(c, entries)
 }
 
-// overrideRequest is the body of both write endpoints — one overlay cell.
+// overrideRequest is the body of the insert endpoint — one overlay cell plus
+// the effect being written.
 type overrideRequest struct {
 	Role       string `json:"role"`
 	Permission string `json:"permission"`
+	// Effect is "grant" or "deny". Empty means "grant", which keeps the body
+	// this endpoint accepted before deny rows existed working unchanged.
+	Effect string `json:"effect"`
 }
 
-// Grant adds an overlay grant, from a JSON body.
-func (h *Handler) Grant(c fiber.Ctx) error {
+// Add writes an overlay row — a grant or a deny — from a JSON body.
+func (h *Handler) Add(c fiber.Ctx) error {
 	var req overrideRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, apperrors.ErrBadRequest)
 	}
-	return h.write(c, true, req)
-}
-
-// Revoke removes an overlay grant, returning the role to the code floor. It
-// names the cell in the QUERY rather than a body: a DELETE with a request body
-// is unevenly supported across the stack (the admin console's own HTTP client
-// sends none), and the pair (role, permission) is short enough to be a URL.
-func (h *Handler) Revoke(c fiber.Ctx) error {
-	return h.write(c, false, overrideRequest{
-		Role:       c.Query("role"),
-		Permission: c.Query("permission"),
+	if req.Effect == "" {
+		req.Effect = EffectGrant
+	}
+	if req.Effect != EffectGrant && req.Effect != EffectDeny {
+		return response.BadRequest(c, apperrors.ErrBadRequest)
+	}
+	return h.write(c, WriteRequest{
+		Add:        true,
+		Effect:     req.Effect,
+		Role:       req.Role,
+		Permission: authz.Permission(req.Permission),
 	})
 }
 
-func (h *Handler) write(c fiber.Ctx, grant bool, req overrideRequest) error {
+// Remove deletes whichever overlay row the cell has — a grant (back to the code
+// floor) or a deny (restoring the code floor). It names the cell in the QUERY
+// rather than a body: a DELETE with a request body is unevenly supported across
+// the stack (the admin console's own HTTP client sends none), and the pair
+// (role, permission) is short enough to be a URL. It deliberately does NOT take
+// an effect: the row that is there is the row being removed, and letting the
+// client assert which one invites deleting a deny while believing it revoked a
+// grant.
+func (h *Handler) Remove(c fiber.Ctx) error {
+	return h.write(c, WriteRequest{
+		Role:       c.Query("role"),
+		Permission: authz.Permission(c.Query("permission")),
+	})
+}
+
+func (h *Handler) write(c fiber.Ctx, req WriteRequest) error {
 	if req.Role == "" || req.Permission == "" {
 		return response.BadRequest(c, apperrors.ErrMissingParam)
 	}
 
-	act := Action{Grant: grant, Role: req.Role, Permission: authz.Permission(req.Permission)}
-	err := h.svc.Apply(c.Context(), callerFrom(c), act)
+	err := h.svc.Apply(c.Context(), callerFrom(c), req)
 	switch {
 	case err == nil:
 		return response.Success(c, nil)

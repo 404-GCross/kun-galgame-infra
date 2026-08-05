@@ -67,6 +67,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// role_permission_overrides.effect, for the same reason: the overlay gained
+	// its deny half on 2026-08-04 and the column is NOT NULL, so a table that
+	// already holds (necessarily grant) rows must be backfilled in raw SQL
+	// before AutoMigrate sees it. Idempotent.
+	if err := permissions.AddOverrideEffectColumn(gormDB); err != nil {
+		slog.Error("failed to add the permission-overlay effect column", "error", err)
+		os.Exit(1)
+	}
+
 	// Get all models to migrate
 	models := getAllModels()
 

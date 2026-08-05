@@ -26,27 +26,44 @@ func (s *Store) Overrides(ctx context.Context) ([]RolePermissionOverride, error)
 	return rows, err
 }
 
-// HasOverride reports whether the overlay currently grants (role, permission).
-// It is the difference between "revoking a grant" and "trying to cut below the
-// code floor", which the validator must be able to tell apart.
-func (s *Store) HasOverride(ctx context.Context, role, permission string) (bool, error) {
-	var count int64
-	err := s.db.WithContext(ctx).Model(&RolePermissionOverride{}).
-		Where("role = ? AND permission = ?", role, permission).Count(&count).Error
-	return count > 0, err
+// OverrideEffect returns the effect of the row for (role, permission), or ""
+// when there is none. It is what tells "revoking a grant" apart from "denying a
+// code-floor key" — two different operations on cells that look alike.
+func (s *Store) OverrideEffect(ctx context.Context, role, permission string) (string, error) {
+	var rows []RolePermissionOverride
+	err := s.db.WithContext(ctx).
+		Where("role = ? AND permission = ?", role, permission).Limit(1).Find(&rows).Error
+	if err != nil || len(rows) == 0 {
+		return "", err
+	}
+	return rows[0].Effect, nil
 }
 
 // ErrAlreadyGranted is returned when the overlay row already exists — a lost
-// race with a concurrent grant, not a validation failure.
-var ErrAlreadyGranted = errors.New("permissions: overlay grant already exists")
+// race with a concurrent write, not a validation failure. (Named before deny
+// rows existed; it now covers either effect, since the unique index is on
+// (role, permission) alone.)
+var ErrAlreadyGranted = errors.New("permissions: overlay row already exists")
 
-// ErrNotGranted is returned when a revoke finds no overlay row to delete.
-var ErrNotGranted = errors.New("permissions: no overlay grant to revoke")
+// ErrNotGranted is returned when a removal finds no overlay row to delete.
+var ErrNotGranted = errors.New("permissions: no overlay row to remove")
 
-// Grant inserts the overlay row and its audit row.
-func (s *Store) Grant(ctx context.Context, role, permission string, actorID uint) error {
+// ErrBadEffect is a programming error, not an operator one: something asked for
+// a row that is neither a grant nor a deny. It is checked here, at the only
+// place rows are written, because an empty Effect would be a row the engine
+// silently ignores — a permission change that appears to have been made.
+var ErrBadEffect = errors.New("permissions: override effect must be grant or deny")
+
+// Add inserts an overlay row with the given effect and its audit row.
+func (s *Store) Add(ctx context.Context, role, permission, effect string, actorID uint) error {
+	action, ok := addAction(effect)
+	if !ok {
+		return ErrBadEffect
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row := RolePermissionOverride{Role: role, Permission: permission, GrantedByUserID: actorID}
+		row := RolePermissionOverride{
+			Role: role, Permission: permission, Effect: effect, GrantedByUserID: actorID,
+		}
 		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
 		if res.Error != nil {
 			return res.Error
@@ -55,25 +72,50 @@ func (s *Store) Grant(ctx context.Context, role, permission string, actorID uint
 			return ErrAlreadyGranted
 		}
 		return tx.Create(&PermissionAuditLog{
-			ActorUserID: actorID, Action: ActionGrant, Role: role, Permission: permission,
+			ActorUserID: actorID, Action: action, Role: role, Permission: permission,
 		}).Error
 	})
 }
 
-// Revoke deletes the overlay row and its audit row. The role returns to the
-// code floor; it never drops below it, because there is no deny row to write.
-func (s *Store) Revoke(ctx context.Context, role, permission string, actorID uint) error {
+func addAction(effect string) (string, bool) {
+	switch effect {
+	case EffectGrant:
+		return ActionGrant, true
+	case EffectDeny:
+		return ActionDeny, true
+	default:
+		return "", false
+	}
+}
+
+// Remove deletes whichever overlay row exists for (role, permission) and audits
+// it under the action matching the row's effect — deleting a grant and deleting
+// a deny move the role in opposite directions, so the history must not record
+// them as the same event. Either way the role returns to its code floor.
+func (s *Store) Remove(ctx context.Context, role, permission string, actorID uint) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Where("role = ? AND permission = ?", role, permission).
-			Delete(&RolePermissionOverride{})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
+		var row RolePermissionOverride
+		// Locked for the length of the transaction so the effect we audit is the
+		// effect we delete, even against a concurrent writer.
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("role = ? AND permission = ?", role, permission).Take(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrNotGranted
 		}
+		if err != nil {
+			return err
+		}
+
+		if err := tx.Delete(&RolePermissionOverride{}, row.ID).Error; err != nil {
+			return err
+		}
+
+		action := ActionRevoke
+		if row.Effect == EffectDeny {
+			action = ActionRevokeDeny
+		}
 		return tx.Create(&PermissionAuditLog{
-			ActorUserID: actorID, Action: ActionRevoke, Role: role, Permission: permission,
+			ActorUserID: actorID, Action: action, Role: role, Permission: permission,
 		}).Error
 	})
 }
