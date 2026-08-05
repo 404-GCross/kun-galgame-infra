@@ -82,8 +82,17 @@ func cleanTables(t *testing.T) {
 		"catalog_merge_proposal", "catalog_revision", "catalog_redirect", "catalog_entity_usage",
 		"catalog_work_relation", "catalog_entity_relation",
 		"catalog_work_title", "catalog_release", "catalog_work",
-		"catalog_name_alias", "catalog_credit_name", "catalog_person",
-		"catalog_label_alias", "catalog_label", "catalog_org",
+		// Work facet tables — the wave-170b merge rehang list (each hangs off a
+		// work by work_id and is truncated in its own right, not only via the
+		// CASCADE, so RESTART IDENTITY reaches them too).
+		"catalog_work_intro", "catalog_work_cover", "catalog_work_screenshot",
+		"catalog_work_rating", "catalog_work_tag", "catalog_work_popularity",
+		"catalog_work_playtime", "catalog_work_platform",
+		"catalog_work_engine", "catalog_engine",
+		"catalog_series_member", "catalog_series",
+		"catalog_work_label", "catalog_work_character",
+		"catalog_name_alias", "catalog_credit_name", "catalog_person_intro", "catalog_person",
+		"catalog_label_alias", "catalog_label_intro", "catalog_label", "catalog_org",
 		"catalog_character_alias", "catalog_character_intro",
 		"catalog_character_trait_link", "catalog_character_trait", "catalog_character",
 		"catalog_survivorship_rule",

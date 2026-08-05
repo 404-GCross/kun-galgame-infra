@@ -60,6 +60,17 @@ func (r *SiteRepository) List(ctx context.Context) ([]model.Site, error) {
 	return sites, nil
 }
 
+// ListByCreator lists the sites a given admin created. Rows with a NULL
+// creator (pre-ownership) never match — only a manage_all caller sees those,
+// and that caller goes through List instead.
+func (r *SiteRepository) ListByCreator(ctx context.Context, userID uint) ([]model.Site, error) {
+	var sites []model.Site
+	if err := r.db.WithContext(ctx).Where("created_by_user_id = ?", userID).Find(&sites).Error; err != nil {
+		return nil, err
+	}
+	return sites, nil
+}
+
 // ListOAuthClients lists all OAuth clients
 func (r *SiteRepository) ListOAuthClients(ctx context.Context) ([]model.OAuthClient, error) {
 	var clients []model.OAuthClient

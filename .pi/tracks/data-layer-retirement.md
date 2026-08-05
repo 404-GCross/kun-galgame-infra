@@ -54,6 +54,9 @@ P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游
   actor)+`SetCreatorIfUnset` 随建 stub 事务写一次、永不覆写。存量 prod 已回填 133/208
   (claim_event 首事件 actor);余 75 行 claim 早于事件流(切轨系统回填 actor=0)按设计保持
   无章。语义更新:creator=「wiki 提交者或领养申领人」快照。待 forum push 部署。
+  ↳ 部署后复跑(08-04 晚):窗口期新增 6 行无章,1 行补章(228620→44632,claim 首事件真人
+  actor)、5 行 resite actor=0 归设计桶;9682 核明=首事件 to_state=0 带 actor 16285 非申领
+  (wiki 快照提交者实为 uid 1),按「非申领事件不落章」不动。终态:无章 75 行全为设计内。
 - **🏁 170 封面补全波(08-04 当日,双 Opus 派发)**:169 坏窗口期 72 部无封面词条,`cmd/backfill-vndb-covers`
   (15e4e666,vndbcovers 机架仿 bangumicovers/dlsitemedia,exact 锚 only+NOT EXISTS 幂等门+quota 停机)
   prod 跑毕 49/72 补齐(47 现锚+2 新铸锚 v67584/v67585;v67582 为 VNDB 无图 stub)。检索波核出:
@@ -67,3 +70,12 @@ P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游
   清单)**——12 行封面手动搬运归位;缺口待修(候选小波)。终账:72 部无封面→55 covered+6 并殁+11 残
   (5 源头无图/1 VNDB stub/1 freem/3 Steam-only/1 特典盘)。三个 draft 目标(228618/620/625)=投稿人
   自撤,非损伤。
+- **🏁 170c merge 机架 rehang 全量对账波(08-04 晚,Opus 执行+Fable 验收)**:170b 缺口根治。
+  e229b2ed:rehang 清单抽出为 merge_rehang.go(363 行),work 批新收 12 facet 表(intro/cover/
+  screenshot/rating/tag/popularity/playtime/platform/engine/series_member/label/character 折叠版)
+  +label/person intro+entity_relation;排除项(revision/claim_event 史表、external_ref 等专步、
+  match 队列、product_work_id)逐个具名注释=「清单即契约」。测试=一次性容器库 3 新用例真跑
+  PASS(负控核实非空转)。**prod 对账治数**:9 表 453 行历史悬空(tag 269/popularity 72/intro 24/
+  character 23/rating 19/label 14/screenshot 14/platform 9/playtime 7/label_intro 2;cover 0=
+  170b 手搬即全量)→ 同款语义一事务治毕(移 373/冲突删 80/roster 折叠 0),21 幸存 work 补
+  touch 喂 changes,复跑对账 15 表全零。无 schema 变更、无 migration。

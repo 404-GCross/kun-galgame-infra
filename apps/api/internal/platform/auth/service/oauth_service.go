@@ -117,6 +117,10 @@ type ClientPublicInfo struct {
 	Name        string `json:"name"`
 	AutoConsent bool   `json:"auto_consent"`
 	SiteDomain  string `json:"site_domain"`
+	// LogoURL is the same app-directory logo GET /oauth/ecosystem exposes, so
+	// the consent page can show the requesting app's icon instead of an
+	// initial-letter disc. Already public there; empty when unset.
+	LogoURL string `json:"logo_url,omitempty"`
 }
 
 // GetClientPublicInfo fetches the public-safe metadata for a client.
@@ -131,6 +135,7 @@ func (s *OAuthService) GetClientPublicInfo(ctx context.Context, clientID string)
 		ID:          client.ID,
 		Name:        client.Name,
 		AutoConsent: client.AutoConsent,
+		LogoURL:     client.LogoURL,
 	}
 	if client.Site != nil {
 		info.SiteDomain = client.Site.Domain

@@ -55,7 +55,10 @@ const initForm = (c: OAuthClient) => {
 }
 
 // Logo upload — POSTs a cropped square Blob to image_service and fills logoUrl
-// with the returned CDN URL. The logoUrl KunInput stays as a paste fallback.
+// with the returned CDN URL. Uploading is the only way to set a logo — an
+// arbitrary external URL would leave the app directory hotlinking a host we
+// don't control. The current logo is shown by feeding logoUrl back into
+// KunUpload as its initial image.
 const { uploading: logoUploading, error: logoError, upload: uploadLogo } = useClientLogoUpload()
 // KunUpload keeps its picked image in internal state with no reset API, so we
 // remount it via :key to clear the preview after a successful upload.
@@ -267,6 +270,7 @@ const handleSubmit = async () => {
           <span class="block text-sm font-medium text-default-500">Logo / 图标</span>
           <KunUpload
             :key="logoUploadKey"
+            :initial-image="logoUrl"
             :aspect="1"
             :size="256"
             class-name="w-32"
@@ -280,14 +284,9 @@ const handleSubmit = async () => {
           <p v-else-if="logoError" class="text-xs text-danger-600">{{ logoError }}</p>
         </div>
         <KunInput
-          v-model="logoUrl"
-          label="Logo URL（也可直接粘贴）"
-          placeholder="https://example.com/logo.png"
-        />
-        <KunInput
           v-model="tagline"
           label="一句话简介 (tagline)"
-          placeholder="例如：Galgame 论坛"
+          placeholder="世界上最萌的 Galgame 论坛"
         />
         <KunNumberInput
           v-if="isRen"
