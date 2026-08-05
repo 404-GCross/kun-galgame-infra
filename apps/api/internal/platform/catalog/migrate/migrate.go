@@ -204,6 +204,27 @@ func preMigrate(db *gorm.DB) error {
 		return fmt.Errorf("premigrate catalog_work_intro.provenance: %w", err)
 	}
 
+	// catalog_{character,person,label}_intro.provenance (entity intro MT,
+	// refs/proj/172): the same 0=source / 1=machine axis catalog_work_intro
+	// grew in step 75, added to the three entity intro tables so machine
+	// translations never masquerade as upstream source text. Same recipe:
+	// meaningful zero → NOT NULL with no default → add nullable, backfill 0
+	// (every existing row IS source text), set NOT NULL. src_hash / mt_model
+	// carry DEFAULT '' and are AutoMigrate's to add.
+	for _, t := range []string{"catalog_character_intro", "catalog_person_intro", "catalog_label_intro"} {
+		if err := db.Exec(`
+			DO $$
+			BEGIN
+				IF to_regclass('` + t + `') IS NOT NULL THEN
+					ALTER TABLE ` + t + ` ADD COLUMN IF NOT EXISTS provenance smallint;
+					UPDATE ` + t + ` SET provenance = 0 WHERE provenance IS NULL;
+					ALTER TABLE ` + t + ` ALTER COLUMN provenance SET NOT NULL;
+				END IF;
+			END $$`).Error; err != nil {
+			return fmt.Errorf("premigrate %s.provenance: %w", t, err)
+		}
+	}
+
 	// The W1-pre nativization columns (refs/proj/140,
 	// refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md): three
 	// axes that used to exist ONLY in the wiki body the read face bridged, and that

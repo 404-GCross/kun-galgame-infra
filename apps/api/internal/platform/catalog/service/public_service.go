@@ -857,24 +857,27 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks, nsfw boo
 // Empty → [].
 func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.PublicLabelIntro, error) {
 	var rows []struct {
-		Lang   string `gorm:"column:lang"`
-		Intro  string `gorm:"column:intro"`
-		Source string `gorm:"column:source"`
+		Lang       string `gorm:"column:lang"`
+		Intro      string `gorm:"column:intro"`
+		Source     string `gorm:"column:source"`
+		Provenance int16  `gorm:"column:provenance"`
 	}
+	// provenance ASC puts SOURCE rows (0) ahead of machine translations (1)
+	// within a language — a source row always wins (the step-75 rule).
 	if err := s.db.WithContext(ctx).Raw(`
-		SELECT i.lang, i.intro, src.key AS source
+		SELECT i.lang, i.intro, src.key AS source, i.provenance
 		FROM catalog_label_intro i JOIN catalog_source src ON src.id = i.source_id
-		WHERE i.label_id = ? ORDER BY i.lang, i.source_id`, labelID).Scan(&rows).Error; err != nil {
+		WHERE i.label_id = ? ORDER BY i.lang, i.provenance, i.source_id`, labelID).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]dto.PublicLabelIntro, 0, len(rows))
 	seenLang := map[string]bool{}
 	for _, r := range rows {
 		if seenLang[r.Lang] {
-			continue // a lower source_id already claimed this language
+			continue // a higher-priority row already claimed this language
 		}
 		seenLang[r.Lang] = true
-		out = append(out, dto.PublicLabelIntro{Lang: r.Lang, Intro: r.Intro, Source: r.Source})
+		out = append(out, dto.PublicLabelIntro{Lang: r.Lang, Intro: r.Intro, Source: r.Source, Machine: r.Provenance == 1})
 	}
 	return out, nil
 }
@@ -1432,13 +1435,16 @@ func (s *PublicService) characterTraits(ctx context.Context, characterID int64, 
 // Empty → [].
 func (s *PublicService) characterIntros(ctx context.Context, characterID int64) ([]dto.PublicCharacterIntro, error) {
 	var rows []struct {
-		Lang     string
-		Intro    string
-		SourceID int16 `gorm:"column:source_id"`
+		Lang       string
+		Intro      string
+		SourceID   int16 `gorm:"column:source_id"`
+		Provenance int16 `gorm:"column:provenance"`
 	}
-	if err := s.db.WithContext(ctx).Raw(`SELECT lang, intro, source_id
+	// provenance ASC puts SOURCE rows (0) ahead of machine translations (1)
+	// within a language — a source row always wins (the step-75 rule).
+	if err := s.db.WithContext(ctx).Raw(`SELECT lang, intro, source_id, provenance
 		FROM catalog_character_intro WHERE character_id = ?
-		ORDER BY lang, source_id`, characterID).Scan(&rows).Error; err != nil {
+		ORDER BY lang, provenance, source_id`, characterID).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]dto.PublicCharacterIntro, 0, len(rows))
@@ -1448,7 +1454,7 @@ func (s *PublicService) characterIntros(ctx context.Context, characterID int64) 
 			continue
 		}
 		seen[r.Lang] = true
-		out = append(out, dto.PublicCharacterIntro{Lang: r.Lang, Intro: r.Intro, Source: s.sourceKey(r.SourceID)})
+		out = append(out, dto.PublicCharacterIntro{Lang: r.Lang, Intro: r.Intro, Source: s.sourceKey(r.SourceID), Machine: r.Provenance == 1})
 	}
 	return out, nil
 }

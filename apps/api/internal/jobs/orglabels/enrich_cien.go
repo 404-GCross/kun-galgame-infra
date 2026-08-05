@@ -302,13 +302,15 @@ func loadDlsiteLabelMultimap(db *gorm.DB) (map[string][]int64, error) {
 }
 
 // preloadCienIntroKeys returns the "labelID|lang" set already carrying a
-// source=cien intro row (the doc-86 fill-missing key).
+// source=cien intro row (the doc-86 fill-missing key). SOURCE rows only
+// (provenance=0): a machine translation carries its source row's source_id,
+// and mistaking one for a cien upstream row would block the genuine text.
 func preloadCienIntroKeys(db *gorm.DB) (map[string]bool, error) {
 	var rows []struct {
 		LabelID int64  `gorm:"column:label_id"`
 		Lang    string `gorm:"column:lang"`
 	}
-	if err := db.Raw(`SELECT label_id, lang FROM catalog_label_intro WHERE source_id = ?`, sourceCien).
+	if err := db.Raw(`SELECT label_id, lang FROM catalog_label_intro WHERE provenance = 0 AND source_id = ?`, sourceCien).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}

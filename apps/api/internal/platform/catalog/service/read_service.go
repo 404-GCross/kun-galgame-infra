@@ -1406,25 +1406,26 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		FROM catalog_character_alias WHERE character_id = ? ORDER BY id`, characterID).Scan(&detail.Aliases).Error; err != nil {
 		return nil, err
 	}
-	// Intros: one element per language, lowest source_id wins — the same merge
-	// as nativeWorkIntros (ordered so the first row seen per lang is the
-	// winning source).
+	// Intros: one element per language — the same merge as nativeWorkIntros
+	// (provenance ASC puts source rows ahead of machine translations, then
+	// lowest source_id; the first row seen per lang wins).
 	var introRows []struct {
-		Lang     string `gorm:"column:lang"`
-		Intro    string `gorm:"column:intro"`
-		SourceID int16  `gorm:"column:source_id"`
+		Lang       string `gorm:"column:lang"`
+		Intro      string `gorm:"column:intro"`
+		SourceID   int16  `gorm:"column:source_id"`
+		Provenance int16  `gorm:"column:provenance"`
 	}
-	if err := db.Raw(`SELECT lang, intro, source_id FROM catalog_character_intro
-		WHERE character_id = ? ORDER BY lang, source_id`, characterID).Scan(&introRows).Error; err != nil {
+	if err := db.Raw(`SELECT lang, intro, source_id, provenance FROM catalog_character_intro
+		WHERE character_id = ? ORDER BY lang, provenance, source_id`, characterID).Scan(&introRows).Error; err != nil {
 		return nil, err
 	}
 	seenLang := map[string]bool{}
 	for _, r := range introRows {
 		if seenLang[r.Lang] {
-			continue // a higher-priority source already claimed this language
+			continue // a higher-priority row already claimed this language
 		}
 		seenLang[r.Lang] = true
-		detail.Intros = append(detail.Intros, WorkIntroRow{Lang: r.Lang, Intro: r.Intro, SourceID: r.SourceID})
+		detail.Intros = append(detail.Intros, WorkIntroRow{Lang: r.Lang, Intro: r.Intro, SourceID: r.SourceID, Machine: r.Provenance == 1})
 	}
 	sortIntros(detail.Intros)
 	// Traits (step 93): links at or below the spoiler ceiling, joined to the

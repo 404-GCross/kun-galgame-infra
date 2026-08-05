@@ -373,13 +373,16 @@ type PublicLabelWork struct {
 }
 
 // PublicLabelIntro is one language's description of a label, merged to the
-// winning source per language (lowest source_id wins — the step-65 intro merge).
-// source is the catalog_source key (public-face convention — never the numeric
-// source_id).
+// winning source per language (provenance ASC then lowest source_id — a source
+// row always beats a machine translation, the step-75 rule). source is the
+// catalog_source key (public-face convention — never the numeric source_id).
 type PublicLabelIntro struct {
 	Lang   string `json:"lang"`
 	Intro  string `json:"intro"`
 	Source string `json:"source"`
+	// Machine mirrors PublicWorkIntro.Machine: an LLM machine translation,
+	// surfaced only when that language has no source row.
+	Machine bool `json:"machine,omitempty"`
 }
 
 // PublicLabelLink is one non-identity web-presence link of a label (official
@@ -845,6 +848,9 @@ type PublicCharacterIntro struct {
 	Lang   string `json:"lang"`
 	Intro  string `json:"intro"`
 	Source string `json:"source"`
+	// Machine mirrors PublicWorkIntro.Machine: an LLM machine translation,
+	// surfaced only when that language has no source row.
+	Machine bool `json:"machine,omitempty"`
 }
 
 // PublicNameIntro is one description of a credited name (wave 108). source is

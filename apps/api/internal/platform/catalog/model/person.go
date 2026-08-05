@@ -98,8 +98,18 @@ type CatalogPersonIntro struct {
 	// Intro is the body text (verbatim from the source except CRLF→LF). NOT
 	// NULL, no default: content is always supplied.
 	Intro string `gorm:"type:text;not null" json:"intro"`
-	// SourceID is the provenance FK. Part of the unique key.
-	SourceID  int16     `gorm:"not null;uniqueIndex:uq_catalog_person_intro" json:"source_id"`
+	// SourceID is the provenance FK. Part of the unique key. A MACHINE-translated
+	// row (Provenance=1) carries the SOURCE row's source_id and is told apart
+	// purely by Provenance (the catalog_work_intro step-75 shape).
+	SourceID int16 `gorm:"not null;uniqueIndex:uq_catalog_person_intro" json:"source_id"`
+	// Provenance is 0=source / 1=machine (entity intro MT, refs/proj/172). A
+	// meaningful zero value: NOT NULL with NO default tag.
+	Provenance int16 `gorm:"not null" json:"provenance"`
+	// SrcHash is sha256(source text) on a machine row — the re-translate
+	// trigger. Empty on source rows; NOT NULL DEFAULT ''.
+	SrcHash string `gorm:"not null;default:''" json:"src_hash"`
+	// MTModel is the model id that produced a machine row; empty on source rows.
+	MTModel   string    `gorm:"not null;default:''" json:"mt_model"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

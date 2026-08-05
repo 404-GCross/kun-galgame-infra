@@ -113,10 +113,12 @@ const preloadChunk = 10000
 // preloadExistingLangs loads every (entity_id → set of intro langs) pair
 // already present for the candidate entities — across ALL sources, because the
 // fill-missing-language rule asks "does the entity have this language at
-// all?", not "did this source already write it?". This preload is the primary
-// skip; the (entity_id,lang,source_id) ON CONFLICT is only the backstop.
-// table is catalog_character_intro or catalog_person_intro with its matching
-// id column.
+// all?", not "did this source already write it?". SOURCE rows only
+// (provenance=0): a machine translation must never block a genuine upstream
+// text in the same language from landing (the read face prefers the source row
+// anyway). This preload is the primary skip; the (entity_id,lang,source_id)
+// ON CONFLICT is only the backstop. table is catalog_character_intro or
+// catalog_person_intro with its matching id column.
 func preloadExistingLangs(ctx context.Context, db *gorm.DB, table, idCol string, ids []int64) (map[int64]map[string]bool, error) {
 	out := map[int64]map[string]bool{}
 	for start := 0; start < len(ids); start += preloadChunk {
@@ -126,7 +128,7 @@ func preloadExistingLangs(ctx context.Context, db *gorm.DB, table, idCol string,
 			Lang     string `gorm:"column:lang"`
 		}
 		if err := db.WithContext(ctx).
-			Raw(`SELECT `+idCol+` AS entity_id, lang FROM `+table+` WHERE `+idCol+` IN ?`, ids[start:end]).
+			Raw(`SELECT `+idCol+` AS entity_id, lang FROM `+table+` WHERE provenance = 0 AND `+idCol+` IN ?`, ids[start:end]).
 			Scan(&rows).Error; err != nil {
 			return nil, err
 		}

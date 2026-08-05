@@ -132,12 +132,14 @@ func labelDisplayNames(db *gorm.DB, ids []int64) (map[int64]string, error) {
 
 // preloadIntroLangs returns label_id → set of languages already present in
 // catalog_label_intro (across ALL sources) — the fill-missing skip index.
+// SOURCE rows only (provenance=0): a machine translation must never block a
+// genuine upstream text in the same language from landing.
 func preloadIntroLangs(db *gorm.DB) (map[int64]map[string]bool, error) {
 	var rows []struct {
 		LabelID int64  `gorm:"column:label_id"`
 		Lang    string `gorm:"column:lang"`
 	}
-	if err := db.Raw(`SELECT label_id, lang FROM catalog_label_intro`).Scan(&rows).Error; err != nil {
+	if err := db.Raw(`SELECT label_id, lang FROM catalog_label_intro WHERE provenance = 0`).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	m := make(map[int64]map[string]bool, len(rows))

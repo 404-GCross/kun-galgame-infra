@@ -2027,6 +2027,10 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "machine",
+                                  "type": "boolean"
+                                },
+                                {
                                   "name": "source",
                                   "required": true,
                                   "type": "string"
@@ -2947,6 +2951,10 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "machine",
+                                  "type": "boolean"
+                                },
+                                {
                                   "name": "source",
                                   "required": true,
                                   "type": "string"
@@ -3267,6 +3275,10 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "machine",
+                                      "type": "boolean"
+                                    },
+                                    {
                                       "name": "source",
                                       "required": true,
                                       "type": "string"
@@ -3538,6 +3550,10 @@ export const docsModel: DocsModel = {
                                       "name": "lang",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "machine",
+                                      "type": "boolean"
                                     },
                                     {
                                       "name": "source",
@@ -4183,6 +4199,10 @@ export const docsModel: DocsModel = {
                                             "type": "string"
                                           },
                                           {
+                                            "name": "machine",
+                                            "type": "boolean"
+                                          },
+                                          {
                                             "name": "source",
                                             "required": true,
                                             "type": "string"
@@ -4459,6 +4479,10 @@ export const docsModel: DocsModel = {
                                             "name": "lang",
                                             "required": true,
                                             "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "type": "boolean"
                                           },
                                           {
                                             "name": "source",

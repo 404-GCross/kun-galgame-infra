@@ -126,8 +126,8 @@ func writeIntro(ctx context.Context, db *gorm.DB, source int16, c Candidate, app
 		return
 	}
 	res := db.WithContext(ctx).Exec(`
-		INSERT INTO catalog_character_intro (character_id, lang, intro, source_id)
-		VALUES (?,?,?,?) ON CONFLICT DO NOTHING`, c.CharacterID, langJa, text, source)
+		INSERT INTO catalog_character_intro (character_id, lang, intro, source_id, provenance)
+		VALUES (?,?,?,?,0) ON CONFLICT DO NOTHING`, c.CharacterID, langJa, text, source)
 	switch {
 	case res.Error != nil:
 		st.Errors++
