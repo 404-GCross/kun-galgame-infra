@@ -31,13 +31,14 @@ func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 // upload-time TTL touch and vanish ~13 months later — the exact "refping
 // site-scope GC fuse" failure that froze 66k galgame images.
 //
-// The catalog-scope hash universe is four sources (step 54, refs/proj/51 §4):
+// The catalog-scope hash universe is five sources (step 54, refs/proj/51 §4):
 //  1. catalog_character.image_hash — the BUST: VNDB portrait wave (step 48) and
 //     the Getchu bust backfill (refs/proj/167 §10).
 //  2. catalog_character.figure_hash — the FULL-BODY figure (refs/proj/167 §11).
 //  3. catalog_work_cover.image_hash — bodyless cover backfill (step 53).
 //  4. catalog_work_screenshot.image_hash — DLsite screenshot backfill (step 54 for
 //     bodyless works, refs/proj/125 for the claimed lane).
+//  5. catalog_label.logo_hash — label brand logos (wave 170, refs/proj/170).
 //
 // Adding an image column anywhere in catalog scope means adding it HERE in the
 // same change. Nothing fails when you forget: uploads succeed, the read face
@@ -181,6 +182,13 @@ SELECT DISTINCT hash FROM (
     UNION
     SELECT image_hash FROM catalog_work_screenshot
     WHERE image_hash IS NOT NULL AND image_hash <> ''
+    UNION
+    -- Label brand logos (wave 170, internal/jobs/labellogos). Live labels only,
+    -- same rationale as the character portrait: a logo is referenced iff a live
+    -- label still points at it. Stored NOT NULL DEFAULT '', so the empty string
+    -- (not NULL) is the "no logo" value the filter has to exclude.
+    SELECT logo_hash FROM catalog_label
+    WHERE logo_hash IS NOT NULL AND logo_hash <> '' AND deleted_at IS NULL
 ) u
 `
 	var hashes []string

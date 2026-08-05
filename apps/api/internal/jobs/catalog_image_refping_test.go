@@ -34,22 +34,25 @@ const (
 	hCharCoverX = "ffff666666666666666666666666666666666666666666666666666666666666"
 	hShotB      = "1111777777777777777777777777777777777777777777777777777777777777"
 	hShotSha    = "2222888888888888888888888888888888888888888888888888888888888888"
+	hLogoA      = "4444aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	hLogoB      = "5555bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
 
 // migrateCatalogRefpingTables migrates the small set the catalog refping query
-// touches (character portraits + work covers + work screenshots) plus the
-// registry + work rows the media FKs need. All in one AutoMigrate call so GORM
-// orders the FKs. Then wipes them for a clean slate.
+// touches (character portraits + work covers + work screenshots + label logos)
+// plus the registry + work rows the media FKs need. All in one AutoMigrate call
+// so GORM orders the FKs. Then wipes them for a clean slate.
 func migrateCatalogRefpingTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	require.NoError(t, db.AutoMigrate(
 		&catalogmodel.CatalogMedium{}, &catalogmodel.CatalogSource{},
 		&catalogmodel.CatalogWork{}, &catalogmodel.CatalogCharacter{},
-		&catalogmodel.CatalogWorkCover{}, &catalogmodel.CatalogWorkScreenshot{}))
+		&catalogmodel.CatalogWorkCover{}, &catalogmodel.CatalogWorkScreenshot{},
+		&catalogmodel.CatalogOrg{}, &catalogmodel.CatalogLabel{}))
 	// Truncate catalog_work too (CASCADE clears its cover/screenshot children):
 	// the claimed work carries a claim-unique (medium, site, product_work_id), so
 	// leaving it behind collides on a second run against the same DB.
-	require.NoError(t, db.Exec(`TRUNCATE catalog_work, catalog_character RESTART IDENTITY CASCADE`).Error)
+	require.NoError(t, db.Exec(`TRUNCATE catalog_work, catalog_character, catalog_label RESTART IDENTITY CASCADE`).Error)
 	// A medium + source the work / cover FKs reference (upsert — the DB may be
 	// shared with the fully-seeded handler tests).
 	require.NoError(t, db.Exec(`INSERT INTO catalog_medium (id, key, name_cn) VALUES (1,'galgame','G') ON CONFLICT (id) DO NOTHING`).Error)
@@ -178,4 +181,39 @@ func TestCatalogRefping_IncludesFullBodyFigures(t *testing.T) {
 	want := []string{hCharA, hCharB, hCharC}
 	sort.Strings(want)
 	assert.Equal(t, want, got, "both image_hash and figure_hash must be kept alive")
+}
+
+// TestCatalogRefping_IncludesLabelLogos pins the wave-170 byte fuse: label brand
+// logos (catalog_label.logo_hash) are catalog-scope bytes with exactly one home
+// row, so they must join the keep-alive union. Unlike the character/work
+// columns, logo_hash is NOT NULL DEFAULT empty-string — the "no logo" value is
+// the empty string, not NULL, and a filter that only excluded NULL would ping it
+// forever and report
+// it not_found (which trips the all-not-found alarm).
+func TestCatalogRefping_IncludesLabelLogos(t *testing.T) {
+	dsn := os.Getenv("TEST_CATALOG_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("TEST_CATALOG_DATABASE_DSN not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	migrateCatalogRefpingTables(t, db)
+
+	mk := func(logo string) *catalogmodel.CatalogLabel {
+		l := &catalogmodel.CatalogLabel{DisplayName: "brand", LogoHash: logo}
+		require.NoError(t, db.Create(l).Error)
+		return l
+	}
+
+	mk(hLogoA) // live logo
+	mk(hLogoA) // duplicate → deduped
+	mk("")     // no logo (the NOT NULL default) → excluded
+	gone := mk(hLogoB)
+	require.NoError(t, db.Delete(gone).Error) // soft-deleted → excluded
+
+	got, err := collectCatalogRefpingHashes(context.Background(), db)
+	require.NoError(t, err)
+	sort.Strings(got)
+
+	assert.Equal(t, []string{hLogoA}, got, "live, non-empty label logos only, deduped")
 }

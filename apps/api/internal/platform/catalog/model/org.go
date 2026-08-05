@@ -44,8 +44,18 @@ type CatalogLabel struct {
 	Lang            string  `gorm:"not null;default:''" json:"lang"`
 	// Kind uses the LabelKind* constants (no default tag — 0=game_brand is a
 	// meaningful zero).
-	Kind            int16          `gorm:"not null" json:"kind"`
-	Note            string         `gorm:"not null;default:''" json:"note"`
+	Kind int16  `gorm:"not null" json:"kind"`
+	Note string `gorm:"not null;default:''" json:"note"`
+	// LogoHash is the label's brand logo / avatar in the image service, catalog
+	// scope (wave 170). One single slot, mirroring catalog_character.image_hash:
+	// a label has one identifying mark, so there is no logo table and no
+	// multi-image gallery. Empty string = no logo, which is also the candidate
+	// filter the backfill selects on, and therefore the whole of the
+	// bangumi > cien precedence: bangumi runs first and cien only ever fills
+	// what is still empty. Provenance goes to field_provenance["logo_hash"].
+	// Any new image column in catalog scope MUST also join the keep-alive union
+	// in internal/jobs/catalog_image_refping.go or its bytes are GC'd a year later.
+	LogoHash        string         `gorm:"type:text;not null;default:''" json:"logo_hash"`
 	FieldProvenance datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"field_provenance"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
