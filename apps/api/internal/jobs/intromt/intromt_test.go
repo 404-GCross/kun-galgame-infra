@@ -159,10 +159,14 @@ type fakeTranslator struct {
 	model string
 	calls int
 	fn    func(ja string) string
+	// gloss records the glossary of the LAST call, so a test can prove the
+	// candidate's term list actually reached the LLM seam.
+	gloss Glossary
 }
 
-func (f *fakeTranslator) Translate(_ context.Context, ja string) (string, string, error) {
+func (f *fakeTranslator) Translate(_ context.Context, ja string, gloss Glossary) (string, string, error) {
 	f.calls++
+	f.gloss = gloss
 	return f.fn(ja), f.model, nil
 }
 
@@ -393,7 +397,7 @@ func TestHTTPTranslator(t *testing.T) {
 
 	tr := NewHTTPTranslator(srv.URL, "sekret", "deepseek-chat", 512)
 	require.True(t, tr.Configured())
-	zh, model, err := tr.Translate(context.Background(), "これは原文です。")
+	zh, model, err := tr.Translate(context.Background(), "これは原文です。", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "这是译文。", zh, "content trimmed, plain text is the translation")
 	assert.Equal(t, "deepseek-chat", model)
@@ -420,7 +424,7 @@ func TestHTTPTranslatorErrors(t *testing.T) {
 	}))
 	defer bad.Close()
 	tr := NewHTTPTranslator(bad.URL, "t", "m", 64)
-	_, _, err := tr.Translate(context.Background(), "x")
+	_, _, err := tr.Translate(context.Background(), "x", nil)
 	assert.Error(t, err)
 
 	// 429 then 200: the retry valve rides out a rate-limit burst instead of
@@ -435,7 +439,7 @@ func TestHTTPTranslatorErrors(t *testing.T) {
 		_, _ = io.WriteString(w, `{"model":"m","choices":[{"message":{"role":"assistant","content":"译"},"finish_reason":"stop"}]}`)
 	}))
 	defer limited.Close()
-	zh, _, err := NewHTTPTranslator(limited.URL, "t", "m", 64).Translate(context.Background(), "x")
+	zh, _, err := NewHTTPTranslator(limited.URL, "t", "m", 64).Translate(context.Background(), "x", nil)
 	require.NoError(t, err, "429 retried to success")
 	assert.Equal(t, "译", zh)
 	assert.Equal(t, 2, hits)
@@ -446,7 +450,7 @@ func TestHTTPTranslatorErrors(t *testing.T) {
 		_, _ = io.WriteString(w, `{"model":"m","choices":[{"message":{"role":"assistant","content":"残りは途中で"},"finish_reason":"length"}]}`)
 	}))
 	defer trunc.Close()
-	_, _, err = NewHTTPTranslator(trunc.URL, "t", "m", 64).Translate(context.Background(), "x")
+	_, _, err = NewHTTPTranslator(trunc.URL, "t", "m", 64).Translate(context.Background(), "x", nil)
 	assert.ErrorContains(t, err, "finish_reason", "partial output refused")
 
 	assert.False(t, NewHTTPTranslator("", "t", "m", 64).Configured(), "no base → not configured")
@@ -493,7 +497,7 @@ type slowFakeTranslator struct {
 	calls atomic.Int64
 }
 
-func (f *slowFakeTranslator) Translate(_ context.Context, ja string) (string, string, error) {
+func (f *slowFakeTranslator) Translate(_ context.Context, ja string, _ Glossary) (string, string, error) {
 	f.calls.Add(1)
 	time.Sleep(2 * time.Millisecond)
 	return "[译] " + ja, f.model, nil
@@ -503,10 +507,10 @@ func (f *slowFakeTranslator) Translate(_ context.Context, ja string) (string, st
 // source (idempotence + re-translate proof) and stamps an obvious mock model.
 func TestMockTranslatorDeterminism(t *testing.T) {
 	m := MockTranslator{Model: "stub"}
-	a1, mdl, err := m.Translate(context.Background(), "同じ原文")
+	a1, mdl, err := m.Translate(context.Background(), "同じ原文", nil)
 	require.NoError(t, err)
-	a2, _, _ := m.Translate(context.Background(), "同じ原文")
-	b, _, _ := m.Translate(context.Background(), "違う原文")
+	a2, _, _ := m.Translate(context.Background(), "同じ原文", nil)
+	b, _, _ := m.Translate(context.Background(), "違う原文", nil)
 	assert.Equal(t, a1, a2, "same source → same output (idempotent)")
 	assert.NotEqual(t, a1, b, "different source → different output (re-translate trigger)")
 	assert.True(t, strings.HasPrefix(mdl, "mock:"), "obvious mock model id")

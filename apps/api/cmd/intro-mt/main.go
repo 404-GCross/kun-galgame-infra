@@ -96,14 +96,15 @@ func main() {
 
 func printReport(st *intromt.Stats, apply bool) {
 	fmt.Printf("\n=== intro-mt %s ===\n", modeLabel(apply))
-	fmt.Printf("candidates=%d would_insert=%d would_retranslate=%d skip_unchanged=%d\n",
-		st.Candidates, st.WouldInsert, st.WouldRetranslate, st.SkipUnchanged)
+	fmt.Printf("candidates=%d with_glossary=%d would_insert=%d would_retranslate=%d skip_unchanged=%d\n",
+		st.Candidates, st.WithGlossary, st.WouldInsert, st.WouldRetranslate, st.SkipUnchanged)
 	if apply {
 		fmt.Printf("inserted=%d retranslated=%d refused=%d errors=%d\n",
 			st.Inserted, st.Retranslated, st.Refused, st.Errors)
 	}
 	for i, s := range st.Samples {
 		fmt.Printf("\n--- sample %d (work %d, %s%s) ---\n", i+1, s.WorkID, s.Decision, modelSuffix(s.MTModel))
+		printGlossary(s.Gloss)
 		fmt.Printf("JA: %s\n", s.Ja)
 		if s.Zh != "" {
 			fmt.Printf("ZH: %s\n", s.Zh)
@@ -112,6 +113,19 @@ func printReport(st *intromt.Stats, apply bool) {
 	if !apply {
 		fmt.Println("\n[dry run] no LLM called, nothing written — re-run with --apply")
 	}
+}
+
+// printGlossary shows the terms injected into this candidate's prompt — the
+// quality gate reads a translated name against the rendering it was handed.
+func printGlossary(g intromt.Glossary) {
+	if len(g) == 0 {
+		return
+	}
+	fmt.Printf("GLOSSARY(%d):", len(g))
+	for _, e := range g {
+		fmt.Printf(" %s→%s", e.Src, e.Zh)
+	}
+	fmt.Println()
 }
 
 func modeLabel(apply bool) string {

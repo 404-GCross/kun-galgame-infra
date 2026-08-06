@@ -90,6 +90,9 @@ type Sample struct {
 	Src      string
 	Zh       string
 	MTModel  string
+	// Gloss is the term list injected into this candidate's prompt — the
+	// quality gate needs to see WHY a name came out the way it did.
+	Gloss Glossary
 }
 
 // LaneStats reports one lane's outcome. Would* are the DECIDED plan (identical
@@ -98,6 +101,7 @@ type Sample struct {
 type LaneStats struct {
 	Lane             string
 	Candidates       int // entities in the windowed candidate set
+	WithGlossary     int // candidates carrying at least one glossary term
 	FromJa           int // candidates whose chosen source is ja
 	FromEn           int // candidates whose chosen source is en
 	WouldInsert      int // no machine zh row yet → new machine translation
@@ -139,6 +143,11 @@ func Run(ctx context.Context, tr Translator, opts Opts) ([]*LaneStats, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load %s candidates: %w", lane.key, err)
 		}
+		// The glossary is ALWAYS-ON and zero-config: it is loaded in dry mode
+		// too, because it participates in src_hash and therefore in the forecast.
+		if err := attachGlossaries(ctx, db, lane, cands); err != nil {
+			return nil, fmt.Errorf("load %s glossaries: %w", lane.key, err)
+		}
 		st := &LaneStats{Lane: lane.key, Candidates: len(cands)}
 		for _, c := range cands {
 			if c.SrcLang == string(SourceJa) {
@@ -146,9 +155,13 @@ func Run(ctx context.Context, tr Translator, opts Opts) ([]*LaneStats, error) {
 			} else {
 				st.FromEn++
 			}
+			if len(c.Gloss) > 0 {
+				st.WithGlossary++
+			}
 		}
 		slog.Info("entity-intro-mt candidates", "lane", lane.key,
 			"candidates", len(cands), "from_ja", st.FromJa, "from_en", st.FromEn,
+			"with_glossary", st.WithGlossary,
 			"apply", opts.Apply, "limit", opts.Limit, "offset", opts.Offset)
 
 		r := &runner{db: db, tr: tr, lane: lane, stats: st}
@@ -157,7 +170,7 @@ func Run(ctx context.Context, tr Translator, opts Opts) ([]*LaneStats, error) {
 			return nil, fmt.Errorf("touch %s entities: %w", lane.key, err)
 		}
 		slog.Info("entity-intro-mt lane done", "lane", lane.key, "apply", opts.Apply,
-			"candidates", st.Candidates, "would_insert", st.WouldInsert,
+			"candidates", st.Candidates, "with_glossary", st.WithGlossary, "would_insert", st.WouldInsert,
 			"would_retranslate", st.WouldRetranslate, "skip_unchanged", st.SkipUnchanged,
 			"inserted", st.Inserted, "retranslated", st.Retranslated,
 			"refused", st.Refused, "errors", st.Errors)

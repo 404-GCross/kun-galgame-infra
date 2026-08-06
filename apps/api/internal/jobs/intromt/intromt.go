@@ -73,6 +73,9 @@ type Sample struct {
 	Ja       string
 	Zh       string
 	MTModel  string
+	// Gloss is the term list injected into this candidate's prompt — the
+	// quality gate needs to see WHY a name came out the way it did.
+	Gloss Glossary
 }
 
 // Stats reports a run's outcome. Would* are the DECIDED plan (identical in dry
@@ -80,6 +83,7 @@ type Sample struct {
 // Refused counts the never-overwrite guard firing (expected 0).
 type Stats struct {
 	Candidates       int // works in the popularity-ranked set (post Top/Limit)
+	WithGlossary     int // candidates carrying at least one glossary term
 	WouldInsert      int // no zh row yet → new machine translation
 	WouldRetranslate int // machine row exists, source hash changed → re-translate
 	SkipUnchanged    int // machine row exists, source hash unchanged → idempotent skip
@@ -125,9 +129,21 @@ func Run(ctx context.Context, tr Translator, opts Opts) (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load candidates: %w", err)
 	}
-	slog.Info("intro-mt candidates", "population", pop, "candidates", len(cands), "apply", opts.Apply, "top", opts.Top, "limit", opts.Limit)
+	// The glossary is ALWAYS-ON and zero-config: it is loaded in dry mode too,
+	// because it participates in src_hash and therefore in the forecast.
+	if err := attachGlossaries(ctx, db, cands); err != nil {
+		return nil, fmt.Errorf("load glossaries: %w", err)
+	}
+	withGloss := 0
+	for _, c := range cands {
+		if len(c.Gloss) > 0 {
+			withGloss++
+		}
+	}
+	slog.Info("intro-mt candidates", "population", pop, "candidates", len(cands),
+		"with_glossary", withGloss, "apply", opts.Apply, "top", opts.Top, "limit", opts.Limit)
 
-	r := &runner{db: db, tr: tr, stats: &Stats{Candidates: len(cands)}}
+	r := &runner{db: db, tr: tr, stats: &Stats{Candidates: len(cands), WithGlossary: withGloss}}
 	r.process(ctx, cands, opts.Apply, opts.Delay, opts.Workers)
 	if err := r.touch(ctx); err != nil {
 		return nil, fmt.Errorf("touch works: %w", err)
@@ -135,7 +151,7 @@ func Run(ctx context.Context, tr Translator, opts Opts) (*Stats, error) {
 
 	st := r.stats
 	slog.Info("intro-mt done", "apply", opts.Apply,
-		"candidates", st.Candidates, "would_insert", st.WouldInsert,
+		"candidates", st.Candidates, "with_glossary", st.WithGlossary, "would_insert", st.WouldInsert,
 		"would_retranslate", st.WouldRetranslate, "skip_unchanged", st.SkipUnchanged,
 		"inserted", st.Inserted, "retranslated", st.Retranslated,
 		"refused", st.Refused, "errors", st.Errors)
@@ -153,7 +169,7 @@ func (r *runner) beginSample(c candidate, dec decision) int {
 		return -1
 	}
 	r.stats.Samples = append(r.stats.Samples, Sample{
-		WorkID: c.WorkID, Decision: decisionName(dec), Ja: c.JaText,
+		WorkID: c.WorkID, Decision: decisionName(dec), Ja: c.JaText, Gloss: c.Gloss,
 	})
 	return len(r.stats.Samples) - 1
 }

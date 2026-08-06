@@ -29,6 +29,9 @@ type candidate struct {
 	Text       string  `gorm:"column:src_text"`
 	MZhID      *int64  `gorm:"column:mzh_id"`
 	MZhSrcHash *string `gorm:"column:mzh_src_hash"`
+	// Gloss is the entity's term list, loaded in bulk after the candidate query
+	// (glossary.go) — never scanned from it.
+	Gloss Glossary `gorm:"-"`
 }
 
 // loadCandidates resolves one lane's candidate set:

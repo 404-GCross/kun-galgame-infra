@@ -90,6 +90,9 @@ type candidate struct {
 	MZhID      *int64  `gorm:"column:mzh_id"`
 	MZhSrcHash *string `gorm:"column:mzh_src_hash"`
 	PopScore   int64   `gorm:"column:pop_score"`
+	// Gloss is the work's term list, loaded in bulk after the candidate query
+	// (glossary.go) — never scanned from it.
+	Gloss Glossary `gorm:"-"`
 }
 
 // loadCandidates resolves the popularity-ranked candidate set:

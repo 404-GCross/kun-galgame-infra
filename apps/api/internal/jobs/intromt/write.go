@@ -26,10 +26,9 @@ const (
 	decSkipSame                 // machine row exists, source hash unchanged → idempotent skip
 )
 
-// decide computes the plan and the source hash for a candidate. The hash is
-// sha256 of the CHOSEN ja text verbatim — the re-translate trigger.
+// decide computes the plan and the source hash for a candidate.
 func decide(c candidate) (decision, string) {
-	hash := hashSource(c.JaText)
+	hash := hashCandidate(c.JaText, c.Gloss)
 	if c.MZhID == nil { // no existing machine row
 		return decInsert, hash
 	}
@@ -37,6 +36,33 @@ func decide(c candidate) (decision, string) {
 		return decSkipSame, hash
 	}
 	return decRetrans, hash
+}
+
+// hashCandidate computes src_hash — the re-translate trigger. CONTRACT
+// (wave 175, glossary-injected MT):
+//
+//   - EMPTY glossary → sha256(source text), bit-for-bit what every machine row
+//     written before glossary injection carries. This is load-bearing: ~137k
+//     machine rows already exist, and a candidate with no glossary data must
+//     keep hashing to exactly the same value or the next run re-translates the
+//     whole corpus for no gain.
+//   - NON-EMPTY glossary → sha256(source text + "\x00" + glossary.Canonical()).
+//     The NUL separator cannot occur in either part, so no (text, glossary)
+//     pair can collide with another. Effect, by design: an entity that HAS
+//     glossary data re-translates exactly ONCE the first time the new binary
+//     sees it — the injected terms genuinely changed the prompt, so the old
+//     translation is stale — and afterwards only when its source text OR its
+//     glossary changes (a newly ingested zh alias, a merged label, a new
+//     roster member).
+//
+// The glossary's canonical form is order-sensitive, which is why the loader's
+// priority order and cap are deterministic (glossary.go): a wobbling order
+// would re-translate the corpus on every run.
+func hashCandidate(text string, gloss Glossary) string {
+	if len(gloss) == 0 {
+		return hashSource(text)
+	}
+	return hashSource(text + "\x00" + gloss.Canonical())
 }
 
 func hashSource(s string) string {
@@ -147,7 +173,7 @@ func (r *runner) handle(ctx context.Context, c candidate, apply bool, delay time
 		}
 	}
 
-	zh, mtModel, err := r.tr.Translate(ctx, c.JaText)
+	zh, mtModel, err := r.tr.Translate(ctx, c.JaText, c.Gloss)
 	if err != nil {
 		r.inc(&r.stats.Errors)
 		slog.Warn("translate failed", "work", c.WorkID, "err", err)

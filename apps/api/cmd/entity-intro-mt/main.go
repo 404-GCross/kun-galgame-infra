@@ -91,8 +91,8 @@ func main() {
 func printReport(lanes []*entityintromt.LaneStats, apply bool) {
 	fmt.Printf("\n=== entity-intro-mt %s ===\n", modeLabel(apply))
 	for _, st := range lanes {
-		fmt.Printf("\n[%s] candidates=%d from_ja=%d from_en=%d would_insert=%d would_retranslate=%d skip_unchanged=%d\n",
-			st.Lane, st.Candidates, st.FromJa, st.FromEn,
+		fmt.Printf("\n[%s] candidates=%d from_ja=%d from_en=%d with_glossary=%d would_insert=%d would_retranslate=%d skip_unchanged=%d\n",
+			st.Lane, st.Candidates, st.FromJa, st.FromEn, st.WithGlossary,
 			st.WouldInsert, st.WouldRetranslate, st.SkipUnchanged)
 		if apply {
 			fmt.Printf("[%s] inserted=%d retranslated=%d refused=%d errors=%d\n",
@@ -100,6 +100,7 @@ func printReport(lanes []*entityintromt.LaneStats, apply bool) {
 		}
 		for i, s := range st.Samples {
 			fmt.Printf("\n--- %s sample %d (entity %d, %s%s) ---\n", s.Lane, i+1, s.EntityID, s.Decision, modelSuffix(s.MTModel))
+			printGlossary(s.Gloss)
 			fmt.Printf("SRC(%s): %s\n", s.SrcLang, s.Src)
 			if s.Zh != "" {
 				fmt.Printf("ZH: %s\n", s.Zh)
@@ -109,6 +110,19 @@ func printReport(lanes []*entityintromt.LaneStats, apply bool) {
 	if !apply {
 		fmt.Println("\n[dry run] no LLM called, nothing written — re-run with --apply")
 	}
+}
+
+// printGlossary shows the terms injected into this candidate's prompt — the
+// quality gate reads a translated name against the rendering it was handed.
+func printGlossary(g entityintromt.Glossary) {
+	if len(g) == 0 {
+		return
+	}
+	fmt.Printf("GLOSSARY(%d):", len(g))
+	for _, e := range g {
+		fmt.Printf(" %s→%s", e.Src, e.Zh)
+	}
+	fmt.Println()
 }
 
 func modeLabel(apply bool) string {

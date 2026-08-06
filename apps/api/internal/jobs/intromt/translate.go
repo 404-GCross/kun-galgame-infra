@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,8 +19,11 @@ import (
 // returns the translated text plus the effective model id that produced it
 // (recorded in mt_model for accountability); an error is recorded and the run
 // continues (single-item failures never abort the batch).
+// gloss is the candidate's own term list (glossary.go): the authoritative
+// Chinese renderings of the proper nouns its text is likely to contain. It is
+// per CALL, not per translator, because it differs for every candidate.
 type Translator interface {
-	Translate(ctx context.Context, jaText string) (zh string, model string, err error)
+	Translate(ctx context.Context, jaText string, gloss Glossary) (zh string, model string, err error)
 }
 
 // TranslateSystemPrompt is the PINNED ja→zh-Hans system prompt for the galgame
@@ -52,6 +56,46 @@ const TranslateSystemPromptEn = `你是资深的游戏本地化译者,负责把�
 4. 英文原文可能带有转译造成的生硬表达;请按中文的自然表达翻译其含义,但不得改变信息内容。
 5. 遇到无法确定的内容,按字面直译,不要留空或添加译注。
 6. 只输出译文正文本身,不要输出原文、解释、前言、后记、标注或任何引号包裹。`
+
+// GlossaryHeader / GlossaryRule are the PINNED glossary section appended to
+// whichever system prompt the lane uses when a candidate has terms (wave 175).
+// Rule 2 of both base prompts already says "keep proper nouns verbatim"; the
+// glossary carves out the exception — for THESE names an authoritative Chinese
+// rendering exists in the catalog — and then restates the verbatim rule as a
+// hard prohibition, because the failure mode is not "did not translate" but
+// "invented kanji for a kana name".
+const (
+	GlossaryHeader = `术语对照表(以下名称在本站已有确定的中文写法,原文 → 中文译名):`
+	GlossaryRule   = `对照表中的名称必须使用给定的中文译名;不在对照表中的人名、角色名、品牌/会社名、作品名一律保留原文写法,禁止自创音译或臆造汉字写法。`
+)
+
+// PromptSection renders the glossary block appended to the system prompt.
+// Empty glossary → empty string → the prompt is byte-identical to the pre-175
+// one, which is the same backward-compatibility promise the hash makes.
+func (g Glossary) PromptSection() string {
+	if len(g) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(GlossaryHeader)
+	for _, e := range g {
+		sb.WriteString("\n")
+		sb.WriteString(e.Src)
+		sb.WriteString(" → ")
+		sb.WriteString(e.Zh)
+	}
+	sb.WriteString("\n")
+	sb.WriteString(GlossaryRule)
+	return sb.String()
+}
+
+// withGlossary appends the glossary section to a base system prompt.
+func withGlossary(base string, gloss Glossary) string {
+	if len(gloss) == 0 {
+		return base
+	}
+	return base + "\n\n" + gloss.PromptSection()
+}
 
 // HTTPTranslator is an OpenAI-compatible chat-completions translator (the same
 // wire the AI gateway's upstream client and llmsuggest speak). Its entire
@@ -119,13 +163,13 @@ var retrySchedule = []time.Duration{2 * time.Second, 8 * time.Second, 30 * time.
 
 // Translate runs one plain-text chat completion (temperature 0 for a faithful,
 // deterministic rendering). The reply content IS the translation.
-func (t *HTTPTranslator) Translate(ctx context.Context, jaText string) (string, string, error) {
+func (t *HTTPTranslator) Translate(ctx context.Context, jaText string, gloss Glossary) (string, string, error) {
 	body := chatRequest{
 		Model:       t.model,
 		MaxTokens:   t.maxTokens,
 		Temperature: 0,
 		Messages: []chatMessage{
-			{Role: "system", Content: t.systemPrompt()},
+			{Role: "system", Content: withGlossary(t.systemPrompt(), gloss)},
 			{Role: "user", Content: jaText},
 		},
 	}
@@ -221,13 +265,15 @@ func (t *HTTPTranslator) postOnce(ctx context.Context, raw []byte) (body []byte,
 // source yields a different translation (the re-translate proof).
 type MockTranslator struct{ Model string }
 
-// Translate returns a deterministic marker translation and a mock model id.
-func (m MockTranslator) Translate(_ context.Context, jaText string) (string, string, error) {
+// Translate returns a deterministic marker translation and a mock model id. The
+// glossary is echoed as an entry COUNT so the write-path rehearsal (and the
+// tests) can see that the term list actually reached the call.
+func (m MockTranslator) Translate(_ context.Context, jaText string, gloss Glossary) (string, string, error) {
 	model := m.Model
 	if model == "" {
 		model = "stub"
 	}
-	return "【MT・rehearsal mock】" + firstRunes(jaText, 60), "mock:" + model, nil
+	return "【MT・rehearsal mock】[gloss:" + strconv.Itoa(len(gloss)) + "] " + firstRunes(jaText, 60), "mock:" + model, nil
 }
 
 func firstRunes(s string, n int) string {
