@@ -17,6 +17,23 @@ import (
 // to the character_pair bucket, whose prompt does not presume a shared voice
 // actor.
 func packetFor(p pairMeta, info map[int64]*charInfo, titles map[int64]string) personadj.Packet {
+	bucket := personadj.BucketCharacterPair
+	if p.Tier == 2 {
+		bucket = personadj.BucketCharacterCV
+	}
+	meta, _ := json.Marshal(map[string]any{"tier": p.Tier})
+	return personadj.Packet{
+		Bucket: bucket,
+		Key:    fmt.Sprintf("xsrc:%d:%d", p.A, p.B),
+		User:   evidenceText(p, info, titles),
+		Meta:   meta,
+	}
+}
+
+// evidenceText renders a pair's evidence body, shared between the round-one
+// packets and the panel re-adjudication packets so both rounds argue over the
+// same rendering contract.
+func evidenceText(p pairMeta, info map[int64]*charInfo, titles map[int64]string) string {
 	a, b := info[p.A], info[p.B]
 	var sb strings.Builder
 
@@ -41,18 +58,7 @@ func packetFor(p pairMeta, info map[int64]*charInfo, titles map[int64]string) pe
 	if p.Instance {
 		sb.WriteString("【注意】至少一侧是跨宇宙变体条目(instance),变体与本体不应合并\n")
 	}
-
-	bucket := personadj.BucketCharacterPair
-	if p.Tier == 2 {
-		bucket = personadj.BucketCharacterCV
-	}
-	meta, _ := json.Marshal(map[string]any{"tier": p.Tier})
-	return personadj.Packet{
-		Bucket: bucket,
-		Key:    fmt.Sprintf("xsrc:%d:%d", p.A, p.B),
-		User:   sb.String(),
-		Meta:   meta,
-	}
+	return sb.String()
 }
 
 func renderSide(sb *strings.Builder, tag string, c *charInfo) {

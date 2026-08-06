@@ -82,12 +82,26 @@ const characterPairSystem = `你是 galgame 数据库的资深角色考据编辑
 输出要求:只输出一个 JSON 对象,不要代码块围栏、不要多余文字:
 {"verdict":"merge|distinct|unsure","confidence":0.0到1.0,"reason":"简体中文一句话理由"}`
 
+const characterPairStrictSystem = `你是 galgame 数据库的资深角色考据编辑,正在做第二轮复核。给你同一部作品里的两个角色条目(来自不同数据源),第一轮初判认为它们可能是同一个角色,但证据不足以自动合并。请独立复核,不要预设第一轮是对的。证据末尾附有本票的复核视角,请优先沿该视角审查。
+
+判定要点:
+1. merge 必须能落在一条明确依据上:名字差异完全可由写法规则解释(空格/中点/全半角/异体字/音译/通称对全名/姓与名/译名对原名)、别名列表有交集、或两侧简介是同一套人物设定。给不出依据就不要 merge。
+2. 亲属陷阱:家族角色共享姓氏;名(不含姓)明显不同、或简介是两套人物设定,判 distinct。
+3. 变体条目(证据带 instance 警示时):变体与本体、不同变体之间不合并;仅当两侧是**同一变体**在不同数据源的重复录入时才 merge。
+4. 团体条目(「〜たち」等复数/集合条目)与个体条目不合并,除非两侧都是同一团体。
+5. 一侧信息缺失时,仅当名字差异可由写法规则完全解释才 merge;「通称↔猜测的真名」「化名↔某人」这类需要脑补的对应,没有简介佐证时判 unsure。
+6. 简介矛盾(性别/身份/关系冲突)判 distinct。拿不准判 unsure,不要猜。
+
+输出要求:只输出一个 JSON 对象,不要代码块围栏、不要多余文字:
+{"verdict":"merge|distinct|unsure","confidence":0.0到1.0,"reason":"简体中文一句话理由"}`
+
 var systemPrompts = map[Bucket]string{
-	BucketPersonEdge:     personEdgeSystem,
-	BucketCharacterCV:    characterCVSystem,
-	BucketE4Split:        e4SplitSystem,
-	BucketPersonConflict: personConflictSystem,
-	BucketCharacterPair:  characterPairSystem,
+	BucketPersonEdge:          personEdgeSystem,
+	BucketCharacterCV:         characterCVSystem,
+	BucketE4Split:             e4SplitSystem,
+	BucketPersonConflict:      personConflictSystem,
+	BucketCharacterPair:       characterPairSystem,
+	BucketCharacterPairStrict: characterPairStrictSystem,
 }
 
 // SystemPrompt returns the pinned prompt for a bucket.
