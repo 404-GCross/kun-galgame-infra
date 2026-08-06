@@ -1385,6 +1385,13 @@ components:
     PublicName:
       additionalProperties: false
       properties:
+        aliases:
+          description: alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         birth_d:
           description: fuzzy birth date, day
           format: int32
@@ -1445,6 +1452,7 @@ components:
         - id
         - name
         - siblings
+        - aliases
         - photo_hash
         - intros
         - refs

@@ -302,6 +302,12 @@ type PublicName struct {
 	Latin    string              `json:"latin,omitempty"`
 	PersonID int64               `json:"person_id,omitempty"`
 	Siblings []PublicSiblingName `json:"siblings"`
+	// Aliases are THIS credit name's alternate spellings (catalog_name_alias)
+	// — the zh-Hans renderings the bangumi name wave files, among others.
+	// Deduplicated, the name itself excluded, always present ([] when there are
+	// none), exactly like PublicLabel.Aliases. A sibling's own spellings are
+	// NOT folded in: each sibling has its own record carrying its own aliases.
+	Aliases []string `json:"aliases" doc:"alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none"`
 	// The person block (wave 172) rides EXACTLY the person_id gate: a hidden
 	// credit_name→person link withholds all five. A photograph and a birthday
 	// are person facts, and publishing them under a link the doctrine is

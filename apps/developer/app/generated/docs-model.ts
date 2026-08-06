@@ -3711,6 +3711,16 @@ export const docsModel: DocsModel = {
                             "type": "object",
                             "children": [
                               {
+                                "name": "aliases",
+                                "required": true,
+                                "nullable": true,
+                                "doc": "alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none",
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "string"
+                                }
+                              },
+                              {
                                 "name": "birth_d",
                                 "doc": "fuzzy birth date, day",
                                 "format": "int32",
@@ -4640,6 +4650,16 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "aliases",
+                                      "required": true,
+                                      "nullable": true,
+                                      "doc": "alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none",
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    {
                                       "name": "birth_d",
                                       "doc": "fuzzy birth date, day",
                                       "format": "int32",
@@ -5105,6 +5125,16 @@ export const docsModel: DocsModel = {
                         "name": "data",
                         "type": "object",
                         "children": [
+                          {
+                            "name": "aliases",
+                            "required": true,
+                            "nullable": true,
+                            "doc": "alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none",
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "string"
+                            }
+                          },
                           {
                             "name": "birth_d",
                             "doc": "fuzzy birth date, day",

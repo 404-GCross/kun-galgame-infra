@@ -692,6 +692,9 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 			ID: sib.ID, Name: nameBuckets(sib.Lang, sib.Name), Latin: derefStrPub(sib.Latin),
 		})
 	}
+	if p.Aliases, err = s.nameAliases(ctx, id); err != nil {
+		return dto.PublicName{}, false, err
+	}
 	if p.Intros, err = s.nameIntros(ctx, id); err != nil {
 		return dto.PublicName{}, false, err
 	}
@@ -1455,6 +1458,46 @@ func (s *PublicService) characterIntros(ctx context.Context, characterID int64) 
 		}
 		seen[r.Lang] = true
 		out = append(out, dto.PublicCharacterIntro{Lang: r.Lang, Intro: r.Intro, Source: s.sourceKey(r.SourceID), Machine: r.Provenance == 1})
+	}
+	return out, nil
+}
+
+// nameAliases loads a credit name's alternate spellings from catalog_name_alias
+// as a flat, ordered, deduplicated string list — the exact shape and query of
+// labelAliases, for the exact same reasons (flat strings serve every consumer:
+// search-as-you-type matching and "also known as" lines; a richer {name, lang,
+// kind} shape stays available as a later addition). Empty → [].
+//
+// HEAD NAME ONLY, never the siblings'. A credit name is the alias owner
+// (catalog_name_alias hangs off credit_name_id, the doc 10 invariant), and the
+// face already lists the person's other public-linked credit names in
+// siblings[] — each of which has its own /names/{id} record carrying its own
+// aliases[]. Folding the siblings' aliases in here would attribute one
+// identity's spellings to another and duplicate what the sibling record
+// already answers.
+//
+// No link-visibility gate is needed: an alias is a spelling of THIS name, not
+// an assertion about the person behind it, so it discloses nothing the head
+// name does not already disclose.
+func (s *PublicService) nameAliases(ctx context.Context, nameID int64) ([]string, error) {
+	var rows []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT a.name FROM catalog_name_alias a
+		JOIN catalog_credit_name cn ON cn.id = a.credit_name_id
+		WHERE a.credit_name_id = ? AND a.name <> cn.name
+		ORDER BY a.name, a.id`, nameID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		if _, dup := seen[r.Name]; dup {
+			continue // the same spelling under two langs renders once
+		}
+		seen[r.Name] = struct{}{}
+		out = append(out, r.Name)
 	}
 	return out, nil
 }

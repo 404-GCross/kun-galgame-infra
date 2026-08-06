@@ -845,6 +845,59 @@ func TestPublicNameIntros(t *testing.T) {
 	}
 }
 
+// TestPublicNameAliases pins the wave-175 addition to GET
+// /v1/catalog/names/{id}: aliases[] carries THIS credit name's alternate
+// spellings — the surface that makes the bangumi zh-Hans name lane visible —
+// in the labelAliases shape (flat, deduplicated, the name itself excluded,
+// always present) and never folds a sibling's spellings in.
+func TestPublicNameAliases(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	p := createPerson(t, "緒方剛志")
+	head := createCreditName(t, &p.ID, "緒方剛志")
+	sibling := createCreditName(t, &p.ID, "Ogata Takeshi")
+
+	createNameAlias(t, head.ID, "绪方刚志", "zh-Hans") // the zh rendering the wave writes
+	createNameAlias(t, head.ID, "绪方刚", "zh-Hans")
+	createNameAlias(t, head.ID, "绪方刚志", "")   // same spelling, other lang → renders once
+	createNameAlias(t, head.ID, "緒方剛志", "ja") // the name itself → excluded
+	createNameAlias(t, sibling.ID, "尾形武", "zh-Hans")
+
+	rec, found, err := svc.Name(ctx, head.ID, false, false, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("name: found=%v err=%v", found, err)
+	}
+	// Ordered by (name, id) exactly like labelAliases.
+	if len(rec.Aliases) != 2 || rec.Aliases[0] != "绪方刚" || rec.Aliases[1] != "绪方刚志" {
+		t.Fatalf("aliases = %+v (want the two zh spellings, deduped, display name excluded)", rec.Aliases)
+	}
+	for _, a := range rec.Aliases {
+		if a == "尾形武" {
+			t.Fatal("a sibling's alias must never be attributed to this name")
+		}
+	}
+	// The sibling's own record answers for the sibling's own spellings.
+	sib, found, err := svc.Name(ctx, sibling.ID, false, false, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("sibling: found=%v err=%v", found, err)
+	}
+	if len(sib.Aliases) != 1 || sib.Aliases[0] != "尾形武" {
+		t.Fatalf("sibling aliases = %+v", sib.Aliases)
+	}
+
+	// A name with no aliases serializes [], never null.
+	bare := createCreditName(t, nil, "無別名")
+	rec, _, err = svc.Name(ctx, bare.ID, false, false, 50, 0)
+	if err != nil {
+		t.Fatalf("bare name: %v", err)
+	}
+	if rec.Aliases == nil || len(rec.Aliases) != 0 {
+		t.Fatalf("an alias-less name must serialize []: %#v", rec.Aliases)
+	}
+}
+
 // createSameSeriesEdge wires a same_series (type 7) edge — the vndb series grain.
 func createSameSeriesEdge(t *testing.T, a, b int64) {
 	t.Helper()
