@@ -870,12 +870,16 @@ components:
       properties:
         group:
           type: string
+        group_zh:
+          type: string
         id:
           format: int64
           type: integer
         lie:
           type: boolean
         name:
+          type: string
+        name_zh:
           type: string
         sexual:
           type: boolean

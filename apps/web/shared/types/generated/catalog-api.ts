@@ -615,6 +615,8 @@ export interface components {
         CharacterTrait: {
             /** @description root-group display name; absent for a root trait */
             group_name?: string;
+            /** @description Simplified-Chinese root-group name; absent for a root trait or an unrendered group */
+            group_name_zh?: string;
             /** @description VNDB root-group tid (i1=Hair, i35=Eyes, …); empty when the trait is itself a root */
             group_tid: string;
             /** Format: int64 */
@@ -623,6 +625,8 @@ export interface components {
             lie?: boolean;
             /** @description verbatim VNDB English trait name */
             name: string;
+            /** @description Simplified-Chinese trait name; absent when the vocabulary row has none yet */
+            name_zh?: string;
             /** @description the trait belongs to a sexual trait family — consumers gate rendering themselves */
             sexual?: boolean;
             /**

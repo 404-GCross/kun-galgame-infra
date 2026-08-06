@@ -758,7 +758,8 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 	}
 	for _, tr := range detail.Traits {
 		resp.Traits = append(resp.Traits, dto.CharacterTrait{
-			ID: tr.ID, Name: tr.Name, GroupTID: tr.GroupTID, GroupName: derefStr(tr.GroupName),
+			ID: tr.ID, Name: tr.Name, NameZh: tr.NameZh,
+			GroupTID: tr.GroupTID, GroupName: derefStr(tr.GroupName), GroupNameZh: derefStr(tr.GroupNameZh),
 			Sexual: tr.Sexual, SpoilerLevel: tr.SpoilerLevel, Lie: tr.Lie,
 		})
 	}

@@ -1339,10 +1339,14 @@ type CharacterDetail struct {
 
 // CharacterTraitRow is one trait on a character's read face (step 93).
 type CharacterTraitRow struct {
-	ID           int64   `gorm:"column:id"`
-	Name         string  `gorm:"column:name"`
+	ID   int64  `gorm:"column:id"`
+	Name string `gorm:"column:name"`
+	// NameZh is the Simplified-Chinese rendering (wave 176); '' when the
+	// vocabulary row has none yet.
+	NameZh       string  `gorm:"column:name_zh"`
 	GroupTID     string  `gorm:"column:group_tid"`
 	GroupName    *string `gorm:"column:group_name"` // NULL for a root trait itself
+	GroupNameZh  *string `gorm:"column:group_name_zh"`
 	Sexual       bool    `gorm:"column:sexual"`
 	SpoilerLevel int16   `gorm:"column:spoiler_level"`
 	Lie          bool    `gorm:"column:lie"`
@@ -1436,7 +1440,8 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 	// vocabulary; group display name resolves by self-join on the verbatim
 	// vndb group tid (NULL when the trait IS a root). Ordered so groups render
 	// contiguously in VNDB's own order.
-	if err := db.Raw(`SELECT t.id, t.name, t.group_tid, g.name AS group_name,
+	if err := db.Raw(`SELECT t.id, t.name, t.name_zh, t.group_tid,
+			g.name AS group_name, g.name_zh AS group_name_zh,
 			t.sexual, l.spoiler_level, l.lie
 		FROM catalog_character_trait_link l
 		JOIN catalog_character_trait t ON t.id = l.trait_id
