@@ -197,22 +197,31 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 - 一人一作一票、`PUT` 到另一张封面 = 票搬家、`DELETE` 幂等 200、作品/封面不可投 → 404 —— 这些是**表的唯一键与 service 的规则**,不是某一张脸的意见,故跨面成立。
 - `site` 仍只作来源标注、不入唯一键:同一个人经两个 client 登录投票,仍是**一张会移动的票**。
 
-### 4.2 编辑提案三件套(写 + 只读投影,wave 177)
+### 4.2 编辑提案与审核(写 + 只读投影,wave 177 三件套 + wave 178 审核面)
 
-> ⚠️ **一等站点已不推荐用 S2S 的 `POST /api/v1/catalog/edit/proposals` 与 `POST /api/v1/catalog/edit/proposals/{id}/withdraw`(wave 177 起)**:同 §2.13 的理由——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户提交或撤回编辑。有用户令牌的场景请改用本节三个 op。两对端点**共用同一 editing engine、同一 registry、同一套站点 overlay**,只有 actor 的来路不同,故策略结论跨面一致。S2S 面**不删除**:审核三件套(amend / merge / decline)、revert、list、diff、snapshot 仍**只在 S2S 面**,且「后端自己认证了用户、无法转交用户令牌」的场景(批量迁移、无浏览器的同步任务)仍是它的正当用途。
+> ⚠️ **一等站点已不推荐用 S2S 的编辑写端点(wave 177 起 create/withdraw,wave 178 起 amend/merge/decline/revert)**:同 §2.13 的理由——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户提交、撤回或**裁决**编辑。有用户令牌的场景请改用本节的 op。两面**共用同一 editing engine、同一 registry、同一套站点 overlay**,只有 actor 的来路不同,故策略结论跨面一致。S2S 面**不删除**(只是「首方不推荐」):`list` / `diff` / `snapshot` 仍**只在 S2S 面**(审核队列列表尚未迁移),且「后端自己认证了用户、无法转交用户令牌」的场景(批量迁移、无浏览器的同步任务)仍是断言面的正当用途。
 
 | op | 方法 · 路径 | 是什么 |
 |----|-------------|--------|
 | `createEditProposalUser` | `POST /user/catalog/edit/proposals` | 以令牌本人的名义提交编辑提案(策略允许时当场直编) |
 | `withdrawEditProposalUser` | `POST /user/catalog/edit/proposals/{id}/withdraw` | 撤回**自己**的开放提案 |
 | `getEditSchemaUser` | `GET /user/catalog/edit/schema/{entity_type}?entity_id=` | 字段 schema + **本令牌**的逐字段能力投影 |
+| `getEditProposalUser` | `GET /user/catalog/edit/proposals/{id}` | 提案详情(含 amendments 与 effective_patch),形状与 S2S `getEditProposal` 逐字相同 |
+| `amendEditProposalUser` | `POST /user/catalog/edit/proposals/{id}/amendments` | 以本人名义修订开放提案(`{set?, unset?, note?}`;逐字段需 review 权) |
+| `mergeEditProposalUser` | `POST /user/catalog/edit/proposals/{id}/merge` | 以本人名义合并开放提案(`{note?}`;逐字段 rebase,409 带冲突字段表) |
+| `declineEditProposalUser` | `POST /user/catalog/edit/proposals/{id}/decline` | 以本人名义拒绝开放提案(`{note?}`,理由落 `decision_note`) |
+| `revertEditEntityUser` | `POST /user/catalog/edit/revert` | 以本人名义回滚实体到历史版本(`{entity_type, entity_id, to_seq, note?}`;**无 `site`**——租户取自令牌 client) |
 
 - **create 请求体 = S2S `EditProposalCreateRequest` 减去 `actor` 与 `site`**,即 `{entity_type, entity_id, patch, note?}`。这不是「精简版」,而是**把可以撒谎的地方全部删掉**:提案人 = 令牌 `id` claim,租户 = 令牌 client 的 `catalog_site`。响应与 S2S 逐字相同(`{proposal, merged, revision?}`)。
 - **roles 取自令牌**:`middleware.JWTAuth` 的 `user_roles`(全局 `roles` claim ∪ `site_roles`)直接喂进该实体 family 的权限词表。因此**管理员令牌在本面同样触发自动合并**(kungal overlay:propose=open / automerge=review),与它在 S2S 面断言 `roles:["admin"]` 的结论一致;站点局部 moderator 只在**该站 client 签发的令牌**上成立(site_roles 的既有语义)。
 - **withdraw 无请求体**:S2S 的撤回请求体只有一个 `actor`,减去之后什么也不剩。检查两道——先比对提案的租户与令牌 client 的 `catalog_site`(跨租户 → **403**),再由引擎校验「提案人 == 本人」(否则 **403** `ErrNotProposer`);已关闭的提案 → **409**,不存在 → **404**。
 - **schema 投影不接受任何 actor 查询参数**:S2S 版的 `user_id` / `roles` / `trust_tier` / `is_entity_owner` / `site` 在本面**全部不存在**——调用方无法询问「换成别人会怎样」。保留的 `entity_id` 描述的是**投影对象**(实体感知的 overlay 对它求值),不是调用者。
-- **`trust_tier` 恒为 0、`is_entity_owner` 恒为 false,是设计而非遗漏**:两者在 infra 侧**没有事实来源**——信任等级住在产品自己的 trust 账本里,「这行是不是他建的」是产品侧的业务事实。因此 **letmoe 的 ProposeTrusted 通道与 kungal 的 owner-review 通道有意留在 S2S 面**,由持有这些事实的后端断言。等认领(claim)生命周期迁到用户令牌、归属成为 catalog 自己持有的事实之后,再回来重开这一段。
-- 错误映射沿用 S2S 面的口味:未注册字段键/空 patch → **422**,策略拒绝 → **403**,实体/提案不存在 → **404**,rebase 冲突/状态不对 → **409**。
+- **审核四件套(amend / merge / decline / revert)请求体 = S2S 版减去 `actor`(revert 再减 `site`)**,响应与 S2S 逐字相同(amend → `EditAmendmentView`,merge → `EditRevisionView`,decline → 关闭后的 `EditProposalView`,revert → `{proposal, revision}`)。审核者 = 令牌本人,`amender_uid` / `decided_by_uid` / 回滚 revision 的 `actor_uid` 都写它。
+- **租户闸(四件套 + 详情读共用)**:先比对提案的 `site` 与令牌 client 的 `catalog_site`,不符 → **403**(先于任何引擎规则,跨租户调用方只知道「不是你的」);revert 无提案可比,租户即令牌 client 绑定值,直接作为 overlay 键与写入租户。
+- **归属(ownership)是 catalog 自己持有的事实了(wave 178)**:`catalog_work.owner_user_id`(可空 bigint,**write-once**)——提交铸造(§2 submit)与**认领诞生**(claim 动作,`from_state IS NULL` 的那一次)各写一次,之后**永不覆盖**;NULL = 未知/历史行(手工回填脚本 `apps/api/cmd/migrate-catalog/backfill/owner-user-id.sql`,由 forum `galgame.creator_user_id` 与诞生事件两路补齐)。引擎经 spec 的 `OwnerUserID` 钩子**推导** `IsEntityOwner`(仅当钩子存在、调用者 uid 非 0、且存储 uid == 调用者 uid),因此 **kungal 的 owner-review 通道在用户面天然成立**,无需任何后端断言,forum 侧的镜像权限闸可以删除。
+  - **推导只会把标志置 ON,永不置 OFF**:S2S 面断言的 `is_entity_owner` **照旧被采信**(某些 family 没注册钩子、某些产品有自己的归属定义),两者是并集关系。
+  - **`trust_tier` 恒为 0 仍是设计而非遗漏**:信任等级在 infra 侧确实没有事实来源(住在产品自己的 trust 账本里),故 **letmoe 的 ProposeTrusted 通道继续留在 S2S 面**。
+- 错误映射沿用 S2S 面的口味:未注册字段键/空 patch/空 delta → **422**,策略拒绝 → **403**,实体/提案/目标 revision 不存在 → **404**,rebase 冲突/提案已关闭 → **409**;令牌缺失或无效 → **401**,缺 `catalog:edit` scope → **403**(message 含 scope 字样)。
 
 ## 5. 鉴权形态
 

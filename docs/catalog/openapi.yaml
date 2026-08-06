@@ -2291,6 +2291,46 @@ components:
         - first_acted_at
         - acted_count
       type: object
+    UserEditAmendRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/UserEditAmendRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        note:
+          maxLength: 2000
+          type: string
+        set:
+          additionalProperties: {}
+          description: Field-key → corrected value (change or add)
+          type: object
+        unset:
+          description: Field keys to reject from the patch
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      type: object
+    UserEditDecisionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/UserEditDecisionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        note:
+          description: Merge note / decline reason (kept on the proposal)
+          maxLength: 2000
+          type: string
+      type: object
     UserEditProposalCreateRequest:
       additionalProperties: false
       properties:
@@ -2320,6 +2360,37 @@ components:
         - entity_type
         - entity_id
         - patch
+      type: object
+    UserEditRevertRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/UserEditRevertRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        entity_id:
+          format: int64
+          minimum: 1
+          type: integer
+        entity_type:
+          description: Registered entity type, e.g. catalog.work
+          minLength: 1
+          type: string
+        note:
+          maxLength: 2000
+          type: string
+        to_seq:
+          description: Target revision seq to restore
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - entity_type
+        - entity_id
+        - to_seq
       type: object
     VoiceName:
       additionalProperties: false
@@ -4430,6 +4501,131 @@ paths:
       summary: File an edit proposal AS THE BEARER TOKEN'S OWN USER (automerges into a direct edit when the caller's token roles already carry the review capability). The proposer and the filing tenant are derived from the token; the body carries neither
       tags:
         - catalog-user
+  /api/v1/user/catalog/edit/proposals/{id}:
+    get:
+      operationId: getEditProposalUser
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Read one proposal with its amendments and effective patch (same shape as the S2S detail read); refuses a proposal filed on another tenant
+      tags:
+        - catalog-user
+  /api/v1/user/catalog/edit/proposals/{id}/amendments:
+    post:
+      operationId: amendEditProposalUser
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserEditAmendRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditAmendmentView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Amend an open proposal AS THE BEARER TOKEN'S OWN USER (set/unset fields; requires the review rule on every touched field). The amender is the token; the body names nobody
+      tags:
+        - catalog-user
+  /api/v1/user/catalog/edit/proposals/{id}/decline:
+    post:
+      operationId: declineEditProposalUser
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserEditDecisionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Decline an open proposal with a reason AS THE BEARER TOKEN'S OWN USER
+      tags:
+        - catalog-user
+  /api/v1/user/catalog/edit/proposals/{id}/merge:
+    post:
+      operationId: mergeEditProposalUser
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserEditDecisionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditRevisionView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Merge an open proposal AS THE BEARER TOKEN'S OWN USER (per-field rebase; 409 lists conflicts). Review authority comes from the token's roles or from catalog-held entity ownership
+      tags:
+        - catalog-user
   /api/v1/user/catalog/edit/proposals/{id}/withdraw:
     post:
       operationId: withdrawEditProposalUser
@@ -4457,6 +4653,31 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Withdraw one's OWN open proposal. Bodiless: the only identity involved is the token's, and the engine refuses any proposal the token's user did not file"
+      tags:
+        - catalog-user
+  /api/v1/user/catalog/edit/revert:
+    post:
+      operationId: revertEditEntityUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserEditRevertRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditRevertResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Restore an entity to a historical revision AS THE BEARER TOKEN'S OWN USER (a new revision; history kept). The tenant whose overlay applies is the token client's, so the body carries no site
       tags:
         - catalog-user
   /api/v1/user/catalog/edit/schema/{entity_type}:

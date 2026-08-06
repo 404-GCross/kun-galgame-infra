@@ -11,11 +11,14 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// The editing engine on the user-token write plane (wave 177).
+// The editing engine on the user-token write plane (waves 177-178).
 //
 // Wave 176 opened this face with the cover ballot — a write whose entire
-// payload is a path. These three ops are the real subject: filing an edit,
-// taking it back, and asking what the caller is allowed to change. They run the
+// payload is a path. Wave 177 brought the real subject: filing an edit, taking
+// it back, and asking what the caller is allowed to change. Wave 178 completes
+// it with the MODERATION ops — amend / merge / decline / revert — and the
+// proposal detail read, so a first-party product needs no S2S mirror of its own
+// permission gates: the same token that files an edit reviews one. They run the
 // SAME engine, the same registry, the same per-family permission vocabulary and
 // the same site overlays as the S2S ops in edit.go. Nothing about the editing
 // model moves here. What moves is where the actor comes from:
@@ -65,21 +68,62 @@ func RegisterUserEditOps(api huma.API, engine *editing.Engine, perms PermResolve
 		Summary: "Field schema + THIS TOKEN's evaluated field-level capabilities. Same projection as the S2S op, with no actor query parameters at all: a caller cannot ask what some other user would be allowed to do",
 		Tags:    tags,
 	}, s.schema)
+
+	// The moderation ops (wave 178). Same engine calls as their S2S siblings;
+	// the only difference is that the reviewer is the token, and that the
+	// proposal's tenant is fenced against the token client's catalog_site
+	// instead of against the S2S client's binding.
+	huma.Register(api, huma.Operation{
+		OperationID: "getEditProposalUser", Method: http.MethodGet,
+		Path:    UserPrefix + "/edit/proposals/{id}",
+		Summary: "Read one proposal with its amendments and effective patch (same shape as the S2S detail read); refuses a proposal filed on another tenant",
+		Tags:    tags,
+	}, s.get)
+	huma.Register(api, huma.Operation{
+		OperationID: "amendEditProposalUser", Method: http.MethodPost,
+		Path:    UserPrefix + "/edit/proposals/{id}/amendments",
+		Summary: "Amend an open proposal AS THE BEARER TOKEN'S OWN USER (set/unset fields; requires the review rule on every touched field). The amender is the token; the body names nobody",
+		Tags:    tags,
+	}, s.amend)
+	huma.Register(api, huma.Operation{
+		OperationID: "mergeEditProposalUser", Method: http.MethodPost,
+		Path:    UserPrefix + "/edit/proposals/{id}/merge",
+		Summary: "Merge an open proposal AS THE BEARER TOKEN'S OWN USER (per-field rebase; 409 lists conflicts). Review authority comes from the token's roles or from catalog-held entity ownership",
+		Tags:    tags,
+	}, s.merge)
+	huma.Register(api, huma.Operation{
+		OperationID: "declineEditProposalUser", Method: http.MethodPost,
+		Path:    UserPrefix + "/edit/proposals/{id}/decline",
+		Summary: "Decline an open proposal with a reason AS THE BEARER TOKEN'S OWN USER",
+		Tags:    tags,
+	}, s.decline)
+	huma.Register(api, huma.Operation{
+		OperationID: "revertEditEntityUser", Method: http.MethodPost,
+		Path:    UserPrefix + "/edit/revert",
+		Summary: "Restore an entity to a historical revision AS THE BEARER TOKEN'S OWN USER (a new revision; history kept). The tenant whose overlay applies is the token client's, so the body carries no site",
+		Tags:    tags,
+	}, s.revert)
 }
 
 // userEditActor derives the policy actor from the verified token, and is the
 // only way these ops learn who is writing.
 //
-// TrustTier is always 0 and IsEntityOwner is always false, BY DESIGN rather
-// than by omission. Neither has an infra-side source: trust tiers live in the
-// product's own trust ledger, and "owns this entity" is a product-side fact
-// about who created the row. Both therefore stay on the S2S face, where the
-// backend that holds those facts asserts them — letmoe's ProposeTrusted lane
-// and kungal's owner-review lane keep running there. Manufacturing either value
-// here (e.g. inferring ownership from the revision log) would put a policy
-// input in the hands of the face that exists precisely to have no such inputs.
-// When the claim lifecycle migrates onto user tokens, ownership becomes a fact
-// the catalog itself holds, and this comment is the place to revisit.
+// TrustTier is always 0 and IsEntityOwner is always false HERE — but ownership
+// is no longer lost by that. Wave 178 made it a fact the CATALOG holds
+// (catalog_work.owner_user_id, stamped write-once at submission / claim birth)
+// and the engine DERIVES it from the spec's OwnerUserID hook, comparing the
+// stored uid to the policy context's own uid. So the flag this function leaves
+// false is set — by the engine, from data, one layer below any wire — exactly
+// when the caller really is the entry's creator, and kungal's owner-review lane
+// works here without a backend to assert anything. This is the revisit the
+// wave-177 comment asked for.
+//
+// The S2S face keeps its asserted `is_entity_owner`: derivation can only turn
+// the flag ON, never off, so a product backend that knows an ownership the
+// catalog does not (a family registering no hook, a product-side notion of
+// ownership) is still believed. TrustTier stays 0 because it genuinely has no
+// infra-side source — trust tiers live in the product's own ledger, and
+// letmoe's ProposeTrusted lane therefore remains an S2S lane.
 func userEditActor(ctx context.Context) (dto.EditActor, string, *houseError) {
 	uid, site, he := userActor(ctx)
 	if he != nil {
@@ -122,26 +166,37 @@ type userEditWithdrawInput struct {
 }
 
 func (s *UserEditServer) withdraw(ctx context.Context, in *userEditWithdrawInput) (*editCloseOutput, error) {
-	actor, site, he := userEditActor(ctx)
-	if he != nil {
-		return nil, he
-	}
-	prop, _, _, err := s.engine.GetProposal(ctx, in.ID)
+	actor, prop, err := s.proposalForUser(ctx, in.ID)
 	if err != nil {
-		return nil, editErr(err)
-	}
-	// The tenancy line the S2S face draws with the client's catalog_site
-	// binding is drawn here with the token client's — a proposal filed on
-	// another tenant is not this caller's to close, and the engine's own check
-	// is about the proposer only. Same 403 either way.
-	if prop.Site != site {
-		return nil, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
-			"the proposal belongs to another catalog tenant")
+		return nil, err
 	}
 	if err := s.engine.WithdrawProposal(ctx, in.ID, s.policyCtx(actor, prop.Site, prop.EntityFamily)); err != nil {
 		return nil, editErr(err)
 	}
 	return s.closedView(ctx, in.ID)
+}
+
+// proposalForUser is this face's counterpart of EditServer.proposalForWrite: it
+// derives the actor from the token, loads the proposal, and draws the tenancy
+// line the S2S face draws with the S2S client's catalog_site binding using the
+// TOKEN client's instead. A proposal filed on another tenant is not this
+// caller's to read or decide — 403, before any engine rule is consulted, so a
+// cross-tenant caller learns nothing beyond "not yours" (the engine's own checks
+// are about the proposer / the field policies, never about the tenant).
+func (s *UserEditServer) proposalForUser(ctx context.Context, id int64) (dto.EditActor, *editing.Proposal, error) {
+	actor, site, he := userEditActor(ctx)
+	if he != nil {
+		return dto.EditActor{}, nil, he
+	}
+	prop, _, _, err := s.engine.GetProposal(ctx, id)
+	if err != nil {
+		return dto.EditActor{}, nil, editErr(err)
+	}
+	if prop.Site != site {
+		return dto.EditActor{}, nil, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+			"the proposal belongs to another catalog tenant")
+	}
+	return actor, prop, nil
 }
 
 // userEditSchemaInput is the S2S schema input with every actor-shaped query
@@ -175,4 +230,106 @@ func (s *UserEditServer) schema(ctx context.Context, in *userEditSchemaInput) (*
 		})
 	}
 	return &editSchemaOutput{Body: okEnvelope(resp)}, nil
+}
+
+// ---- the moderation ops (wave 178) -----------------------------------------
+
+// get is the proposal DETAIL read: the same view the S2S op returns (proposal +
+// amendments + effective patch), reusing its mappers verbatim. It is fenced by
+// tenant like every other op here — the withdraw precedent — because a proposal
+// carries its patch, its proposer and its decision note, none of which belong to
+// a neighbouring tenant's caller.
+func (s *UserEditServer) get(ctx context.Context, in *editGetInput) (*editGetOutput, error) {
+	_, site, he := userEditActor(ctx)
+	if he != nil {
+		return nil, he
+	}
+	prop, amendments, eff, err := s.engine.GetProposal(ctx, in.ID)
+	if err != nil {
+		return nil, editErr(err)
+	}
+	if prop.Site != site {
+		return nil, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+			"the proposal belongs to another catalog tenant")
+	}
+	view := proposalView(prop)
+	view.EffectivePatch = eff
+	view.Amendments = amendmentViews(amendments)
+	return &editGetOutput{Body: okEnvelope(view)}, nil
+}
+
+type userEditAmendInput struct {
+	ID   int64 `path:"id" minimum:"1"`
+	Body dto.UserEditAmendRequest
+}
+
+func (s *UserEditServer) amend(ctx context.Context, in *userEditAmendInput) (*editAmendOutput, error) {
+	actor, prop, err := s.proposalForUser(ctx, in.ID)
+	if err != nil {
+		return nil, err
+	}
+	amendment, aerr := s.engine.AmendProposal(ctx, in.ID, editing.AmendInput{
+		Set: in.Body.Set, Unset: in.Body.Unset, Note: in.Body.Note,
+		Actor: s.policyCtx(actor, prop.Site, prop.EntityFamily),
+	})
+	if aerr != nil {
+		return nil, editErr(aerr)
+	}
+	views := amendmentViews([]editing.ProposalAmendment{*amendment})
+	return &editAmendOutput{Body: okEnvelope(views[0])}, nil
+}
+
+type userEditDecisionInput struct {
+	ID   int64 `path:"id" minimum:"1"`
+	Body dto.UserEditDecisionRequest
+}
+
+func (s *UserEditServer) merge(ctx context.Context, in *userEditDecisionInput) (*editMergeOutput, error) {
+	actor, prop, err := s.proposalForUser(ctx, in.ID)
+	if err != nil {
+		return nil, err
+	}
+	rev, merr := s.engine.MergeProposal(ctx, in.ID, s.policyCtx(actor, prop.Site, prop.EntityFamily), in.Body.Note)
+	if merr != nil {
+		return nil, editErr(merr)
+	}
+	return &editMergeOutput{Body: okEnvelope(revisionView(rev))}, nil
+}
+
+func (s *UserEditServer) decline(ctx context.Context, in *userEditDecisionInput) (*editCloseOutput, error) {
+	actor, prop, err := s.proposalForUser(ctx, in.ID)
+	if err != nil {
+		return nil, err
+	}
+	if derr := s.engine.DeclineProposal(ctx, in.ID, s.policyCtx(actor, prop.Site, prop.EntityFamily), in.Body.Note); derr != nil {
+		return nil, editErr(derr)
+	}
+	return s.closedView(ctx, in.ID)
+}
+
+type userEditRevertInput struct {
+	Body dto.UserEditRevertRequest
+}
+
+// revert restores an entity to a historical revision. There is no proposal to
+// fence against, so the tenant is simply the token client's binding — passed as
+// the actor's site, which is both the policy-overlay key and the tenant the
+// produced proposal/revision rows are attributed to. The engine gates it on the
+// review rule per changed field, so the authority is the same one merge needs:
+// the token's roles, or the ownership the engine derives from the catalog.
+func (s *UserEditServer) revert(ctx context.Context, in *userEditRevertInput) (*editRevertOutput, error) {
+	actor, site, he := userEditActor(ctx)
+	if he != nil {
+		return nil, he
+	}
+	prop, rev, err := s.engine.Revert(ctx, editing.RevertInput{
+		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID, ToSeq: in.Body.ToSeq,
+		Note: in.Body.Note, Actor: s.policyCtx(actor, site, familyOf(in.Body.EntityType)),
+	})
+	if err != nil {
+		return nil, editErr(err)
+	}
+	return &editRevertOutput{Body: okEnvelope(dto.EditRevertResponse{
+		Proposal: proposalView(prop), Revision: revisionView(rev),
+	})}, nil
 }
