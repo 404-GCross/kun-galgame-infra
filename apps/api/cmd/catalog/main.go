@@ -400,6 +400,9 @@ func setupPublicCatalog(
 	// Slim public counts (149b) — the product-facing "how big is this
 	// catalogue" number; the internal dashboard stays on the S2S face.
 	v1.Get("/stats", publicH.Stats)
+	// Release-grain new-releases timeline (wave 174) — the calendar's sibling
+	// one grain down, where ports and re-editions are finally visible.
+	v1.Get("/releases", publicH.Releases)
 	// Release-calendar buckets (A2-1c): month view + the two pending buckets.
 	v1.Get("/calendar", publicH.Calendar)
 	v1.Get("/calendar/pending", publicH.CalendarPending)

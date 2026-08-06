@@ -1054,3 +1054,61 @@ type PublicWorksSearchData struct {
 	// public strings (all_ages | sensitive | r18), never the enum ints.
 	Facets map[string]map[string]int64 `json:"facets,omitempty"`
 }
+
+// ── wave 174: the release-grain new-releases timeline ───────────────────────
+
+// PublicReleaseFeedItem is one row of GET /v1/catalog/releases: ONE dated
+// release, plus the work it belongs to.
+//
+// The release half is PublicRelease's shape verbatim, key for key (`date`
+// included — the work block below carries its own work-grain `release_date`,
+// and two differently-scoped date keys under the same spelling would be a trap
+// rather than a convenience). A consumer that already renders a work's
+// releases[] renders a timeline row with the same code.
+type PublicReleaseFeedItem struct {
+	// ID is the stable catalog release id — the addressable identity the
+	// release-level anchors hang off.
+	ID   int64  `json:"id"`
+	Kind string `json:"kind" doc:"default|digital|physical|trial|patch"`
+	// Date is the release's own fuzzy date as partial ISO (YYYY-MM[-DD]).
+	// Never year-only here: a row without a month is not in this feed at all.
+	Date      *string  `json:"date"`
+	Title     string   `json:"title,omitempty"`
+	Lang      string   `json:"lang,omitempty"`
+	Platform  string   `json:"platform,omitempty"`
+	Platforms []string `json:"platforms,omitempty"`
+	// Refs are this release's EXACT external anchors (dlsite workno / vndb
+	// release id / steam appid …), ALWAYS loaded — release-level identity is
+	// the whole reason a release-grain feed is addressable, so unlike the works
+	// list's refs block it is not behind include=.
+	Refs []PublicCatalogRef `json:"refs"`
+	// IsFirst says whether this release is the work's EARLIEST dated one — the
+	// port / re-edition discriminator this feed exists to publish.
+	//
+	// true = the original release (a title genuinely coming out); false = a
+	// later edition of something already released: a console port, a Steam
+	// re-issue, a localisation. A "new titles" surface renders is_first only; a
+	// "what can I buy this week" surface renders everything.
+	//
+	// It is computed over the work's whole dated-release set — the same
+	// population predicate this feed uses, month precision or better — and NOT
+	// over the filtered page, so it does not change when you narrow by kind,
+	// language or date window. A row's is_first is a property of the row.
+	IsFirst bool `json:"is_first"`
+	// Work is the parent work as the works browse lane renders it
+	// (PublicWorkListItem, claimed_by / release_date / cover and all),
+	// enriched by whatever include= asked for. One work appearing three times
+	// in a page (three ports) carries three identical copies of this block:
+	// the item is the release, and a caller keying by work.id de-duplicates.
+	Work PublicWorkListItem `json:"work"`
+}
+
+// PublicReleaseFeedData is the timeline envelope, the calendar's shape: count
+// is the size of the WHOLE filtered set (it comes free from the ETag meta
+// query, so it costs nothing to publish), items is at most `limit` of it, and
+// next_cursor is nil on the last page.
+type PublicReleaseFeedData struct {
+	Count      int64                   `json:"count"`
+	Items      []PublicReleaseFeedItem `json:"items"`
+	NextCursor *string                 `json:"next_cursor"`
+}
