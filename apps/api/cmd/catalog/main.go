@@ -192,6 +192,10 @@ func main() {
 	catHandler.SetupLifecycle(s2sAPI, claimSvc, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,
 	})
+	// The best-cover vote face (wave 175): two advisory ops on the same S2S API
+	// and the same asserted-actor convention. It writes catalog_cover_vote and
+	// nothing else — the editorial cover columns are not its to move.
+	catHandler.SetupCoverVotes(s2sAPI, service.NewCoverVoteService(catalogDB.DB()))
 
 	// NextMoe open API: serve the frozen public spec unauthenticated at its face
 	// root — the machine-readable contract itself must not need a key. Built ONCE

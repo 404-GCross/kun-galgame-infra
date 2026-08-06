@@ -60,6 +60,8 @@ func main() {
 		catHandler.SetupEdit(api, nil, nil)
 		// Same for the claim-lifecycle face (wave 155): actions + the two feeds.
 		catHandler.SetupLifecycle(api, nil, nil, nil)
+		// Same for the best-cover vote face (wave 175): the two advisory ops.
+		catHandler.SetupCoverVotes(api, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil, nil, nil)
 	case *catalogPublic:

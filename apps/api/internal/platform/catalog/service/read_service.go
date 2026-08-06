@@ -209,6 +209,9 @@ type WorkIntroRow struct {
 // catalog_work_cover. PortraitPinned flags the vertical portrait pin; SourceID
 // is the provenance (§8.C).
 type WorkCoverRow struct {
+	// ID is the catalog_work_cover row id — the address a best-cover vote
+	// (wave 175) names, and the key its tally comes back on.
+	ID             int64
 	ImageHash      string
 	Kind           string
 	PortraitPinned bool
@@ -620,6 +623,7 @@ func (s *ReadService) loadWorkCovers(ctx context.Context, subjects []claimSubjec
 func (s *ReadService) nativeWorkCovers(ctx context.Context, workIDs []int64, out map[int64][]WorkCoverRow) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {
+		ID             int64  `gorm:"column:id"`
 		WorkID         int64  `gorm:"column:work_id"`
 		ImageHash      string `gorm:"column:image_hash"`
 		SortOrder      int    `gorm:"column:sort_order"`
@@ -629,14 +633,14 @@ func (s *ReadService) nativeWorkCovers(ctx context.Context, workIDs []int64, out
 		Violence       int16  `gorm:"column:violence"`
 		SourceID       int16  `gorm:"column:source_id"`
 	}
-	if err := db.Raw(`SELECT work_id, image_hash, sort_order, kind, portrait_pinned, sexual, violence, source_id
+	if err := db.Raw(`SELECT id, work_id, image_hash, sort_order, kind, portrait_pinned, sexual, violence, source_id
 		FROM catalog_work_cover WHERE work_id IN ?
 		ORDER BY work_id, sort_order, image_hash`, workIDs).Scan(&rows).Error; err != nil {
 		return err
 	}
 	for _, r := range rows {
 		out[r.WorkID] = append(out[r.WorkID], WorkCoverRow{
-			ImageHash: r.ImageHash, Kind: r.Kind, PortraitPinned: r.PortraitPinned,
+			ID: r.ID, ImageHash: r.ImageHash, Kind: r.Kind, PortraitPinned: r.PortraitPinned,
 			SortOrder: r.SortOrder, Sexual: r.Sexual, Violence: r.Violence, SourceID: r.SourceID,
 		})
 	}

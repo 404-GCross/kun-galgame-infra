@@ -475,6 +475,45 @@ components:
         - work_id
         - created
       type: object
+    CoverVoteRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CoverVoteRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor:
+          $ref: "#/components/schemas/EditActor"
+          description: The end user the product backend is voting for
+        site:
+          description: Acting tenant; must equal the client's catalog_site binding
+          minLength: 1
+          type: string
+      required:
+        - site
+        - actor
+      type: object
+    CoverVoteResponse:
+      additionalProperties: false
+      properties:
+        cover_id:
+          format: int64
+          type: integer
+        vote_count:
+          description: the cover's advisory vote total after this write
+          format: int64
+          type: integer
+        voted:
+          description: the acting user's resulting state on this cover
+          type: boolean
+      required:
+        - cover_id
+        - vote_count
+        - voted
+      type: object
     CreditGroup:
       additionalProperties: false
       properties:
@@ -1308,6 +1347,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/ClaimWorkResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeCoverVoteResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeCoverVoteResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/CoverVoteResponse"
         message:
           type: string
       required:
@@ -2477,6 +2537,10 @@ components:
     WorkCover:
       additionalProperties: false
       properties:
+        id:
+          description: catalog_work_cover row id (the vote endpoints' cover id)
+          format: int64
+          type: integer
         image_hash:
           type: string
         kind:
@@ -2500,7 +2564,15 @@ components:
           description: "content flag: 0=safe 1=suggestive 2=explicit"
           format: int32
           type: integer
+        vote_count:
+          description: advisory best-cover votes on this cover; never reorders anything server-side
+          format: int64
+          type: integer
+        voted:
+          description: true if the ?uid= viewer's vote is on this cover; omitted when no uid was given
+          type: boolean
       required:
+        - id
         - image_hash
         - kind
         - portrait_pinned
@@ -2508,6 +2580,7 @@ components:
         - sexual
         - violence
         - source_id
+        - vote_count
       type: object
     WorkCreditsResponse:
       additionalProperties: false
@@ -3971,6 +4044,14 @@ paths:
             description: The id within that source (e.g. a DLsite RJ number, a VNDB v-id)
             minLength: 1
             type: string
+        - description: "Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"
+          explode: false
+          in: query
+          name: uid
+          schema:
+            description: "Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"
+            format: int64
+            type: integer
       responses:
         "200":
           content:
@@ -4109,6 +4190,14 @@ paths:
             description: Catalog work id
             format: int64
             type: integer
+        - description: "Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"
+          explode: false
+          in: query
+          name: uid
+          schema:
+            description: "Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"
+            format: int64
+            type: integer
       responses:
         "200":
           content:
@@ -4191,5 +4280,92 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: List a work's credits grouped by role
+      tags:
+        - catalog-s2s
+  /api/v1/catalog/works/{workID}/covers/{coverID}/vote:
+    delete:
+      operationId: unvoteCatalogWorkCover
+      parameters:
+        - description: Catalog work id
+          in: path
+          name: workID
+          required: true
+          schema:
+            description: Catalog work id
+            format: int64
+            minimum: 1
+            type: integer
+        - description: catalog_work_cover row id, as returned by the work detail's covers[].id
+          in: path
+          name: coverID
+          required: true
+          schema:
+            description: catalog_work_cover row id, as returned by the work detail's covers[].id
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoverVoteRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeCoverVoteResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Withdraw the asserted user's best-cover vote on this work. Idempotent (no vote to withdraw is still a 200); the cover id is part of the symmetric path and is not required to match the voted one — a user holds at most one ballot per work
+      tags:
+        - catalog-s2s
+    put:
+      operationId: voteCatalogWorkCover
+      parameters:
+        - description: Catalog work id
+          in: path
+          name: workID
+          required: true
+          schema:
+            description: Catalog work id
+            format: int64
+            minimum: 1
+            type: integer
+        - description: catalog_work_cover row id, as returned by the work detail's covers[].id
+          in: path
+          name: coverID
+          required: true
+          schema:
+            description: catalog_work_cover row id, as returned by the work detail's covers[].id
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoverVoteRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeCoverVoteResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "Record the asserted user's vote for this work's best cover. ONE ballot per user per WORK: voting a different cover MOVES the vote rather than adding one. Returns the voted cover's new total. Advisory only — votes never reorder covers and never touch the editorial pins"
       tags:
         - catalog-s2s

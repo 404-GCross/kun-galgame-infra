@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,6 +70,7 @@ func (s *S2SServer) registerRead(api huma.API) {
 type byAnchorInput struct {
 	Source     string `query:"source" minLength:"1" doc:"Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry"`
 	ExternalID string `query:"external_id" minLength:"1" doc:"The id within that source (e.g. a DLsite RJ number, a VNDB v-id)"`
+	UID        int64  `query:"uid" doc:"Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"`
 }
 
 type byAnchorOutput struct {
@@ -80,13 +82,18 @@ func (s *S2SServer) workByAnchor(ctx context.Context, in *byAnchorInput) (*byAnc
 	if err != nil {
 		return nil, workDetailErr(err)
 	}
-	return &byAnchorOutput{Body: okEnvelope(buildWorkResponse(detail))}, nil
+	votes, err := s.coverVotes(ctx, detail, in.UID)
+	if err != nil {
+		return nil, err
+	}
+	return &byAnchorOutput{Body: okEnvelope(buildWorkResponse(detail, votes))}, nil
 }
 
 // ---- work by id (internal browser drill-down; same bundle) ----
 
 type workByIDInput struct {
-	ID int64 `path:"id" doc:"Catalog work id"`
+	ID  int64 `path:"id" doc:"Catalog work id"`
+	UID int64 `query:"uid" doc:"Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"`
 }
 
 func (s *S2SServer) workByID(ctx context.Context, in *workByIDInput) (*byAnchorOutput, error) {
@@ -94,7 +101,31 @@ func (s *S2SServer) workByID(ctx context.Context, in *workByIDInput) (*byAnchorO
 	if err != nil {
 		return nil, workDetailErr(err)
 	}
-	return &byAnchorOutput{Body: okEnvelope(buildWorkResponse(detail))}, nil
+	votes, err := s.coverVotes(ctx, detail, in.UID)
+	if err != nil {
+		return nil, err
+	}
+	return &byAnchorOutput{Body: okEnvelope(buildWorkResponse(detail, votes))}, nil
+}
+
+// coverVotes tallies the detail's covers in one batched query (wave 175). It is
+// the read side of an ADVISORY facet, so it is additive to a bundle that was
+// already assembled: the counts decorate the cover rows and change neither their
+// order nor their membership.
+func (s *S2SServer) coverVotes(ctx context.Context, detail *service.WorkDetail, viewerUID int64) (map[int64]service.CoverVoteTally, error) {
+	if len(detail.Covers) == 0 {
+		return nil, nil
+	}
+	coverIDs := make([]int64, 0, len(detail.Covers))
+	for _, cv := range detail.Covers {
+		coverIDs = append(coverIDs, cv.ID)
+	}
+	votes, err := s.read.CoverVotes(ctx, coverIDs, viewerUID)
+	if err != nil {
+		slog.Error("catalog cover votes", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	return votes, nil
 }
 
 func workDetailErr(err error) error {
@@ -105,8 +136,9 @@ func workDetailErr(err error) error {
 }
 
 // buildWorkResponse maps a service WorkDetail to the wire DTO (shared by the
-// by-anchor and by-id read-throughs).
-func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
+// by-anchor and by-id read-throughs). `votes` is the advisory best-cover tally
+// keyed by cover id (wave 175); an empty map renders every cover at zero.
+func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.CoverVoteTally) dto.WorkByAnchorResponse {
 	resp := dto.WorkByAnchorResponse{
 		Work: dto.WorkCore{
 			ID: detail.Work.ID, MediumID: detail.Work.MediumID, DisplayName: detail.Work.DisplayName,
@@ -201,9 +233,13 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		resp.Intro = append(resp.Intro, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID, Machine: in.Machine})
 	}
 	for _, cv := range detail.Covers {
+		// The tally is decoration: absent from the map = nobody voted, which is a
+		// zero count, never a reason to reorder or omit the cover.
+		tally := votes[cv.ID]
 		resp.Covers = append(resp.Covers, dto.WorkCover{
-			ImageHash: cv.ImageHash, Kind: cv.Kind, PortraitPinned: cv.PortraitPinned,
+			ID: cv.ID, ImageHash: cv.ImageHash, Kind: cv.Kind, PortraitPinned: cv.PortraitPinned,
 			SortOrder: cv.SortOrder, Sexual: cv.Sexual, Violence: cv.Violence, SourceID: cv.SourceID,
+			VoteCount: tally.Count, Voted: tally.Voted,
 		})
 	}
 	for _, sh := range detail.Screenshots {

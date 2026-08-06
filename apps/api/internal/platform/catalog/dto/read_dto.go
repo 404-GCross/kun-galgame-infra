@@ -199,6 +199,9 @@ type WorkScreenshot struct {
 // references the catalog_source registry (§8.C) and carries the provenance the
 // row was mirrored or backfilled with (curated / vndb / bangumi / upscale).
 type WorkCover struct {
+	// ID is the catalog_work_cover row id — the address the best-cover vote ops
+	// take (wave 175), and what vote_count below is counted over.
+	ID        int64  `json:"id" doc:"catalog_work_cover row id (the vote endpoints' cover id)"`
 	ImageHash string `json:"image_hash"`
 	// Kind labels the cover type (main / pkgfront / dig / …); empty string =
 	// unknown / user upload (galgame_cover semantics).
@@ -209,6 +212,15 @@ type WorkCover struct {
 	Sexual   int16 `json:"sexual" doc:"content flag: 0=safe 1=suggestive 2=explicit"`
 	Violence int16 `json:"violence" doc:"content flag: 0=safe 1=suggestive 2=explicit"`
 	SourceID int16 `json:"source_id" doc:"catalog_source id (provenance): galgame_wiki/vndb/bangumi/upscale for a bridged claimed cover, the backfill source for a bodyless cover"`
+	// VoteCount / Voted are the ADVISORY best-cover vote projection (wave 175).
+	// They never move sort_order or portrait_pinned — the editorial pins outrank
+	// the counts, and a consumer decides for itself what (if anything) they do to
+	// its gallery.
+	VoteCount int `json:"vote_count" doc:"advisory best-cover votes on this cover; never reorders anything server-side"`
+	// Voted answers only when the caller identified a viewer (?uid=); it is
+	// omitted otherwise rather than stated as false, because "nobody asked" and
+	// "this user has not voted" are different facts.
+	Voted bool `json:"voted,omitempty" doc:"true if the ?uid= viewer's vote is on this cover; omitted when no uid was given"`
 }
 
 // WorkIntro is one language's intro on a work, with its provenance. source_id

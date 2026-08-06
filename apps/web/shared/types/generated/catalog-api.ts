@@ -498,6 +498,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/works/{workID}/covers/{coverID}/vote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Record the asserted user's vote for this work's best cover. ONE ballot per user per WORK: voting a different cover MOVES the vote rather than adding one. Returns the voted cover's new total. Advisory only — votes never reorder covers and never touch the editorial pins */
+        put: operations["voteCatalogWorkCover"];
+        post?: never;
+        /** Withdraw the asserted user's best-cover vote on this work. Idempotent (no vote to withdraw is still a 200); the cover id is part of the symmetric path and is not required to match the voted one — a user holds at most one ballot per work */
+        delete: operations["unvoteCatalogWorkCover"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -734,6 +752,29 @@ export interface components {
             created: boolean;
             /** Format: int64 */
             work_id: number;
+        };
+        CoverVoteRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CoverVoteRequest.json
+             */
+            readonly $schema?: string;
+            /** @description The end user the product backend is voting for */
+            actor: components["schemas"]["EditActor"];
+            /** @description Acting tenant; must equal the client's catalog_site binding */
+            site: string;
+        };
+        CoverVoteResponse: {
+            /** Format: int64 */
+            cover_id: number;
+            /**
+             * Format: int64
+             * @description the cover's advisory vote total after this write
+             */
+            vote_count: number;
+            /** @description the acting user's resulting state on this cover */
+            voted: boolean;
         };
         CreditGroup: {
             credits: components["schemas"]["CreditItem"][] | null;
@@ -1140,6 +1181,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["ClaimWorkResponse"];
+            message: string;
+        };
+        EnvelopeCoverVoteResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeCoverVoteResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["CoverVoteResponse"];
             message: string;
         };
         EnvelopeCursorPageUserClaimItem: {
@@ -1705,6 +1758,11 @@ export interface components {
             status: number;
         };
         WorkCover: {
+            /**
+             * Format: int64
+             * @description catalog_work_cover row id (the vote endpoints' cover id)
+             */
+            id: number;
             image_hash: string;
             kind: string;
             /** @description true = the vertical portrait pin (portrait-first UI) */
@@ -1729,6 +1787,13 @@ export interface components {
              * @description content flag: 0=safe 1=suggestive 2=explicit
              */
             violence: number;
+            /**
+             * Format: int64
+             * @description advisory best-cover votes on this cover; never reorders anything server-side
+             */
+            vote_count: number;
+            /** @description true if the ?uid= viewer's vote is on this cover; omitted when no uid was given */
+            voted?: boolean;
         };
         WorkCreditsResponse: {
             groups: components["schemas"]["CreditGroup"][] | null;
@@ -2887,6 +2952,8 @@ export interface operations {
                 source?: string;
                 /** @description The id within that source (e.g. a DLsite RJ number, a VNDB v-id) */
                 external_id?: string;
+                /** @description Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking) */
+                uid?: number;
             };
             header?: never;
             path?: never;
@@ -3022,7 +3089,10 @@ export interface operations {
     };
     getCatalogWorkByID: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking) */
+                uid?: number;
+            };
             header?: never;
             path: {
                 /** @description Catalog work id */
@@ -3108,6 +3178,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeWorkCreditsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    voteCatalogWorkCover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Catalog work id */
+                workID: number;
+                /** @description catalog_work_cover row id, as returned by the work detail's covers[].id */
+                coverID: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoverVoteRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCoverVoteResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    unvoteCatalogWorkCover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Catalog work id */
+                workID: number;
+                /** @description catalog_work_cover row id, as returned by the work detail's covers[].id */
+                coverID: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoverVoteRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCoverVoteResponse"];
                 };
             };
             /** @description Error */

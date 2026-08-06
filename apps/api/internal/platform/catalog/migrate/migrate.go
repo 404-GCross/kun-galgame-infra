@@ -64,6 +64,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkIntro{},      // bodyless multilingual intro (step 52 media-aggregation pilot)
 		&model.CatalogWorkCover{},      // bodyless cover images (step 53 media-aggregation wave II)
 		&model.CatalogWorkScreenshot{}, // bodyless screenshot images (step 54 media-aggregation wave III)
+		&model.CatalogCoverVote{},      // advisory best-cover votes (wave 175); its cover FK is raw SQL below
 		&model.CatalogWorkRating{},     // bodyless source-native ratings (step 58a media-aggregation facet A)
 		&model.CatalogWorkTag{},        // bodyless verbatim folksonomy tags (step 58b media-aggregation facet B)
 		&model.CatalogWorkPopularity{}, // bodyless per-metric popularity counters (step 62 popularity facet)
@@ -412,6 +413,26 @@ func rawSQL(db *gorm.DB) error {
 	} {
 		if err := db.Exec(ix.stmt).Error; err != nil {
 			return fmt.Errorf("create index %s: %w", ix.name, err)
+		}
+	}
+
+	// (7) cover vote → cover FK with ON DELETE CASCADE (wave 175). The column is
+	// a plain bigint on the model (a GORM association would copy the referenced
+	// identity PK's full type onto it), so the referential rule is declared here.
+	// CASCADE is the whole cleanup story: a vote for a cover that no longer
+	// exists is not a vote, and no deletion path — editorial, merge or GC — has
+	// to remember this table. Guarded because ADD CONSTRAINT has no IF NOT EXISTS.
+	voteFK, err := constraintExists(db, "catalog_cover_vote", "fk_catalog_cover_vote_cover")
+	if err != nil {
+		return err
+	}
+	if !voteFK {
+		if err := db.Exec(`
+			ALTER TABLE catalog_cover_vote
+			    ADD CONSTRAINT fk_catalog_cover_vote_cover
+			    FOREIGN KEY (cover_id) REFERENCES catalog_work_cover(id) ON DELETE CASCADE
+		`).Error; err != nil {
+			return fmt.Errorf("add cover vote FK: %w", err)
 		}
 	}
 	return nil
