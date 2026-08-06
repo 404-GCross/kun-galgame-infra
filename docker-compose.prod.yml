@@ -527,6 +527,14 @@ services:
       # so setting this in the Dokploy panel alone never reaches the container
       # (2026-08-06: a panel-only KUN_TRUST_SCAN_MODE=live was a silent no-op).
       KUN_TRUST_SCAN_MODE: ${KUN_TRUST_SCAN_MODE:-shadow}
+      # Share of CLEAN verdicts drawn into the human queue as calibration items
+      # (source=6). This is the ONLY instrument that measures false negatives —
+      # what the pipeline misses is otherwise invisible, since a subject nobody
+      # flags produces no evidence of its own. Default 0 (off): it spends human
+      # review capacity, so turning it on is a deliberate act. Capped at 0.05 in
+      # code; anything higher or negative degrades to off. Same reason as
+      # SCAN_MODE above: it must be named here to reach the container at all.
+      KUN_TRUST_SCAN_SAMPLE_RATE: ${KUN_TRUST_SCAN_SAMPLE_RATE:-0}
     # Internal only — product backends reach it at http://trust:9283 over
     # dokploy-network.
     expose: ["9283"]
