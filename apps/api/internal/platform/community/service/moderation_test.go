@@ -149,7 +149,12 @@ func TestReview_HoldRelease(t *testing.T) {
 	rs := NewReviewService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
-	// A fresh TL0 author's first reply is held + enqueued (first_post_hold).
+	// The hold budget is now seeded EXPLICITLY: wave 07 retired the blanket
+	// newcomer hold, so a fresh author carries 0 and would post straight through.
+	// The hold machinery itself is untouched (a site or an operator can still put
+	// a specific user on hold) — that is what this test covers.
+	seedTrust(t, 600, model.TrustLevelNew, 2)
+
 	post, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 600, BodyRaw: "hi"})
 	if err != nil {
 		t.Fatalf("reply: %v", err)
@@ -184,7 +189,10 @@ func TestReview_ListPendingJoinsPost(t *testing.T) {
 	rs := NewReviewService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
-	// A fresh TL0 author's first reply is held + enqueued (first_post_hold).
+	// Explicit hold budget — see TestReview_HoldRelease on why this is no longer
+	// the default for a fresh author.
+	seedTrust(t, 600, model.TrustLevelNew, 2)
+
 	post, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 600, BodyRaw: "hi"})
 	if err != nil {
 		t.Fatalf("reply: %v", err)

@@ -119,6 +119,10 @@ func TestStaffBoost_ClearsFirstPostHolds(t *testing.T) {
 	}
 
 	// A creator boost does NOT touch the hold budget (only staff is review-exempt).
+	// User 21 is put on hold explicitly: post-wave-07 a fresh row carries 0, which
+	// would make "the budget survived the boost" indistinguishable from "there was
+	// never a budget".
+	seedTrust(t, 21, model.TrustLevelNew, 2)
 	tr, err = ts.SetBoost(ctx, 21, model.GrantedBoostCreator)
 	if err != nil {
 		t.Fatalf("creator boost: %v", err)

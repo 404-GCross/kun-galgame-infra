@@ -28,9 +28,12 @@ func (r *TrustRepository) GetTrust(userID int64) (*model.CommunityTrust, error) 
 }
 
 // GetOrCreateTrustTx returns the user's trust row, creating a fresh TL0 row
-// (level=0, first_posts_held_remaining=2 via the DDL default) when absent. The
-// trust ENGINE (promotion metering, starter boosts) is step 04; here the
-// sandbox only needs the row to exist so its hold counter can persist.
+// (level=0, first_posts_held_remaining=0) when absent. Since wave 07 retired the
+// blanket newcomer hold, the counter's creation value is an explicitly-written
+// zero: the model carries no gorm default, so GORM includes the zero in the
+// INSERT instead of deferring to a DDL default. The trust ENGINE (promotion
+// metering, starter boosts) is step 04; here the sandbox only needs the row to
+// exist so its hold counter can persist.
 func GetOrCreateTrustTx(tx *gorm.DB, userID int64) (*model.CommunityTrust, error) {
 	var t model.CommunityTrust
 	err := tx.Where("user_id = ?", userID).First(&t).Error

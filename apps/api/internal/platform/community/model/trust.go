@@ -28,9 +28,16 @@ type CommunityTrust struct {
 	FlagsDisagreed *int32 `gorm:"column:flags_disagreed" json:"flags_disagreed"`
 
 	// FirstPostsHeldRemaining is the first-N-posts hold counter (approve_post_count
-	// model). Its creation value is fixed at 2, so the DDL default stays; the
-	// service decrements it via an explicit UPDATE, never a zero-valued Create.
-	FirstPostsHeldRemaining int32 `gorm:"not null;default:2;column:first_posts_held_remaining" json:"first_posts_held_remaining"`
+	// model). Wave 07 retired the blanket newcomer hold: the creation value is now
+	// 0, so this is an INTENT column (no gorm default — a default tag would make
+	// GORM omit the zero from INSERTs and let the DDL default win silently, the
+	// gorm-default-tag-zero-value-trap). Retiring it was a measurement, not a
+	// preference: across 208 production hold items it caught zero harmful posts,
+	// 94.5% were approved, and the 11 rejections were all benign galgame comments
+	// (one was a legitimate resource bug report). The holds that remain are the
+	// ones that actually work — the synchronous Tier0 word list at write time, and
+	// an AI live-mode verdict retroactively (doc 18 §6 P2).
+	FirstPostsHeldRemaining int32 `gorm:"not null;column:first_posts_held_remaining" json:"first_posts_held_remaining"`
 	// GrantedBoost uses the GrantedBoost* constants; NULL = no starter bonus.
 	GrantedBoost *int16    `gorm:"column:granted_boost" json:"granted_boost"`
 	UpdatedAt    time.Time `json:"updated_at"`

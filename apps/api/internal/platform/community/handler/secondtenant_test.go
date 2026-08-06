@@ -181,7 +181,15 @@ func TestSecondTenant_CrossTenantGuard(t *testing.T) {
 		t.Fatalf("A delete own: %v", err)
 	}
 
-	// Probe 4: review queue. A newcomer's held first post enqueues a site-A item.
+	// Probe 4: review queue. A held post enqueues a site-A item. The hold budget is
+	// seeded explicitly (wave 07 retired the blanket newcomer hold); this probe is
+	// about the item's TENANT, not about what caused the hold.
+	if err := testDB.Exec(
+		`INSERT INTO community_trust (user_id, level, first_posts_held_remaining) VALUES (700, 0, 2)
+		 ON CONFLICT (user_id) DO UPDATE SET level = 0, first_posts_held_remaining = 2`,
+	).Error; err != nil {
+		t.Fatalf("seed held author: %v", err)
+	}
 	if _, err := s.reply(ctxA, &replyInput{ID: tA, Body: dto.ReplyRequest{AuthorID: 700, Body: "held newcomer post"}}); err != nil {
 		t.Fatalf("A held reply: %v", err)
 	}

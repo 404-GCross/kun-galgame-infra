@@ -49,6 +49,22 @@ func rawSQL(db *gorm.DB) error {
 	if err := db.Exec(`DROP INDEX IF EXISTS uq_community_thread_anchor_comments`).Error; err != nil {
 		return fmt.Errorf("drop legacy comments anchor unique: %w", err)
 	}
+	// Wave 07: retire the blanket newcomer hold. AutoMigrate never LOWERS an
+	// existing column default, so dropping the model's `default:2` tag alone would
+	// leave the DDL default at 2 and every fresh trust row would silently keep
+	// holding two posts (the gorm-default-tag-zero-value-trap, inverted). Both
+	// statements are idempotent and must ship together with the model change:
+	// the ALTER fixes future rows, the UPDATE releases the ones already carrying a
+	// budget (391 users in production at cutover).
+	if err := db.Exec(
+		`ALTER TABLE community_trust ALTER COLUMN first_posts_held_remaining SET DEFAULT 0`).Error; err != nil {
+		return fmt.Errorf("drop newcomer hold default: %w", err)
+	}
+	if err := db.Exec(
+		`UPDATE community_trust SET first_posts_held_remaining = 0, updated_at = now()
+		 WHERE first_posts_held_remaining > 0`).Error; err != nil {
+		return fmt.Errorf("release outstanding newcomer holds: %w", err)
+	}
 	for _, ix := range []struct{ name, stmt string }{
 		// Invariant 4 (site anchors): at most ONE live comments thread per
 		// (site, anchor). Site-local anchors (anchor_kind 1=site_game,

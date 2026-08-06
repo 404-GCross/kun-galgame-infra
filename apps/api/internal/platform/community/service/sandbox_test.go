@@ -37,8 +37,12 @@ func TestSandbox_FirstPostHold(t *testing.T) {
 	ps := NewPostService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
-	// Fresh TL0 user (holds=2 via GetOrCreate): first two posts held, third visible.
+	// A TL0 user explicitly put on hold for two posts: the first two are held, the
+	// third is visible. Wave 07 retired the blanket newcomer hold, so the budget is
+	// seeded rather than inherited — the spend-down mechanism under test is
+	// unchanged.
 	author := int64(500)
+	seedTrust(t, author, model.TrustLevelNew, 2)
 	p1, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: author, BodyRaw: "one"})
 	if err != nil {
 		t.Fatalf("p1: %v", err)

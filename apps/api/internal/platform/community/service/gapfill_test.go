@@ -94,7 +94,9 @@ func TestEditPost_TombstonedAndHiddenRejected(t *testing.T) {
 		t.Fatalf("editing a tombstoned post must return ErrPostNotEditable, got %v", err)
 	}
 
-	// A held/hidden (first-post-hold) newcomer post is not editable either.
+	// A held/hidden post is not editable either. The hold budget is seeded
+	// explicitly since wave 07 retired the blanket newcomer hold.
+	seedTrust(t, 700, model.TrustLevelNew, 2)
 	held, err := ps.Reply(ctx, ReplyParams{ThreadID: th.ID, AuthorID: 700, BodyRaw: "held"})
 	if err != nil {
 		t.Fatalf("reply: %v", err)

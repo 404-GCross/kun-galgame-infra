@@ -326,9 +326,12 @@ func seedTrust(tgt *gorm.DB, authors map[int64]bool, apply bool, rep *Report) er
 		return nil
 	}
 
-	// Raw multi-row INSERT with every column listed explicitly. A GORM Create
-	// would omit first_posts_held_remaining=0 (its DDL default is 2) and the
-	// default would silently win — the zero-value trap this seed must avoid.
+	// Raw multi-row INSERT with every column listed explicitly, so no column's
+	// value can be decided by a DDL default behind this tool's back. (When this
+	// seed ran, first_posts_held_remaining defaulted to 2 and a GORM Create would
+	// have omitted the intended 0 and let the default win — the zero-value trap.
+	// Wave 07 has since dropped that default to 0, which does not change what this
+	// code must do: state every value.)
 	// ON CONFLICT DO NOTHING guarantees an existing row is never mutated.
 	now := time.Now()
 	const cols = "(user_id, level, first_posts_held_remaining, updated_at)"

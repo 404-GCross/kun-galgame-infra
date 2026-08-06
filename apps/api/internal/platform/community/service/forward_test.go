@@ -80,6 +80,10 @@ func waitCall(t *testing.T, f *fakeForwarder) {
 // heldReply creates a fresh-author (held) first post and returns its review item.
 func heldReply(t *testing.T, ps *PostService, threadID, author int64, body string) (*model.CommunityPost, *model.CommunityReviewItem) {
 	t.Helper()
+	// Wave 07 retired the blanket newcomer hold, so producing a held post now
+	// requires SAYING the author is on hold. These tests are about what happens to
+	// a held post, not about who gets held.
+	seedTrust(t, author, model.TrustLevelNew, 2)
 	p, err := ps.Reply(context.Background(), ReplyParams{ThreadID: threadID, AuthorID: author, BodyRaw: body})
 	if err != nil {
 		t.Fatalf("held reply: %v", err)

@@ -271,7 +271,15 @@ func TestListThreads_OpeningStatusProjected(t *testing.T) {
 	}
 	visID := visOut.Body.Data.Thread.ID
 
-	// A fresh newcomer's opening post is held (first-post hold).
+	// An author on hold opens a topic → the opening post is held. Wave 07 retired
+	// the blanket newcomer hold, so the budget is stated rather than inherited;
+	// what this test projects is the STATUS, not who gets held.
+	if err := testDB.Exec(
+		`INSERT INTO community_trust (user_id, level, first_posts_held_remaining) VALUES (700, 0, 2)
+		 ON CONFLICT (user_id) DO UPDATE SET level = 0, first_posts_held_remaining = 2`,
+	).Error; err != nil {
+		t.Fatalf("seed held author: %v", err)
+	}
 	heldOut, err := s.openTopic(ctx, &openTopicInput{Body: dto.OpenTopicRequest{AuthorID: 700, AnchorID: "b1", Title: "held", Body: "y"}})
 	if err != nil {
 		t.Fatalf("openTopic held: %v", err)
