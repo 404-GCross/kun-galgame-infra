@@ -83,6 +83,20 @@ func TestAdminTermsCRUD(t *testing.T) {
 	if len(list.Body.Data.Terms) != 1 {
 		t.Fatalf("active list = %d, want 1", len(list.Body.Data.Terms))
 	}
+	// Total is what the pager in the console counts with; it must be plumbed
+	// through the handler, not left at its zero value.
+	if list.Body.Data.Total != 1 {
+		t.Fatalf("list total = %d, want 1", list.Body.Data.Total)
+	}
+	// The search box narrows the same listing; a miss is an empty page, not an
+	// unfiltered one.
+	miss, err := s.listTerms(admin, &listTermsInput{Kind: -1, Q: "nothing-matches-this"})
+	if err != nil {
+		t.Fatalf("list terms (search): %v", err)
+	}
+	if len(miss.Body.Data.Terms) != 0 || miss.Body.Data.Total != 0 {
+		t.Fatalf("search miss = %d terms (total %d), want 0", len(miss.Body.Data.Terms), miss.Body.Data.Total)
+	}
 
 	// Deprecate → active list is empty, include_deprecated shows it.
 	if _, err := s.deprecateTerm(admin, &deprecateTermInput{ID: id}); err != nil {

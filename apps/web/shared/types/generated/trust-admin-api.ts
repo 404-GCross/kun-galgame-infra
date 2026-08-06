@@ -714,6 +714,8 @@ export interface components {
         };
         TermsResponse: {
             terms: components["schemas"]["TermView"][] | null;
+            /** Format: int64 */
+            total: number;
         };
     };
     responses: never;
@@ -1168,6 +1170,12 @@ export interface operations {
                 kind?: number;
                 /** @description include retired terms */
                 include_deprecated?: boolean;
+                /** @description substring search over the normalized term (the raw input is normalized the same way before matching) */
+                q?: string;
+                /** @description 1-based page number */
+                page?: number;
+                /** @description terms per page (default 50, max 200) */
+                limit?: number;
             };
             header?: never;
             path?: never;

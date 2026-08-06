@@ -33,6 +33,9 @@ type listTermsInput struct {
 	Site              string `query:"site" doc:"filter to one site; empty = all (global + every site)"`
 	Kind              int16  `query:"kind" default:"-1" doc:"0=suspect 1=banned; -1 = all"`
 	IncludeDeprecated bool   `query:"include_deprecated" doc:"include retired terms"`
+	Q                 string `query:"q" doc:"substring search over the normalized term (the raw input is normalized the same way before matching)"`
+	Page              int    `query:"page" doc:"1-based page number"`
+	Limit             int    `query:"limit" doc:"terms per page (default 50, max 200)"`
 }
 type termsOutput struct {
 	Body Envelope[dto.TermsResponse]
@@ -42,13 +45,14 @@ func (s *AdminServer) listTerms(ctx context.Context, in *listTermsInput) (*terms
 	if he := s.requireTermManage(ctx); he != nil {
 		return nil, he
 	}
-	terms, err := s.terms.List(ctx, service.TermFilters{
+	terms, total, err := s.terms.List(ctx, service.TermFilters{
 		Site: in.Site, Kind: optionalFilter(in.Kind), IncludeDeprecated: in.IncludeDeprecated,
+		Query: in.Q, Page: in.Page, Limit: in.Limit,
 	})
 	if err != nil {
 		return nil, mapAdminErr("list terms", err)
 	}
-	return &termsOutput{Body: okEnvelope(dto.TermsResponse{Terms: toTermViews(terms)})}, nil
+	return &termsOutput{Body: okEnvelope(dto.TermsResponse{Terms: toTermViews(terms), Total: total})}, nil
 }
 
 type createTermInput struct{ Body dto.CreateTermRequest }

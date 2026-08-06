@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -219,26 +220,26 @@ func TestTermListFilters(t *testing.T) {
 	}
 
 	// Default: active only.
-	active, err := svc.List(context.Background(), TermFilters{})
+	active, total, err := svc.List(context.Background(), TermFilters{})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(active) != 2 {
-		t.Fatalf("active list = %d, want 2 (retired excluded)", len(active))
+	if len(active) != 2 || total != 2 {
+		t.Fatalf("active list = %d (total %d), want 2 (retired excluded)", len(active), total)
 	}
 	// include_deprecated shows the retired one.
-	all, _ := svc.List(context.Background(), TermFilters{IncludeDeprecated: true})
-	if len(all) != 3 {
-		t.Fatalf("full list = %d, want 3", len(all))
+	all, allTotal, _ := svc.List(context.Background(), TermFilters{IncludeDeprecated: true})
+	if len(all) != 3 || allTotal != 3 {
+		t.Fatalf("full list = %d (total %d), want 3", len(all), allTotal)
 	}
 	// site filter.
-	kungal, _ := svc.List(context.Background(), TermFilters{Site: "kungal", IncludeDeprecated: true})
+	kungal, _, _ := svc.List(context.Background(), TermFilters{Site: "kungal", IncludeDeprecated: true})
 	if len(kungal) != 2 {
 		t.Fatalf("kungal list = %d, want 2", len(kungal))
 	}
 	// kind filter.
 	banned := model.TermKindBanned
-	onlyBanned, _ := svc.List(context.Background(), TermFilters{Kind: &banned, IncludeDeprecated: true})
+	onlyBanned, _, _ := svc.List(context.Background(), TermFilters{Kind: &banned, IncludeDeprecated: true})
 	if len(onlyBanned) != 1 || onlyBanned[0].TermNorm != "k-banned" {
 		t.Fatalf("banned-only list = %v, want [k-banned]", onlyBanned)
 	}
@@ -318,5 +319,65 @@ func TestCheckForwarderNoWireBinds(t *testing.T) {
 	}
 	if res.Decision != DecisionHold {
 		t.Fatalf("forwarder bound check → %s, want hold", res.Decision)
+	}
+}
+
+// TestTermListPaging pins the pager and the search box added for the admin
+// console: the live word list is ~46k terms, so an unpaged listing would ship
+// the whole table to the browser on every filter change.
+func TestTermListPaging(t *testing.T) {
+	cleanTables(t)
+	svc := NewTermService(testDB, nil)
+	for i := range 7 {
+		mkTerm(t, svc, nil, fmt.Sprintf("page-term-%d", i), model.TermKindSuspect)
+	}
+	mkTerm(t, svc, nil, "unrelated", model.TermKindSuspect)
+
+	// Total counts every match; the page carries only Limit of them.
+	first, total, err := svc.List(context.Background(), TermFilters{Limit: 3})
+	if err != nil {
+		t.Fatalf("list page 1: %v", err)
+	}
+	if total != 8 {
+		t.Fatalf("total = %d, want 8 (the count ignores the page window)", total)
+	}
+	if len(first) != 3 {
+		t.Fatalf("page 1 = %d terms, want 3", len(first))
+	}
+
+	// Pages partition the result: no row appears twice, page 3 is the tail.
+	second, _, _ := svc.List(context.Background(), TermFilters{Limit: 3, Page: 2})
+	third, _, _ := svc.List(context.Background(), TermFilters{Limit: 3, Page: 3})
+	seen := map[int64]bool{}
+	for _, page := range [][]model.TrustTerm{first, second, third} {
+		for _, term := range page {
+			if seen[term.ID] {
+				t.Fatalf("term %d (%s) appeared on two pages", term.ID, term.TermNorm)
+			}
+			seen[term.ID] = true
+		}
+	}
+	if len(seen) != 8 {
+		t.Fatalf("three pages covered %d distinct terms, want all 8", len(seen))
+	}
+
+	// Search narrows both the page and the total.
+	found, foundTotal, _ := svc.List(context.Background(), TermFilters{Query: "page-term"})
+	if foundTotal != 7 || len(found) != 7 {
+		t.Fatalf("search = %d terms (total %d), want 7", len(found), foundTotal)
+	}
+
+	// The needle is normalized like any other input: a full-width upper-case
+	// query still finds the term stored in its folded form.
+	mkTerm(t, svc, nil, "SPAM", model.TermKindBanned)
+	wide, wideTotal, _ := svc.List(context.Background(), TermFilters{Query: "ＳＰＡ"})
+	if wideTotal != 1 || len(wide) != 1 || wide[0].TermNorm != "spam" {
+		t.Fatalf("normalized search = %v (total %d), want [spam]", wide, wideTotal)
+	}
+
+	// LIKE wildcards in operator input are literal, not patterns.
+	_, pctTotal, _ := svc.List(context.Background(), TermFilters{Query: "%"})
+	if pctTotal != 0 {
+		t.Fatalf("searching %q matched %d terms; wildcards must be escaped", "%", pctTotal)
 	}
 }

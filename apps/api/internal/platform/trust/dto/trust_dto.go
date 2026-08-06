@@ -289,9 +289,12 @@ type TermView struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// TermsResponse lists Tier0 terms (admin).
+// TermsResponse lists ONE PAGE of Tier0 terms (admin). Total is the count
+// matching the filters, not the length of Terms — the live word list runs to
+// tens of thousands of entries, so the listing is always paged.
 type TermsResponse struct {
 	Terms []TermView `json:"terms"`
+	Total int64      `json:"total"`
 }
 
 // CreateTermRequest registers a Tier0 term. `term` is the RAW word; the service

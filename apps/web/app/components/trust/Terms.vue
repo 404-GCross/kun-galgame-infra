@@ -2,8 +2,10 @@
 // Tier0 word-list registry (step 05/06): the deterministic banned/suspect terms
 // that back the synchronous /trust/check gate. A term is created (the raw word is
 // normalized server-side — we surface the stored normalized form on success),
-// filtered by site / kind / deprecation, and deprecated (never hard-deleted, and
-// never un-deprecated — deprecation is terminal). Managing terms requires
+// filtered by site / kind / deprecation, searched by substring, and deprecated
+// (never hard-deleted, and never un-deprecated — deprecation is terminal). The
+// listing is paged: the registry is populated by the AI suspect-word importer
+// and runs to tens of thousands of entries. Managing terms requires
 // trust.term_manage (admin/主理人); a moderator gets a 403 the same way the other
 // trust panels surface a permission failure.
 import type {
@@ -20,23 +22,54 @@ import {
 
 const api = useApi('trust')
 
-// Filters
+// Filters. The list is paged server-side: production carries 46k+ live terms,
+// so the whole registry is never a page's worth of data. `search` is the
+// SUBMITTED needle — typing alone does not fire a request, because each one is
+// a substring scan over the whole table.
 const site = ref('')
 const kind = ref<number>(TRUST_FILTER_ALL)
 const includeDeprecated = ref(false)
+const searchInput = ref('')
+const search = ref('')
+const page = ref(1)
+const limit = 50
 
-const { data, refresh, error } = await useApiFetch<TrustTermsResponse>(
+watch([site, kind, includeDeprecated, search], () => {
+  page.value = 1
+})
+
+const submitSearch = () => {
+  search.value = searchInput.value.trim()
+}
+
+const clearSearch = () => {
+  searchInput.value = ''
+  search.value = ''
+}
+
+const {
+  data,
+  status: fetchStatus,
+  refresh,
+  error
+} = await useApiFetch<TrustTermsResponse>(
   '/admin/trust/terms',
   {
     query: computed(() => ({
       site: site.value || undefined,
       kind: kind.value,
-      include_deprecated: includeDeprecated.value || undefined
+      include_deprecated: includeDeprecated.value || undefined,
+      q: search.value || undefined,
+      page: page.value,
+      limit
     }))
   },
   'trust'
 )
 const terms = computed<TrustTerm[]>(() => data.value?.terms ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
+const isLoading = computed(() => fetchStatus.value === 'pending')
 
 const kindFilterOptions = [
   { value: TRUST_FILTER_ALL, label: '全部类型' },
@@ -129,11 +162,13 @@ const confirmDeprecate = async () => {
     <h1 class="text-foreground text-2xl font-bold">T&S 审核队列</h1>
     <TrustSubNav />
     <KunCard content-class="space-y-3 p-4">
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center gap-3">
         <h2 class="text-foreground text-lg font-bold">Tier0 词表</h2>
-        <KunInput v-model="site" placeholder="按站点过滤" class="w-36" />
-        <KunSelect v-model="kind" :options="kindFilterOptions" class="w-40" />
-        <KunSwitch v-model="includeDeprecated" label="含已弃用" />
+        <span class="text-default-400 text-sm">
+          共 {{ total }} 条<template v-if="search">
+            (匹配「{{ search }}」)</template
+          >
+        </span>
         <KunButton
           color="primary"
           size="sm"
@@ -144,6 +179,34 @@ const confirmDeprecate = async () => {
           新建
         </KunButton>
       </div>
+
+      <form
+        class="flex flex-wrap items-center gap-2"
+        @submit.prevent="submitSearch"
+      >
+        <KunInput
+          v-model="searchInput"
+          type="text"
+          placeholder="搜索词条(归一化后匹配)"
+          class="min-w-56 flex-1"
+        />
+        <KunButton color="primary" variant="flat" size="sm" type="submit">
+          <KunIcon name="lucide:search" class="mr-1 size-4" />
+          搜索
+        </KunButton>
+        <KunButton
+          v-if="search"
+          color="default"
+          variant="flat"
+          size="sm"
+          @click="clearSearch"
+        >
+          清除
+        </KunButton>
+        <KunInput v-model="site" placeholder="按站点过滤" class="w-36" />
+        <KunSelect v-model="kind" :options="kindFilterOptions" class="w-40" />
+        <KunSwitch v-model="includeDeprecated" label="含已弃用" />
+      </form>
 
       <CommonFetchError v-if="error" @retry="refresh" />
 
@@ -212,12 +275,20 @@ const confirmDeprecate = async () => {
             </tr>
             <tr v-if="!terms.length && !error">
               <td colspan="6" class="text-default-400 px-2 py-8 text-center">
-                暂无词条
+                {{
+                  isLoading ? '加载中…' : search ? '没有匹配的词条' : '暂无词条'
+                }}
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+
+      <KunPagination
+        v-model:current-page="page"
+        :total-page="totalPages"
+        :is-loading="isLoading"
+      />
 
       <KunModal v-model="createOpen">
         <div class="space-y-4">

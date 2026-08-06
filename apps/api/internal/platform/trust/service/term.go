@@ -215,15 +215,21 @@ func (s *TermService) invalidate() {
 // --- admin CRUD -----------------------------------------------------------
 
 // TermFilters filters an admin term listing. Site "" = all sites; Kind nil =
-// both kinds.
+// both kinds; Query "" = no substring search. Page/Limit page the result the
+// same way ReviewFilters does — the word list is not a small table (46,434 live
+// terms in production on 2026-08-06), so an unpaged listing is not an option.
 type TermFilters struct {
 	Site              string
 	Kind              *int16
 	IncludeDeprecated bool
+	Query             string
+	Page              int
+	Limit             int
 }
 
-// List returns terms for the admin surface, global first then per-site.
-func (s *TermService) List(ctx context.Context, f TermFilters) ([]model.TrustTerm, error) {
+// List returns one page of terms for the admin surface, global first then
+// per-site, plus the total matching the filters (for the pager).
+func (s *TermService) List(ctx context.Context, f TermFilters) ([]model.TrustTerm, int64, error) {
 	q := s.db.WithContext(ctx).Model(&model.TrustTerm{})
 	if f.Site != "" {
 		q = q.Where("site = ?", f.Site)
@@ -234,9 +240,37 @@ func (s *TermService) List(ctx context.Context, f TermFilters) ([]model.TrustTer
 	if !f.IncludeDeprecated {
 		q = q.Where("is_deprecated = false")
 	}
+	// Search matches the NORMALIZED form, because that is what the gate actually
+	// compares against and what the table stores. The raw word an operator types
+	// goes through the same normalization first, so searching "ＳＰＡＭ" finds
+	// the term stored as "spam".
+	if needle := norm.Normalize(f.Query); needle != "" {
+		q = q.Where("term_norm LIKE ?", "%"+escapeLike(needle)+"%")
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	limit := clampLimit(f.Limit)
+	offset := 0
+	if f.Page > 1 {
+		offset = (f.Page - 1) * limit
+	}
 	var terms []model.TrustTerm
-	err := q.Order("site NULLS FIRST").Order("term_norm ASC").Find(&terms).Error
-	return terms, err
+	// id breaks ties: (site, term_norm) is unique, but paging over a table that
+	// is being written to needs a total order or rows can repeat across pages.
+	if err := q.Order("site NULLS FIRST").Order("term_norm ASC").Order("id ASC").
+		Limit(limit).Offset(offset).Find(&terms).Error; err != nil {
+		return nil, 0, err
+	}
+	return terms, total, nil
+}
+
+// escapeLike neutralizes the LIKE wildcards in operator input so a search for
+// "100%" looks for that literal string instead of matching everything.
+func escapeLike(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
 }
 
 // CreateTermParams registers one Tier0 term. Term is the RAW admin input; the

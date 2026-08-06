@@ -805,8 +805,12 @@ components:
           type:
             - array
             - "null"
+        total:
+          format: int64
+          type: integer
       required:
         - terms
+        - total
       type: object
 info:
   title: KUN Trust Admin API
@@ -1257,6 +1261,29 @@ paths:
           schema:
             description: include retired terms
             type: boolean
+        - description: substring search over the normalized term (the raw input is normalized the same way before matching)
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: substring search over the normalized term (the raw input is normalized the same way before matching)
+            type: string
+        - description: 1-based page number
+          explode: false
+          in: query
+          name: page
+          schema:
+            description: 1-based page number
+            format: int64
+            type: integer
+        - description: terms per page (default 50, max 200)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: terms per page (default 50, max 200)
+            format: int64
+            type: integer
       responses:
         "200":
           content:
