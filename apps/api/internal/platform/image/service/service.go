@@ -26,6 +26,7 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Errors returned by the service layer. Handlers map these to error codes.
@@ -363,12 +364,13 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 	return s.buildResult(req.CDNBase, hash, mainOut.Ext, mainOut.Thumbhash, mainOut.Width, mainOut.Height, int64(len(mainOut.Data)), ps, false), nil
 }
 
-// SoftDelete marks an image deleted (sets deleted_at) when the calling
-// `site` has a usage record for `hash`. The GC worker physically removes the
-// S3 objects + row after the hard-delete TTL. It is deliberately:
-//   - soft (recoverable until GC) — safe under content dedup, where a hash
-//     may be shared and a hard delete would break other referrers;
-//   - site-scoped — a client can only retire images its own site referenced.
+// SoftDelete retires the calling site's use of `hash`: it removes that
+// site's usage rows, and only when no other site's usage remains does it mark
+// the image itself deleted (sets deleted_at; the GC worker physically removes
+// the S3 objects + row after the hard-delete TTL). Under content dedup a hash
+// is shared storage — one site saying "I no longer use this" must not take
+// the bytes away from every other referrer, which is exactly what the
+// previous WHERE-hash-global update did.
 //
 // Returns false (not found) when the caller's site never used the hash, so
 // one client can't retire another's images. For irreversible compliance
@@ -379,23 +381,49 @@ func (s *Service) SoftDelete(ctx context.Context, hash, site string) (bool, erro
 		// clear error instead of a nil-pointer panic.
 		return false, errors.New("service: SoftDelete requires a DB handle")
 	}
-	var usage int64
-	if err := s.db.WithContext(ctx).
-		Model(&model.ImageSiteUsage{}).
-		Where("hash = ? AND site = ?", hash, site).
-		Count(&usage).Error; err != nil {
+	deleted := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Lock the image row first so two sites detaching concurrently
+		// serialize here — otherwise each could see the other's not-yet-
+		// committed usage rows and both skip the final soft-delete, leaving
+		// the bytes alive with zero referrers.
+		var img model.Image
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("hash = ?", hash).First(&img).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+
+		res := tx.Where("hash = ? AND site = ?", hash, site).
+			Delete(&model.ImageSiteUsage{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			// This site never used the hash — not its image to retire.
+			return nil
+		}
+		deleted = true
+
+		var remaining int64
+		if err := tx.Model(&model.ImageSiteUsage{}).
+			Where("hash = ?", hash).Count(&remaining).Error; err != nil {
+			return err
+		}
+		if remaining > 0 {
+			// Other sites still reference the bytes; the image stays live.
+			return nil
+		}
+		return tx.Model(&model.Image{}).
+			Where("hash = ?", hash).
+			Update("deleted_at", time.Now()).Error
+	})
+	if err != nil {
 		return false, err
 	}
-	if usage == 0 {
-		return false, nil
-	}
-	if err := s.db.WithContext(ctx).
-		Model(&model.Image{}).
-		Where("hash = ?", hash).
-		Update("deleted_at", time.Now()).Error; err != nil {
-		return false, err
-	}
-	return true, nil
+	return deleted, nil
 }
 
 // buildResult composes the JSON-shaped result including variant URLs.

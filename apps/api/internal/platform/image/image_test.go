@@ -418,6 +418,69 @@ func TestReferencePing_TouchesLastReferencedAt(t *testing.T) {
 	assert.True(t, after.LastReferencedAt.After(before.LastReferencedAt))
 }
 
+// Under content dedup a hash is shared storage: one site deleting it must
+// detach only that site's usage, and the bytes may only die when the LAST
+// site leaves. The pre-fix behavior (site-checked but WHERE-hash-global
+// deleted_at) let any single site take a shared image away from everyone.
+func TestSoftDelete_SharedHashDetachesPerSite(t *testing.T) {
+	ctx := context.Background()
+	body := fixturePNG(64, 64, 9, 9, 9)
+
+	up, err := testSvc.Upload(ctx, service.UploadRequest{
+		Body: body, Preset: "topic", Site: "siteDelA",
+	})
+	require.NoError(t, err)
+	_, err = testSvc.Upload(ctx, service.UploadRequest{
+		Body: body, Preset: "topic", Site: "siteDelB",
+	})
+	require.NoError(t, err)
+
+	// A site that never used the hash cannot retire it, and nothing changes.
+	ok, err := testSvc.SoftDelete(ctx, up.Hash, "stranger")
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	// First site detaches: its usage row goes, the image stays live for B.
+	ok, err = testSvc.SoftDelete(ctx, up.Hash, "siteDelA")
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	img, err := testImgRepo.FindByHash(ctx, up.Hash)
+	require.NoError(t, err)
+	require.NotNil(t, img, "image must survive while another site references it")
+	assert.Nil(t, img.DeletedAt)
+
+	var usages []model.ImageSiteUsage
+	require.NoError(t, testDB.Where("hash = ?", up.Hash).Find(&usages).Error)
+	require.Len(t, usages, 1)
+	assert.Equal(t, "siteDelB", usages[0].Site)
+
+	// Repeat delete by the detached site is a no-op not-found.
+	ok, err = testSvc.SoftDelete(ctx, up.Hash, "siteDelA")
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	// Last site leaves: now the image is soft-deleted.
+	ok, err = testSvc.SoftDelete(ctx, up.Hash, "siteDelB")
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	var gone model.Image
+	require.NoError(t, testDB.Where("hash = ?", up.Hash).First(&gone).Error)
+	assert.NotNil(t, gone.DeletedAt)
+
+	var remaining int64
+	require.NoError(t, testDB.Model(&model.ImageSiteUsage{}).
+		Where("hash = ?", up.Hash).Count(&remaining).Error)
+	assert.Zero(t, remaining)
+
+	// Unknown hash → not found, no error.
+	ok, err = testSvc.SoftDelete(ctx,
+		"0000000000000000000000000000000000000000000000000000000000000000", "siteDelA")
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
 // storageKey replicates the internal service helper for test assertions.
 func storageKey(hash, variant, ext string) string {
 	if variant == "" {

@@ -160,11 +160,13 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 
 // ---- DELETE /image/:hash ----
 
-// SoftDelete retires an image the caller's site has used (sets deleted_at;
-// the GC worker physically removes it after the TTL). Soft + site-scoped so
-// it's safe under content dedup — one client can't hard-delete a hash shared
-// by another. Used by the OAuth backend to GC a user's avatar on
-// anonymization. For irreversible compliance deletes use the admin force path.
+// SoftDelete retires the caller's site's use of an image: its usage rows go
+// away, and the image itself is only marked deleted (then GC'd after the TTL)
+// once no other site still references the hash. Site-scoped on the WRITE, not
+// just the permission check, so under content dedup one client deleting a
+// shared hash cannot take the bytes away from every other referrer. Used by
+// the OAuth backend to GC a user's avatar on anonymization. For irreversible
+// compliance deletes use the admin force path.
 func (h *Handler) SoftDelete(c fiber.Ctx) error {
 	site := imgMW.SiteKeyFromCtx(c)
 	if site == "" {
