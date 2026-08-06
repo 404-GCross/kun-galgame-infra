@@ -53,8 +53,8 @@ type CatalogLabel struct {
 	// filter the backfill selects on, and therefore the whole of the
 	// bangumi > cien precedence: bangumi runs first and cien only ever fills
 	// what is still empty. Provenance goes to field_provenance["logo_hash"].
-	// Any new image column in catalog scope MUST also join the keep-alive union
-	// in internal/jobs/catalog_image_refping.go or its bytes are GC'd a year later.
+	// Any new image column in catalog scope MUST also join the registry in
+	// internal/platform/catalog/imagerefs or its bytes are GC'd a year later.
 	LogoHash        string         `gorm:"type:text;not null;default:''" json:"logo_hash"`
 	FieldProvenance datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"field_provenance"`
 	CreatedAt       time.Time      `json:"created_at"`

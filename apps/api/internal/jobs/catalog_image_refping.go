@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"api/internal/infrastructure/database"
+	"api/internal/platform/catalog/imagerefs"
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
@@ -31,25 +32,12 @@ func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 // upload-time TTL touch and vanish ~13 months later — the exact "refping
 // site-scope GC fuse" failure that froze 66k galgame images.
 //
-// The catalog-scope hash universe is five sources (step 54, refs/proj/51 §4):
-//  1. catalog_character.image_hash — the BUST: VNDB portrait wave (step 48) and
-//     the Getchu bust backfill (refs/proj/167 §10).
-//  2. catalog_character.figure_hash — the FULL-BODY figure (refs/proj/167 §11).
-//  3. catalog_work_cover.image_hash — bodyless cover backfill (step 53).
-//  4. catalog_work_screenshot.image_hash — DLsite screenshot backfill (step 54 for
-//     bodyless works, refs/proj/125 for the claimed lane).
-//  5. catalog_label.logo_hash — label brand logos (wave 170, refs/proj/170).
-//  6. catalog_person.photo_hash — person photographs (wave 172,
-//     internal/jobs/personphotos).
+// The catalog-scope hash universe is the imagerefs registry
+// (internal/platform/catalog/imagerefs) — six image-bearing columns, and the
+// one place a seventh gets added. Read its package doc before changing what
+// this sweep pings.
 //
-// Adding an image column anywhere in catalog scope means adding it HERE in the
-// same change. Nothing fails when you forget: uploads succeed, the read face
-// renders, and the bytes are collected a year later.
-//
-// For (2) and (3) ALL rows count, INCLUDING those shadowed by a later claim
-// (§8.B shadow-never-delete): a shadowed media row's bytes stay in catalog scope
-// until an explicit handoff, so a missed shadowed row = GC eats a live image.
-// Claim state is deliberately NOT a filter here — a claimed work's BRIDGED
+// Claim state is deliberately NOT a filter — a claimed work's BRIDGED
 // covers/screenshots live in the galgame_wiki scope and are pinged by the
 // SEPARATE galgame-image-refping, but its NATIVE catalog_work_screenshot rows
 // (the DLsite claimed lane) are catalog-scope bytes owned by this sweep — byte
@@ -152,56 +140,10 @@ func RunCatalogImageRefping(ctx context.Context, cfg *config.Config, opts Catalo
 }
 
 // collectCatalogRefpingHashes returns the deduped set of every non-empty
-// catalog-scope image_hash: LIVE character portraits UNIONed with EVERY
-// catalog_work_cover row (step 53) and EVERY catalog_work_screenshot row (step 54).
-//
-//   - Soft-deleted characters are excluded (their portrait may legitimately age
-//     out) — a portrait is referenced iff a live character still points at it.
-//   - catalog_work_cover / catalog_work_screenshot are taken in FULL — no
-//     claim/shadow filter (§8.B shadow-never-delete): a bodyless media row that a
-//     later claim shadowed still owns bytes in the catalog scope, so it MUST keep
-//     being pinged. Missing it = GC eats a live image (the 66k-frozen class).
-//
-// Unlike galgame images (which also live in revision/PR snapshots), catalog
-// media has exactly one home row each, so this is the whole referenced universe.
+// catalog-scope image hash. The universe — which columns count, and with which
+// live/shadow filter — is the imagerefs registry; unlike galgame images (which
+// also live in revision/PR snapshots), catalog media has exactly one home row
+// each, so the registry IS the whole referenced universe.
 func collectCatalogRefpingHashes(ctx context.Context, db *gorm.DB) ([]string, error) {
-	const q = `
-SELECT DISTINCT hash FROM (
-    SELECT image_hash AS hash FROM catalog_character
-    WHERE image_hash IS NOT NULL AND image_hash <> '' AND deleted_at IS NULL
-    UNION
-    -- Characters carry TWO independent images: the bust (image_hash) and the
-    -- full-body figure (figure_hash). Both are catalog-scope bytes with one
-    -- home row each, so both must be listed here. A new image column that is
-    -- not added to this union is invisible to the keep-alive sweep and its
-    -- bytes are collected once the TTL elapses — the failure is silent and
-    -- arrives a year late.
-    SELECT figure_hash FROM catalog_character
-    WHERE figure_hash IS NOT NULL AND figure_hash <> '' AND deleted_at IS NULL
-    UNION
-    SELECT image_hash FROM catalog_work_cover
-    WHERE image_hash IS NOT NULL AND image_hash <> ''
-    UNION
-    SELECT image_hash FROM catalog_work_screenshot
-    WHERE image_hash IS NOT NULL AND image_hash <> ''
-    UNION
-    -- Label brand logos (wave 170, internal/jobs/labellogos). Live labels only,
-    -- same rationale as the character portrait: a logo is referenced iff a live
-    -- label still points at it. Stored NOT NULL DEFAULT '', so the empty string
-    -- (not NULL) is the "no logo" value the filter has to exclude.
-    SELECT logo_hash FROM catalog_label
-    WHERE logo_hash IS NOT NULL AND logo_hash <> '' AND deleted_at IS NULL
-    UNION
-    -- Person photographs (wave 172, internal/jobs/personphotos). Live persons
-    -- only, and stored NOT NULL DEFAULT '' exactly like the label logo above —
-    -- so the empty string, not NULL, is the "no photo" value to exclude.
-    SELECT photo_hash FROM catalog_person
-    WHERE photo_hash IS NOT NULL AND photo_hash <> '' AND deleted_at IS NULL
-) u
-`
-	var hashes []string
-	if err := db.WithContext(ctx).Raw(q).Scan(&hashes).Error; err != nil {
-		return nil, err
-	}
-	return hashes, nil
+	return imagerefs.DistinctHashes(ctx, db)
 }

@@ -41,7 +41,7 @@
 //   - Fresh hashes are reference-pinged immediately — an image sits at TTL from
 //     upload time, so waiting for the nightly sweep risks uploading bytes and
 //     then losing them. catalog_person.photo_hash is in that nightly union too
-//     (internal/jobs/catalog_image_refping.go).
+//     (internal/platform/catalog/imagerefs).
 //   - Sexual/Violence do not apply: a person photograph is rated 0. The preset
 //     carries no rating field, so this is simply not asserted anywhere.
 package personphotos

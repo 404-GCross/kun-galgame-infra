@@ -11,6 +11,7 @@ import (
 
 	"api/internal/infrastructure/database"
 	jobmodel "api/internal/jobs/model"
+	"api/internal/platform/catalog/imagerefs"
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
@@ -61,6 +62,15 @@ const maxListed = 500
 // The probe is POST /image/meta-batch, which answers only for rows that exist and
 // are not soft-deleted — so "absent from the result" is exactly the condition we
 // are hunting, with no need to reach into the image service's database.
+//
+// The reference universe comes from the shared imagerefs registry
+// (internal/platform/catalog/imagerefs), which WIDENED this audit from the three
+// kinds it shipped with (covers, screenshots, character portraits) to all six
+// image-bearing columns — character figures, label logos and person photos were
+// unaudited before. The persisted baseline the diff reads is hash strings only,
+// so the kind rename that came with it (character_portrait → character_bust) is
+// invisible to the diff; the widening itself shows up once, as a batch of
+// "newly broken" hashes on the first run that sees the new kinds.
 func RunImageRefAudit(ctx context.Context, cfg *config.Config, opts ImageRefAuditOpts) (Summary, error) {
 	if opts.Batch < 1 || opts.Batch > 1000 {
 		opts.Batch = 1000 // image_service / SDK reject batches > 1000
@@ -84,7 +94,7 @@ func RunImageRefAudit(ctx context.Context, cfg *config.Config, opts ImageRefAudi
 	}
 	defer catalogDB.Close()
 
-	refs, err := collectCatalogImageRefs(ctx, catalogDB.DB())
+	refs, err := imagerefs.Collect(ctx, catalogDB.DB())
 	if err != nil {
 		return nil, fmt.Errorf("collect catalog image refs: %w", err)
 	}
@@ -114,7 +124,7 @@ func RunImageRefAudit(ctx context.Context, cfg *config.Config, opts ImageRefAudi
 		}
 	}
 
-	brokenRefs := make([]imageRef, 0)
+	brokenRefs := make([]imagerefs.Ref, 0)
 	brokenSet := make(map[string]struct{})
 	for _, r := range refs {
 		if _, ok := live[r.Hash]; ok {
@@ -171,39 +181,6 @@ func RunImageRefAudit(ctx context.Context, cfg *config.Config, opts ImageRefAudi
 		len(fresh), len(brokenRefs), fresh)
 }
 
-// imageRef is one catalog row that points at an image hash.
-type imageRef struct {
-	Hash     string `gorm:"column:hash"`
-	Kind     string `gorm:"column:kind"`
-	EntityID int64  `gorm:"column:entity_id"`
-}
-
-// collectCatalogImageRefs returns every live catalog row that references an
-// image, carrying the owning entity so a broken hash can be reported as the
-// work/character a user would see it on.
-//
-// This is the same universe catalog-image-refping keeps alive, minus the
-// aggregation: covers and screenshots in full (a shadowed media row still owns
-// its bytes), portraits only while their character is live.
-func collectCatalogImageRefs(ctx context.Context, db *gorm.DB) ([]imageRef, error) {
-	const q = `
-SELECT image_hash AS hash, 'work_cover' AS kind, work_id AS entity_id
-    FROM catalog_work_cover WHERE image_hash IS NOT NULL AND image_hash <> ''
-UNION ALL
-SELECT image_hash, 'work_screenshot', work_id
-    FROM catalog_work_screenshot WHERE image_hash IS NOT NULL AND image_hash <> ''
-UNION ALL
-SELECT image_hash, 'character_portrait', id
-    FROM catalog_character
-    WHERE image_hash IS NOT NULL AND image_hash <> '' AND deleted_at IS NULL
-`
-	var refs []imageRef
-	if err := db.WithContext(ctx).Raw(q).Scan(&refs).Error; err != nil {
-		return nil, err
-	}
-	return refs, nil
-}
-
 // previousBrokenHashes loads the broken set this job recorded last time. Runs
 // that FAILED count: a run that reports new breakage fails by design, and the
 // next one must diff against it or it would re-alert on the same hashes.
@@ -258,7 +235,7 @@ func newlyBroken(broken []string, previous map[string]struct{}) []string {
 
 // affectedEntities counts the distinct entities behind the broken refs, keyed
 // by kind, so the summary says "3 works" rather than only "8 hashes".
-func affectedEntities(refs []imageRef) map[string]int {
+func affectedEntities(refs []imagerefs.Ref) map[string]int {
 	seen := make(map[string]map[int64]struct{})
 	for _, r := range refs {
 		if seen[r.Kind] == nil {
@@ -273,7 +250,7 @@ func affectedEntities(refs []imageRef) map[string]int {
 	return out
 }
 
-func distinctHashes(refs []imageRef) []string {
+func distinctHashes(refs []imagerefs.Ref) []string {
 	set := make(map[string]struct{}, len(refs))
 	for _, r := range refs {
 		set[r.Hash] = struct{}{}

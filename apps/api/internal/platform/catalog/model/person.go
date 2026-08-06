@@ -62,8 +62,8 @@ type CatalogPerson struct {
 	// it. Filled by internal/jobs/personphotos from the bangumi mirror;
 	// provenance lands under field_provenance["photo_hash"].
 	//
-	// A new image column in catalog scope must ALSO join the keep-alive union
-	// in internal/jobs/catalog_image_refping.go, or the bytes are silently
+	// A new image column in catalog scope must ALSO join the registry in
+	// internal/platform/catalog/imagerefs, or the bytes are silently
 	// collected once the TTL elapses.
 	PhotoHash       string         `gorm:"type:text;not null;default:''" json:"photo_hash"`
 	Description     string         `gorm:"not null;default:''" json:"description"`

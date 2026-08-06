@@ -3,6 +3,8 @@ package jobs
 import (
 	"reflect"
 	"testing"
+
+	"api/internal/platform/catalog/imagerefs"
 )
 
 // The whole point of the diff is that an already-known breakage must NOT
@@ -31,11 +33,11 @@ func TestNewlyBrokenOnlyReportsUnseenHashes(t *testing.T) {
 // The persisted list is what the next run diffs against, so its order must not
 // depend on map iteration or every run would look like churn.
 func TestDistinctHashesIsSortedAndDeduped(t *testing.T) {
-	refs := []imageRef{
-		{Hash: "ccc", Kind: "work_cover", EntityID: 1},
-		{Hash: "aaa", Kind: "work_screenshot", EntityID: 2},
-		{Hash: "ccc", Kind: "work_screenshot", EntityID: 3},
-		{Hash: "bbb", Kind: "character_portrait", EntityID: 4},
+	refs := []imagerefs.Ref{
+		{Hash: "ccc", Kind: imagerefs.KindWorkCover, EntityID: 1},
+		{Hash: "aaa", Kind: imagerefs.KindWorkScreenshot, EntityID: 2},
+		{Hash: "ccc", Kind: imagerefs.KindWorkScreenshot, EntityID: 3},
+		{Hash: "bbb", Kind: imagerefs.KindCharacterBust, EntityID: 4},
 	}
 	want := []string{"aaa", "bbb", "ccc"}
 	for i := range 5 {
@@ -48,14 +50,14 @@ func TestDistinctHashesIsSortedAndDeduped(t *testing.T) {
 // A summary that says "8 hashes" is not actionable; "3 works" is what a human
 // goes and looks at. One work with several dead covers must count once.
 func TestAffectedEntitiesCountsDistinctEntitiesPerKind(t *testing.T) {
-	refs := []imageRef{
-		{Hash: "a", Kind: "work_cover", EntityID: 10},
-		{Hash: "b", Kind: "work_cover", EntityID: 10},
-		{Hash: "c", Kind: "work_cover", EntityID: 11},
-		{Hash: "d", Kind: "work_screenshot", EntityID: 10},
-		{Hash: "e", Kind: "character_portrait", EntityID: 99},
+	refs := []imagerefs.Ref{
+		{Hash: "a", Kind: imagerefs.KindWorkCover, EntityID: 10},
+		{Hash: "b", Kind: imagerefs.KindWorkCover, EntityID: 10},
+		{Hash: "c", Kind: imagerefs.KindWorkCover, EntityID: 11},
+		{Hash: "d", Kind: imagerefs.KindWorkScreenshot, EntityID: 10},
+		{Hash: "e", Kind: imagerefs.KindCharacterBust, EntityID: 99},
 	}
-	want := map[string]int{"work_cover": 2, "work_screenshot": 1, "character_portrait": 1}
+	want := map[string]int{"work_cover": 2, "work_screenshot": 1, imagerefs.KindCharacterBust: 1}
 	if got := affectedEntities(refs); !reflect.DeepEqual(got, want) {
 		t.Fatalf("want %v, got %v", want, got)
 	}
