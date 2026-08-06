@@ -2,13 +2,16 @@
 // face the registry was missing (wave 157 P3, doc 156 §3.1 categories ① and ⑤).
 //
 // Why it is an AGGREGATE over catalog_claim_event rather than a column filter:
-// a claim belongs to a SITE, never to a user (catalog_work carries site +
-// product_work_id and nothing else about people — 03 定案 §9-3 keeps it that
-// way on purpose, because the registry is an identity layer and its rows
-// outlive any account). The only place a user appears is as the ACTOR of a
-// transition. So "my submissions" is, precisely, "the works whose lifecycle I
-// moved", and this file says exactly that in SQL instead of adding a
-// denormalized owner column the registry would then have to keep true forever.
+// "my submissions" is asked as "the works whose lifecycle I moved" — every
+// transition I caused, including the ones on works somebody else created — and
+// the event log is the only place that question has an answer. That is a
+// different question from "who created this entry", which wave 178 DID make a
+// column (catalog_work.owner_user_id, write-once at mint/claim-birth): the
+// column answers ownership for ONE work, this aggregate answers activity across
+// many, and neither can be derived from the other. The 03 定案 §9-3 reading that
+// the registry must hold nothing about people at all is superseded: ownership is
+// a catalog-held fact now, because the user-token face has no backend to assert
+// it (see handler/user_edit.go).
 //
 // The shape follows the wiki ListMine it replaces (identity + current state +
 // the latest event's summary, most recent activity first), because that is

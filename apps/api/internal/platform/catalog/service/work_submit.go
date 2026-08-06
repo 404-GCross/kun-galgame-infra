@@ -298,6 +298,14 @@ func (s *ClaimLifecycleService) SubmitWork(ctx context.Context, p SubmitWorkPara
 			Extra:           []byte(`{}`),
 			FieldProvenance: []byte(`{}`),
 		}
+		// The submitter is stamped as the row's owner at birth (wave 178): a
+		// submission is the one moment where "who created this entry" is known
+		// beyond doubt, and writing it here is what lets the editing engine
+		// derive ownership later without any product-side assertion. A machine
+		// submission (no actor) leaves it nil rather than stamping 0.
+		if p.ActorUID != 0 {
+			w.OwnerUserID = &p.ActorUID
+		}
 		if err := tx.Create(&w).Error; err != nil {
 			return err
 		}

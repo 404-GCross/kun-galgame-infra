@@ -27,6 +27,21 @@ type CatalogWork struct {
 	// triple is globally unique — exactly the wanted rule.
 	Site          *string `gorm:"uniqueIndex:uq_catalog_work_claim" json:"site"`
 	ProductWorkID *int64  `gorm:"uniqueIndex:uq_catalog_work_claim" json:"product_work_id"`
+	// OwnerUserID is the submitting user's uid — the PER-USER counterpart of
+	// Site, stamped ONCE at mint (the submission mint) or at claim birth (the
+	// `claim` transition), and never overwritten afterwards. It is what makes
+	// "this person created this entry" a fact the CATALOG holds rather than one
+	// a product backend asserts on every request: the editing engine derives
+	// IsEntityOwner from it (editspec's OwnerUserID hook), so the owner-review
+	// lane works on the user-token face where nothing may be asserted.
+	//
+	// NULLABLE, and nil means unknown/legacy rather than "nobody": every row
+	// that predates wave 178 has nil until the manual backfill fills it in from
+	// the product's own creator column (cmd/migrate-catalog/backfill/
+	// owner-user-id.sql). Nullable also keeps the migration a plain AutoMigrate
+	// column add. No `default:` tag on purpose (the default-tag zero-value trap):
+	// a uid is written explicitly or not at all.
+	OwnerUserID *int64 `gorm:"column:owner_user_id;index" json:"owner_user_id"`
 	// ClaimState is the claim's VISIBILITY on the owning product face
 	// (ClaimState* constants — a catalog-owned vocabulary, never a product's
 	// status machine). NULLABLE by design, three-valued:

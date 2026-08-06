@@ -75,6 +75,30 @@ func (e *Engine) ownerSite(ctx context.Context, spec *EntityTypeSpec, entityID i
 	return owner, nil
 }
 
+// deriveOwnership stamps pc.IsEntityOwner from the spec's OwnerUserID hook —
+// the one place ownership becomes a policy input without anyone asserting it
+// (wave 178). Every op that evaluates a policy against a KNOWN entity calls it
+// exactly once, before the first AllowsPropose/AllowsReview.
+//
+// It can only turn the flag ON. An S2S caller that already asserted ownership
+// keeps it (the product backends holding facts the catalog does not — letmoe's
+// trust lane, a family whose spec registers no hook — must not be downgraded by
+// a hook that returns nil), and derivation covers everyone else. entityID 0 (the
+// type-level schema projection) and an anonymous context derive nothing.
+func (e *Engine) deriveOwnership(ctx context.Context, spec *EntityTypeSpec, entityID int64, pc *PolicyContext) error {
+	if pc.IsEntityOwner || pc.UserID == 0 || entityID == 0 || spec.OwnerUserID == nil {
+		return nil
+	}
+	owner, err := spec.OwnerUserID(ctx, entityID)
+	if err != nil {
+		return fmt.Errorf("editing: owner user for %s/%d: %w", spec.Type, entityID, err)
+	}
+	if owner != nil && *owner == pc.UserID {
+		pc.IsEntityOwner = true
+	}
+	return nil
+}
+
 // ---- reads ----------------------------------------------------------------
 
 // CurrentSnapshot reads the entity's CURRENT registered-field state through
@@ -319,6 +343,9 @@ type FieldProjection struct {
 func (e *Engine) SchemaProjection(ctx context.Context, entityType string, entityID int64, pc PolicyContext) ([]FieldProjection, error) {
 	spec, err := e.resolveSpec(entityType)
 	if err != nil {
+		return nil, err
+	}
+	if err := e.deriveOwnership(ctx, spec, entityID, &pc); err != nil {
 		return nil, err
 	}
 	needOwner := false

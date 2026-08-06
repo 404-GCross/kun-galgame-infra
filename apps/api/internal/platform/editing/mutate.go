@@ -70,6 +70,10 @@ func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*P
 	if len(in.Patch) == 0 {
 		return nil, nil, ErrEmptyPatch
 	}
+	// Ownership is derived once, before any field's policy is evaluated.
+	if err := e.deriveOwnership(ctx, spec, in.EntityID, &in.Actor); err != nil {
+		return nil, nil, err
+	}
 	pols := make(map[string]Policy, len(in.Patch))
 	needOwner := false
 	for _, key := range sortedKeys(in.Patch) {
@@ -184,6 +188,9 @@ func (e *Engine) AmendProposal(ctx context.Context, proposalID int64, in AmendIn
 		if err != nil {
 			return err
 		}
+		if err := e.deriveOwnership(ctx, spec, prop.EntityID, &in.Actor); err != nil {
+			return err
+		}
 		amendments, err := loadAmendments(etx, proposalID)
 		if err != nil {
 			return err
@@ -269,6 +276,9 @@ func (e *Engine) MergeProposal(ctx context.Context, proposalID int64, actor Poli
 		if err != nil {
 			return err
 		}
+		if err := e.deriveOwnership(ctx, spec, prop.EntityID, &actor); err != nil {
+			return err
+		}
 		amendments, err := loadAmendments(etx, proposalID)
 		if err != nil {
 			return err
@@ -341,6 +351,9 @@ func (e *Engine) DeclineProposal(ctx context.Context, proposalID int64, actor Po
 		}
 		spec, err := e.resolveSpec(prop.EntityType)
 		if err != nil {
+			return err
+		}
+		if err := e.deriveOwnership(ctx, spec, prop.EntityID, &actor); err != nil {
 			return err
 		}
 		amendments, err := loadAmendments(etx, proposalID)

@@ -190,10 +190,11 @@ func (s *ClaimLifecycleService) Act(ctx context.Context, p ClaimActionParams) (*
 			Site          *string
 			ProductWorkID *int64
 			ClaimState    *int16
+			OwnerUserID   *int64
 		}
 		// FOR UPDATE: two concurrent actions on one claim must serialize, or the
 		// event log would record a transition from a state that never was.
-		if err := tx.Raw(`SELECT id, site, product_work_id, claim_state FROM catalog_work
+		if err := tx.Raw(`SELECT id, site, product_work_id, claim_state, owner_user_id FROM catalog_work
 		                  WHERE id = ? AND deleted_at IS NULL FOR UPDATE`, p.WorkID).
 			Scan(&work).Error; err != nil {
 			return err
@@ -229,6 +230,17 @@ func (s *ClaimLifecycleService) Act(ctx context.Context, p ClaimActionParams) (*
 			updates["site"] = p.Site
 			updates["product_work_id"] = *p.ProductWorkID
 			eventSite = p.Site
+			// Ownership is WRITE-ONCE (wave 178), and this is its second and last
+			// writer beside the submission mint: `claim` is the birth of a claim
+			// (the transition with no prior state), so the claimant is the entry's
+			// creator in exactly the sense the forum's SetCreatorIfUnset means it.
+			// A row that already carries an owner keeps it — a later re-claim never
+			// re-attributes someone else's entry — and a machine claim (uid 0)
+			// stamps nothing rather than stamping 0. The FOR UPDATE above makes the
+			// read-then-write safe against a concurrent claimant.
+			if work.OwnerUserID == nil && p.ActorUID > 0 {
+				updates["owner_user_id"] = p.ActorUID
+			}
 		}
 		// A model Update also bumps updated_at, which IS the changes-feed touch
 		// (repository.TouchWorks does exactly that and nothing more) — so the

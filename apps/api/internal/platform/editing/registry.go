@@ -193,6 +193,15 @@ type EntityTypeSpec struct {
 	// what "owner" means is the family's business (catalog: the claiming
 	// site), the engine only compares it to the proposal's site.
 	OwnerSite func(ctx context.Context, entityID int64) (*string, error)
+	// OwnerUserID reports which USER owns the entity (nil = unknown/nobody) —
+	// the per-user counterpart of OwnerSite, and the source the engine derives
+	// PolicyContext.IsEntityOwner from (E3b owner-review without an assertion).
+	// Optional: a nil hook simply means this family derives no ownership, and
+	// only an S2S-asserted flag is honored. Media-agnostic in the same way —
+	// what "owning an entity" means is the family's business (catalog: the
+	// submitter/claimant stamped on catalog_work.owner_user_id), the engine only
+	// compares the result to the caller's uid.
+	OwnerUserID func(ctx context.Context, entityID int64) (*int64, error)
 	// OnMerge fires AFTER a merge commits (lifetime pillar 1: the single write
 	// path — direct edit, reviewer merge, and revert all flow through it), the
 	// media-agnostic seam for post-merge side effects. galgame.game reindexes

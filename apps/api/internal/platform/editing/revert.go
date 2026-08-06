@@ -26,6 +26,10 @@ func (e *Engine) Revert(ctx context.Context, in RevertInput) (*Proposal, *Revisi
 	if err != nil {
 		return nil, nil, err
 	}
+	// Ownership is derived once, before the per-field review check below.
+	if err := e.deriveOwnership(ctx, spec, in.EntityID, &in.Actor); err != nil {
+		return nil, nil, err
+	}
 	target, err := e.revisionAt(ctx, spec, in.EntityID, in.ToSeq)
 	if err != nil {
 		return nil, nil, err

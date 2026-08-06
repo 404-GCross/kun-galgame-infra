@@ -95,9 +95,11 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 	// kungal overlay (E3a ruling 2 + E3b direct-edit — carried over from the
 	// retired galgame.game spec, where the N5 re-anchoring lost it): any
 	// logged-in user proposes into the kungal review queue; review holds the
-	// work review perm, and OwnerReview additionally admits the entry's
-	// product-asserted creator (the forum BFF stamps is_entity_owner from
-	// galgame.creator_user_id). Automerge=review closes the loop: whoever
+	// work review perm, and OwnerReview additionally admits the entry's creator
+	// — since wave 178 a CATALOG-held fact (catalog_work.owner_user_id, derived
+	// through the OwnerUserID hook below), no longer a flag the forum BFF stamps
+	// from galgame.creator_user_id. An S2S caller may still assert it.
+	// Automerge=review closes the loop: whoever
 	// could review a field — admin/ren via perm, the game's creator via
 	// OwnerReview — direct-edits it instead of queuing a proposal to
 	// adjudicate against themselves. The old spec's special keys (bid locked,
@@ -184,6 +186,22 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 				return nil, err
 			}
 			return w.Site, nil
+		},
+		// OwnerUserID = the user stamped on the row at submission / claim birth
+		// (catalog_work.owner_user_id, write-once; nil = unknown or legacy). The
+		// engine turns a match with the caller's uid into IsEntityOwner, which is
+		// what feeds the kungal overlay's OwnerReview capability — no product
+		// backend is involved, so the user-token face gets it too.
+		OwnerUserID: func(ctx context.Context, entityID int64) (*int64, error) {
+			var w catmodel.CatalogWork
+			err := db.WithContext(ctx).Select("id", "owner_user_id").First(&w, entityID).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, editing.ErrEntityNotFound
+			}
+			if err != nil {
+				return nil, err
+			}
+			return w.OwnerUserID, nil
 		},
 		// Default policy (E0): perm-gated proposals, perm-gated review, no
 		// automerge. The letmoe site overlay above is the E1 tenant tuning.
