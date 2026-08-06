@@ -70,6 +70,10 @@ func main() {
 		// The user plane's editing ops (wave 177) — the same three verbs the
 		// S2S edit face offers, with the actor derived from the token.
 		catHandler.RegisterUserEditOps(api, nil, nil)
+		// The user plane's claims ops (wave 179): submit, the eight lifecycle
+		// actions, and "my claims" — the S2S claims face with the submitter,
+		// the tenant and the reviewer taken from the token.
+		catHandler.RegisterUserClaimOps(api, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil, nil, nil)
 	case *catalogPublic:

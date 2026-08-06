@@ -12,11 +12,11 @@ import (
 // pairMeta is one candidate pair with everything the emit phase needs. It is
 // the durable per-pair artefact (pairs.jsonl) the verdicts join back onto.
 type pairMeta struct {
-	A        int64   `json:"a"`
-	B        int64   `json:"b"`
-	Tier     int     `json:"tier"` // 1 fold-equal, 2 VA bridge, 3 name-similar
-	Works    []int64 `json:"works"`
-	CV       string  `json:"cv,omitempty"` // bridging voice actor name (tier 2, or extra evidence)
+	A        int64    `json:"a"`
+	B        int64    `json:"b"`
+	Tier     int      `json:"tier"` // 1 fold-equal, 2 VA bridge, 3 name-similar
+	Works    []int64  `json:"works"`
+	CV       string   `json:"cv,omitempty"` // bridging voice actor name (tier 2, or extra evidence)
 	AName    string   `json:"a_name"`
 	BName    string   `json:"b_name"`
 	ASources []string `json:"a_sources"`

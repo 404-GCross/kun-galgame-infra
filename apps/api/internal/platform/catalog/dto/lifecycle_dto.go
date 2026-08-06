@@ -29,6 +29,34 @@ type StaffClaimActionRequest struct {
 	Reason string `json:"reason,omitempty" doc:"Moderator note; REQUIRED for decline, recorded on the event"`
 }
 
+// The claims face's USER-TOKEN request shapes (wave 179). Each is its S2S
+// sibling minus every identity field — `actor` and `site` — because on that
+// face the uid is the token's `id` claim and the tenant is the token client's
+// catalog_site, so a wire field for either would only be a place to lie. Both
+// are written out explicitly rather than embedding the S2S struct (Huma's
+// anonymous-embed trap silently drops the fields), and both are separate types
+// so no future field can land on both faces by accident.
+
+// UserClaimActionRequest is the body of one lifecycle action taken by the
+// token's own user.
+type UserClaimActionRequest struct {
+	// ProductWorkID is required by `claim` and ignored by every other action.
+	// A pointer rather than the S2S face's 0-means-absent int, because on a
+	// body field Huma can express the absence directly.
+	ProductWorkID *int64 `json:"product_work_id,omitempty" minimum:"1" doc:"The product-side work id to anchor (claim only)"`
+	Reason        string `json:"reason,omitempty" doc:"Moderator note; REQUIRED for decline, recorded on the event"`
+}
+
+// UserWorkSubmitRequest mints a work in the pending claim state as the token's
+// own user. Same content contract as WorkSubmitRequest — the field keys are the
+// editing face's registered catalog.work keys — with the submitter and the
+// submitting tenant derived from the token instead of named on the wire.
+type UserWorkSubmitRequest struct {
+	ProductWorkID *int64          `json:"product_work_id,omitempty" minimum:"1" doc:"The product-side work id to anchor this submission at. OMIT IT to have the registry issue the identity: the claim then adopts the minted work id, which the response returns. Idempotency depends on this choice — see the endpoint summary"`
+	Fields        map[string]any  `json:"fields" doc:"Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets"`
+	Released      *WorkSubmitDate `json:"released,omitempty" doc:"Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA"`
+}
+
 // WorkSubmitRequest mints a work in the pending claim state (wave 162).
 //
 // The content half is keyed exactly like an edit patch — the SAME field keys

@@ -223,6 +223,30 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
   - **`trust_tier` 恒为 0 仍是设计而非遗漏**:信任等级在 infra 侧确实没有事实来源(住在产品自己的 trust 账本里),故 **letmoe 的 ProposeTrusted 通道继续留在 S2S 面**。
 - 错误映射沿用 S2S 面的口味:未注册字段键/空 patch/空 delta → **422**,策略拒绝 → **403**,实体/提案/目标 revision 不存在 → **404**,rebase 冲突/提案已关闭 → **409**;令牌缺失或无效 → **401**,缺 `catalog:edit` scope → **403**(message 含 scope 字样)。
 
+### 4.3 认领生命周期(投稿 + 八动作 + 我的认领,wave 179)
+
+> ⚠️ **一等站点已不推荐用 S2S 的认领写端点**(`submitCatalogWork`、`actOnCatalogClaim`):同 §4.2 的理由——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户投稿、撤回,乃至**裁决**别人的投稿。有用户令牌的场景请改用本节的 op。两面**共用同一 service、同一状态机、同一 `catalog_claim_event` 账本**,只有身份的来路不同,故一条认领的历史无论从后端还是从浏览器写入都读作同一串事件。
+
+| op | 方法 · 路径 | 是什么 |
+|----|-------------|--------|
+| `submitCatalogWorkUser` | `POST /user/catalog/works/submit` | 以令牌本人的名义投稿:铸造 pending 认领(注册行 + 内容 + 诞生事件,一个事务),并把本人盖成 `owner_user_id` |
+| `actOnCatalogClaimUser` | `POST /user/catalog/works/{id}/claim-actions/{action}` | 以令牌本人的名义推动认领:`claim`/`submit`/`publish`/`withdraw`(须**本人是条目所有者**——**或该条目尚无主时的第一认领人**,此时动作即认领)或 `approve`/`decline`/`ban`/`unban`(须令牌 roles 持 `catalog.claim.review`) |
+| `listCatalogClaimsMine` | `GET /user/catalog/claims/mine?claim_state=&before=&limit=` | **本人**在**本令牌站点**上动过的认领(即 S2S `listCatalogClaimsByUser` 的自照版),响应同为 `CursorPage<UserClaimItem>` |
+
+- **请求体 = S2S 版减去 `site` 与 `actor`**:submit 为 `{product_work_id?, fields, released?}`,action 为 `{product_work_id?, reason?}`。投稿人/操作者 = 令牌 `id` claim,租户 = 令牌 client 的 `catalog_site`。响应与 S2S 逐字相同(`WorkSubmitResponse` / `ClaimActionResult`),幂等规则(`product_work_id` 给了 = claim 键精确;没给 = 只认 payload 里的身份锚;两者皆无 = 重试会二次铸造)也逐字相同。
+- **权威一分为三**:
+  - **审核四动作**——令牌 roles 经 catalog family 的权限词表解析 `catalog.claim.review`,与 S2S 面解析断言 actor 的**同一个 resolver**(由 DB 权限 overlay 热替换,故权限台授权即刻生效);不足 → **403**。
+  - **所有者三动作(`submit`/`publish`/`withdraw`)——「无主即认领,有主即他人」**:
+    - `owner_user_id` 是**别人** → **403**。这是本波**新长出的牙**:S2S 面只校验租户(uid 是后端断言的、只能采信),在 uid 无法断言的面上,把它和所有者对一次是免费的。
+    - `owner_user_id` 为 **NULL** → **放行,并在同一条 UPDATE 里把调用者盖成所有者**(write-once,与 `claim` 动作、投稿铸造同一套规则)。这不是宽容,**这就是产品的主手势**:注册表的大宗是机器导入的镜像存量,躺在 `draft` 且无主(prod 2026-08:kungal 有 **53,486** 条这样的 draft;pending/declined **零**条无主),forum 向导的「认领这部游戏」正是一个人对其中一条调 `publish`。若把无主判成拒绝,等于用一个看起来像安全检查的规则 403 掉整个功能。**第一个动它的人成为主人**,此后上一条把其他人挡在外面。
+    - 检查与盖章同在 `SELECT ... FOR UPDATE` 事务内:两个认领者被串行化,输的那个撞上的是**迁移规则的 409**(它要的起始状态已经没了),而不是半盖的所有权。
+    - **S2S 面不参与认领**:`RequireOwner` 未置时(S2S / staff)移动无主认领**不盖任何所有者**——那边的 uid 是断言值,机器同步不该把任何人写成谁的主人。
+  - **`claim`(none→draft)**——任何已登录用户皆可,因为这个动作**就是**上一条所检查的归属的诞生;它照旧要求 `product_work_id`,并沿用 write-once 盖章(已有所有者的行永不改归属)。
+- **租户对审核动作也传**(与 S2S 面不同:那里为让 curator 跨租户裁决而把 site 置空)。本面的 moderator 是经**某一个产品的 client** 到达的,该 client 绑定的站点是它唯一可裁决的租户;跨租户 → **403**(既有租户闸直接给出)。平台级队列是 staff 面(`/api/v1/admin/catalog`)的活,那面背后是 staff JWT 而非 per-product 令牌。
+- **`mine` 无 uid 参数**:uid 与 site 全部取自令牌,故它天然只答「我的」。`claim_state` 用与全站一致的闭合词表解析器(非法值 → **400**,message 为同一句),`before` = 上一页末行的 `last_event_id`,`total` 即该用户的统计值(「我发布的」= `claim_state=live&limit=1`)。
+- **S2S 认领面全部保留**,不是过渡期的残留:`listCatalogClaimsByUser`(**读别人的**认领,forum 的个人资料页靠它)在用户面**故意没有对应 op**;`listCatalogClaimEvents` / `listCatalogEditRevisions` 两条游标 feed、staff 审核队列与各类投影**仍只在 S2S / admin 面**——它们是机器消费者的面,没有「令牌本人」可言。
+- 错误映射沿用 S2S 面:非法迁移 → **409**(带 `ClaimTransitionInfo`),重复投稿 → **409**(带 `WorkSubmitConflictInfo`),作品不存在 → **404**,未知 action → **400**,`decline` 缺 reason / `claim` 缺 `product_work_id` / 投稿缺 `display_name` → **422**,越权(条目属于他人、跨租户、无审核权)→ **403**。
+
 ## 5. 鉴权形态
 
 - **S2S face(`/api/v1/catalog/*`)**:`Authorization: Basic <b64(client_id:client_secret)>`,对 `oauth_clients` 注册表校验。任何有效一等 client 可**认证**;但——

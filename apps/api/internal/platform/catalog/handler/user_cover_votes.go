@@ -38,7 +38,7 @@ type UserServer struct{ votes *service.CoverVoteService }
 // The editing engine and its per-family permission resolvers are the SAME
 // instances the S2S face was set up with (wave 177) — one engine, two faces, so
 // the policy a proposal meets never depends on which door it came through.
-func SetupUser(app *fiber.App, votes *service.CoverVoteService, engine *editing.Engine, perms PermResolvers) huma.API {
+func SetupUser(app *fiber.App, votes *service.CoverVoteService, engine *editing.Engine, perms PermResolvers, claims *service.ClaimLifecycleService) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Catalog User API", "1.0.0")
@@ -51,6 +51,9 @@ func SetupUser(app *fiber.App, votes *service.CoverVoteService, engine *editing.
 
 	RegisterUserOps(api, votes)
 	RegisterUserEditOps(api, engine, perms)
+	// The claims face (wave 179): the same lifecycle service the S2S face drives,
+	// with the submitter, the tenant and the reviewer taken from the token.
+	RegisterUserClaimOps(api, claims)
 	return api
 }
 

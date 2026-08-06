@@ -39,16 +39,20 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "", "packets | emit")
+	mode := flag.String("mode", "", "packets | emit | panel-packets | panel-emit")
 	pairsPath := flag.String("pairs", "pairs.jsonl", "pair metadata JSONL (written by packets, read by emit)")
 	packetsPath := flag.String("packets", "packets.jsonl", "evidence packets JSONL for catalog-adjudicate (packets mode)")
 	verdictsPath := flag.String("verdicts", "", "verdicts JSONL from catalog-adjudicate (emit mode)")
 	worklistPath := flag.String("worklist", "worklist.jsonl", "merge worklist for catalog-dedup-batch (emit mode)")
 	reviewPath := flag.String("review", "review.txt", "human-review tail (emit mode)")
+	pairs2Path := flag.String("pairs2", "pairs2.jsonl", "panel pair metadata JSONL (written by panel-packets, read by panel-emit)")
+	packets2Path := flag.String("packets2", "packets2.jsonl", "panel vote packets JSONL (panel-packets mode)")
+	verdicts2Path := flag.String("verdicts2", "", "panel verdicts JSONL from catalog-adjudicate (panel-emit mode)")
+	residualPath := flag.String("residual", "residual.txt", "panel residual tail (panel-emit mode)")
 	flag.Parse()
 
 	switch *mode {
-	case "packets":
+	case "packets", "panel-packets":
 		_ = godotenv.Load("apps/api/.env")
 		cfg, err := config.Load()
 		if err != nil {
@@ -62,8 +66,30 @@ func main() {
 			os.Exit(1)
 		}
 		defer catalogDB.Close()
+		if *mode == "panel-packets" {
+			if *verdictsPath == "" {
+				fmt.Fprintln(os.Stderr, "-verdicts (round one) is required in panel-packets mode")
+				os.Exit(2)
+			}
+			if err := runPanelPackets(catalogDB.DB(), *pairsPath, *verdictsPath,
+				*pairs2Path, *packets2Path, os.Stdout); err != nil {
+				slog.Error("panel-packets", "error", err)
+				os.Exit(1)
+			}
+			return
+		}
 		if err := runPackets(catalogDB.DB(), *pairsPath, *packetsPath); err != nil {
 			slog.Error("packets", "error", err)
+			os.Exit(1)
+		}
+	case "panel-emit":
+		logger.Init("development")
+		if *verdicts2Path == "" {
+			fmt.Fprintln(os.Stderr, "-verdicts2 is required in panel-emit mode")
+			os.Exit(2)
+		}
+		if err := runPanelEmit(*pairs2Path, *verdicts2Path, *worklistPath, *residualPath, os.Stdout); err != nil {
+			slog.Error("panel-emit", "error", err)
 			os.Exit(1)
 		}
 	case "emit":
@@ -77,7 +103,7 @@ func main() {
 			os.Exit(1)
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "unknown -mode %q (packets | emit)\n", *mode)
+		fmt.Fprintf(os.Stderr, "unknown -mode %q (packets | emit | panel-packets | panel-emit)\n", *mode)
 		os.Exit(2)
 	}
 }

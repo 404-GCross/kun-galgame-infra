@@ -47,6 +47,11 @@ const (
 	// voice-actor claim — so its prompt leads with the family-member and
 	// similar-named-castmate traps instead of the double-casting one.
 	BucketCharacterPair Bucket = "character_pair"
+	// BucketCharacterPairStrict is the step-177b re-check panel over the
+	// wave-177 review tail: three votes per pair, each vote reading the same
+	// evidence under a different lens, judged by a stricter prompt that must
+	// name its merge grounds and treats variant rows as keep-apart by default.
+	BucketCharacterPairStrict Bucket = "character_pair_strict"
 )
 
 // ValidBucket reports whether b has a pinned prompt.

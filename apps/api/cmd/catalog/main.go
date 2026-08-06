@@ -216,9 +216,12 @@ func main() {
 	// one engine, one registry and one set of site overlays; only the actor's
 	// provenance differs (token-derived instead of body-asserted), so a second
 	// engine here would be a second policy universe waiting to disagree.
+	// …and, from wave 179, the SAME claim-lifecycle service: one state machine
+	// and one event ledger behind both faces, so a claim's history reads the
+	// same whether the transition arrived from a backend or from a browser.
 	catHandler.SetupUser(application.Fiber, coverVoteSvc, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,
-	})
+	}, claimSvc)
 
 	// NextMoe open API: serve the frozen public spec unauthenticated at its face
 	// root — the machine-readable contract itself must not need a key. Built ONCE
