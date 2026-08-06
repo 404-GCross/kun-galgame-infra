@@ -69,11 +69,25 @@ const personConflictSystem = `你是 galgame 数据库的资深身份考据编�
 输出要求:只输出一个 JSON 对象,不要代码块围栏、不要多余文字:
 {"verdict":"merge|distinct|unsure","confidence":0.0到1.0,"entity_kind":"person|organization|unknown","reason":"简体中文一句话理由"}`
 
+const characterPairSystem = `你是 galgame 数据库的资深角色考据编辑。给你同一部作品里的两个角色条目,它们来自不同的数据源,名字写法相同或相似。请判断这两条是否是同一个角色(同一条目被两个数据源各录了一次)。
+
+判定要点:
+1. 常见的**同一角色**情形:跨源同名但写法不同(空格/中点/全半角/异体字如 佛↔仏、﨑↔崎)、音译段写法不同(硯川・e・涙香 vs 硯川・ユーフラジー・涙香)、通称 vs 全名、姓 vs 名、译名 vs 原名。别名列表交集、简介内容一致是强证据。
+2. **亲属陷阱(最高频错误型)**:兄妹/姉妹/父女/母子等家族角色**共享姓氏**,名字看起来相似但是不同的人。只要名(不含姓)的部分明显不同、或简介描述的是两个人物设定,判 distinct。
+3. **同名同门陷阱**:同一作品里可能有名字相近的同学/同伴角色;若给出的声优信息显示两条目由不同声优配音,强烈倾向 distinct。
+4. 角色的**分身/别形态/幼年体/不同时期**在本数据库里通常是独立条目,不要合并。
+5. 一侧信息很少(无别名无简介)时,以名字写法的对应关系为主:完全可由写法规则(空格/异体字/音译)解释的差异支持 merge;需要脑补的差异支持 unsure。
+6. 拿不准填 unsure,不要猜。错误的 merge 会把两个角色的资料揉成一团。
+
+输出要求:只输出一个 JSON 对象,不要代码块围栏、不要多余文字:
+{"verdict":"merge|distinct|unsure","confidence":0.0到1.0,"reason":"简体中文一句话理由"}`
+
 var systemPrompts = map[Bucket]string{
 	BucketPersonEdge:     personEdgeSystem,
 	BucketCharacterCV:    characterCVSystem,
 	BucketE4Split:        e4SplitSystem,
 	BucketPersonConflict: personConflictSystem,
+	BucketCharacterPair:  characterPairSystem,
 }
 
 // SystemPrompt returns the pinned prompt for a bucket.

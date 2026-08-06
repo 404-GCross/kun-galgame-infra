@@ -41,6 +41,12 @@ const (
 	BucketCharacterCV    Bucket = "character_cv"
 	BucketE4Split        Bucket = "e4_split"
 	BucketPersonConflict Bucket = "person_conflict"
+	// BucketCharacterPair is the wave-177 cross-source co-resident lane
+	// (cmd/catalog-char-xsrc): two characters on the same work from different
+	// sources whose names fold together or look similar, WITHOUT a shared
+	// voice-actor claim — so its prompt leads with the family-member and
+	// similar-named-castmate traps instead of the double-casting one.
+	BucketCharacterPair Bucket = "character_pair"
 )
 
 // ValidBucket reports whether b has a pinned prompt.
