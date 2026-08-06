@@ -47,11 +47,12 @@ const onReview = async (hash: string, status: string, reason?: string) => {
   }
 }
 
-// Delete confirmation via KunModal (replaces native confirm()).
+// Delete confirmation lives in ImagesDeleteModal: it checks catalog for rows
+// that reference the hash and offers to detach them before the bytes go, so a
+// delete cannot silently leave a blank gallery behind.
 const delOpen = ref(false)
 const delHash = ref('')
 const delForce = ref(false)
-const delLoading = ref(false)
 
 const onDelete = (hash: string, force = false) => {
   delHash.value = hash
@@ -59,25 +60,10 @@ const onDelete = (hash: string, force = false) => {
   delOpen.value = true
 }
 
-const confirmDelete = async () => {
-  delLoading.value = true
-  try {
-    const res = await api.delete(
-      `/admin/image/${delHash.value}${delForce.value ? '?force=true' : ''}`
-    )
-    if (res.code === 0) {
-      useKunMessage('图片已删除', 'success')
-      await refreshList()
-      await refreshStats()
-    } else {
-      useKunMessage(res.message || '删除失败', 'error')
-    }
-  } finally {
-    delLoading.value = false
-    delOpen.value = false
-  }
+const onDeleted = async () => {
+  await refreshList()
+  await refreshStats()
 }
-
 </script>
 
 <template>
@@ -170,48 +156,11 @@ const confirmDelete = async () => {
       </div>
     </template>
 
-    <KunModal v-model="delOpen">
-    <div class="space-y-4">
-      <h2 class="text-xl font-bold text-foreground">
-        {{ delForce ? '硬删除图片' : '软删除图片' }}
-      </h2>
-      <p
-        :class="[
-          'rounded-lg p-3 text-sm',
-          delForce
-            ? 'bg-danger-50 text-danger'
-            : 'bg-warning-50 text-warning-700',
-        ]"
-      >
-        {{
-          delForce
-            ? '物理删除 S3 对象与数据库行，不可恢复。确认继续？'
-            : '软删除：30 天后 GC 会物理删除。确认继续？'
-        }}
-      </p>
-      <div class="flex justify-end gap-3">
-        <KunButton
-          color="default"
-          variant="flat"
-          :disabled="delLoading"
-          @click="delOpen = false"
-        >
-          取消
-        </KunButton>
-        <KunButton
-          :color="delForce ? 'danger' : 'warning'"
-          :disabled="delLoading"
-          @click="confirmDelete"
-        >
-          <KunIcon
-            v-if="delLoading"
-            name="lucide:loader-circle"
-            class="mr-2 size-4 animate-spin"
-          />
-          {{ delForce ? '确认硬删除' : '确认软删除' }}
-        </KunButton>
-      </div>
-    </div>
-    </KunModal>
+    <ImagesDeleteModal
+      v-model="delOpen"
+      :hash="delHash"
+      :force="delForce"
+      @deleted="onDeleted"
+    />
   </div>
 </template>

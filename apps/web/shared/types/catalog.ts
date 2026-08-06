@@ -22,3 +22,7 @@ export type CatalogDecideCandidateData = Schemas['DecideCandidateData']
 export type CatalogDetachNameData = Schemas['DetachNameData']
 export type CatalogProposalActionData = Schemas['ProposalActionData']
 export type CatalogRefActionData = Schemas['RefActionData']
+export type CatalogImageReferenceItem = Schemas['ImageReferenceItem']
+export type CatalogImageReferencesData = Schemas['ImageReferencesData']
+export type CatalogDetachImageReferencesData =
+  Schemas['DetachImageReferencesData']

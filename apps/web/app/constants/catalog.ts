@@ -116,3 +116,15 @@ export const CATALOG_SOURCE_LABELS: Record<number, string> = {
   10: 'Twitter',
   11: 'Pixiv'
 }
+
+// The catalog rows that can hold an image hash (the imagerefs registry on the
+// Go side). Shown in the image console's delete modal so an operator reads
+// "角色胸像 #123" instead of a raw kind token.
+export const CATALOG_IMAGE_REF_KIND_LABELS: Record<string, string> = {
+  work_cover: '封面',
+  work_screenshot: '截图',
+  character_bust: '角色胸像',
+  character_figure: '角色立绘',
+  label_logo: '会社 logo',
+  person_photo: '人物照片'
+}
