@@ -220,3 +220,67 @@ func TestClassifyImportedTermPurpose(t *testing.T) {
 		}
 	}
 }
+
+// TestPurposeColumnOnPopulatedTable reproduces the PRODUCTION upgrade path: an
+// existing trust_term with rows but no purpose column, then this migration on
+// top of it. AutoMigrate emits `ADD COLUMN … NOT NULL` with no default, which
+// Postgres refuses on a populated table — and since the trust service waits on
+// migrate-trust (compose depends_on service_completed_successfully), that
+// failure would keep trust from starting at all. A column addition would have
+// been an outage, so the populated case gets its own test; running the
+// migration only against the empty database it provisions proves nothing here.
+func TestPurposeColumnOnPopulatedTable(t *testing.T) {
+	db := testDB
+	if err := db.Exec("ALTER TABLE trust_term DROP COLUMN IF EXISTS purpose").Error; err != nil {
+		t.Fatalf("drop column: %v", err)
+	}
+	if err := db.Exec("TRUNCATE trust_term RESTART IDENTITY CASCADE").Error; err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	if err := db.Exec(
+		`INSERT INTO trust_term (term_norm, kind, note, is_deprecated)
+		 VALUES ('pre-a', 0, '反动词库.txt', false), ('pre-b', 0, NULL, false)`).Error; err != nil {
+		t.Fatalf("seed pre-existing rows: %v", err)
+	}
+
+	if err := Run(db); err != nil {
+		t.Fatalf("migration failed on a populated table: %v", err)
+	}
+
+	// Pre-existing rows land on the meaningful zero, and the provenance backfill
+	// still reclassifies the compliance one.
+	for _, tc := range []struct {
+		term string
+		want int16
+	}{
+		{"pre-a", model.TermPurposeCompliance},
+		{"pre-b", model.TermPurposeAbuse},
+	} {
+		// Read the scalar rather than the model: this test drops and re-adds a
+		// column, and a SELECT * through the prepared-statement cache trips
+		// "cached plan must not change result type" — an artifact of the DDL
+		// churn here, not of the migration (production never drops the column).
+		var got int16
+		if err := db.Raw("SELECT purpose FROM trust_term WHERE term_norm = ?", tc.term).
+			Scan(&got).Error; err != nil {
+			t.Fatalf("reload %s: %v", tc.term, err)
+		}
+		if got != tc.want {
+			t.Errorf("%s purpose = %d, want %d", tc.term, got, tc.want)
+		}
+	}
+
+	// The DDL default must NOT survive: purpose is an intent column whose zero is
+	// meaningful (章程 ruling 4), and a lingering default is exactly the GORM
+	// zero-value trap — it would silently supply 0 for a caller that meant to
+	// write compliance and passed the field through a partial update.
+	var colDefault *string
+	if err := db.Raw(`SELECT column_default FROM information_schema.columns
+	                   WHERE table_name = 'trust_term' AND column_name = 'purpose'`).
+		Scan(&colDefault).Error; err != nil {
+		t.Fatalf("read column_default: %v", err)
+	}
+	if colDefault != nil {
+		t.Fatalf("purpose kept a DDL default (%q); the zero-value trap is open", *colDefault)
+	}
+}

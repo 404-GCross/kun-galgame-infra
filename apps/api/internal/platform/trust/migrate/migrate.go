@@ -17,6 +17,9 @@ import (
 // report reasons. Idempotent: safe to run on every deploy and repeatedly
 // against the same database.
 func Run(db *gorm.DB) error {
+	if err := preAutoMigrate(db); err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(
 		// Reason before report (report.reason_id FK); review_item before both
 		// report (review_item_id, no FK) and disposition (review_item_id FK).
@@ -83,6 +86,38 @@ func classifyImportedTermPurpose(db *gorm.DB) error {
 		Where("note IN ? AND purpose <> ?", compliancePurposeSources, model.TermPurposeCompliance).
 		Update("purpose", model.TermPurposeCompliance).Error; err != nil {
 		return fmt.Errorf("classify imported term purpose: %w", err)
+	}
+	return nil
+}
+
+// preAutoMigrate runs BEFORE AutoMigrate, for the one thing AutoMigrate cannot
+// do: add a NOT NULL column to a table that already has rows.
+//
+// Postgres rejects `ADD COLUMN … NOT NULL` without a default on a populated
+// table, and trust_term carries 46k+ rows in production. AutoMigrate emits
+// exactly that statement, so without this the migration fails — and because the
+// trust service waits on migrate-trust (compose depends_on
+// service_completed_successfully), a failed migration means trust never starts.
+// A schema addition would have become an outage.
+//
+// The column is therefore added here WITH a default (so existing rows are
+// backfilled) and the default is then DROPPED, which is what keeps 章程 ruling 4
+// satisfied: purpose is an intent column whose zero is meaningful, so no DDL
+// default may survive to silently supply it on future inserts (the GORM
+// zero-value default trap). The DO block makes it a no-op on a fresh database
+// where the table does not exist yet.
+func preAutoMigrate(db *gorm.DB) error {
+	const addPurpose = `
+		DO $$
+		BEGIN
+		    IF to_regclass('trust_term') IS NOT NULL THEN
+		        ALTER TABLE trust_term
+		            ADD COLUMN IF NOT EXISTS purpose smallint NOT NULL DEFAULT 0;
+		        ALTER TABLE trust_term ALTER COLUMN purpose DROP DEFAULT;
+		    END IF;
+		END $$;`
+	if err := db.Exec(addPurpose).Error; err != nil {
+		return fmt.Errorf("pre-migrate trust_term.purpose: %w", err)
 	}
 	return nil
 }
