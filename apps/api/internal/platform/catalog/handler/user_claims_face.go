@@ -37,14 +37,19 @@ import (
 //     resolve catalog.claim.review, exactly as the S2S face resolves the
 //     asserted actor's. The DB permission overlay hot-swaps that resolver, so a
 //     grant made in the permission console takes effect on the next request.
-//   - owner actions (submit/publish/withdraw) — the caller must BE the entry's
-//     owner (catalog_work.owner_user_id, stamped write-once at mint / claim
-//     birth). This is the tooth the S2S plane never had: there the asserted uid
-//     was taken on faith and only the tenant was checked, so any of a site's
-//     users could have been made to move any of that site's claims. On a face
-//     where the uid cannot be asserted, checking it is free.
+//   - owner actions (submit/publish/withdraw) — take it if it is free, refuse it
+//     if it is somebody else's. A claim already owned by another user is a 403;
+//     an UNOWNED claim is allowed and adopts the caller as its owner
+//     (catalog_work.owner_user_id, write-once) in the same statement. The second
+//     half is the product's main gesture, not a leniency: the registry's bulk is
+//     machine-imported mirror stock sitting in `draft` with no owner, and the
+//     forum wizard's "claim this game" is a person calling `publish` on one of
+//     them — refusing it would have 403'd the whole feature. The first half is
+//     the tooth the S2S plane never had: there the asserted uid was taken on
+//     faith and only the tenant was checked, so any of a site's users could have
+//     been made to move any of that site's claims.
 //   - claim (none→draft) — any authenticated user, because the action IS the
-//     birth of the ownership the previous bullet checks.
+//     birth of a claim on an unanchored work; it stamps ownership the same way.
 //
 // The tenant is passed to the service for every action, review ones included,
 // so the existing tenancy check answers a cross-tenant call with a 403 without
@@ -70,7 +75,7 @@ func RegisterUserClaimOps(api huma.API, lifecycle *service.ClaimLifecycleService
 	huma.Register(api, huma.Operation{
 		OperationID: "actOnCatalogClaimUser", Method: http.MethodPost,
 		Path:    UserPrefix + "/works/{id}/claim-actions/{action}",
-		Summary: "Move a claim through its lifecycle AS THE BEARER TOKEN'S OWN USER: claim / submit / publish / withdraw (the token's user must be the entry's owner) or approve / decline / ban / unban (the token's roles must carry catalog.claim.review). 409 on an illegal transition, echoing the current state; 403 on another user's or another tenant's claim",
+		Summary: "Move a claim through its lifecycle AS THE BEARER TOKEN'S OWN USER: claim / submit / publish / withdraw (the token's user must be the entry's owner — or its FIRST CLAIMANT when the entry is unowned, in which case the action adopts it: this is how a person claims one of the machine-imported drafts) or approve / decline / ban / unban (the token's roles must carry catalog.claim.review). 409 on an illegal transition, echoing the current state; 403 on ANOTHER user's claim or another tenant's",
 		Tags:    tags,
 	}, s.act)
 	huma.Register(api, huma.Operation{
@@ -143,9 +148,9 @@ func (s *UserClaimServer) act(ctx context.Context, in *userClaimActionInput) (*c
 		ProductWorkID: in.Body.ProductWorkID,
 		ActorUID:      uid,
 		Reason:        in.Body.Reason,
-		// Personal ownership is checked for the owner actions only; the service
-		// ignores the flag for `claim` (no owner exists yet) and for the review
-		// actions, whose authority was just resolved above.
+		// Personal ownership is settled for the owner actions only; the service
+		// ignores the flag for `claim` (which stamps ownership by itself) and for
+		// the review actions, whose authority was just resolved above.
 		RequireOwner: !review,
 	})
 	if err != nil {

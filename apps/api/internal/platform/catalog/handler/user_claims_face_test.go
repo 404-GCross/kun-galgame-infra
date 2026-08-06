@@ -201,10 +201,11 @@ func TestUserClaims_SubmitDerivesActorAndSite(t *testing.T) {
 	assert.Equal(t, fiber.StatusUnprocessableEntity, status, string(raw))
 }
 
-// TestUserClaims_OwnerActionsNeedOwnership is the wave's new tooth. The S2S
-// plane checked only the tenant, so any of a site's users could be made to move
-// any of that site's claims; here the uid IS the token, so the entry's stamped
-// owner is the only one who can move it.
+// TestUserClaims_OwnerActionsNeedOwnership is the wave's new tooth, on a claim
+// that already HAS an owner. The S2S plane checked only the tenant, so any of a
+// site's users could be made to move any of that site's claims; here the uid IS
+// the token, so a taken entry is its owner's alone. (A FREE entry is the other
+// half of the rule and is the next test's subject.)
 func TestUserClaims_OwnerActionsNeedOwnership(t *testing.T) {
 	db := openCatalogTestDB(t)
 	resetClaims(t, db)
@@ -246,18 +247,53 @@ func TestUserClaims_OwnerActionsNeedOwnership(t *testing.T) {
 	status, raw = userEditReq(t, app, "POST", userClaimActionPath(work, "submit"), owner, `{}`)
 	assert.Equal(t, fiber.StatusConflict, status, string(raw))
 
-	// An unowned claim (a row from before ownership was a column) is nobody's to
-	// move on this face.
-	orphan := seedClaimedWork(t, db, model.ClaimStateDraft, 0)
-	status, raw = userEditReq(t, app, "POST", userClaimActionPath(orphan, "publish"), owner, `{}`)
-	assert.Equal(t, fiber.StatusForbidden, status, string(raw))
-
 	// The subject refusals are the service's: an unknown action is a 400 and an
 	// unknown work a 404.
 	status, _ = userEditReq(t, app, "POST", userClaimActionPath(work, "annihilate"), owner, `{}`)
 	assert.Equal(t, fiber.StatusBadRequest, status)
 	status, _ = userEditReq(t, app, "POST", userClaimActionPath(9_000_179, "withdraw"), owner, `{}`)
 	assert.Equal(t, fiber.StatusNotFound, status)
+}
+
+// TestUserClaims_FirstClaimantAdoptsAFreeDraft is the OTHER half of the owner
+// rule, and the half the product actually runs on: the registry's bulk is
+// machine-imported mirror stock sitting in `draft` with no owner (prod holds
+// ~53k such kungal drafts), and the wizard's "claim this game" is a person
+// publishing one of them. It must work, and it must take the entry.
+func TestUserClaims_FirstClaimantAdoptsAFreeDraft(t *testing.T) {
+	db := openCatalogTestDB(t)
+	resetClaims(t, db)
+	app := userClaimApp(db)
+	draft := seedClaimedWork(t, db, model.ClaimStateDraft, 0)
+
+	var before *int64
+	require.NoError(t, db.Raw(
+		`SELECT owner_user_id FROM catalog_work WHERE id = ?`, draft).Scan(&before).Error)
+	require.Nil(t, before, "the imported draft starts ownerless")
+
+	// A plain user's token — no roles, no prior relationship to the row.
+	status, raw := userEditReq(t, app, "POST", userClaimActionPath(draft, "publish"),
+		userToken(t, 851, ScopeCatalogEdit, "kungal-client"), `{}`)
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+	assert.Equal(t, model.ClaimStateKeyLive, claimStateOf(t, db, draft))
+
+	var after *int64
+	require.NoError(t, db.Raw(
+		`SELECT owner_user_id FROM catalog_work WHERE id = ?`, draft).Scan(&after).Error)
+	require.NotNil(t, after, "moving a free claim adopts it")
+	assert.EqualValues(t, 851, *after, "the owner is the token's id claim")
+
+	// Ownership took hold: the next person is fenced out of the same row.
+	status, raw = userEditReq(t, app, "POST", userClaimActionPath(draft, "withdraw"),
+		userToken(t, 852, ScopeCatalogEdit, "kungal-client"), `{}`)
+	assert.Equal(t, fiber.StatusForbidden, status, string(raw))
+	assert.Equal(t, model.ClaimStateKeyLive, claimStateOf(t, db, draft), "the refusal moved nothing")
+
+	// …and the adopter still owns it.
+	status, raw = userEditReq(t, app, "POST", userClaimActionPath(draft, "withdraw"),
+		userToken(t, 851, ScopeCatalogEdit, "kungal-client"), `{}`)
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+	assert.Equal(t, model.ClaimStateKeyDraft, claimStateOf(t, db, draft))
 }
 
 // TestUserClaims_ReviewActionsNeedThePermission: the review half's authority is

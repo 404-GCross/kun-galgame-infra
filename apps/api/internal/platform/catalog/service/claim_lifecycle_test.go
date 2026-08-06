@@ -343,9 +343,10 @@ func ownerOfWork(t *testing.T, workID int64) *int64 {
 	return got
 }
 
-// TestClaimRequireOwner pins the user-face tooth: with RequireOwner set, the
-// three owner actions are refused unless the caller IS the entry's stamped
-// owner — and the S2S posture (the flag unset) is untouched by any of it.
+// TestClaimRequireOwner pins the user-face rule: with RequireOwner set, the
+// three owner actions TAKE a free claim (adopting the caller as its owner) and
+// REFUSE one that already belongs to somebody else — and the S2S posture (the
+// flag unset) is untouched by any of it, adoption included.
 func TestClaimRequireOwner(t *testing.T) {
 	s := newLifecycle(t)
 	work := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "所有者テスト")
@@ -391,19 +392,52 @@ func TestClaimRequireOwner(t *testing.T) {
 		t.Fatalf("the S2S withdraw: %v", got)
 	}
 
-	// A work with NO owner refuses every owner action on the user face: an entry
-	// nobody is recorded as having created is nobody's to move there.
+	// A work with NO owner is FREE, and moving it takes it: this is the mirror
+	// stock the product's "claim this game" gesture acts on (prod holds tens of
+	// thousands of such kungal drafts), so refusing it would refuse the feature.
 	orphan := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "無主テスト")
 	claimWork(t, orphan.ID, "kungal", 4180)
 	if err := testDB.Exec(`UPDATE catalog_work SET claim_state = ? WHERE id = ?`,
 		model.ClaimStateDraft, orphan.ID).Error; err != nil {
 		t.Fatal(err)
 	}
+	if ownerOfWork(t, orphan.ID) != nil {
+		t.Fatal("the fixture must start ownerless")
+	}
+	act(t, s, orphan.ID, ClaimActionPublish, ClaimActionParams{
+		Site: "kungal", ActorUID: 73, RequireOwner: true,
+	})
+	if got := claimStateOfWork(t, orphan.ID); got == nil || *got != model.ClaimStateLive {
+		t.Fatalf("the first claimant's publish: %v", got)
+	}
+	adopted := ownerOfWork(t, orphan.ID)
+	if adopted == nil || *adopted != 73 {
+		t.Fatalf("publishing a free claim must adopt it: %v", adopted)
+	}
+
+	// …and from that moment it is taken: the next person meets the first rule.
 	_, err = s.Act(context.Background(), ClaimActionParams{
-		WorkID: orphan.ID, Action: ClaimActionPublish, Site: "kungal", ActorUID: 71, RequireOwner: true,
+		WorkID: orphan.ID, Action: ClaimActionWithdraw, Site: "kungal", ActorUID: 74, RequireOwner: true,
 	})
 	if !errors.As(err, &notOwned) {
-		t.Fatalf("an unowned work's publish: %v", err)
+		t.Fatalf("a second claimant after adoption: %v", err)
+	}
+	if got := claimStateOfWork(t, orphan.ID); got == nil || *got != model.ClaimStateLive {
+		t.Fatalf("the refusal moved the adopted claim: %v", got)
+	}
+
+	// The S2S plane adopts NOTHING: without the flag, moving an ownerless claim
+	// leaves it ownerless, because there the uid is an assertion and a machine
+	// sync must not name a person the owner of anything.
+	free := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "S2S無主")
+	claimWork(t, free.ID, "kungal", 4181)
+	if err := testDB.Exec(`UPDATE catalog_work SET claim_state = ? WHERE id = ?`,
+		model.ClaimStateDraft, free.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	act(t, s, free.ID, ClaimActionPublish, ClaimActionParams{Site: "kungal", ActorUID: 75})
+	if owner := ownerOfWork(t, free.ID); owner != nil {
+		t.Fatalf("the S2S path must not stamp an owner: %v", *owner)
 	}
 
 	// …and the review actions ignore the flag entirely: their authority was
