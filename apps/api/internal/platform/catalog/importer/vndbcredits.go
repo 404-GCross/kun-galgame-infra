@@ -118,6 +118,11 @@ func (im *Importer) runVNDBCredits() (Stats, error) {
 			roleCounts[r.Role+" (unmapped)"]++
 			continue
 		}
+		// The staff→其他 bucket refines by note (see staffnotes.go). Planning
+		// the refined role here — not just backfilling moved rows — is what
+		// keeps a re-import from re-inserting the 其他 edge a backfill moved:
+		// the unique index includes role_id, so only an identical plan conflicts.
+		roleID = RefineVNDBStaffRole(roleID, r.Note)
 		roleCounts[r.Role]++
 		plans = append(plans, creditPlan{
 			workID: r.WorkID, cnExtID: strconv.Itoa(r.AID), roleID: roleID, note: r.Note,

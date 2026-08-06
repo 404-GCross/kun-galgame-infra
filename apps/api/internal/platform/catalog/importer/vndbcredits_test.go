@@ -141,3 +141,32 @@ func TestVNDBCreditsWave(t *testing.T) {
 	assert.Equal(t, 4, st2.Already)
 	assert.Equal(t, int64(3), scalarInt(t, `SELECT count(*) FROM catalog_credit WHERE source_id=2`), "still exactly 3 credits")
 }
+
+// The staff catch-all refines by note at plan time (staffnotes.go): a noted
+// engine credit lands on 程序, an unmapped note stays in 其他, and every
+// refinement target must be a seeded vocabulary row — a typo'd id here would
+// otherwise only surface as an FK error mid-import.
+func TestVNDBCreditsWave_RefinesStaffNotes(t *testing.T) {
+	clean(t)
+	work := seedVNDBWork(t, "v200")
+	seedVNDBStaff(t, "s3", "ja")
+	seedVNDBAlias(t, 30, "s3", "かつらぎ", "")
+	seedVNDBAlias(t, 31, "s3", "ムービー屋", "")
+	seedVNStaff(t, "v200", 30, "staff", "Programming") // refined → 程序
+	seedVNStaff(t, "v200", 31, "staff", "OP movie")    // unmapped note → 其他
+
+	st, err := New(testDB, nil, Options{Source: "vndb"}).Run("vndb")
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.CreditsWritten)
+
+	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
+		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=238 AND note='Programming'`, work)))
+	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
+		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=2 AND note='OP movie'`, work)))
+
+	for note, roleID := range StaffNoteRoleTable() {
+		assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
+			`SELECT count(*) FROM catalog_role WHERE id=%d`, roleID)),
+			"note %q targets a role id absent from the seeded vocabulary", note)
+	}
+}
