@@ -40,11 +40,12 @@ const FACES = [
 
 // Total operations across the frozen specs — a coverage guard so a spec edit
 // that adds/drops an endpoint without a model rebuild fails loudly.
-// catalog 23 (prior 12 + A2-1b taxonomy lists 4 + A2-1c calendar buckets 3 +
+// catalog 24 (prior 12 + A2-1b taxonomy lists 4 + A2-1c calendar buckets 3 +
 // A2-1d works/search 1 + wave-149b stats 1 + wave-149c series detail 1 +
-// the series browse lane 1). The galgame face's 26 ops left the count at wave 146
-// when that face was delisted (46 → 20).
-const EXPECTED_OPERATION_COUNT = 23
+// the series browse lane 1 + wave-174 the release-grain timeline 1). The
+// galgame face's 26 ops left the count at wave 146 when that face was delisted
+// (46 → 20).
+const EXPECTED_OPERATION_COUNT = 24
 
 const refName = (ref) => ref.split('/').pop()
 

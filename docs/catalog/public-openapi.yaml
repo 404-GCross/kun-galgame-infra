@@ -294,6 +294,27 @@ components:
         - code
         - message
       type: object
+    EnvelopePublicReleaseFeedData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePublicReleaseFeedData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PublicReleaseFeedData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopePublicResolveData:
       additionalProperties: false
       properties:
@@ -1632,6 +1653,70 @@ components:
         - kind
         - date
         - refs
+      type: object
+    PublicReleaseFeedData:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        items:
+          items:
+            $ref: "#/components/schemas/PublicReleaseFeedItem"
+          type:
+            - array
+            - "null"
+        next_cursor:
+          type:
+            - string
+            - "null"
+      required:
+        - count
+        - items
+        - next_cursor
+      type: object
+    PublicReleaseFeedItem:
+      additionalProperties: false
+      properties:
+        date:
+          type:
+            - string
+            - "null"
+        id:
+          format: int64
+          type: integer
+        is_first:
+          type: boolean
+        kind:
+          description: default|digital|physical|trial|patch
+          type: string
+        lang:
+          type: string
+        platform:
+          type: string
+        platforms:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        refs:
+          items:
+            $ref: "#/components/schemas/PublicCatalogRef"
+          type:
+            - array
+            - "null"
+        title:
+          type: string
+        work:
+          $ref: "#/components/schemas/PublicWorkListItem"
+      required:
+        - id
+        - kind
+        - date
+        - refs
+        - is_first
+        - work
       type: object
     PublicResolveData:
       additionalProperties: false
@@ -3030,6 +3115,125 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Keyset feed of id-convergence (merge) events for stored-id cleanup; filter by entity_type
+      tags:
+        - catalog-public
+  /v1/catalog/releases:
+    get:
+      description: "The calendar one grain down. /v1/catalog/calendar places a WORK in the month of its EARLIEST release and shows it once, so a Switch port, a Steam re-issue or a Chinese localisation of a title released years ago is invisible there by construction. Here every release row is its own item, on its own date. is_first tells the two apart: true = the work's earliest dated release (a title genuinely coming out), false = a later edition of something already released — computed over the work's whole dated-release set, so it does not change when you narrow the feed. Each item carries the parent work as a works-list row (include= and all). Population: releases of LIVE galgame works whose date is known to at least the MONTH. Year-only and undated releases are deliberately absent — they cannot be ordered against a real date, and they already have homes in /v1/catalog/calendar/pending and /v1/catalog/calendar/tba. Carries a feed-level ETag (count + newest created_at + highest release id over the whole filtered set): an If-None-Match hit 304s before any page is loaded."
+      operationId: listCatalogReleasesPublic
+      parameters:
+        - description: date_desc (default) = newest first, the feed reading; date_asc walks forwards from the earliest release. The tiebreak inside one date is id ASC in BOTH directions. Keyset-paged over (date, id) — a cursor minted in one direction is refused in the other
+          explode: false
+          in: query
+          name: sort
+          schema:
+            description: date_desc (default) = newest first, the feed reading; date_asc walks forwards from the earliest release. The tiebreak inside one date is id ASC in BOTH directions. Keyset-paged over (date, id) — a cursor minted in one direction is refused in the other
+            enum:
+              - date_desc
+              - date_asc
+            type: string
+        - description: "YYYY-MM-DD, INCLUSIVE lower bound on the release's own date. Note the precision rule: a month-precision release is addressed at its month's START (2024-06 sits at 2024-06-00, i.e. before 2024-06-01), so date_from=2024-06-01 excludes it while date_from=2024-05-31 includes it. A malformed value is a 400"
+          explode: false
+          in: query
+          name: date_from
+          schema:
+            description: "YYYY-MM-DD, INCLUSIVE lower bound on the release's own date. Note the precision rule: a month-precision release is addressed at its month's START (2024-06 sits at 2024-06-00, i.e. before 2024-06-01), so date_from=2024-06-01 excludes it while date_from=2024-05-31 includes it. A malformed value is a 400"
+            type: string
+        - description: YYYY-MM-DD, INCLUSIVE upper bound, same ordinal and the same precision rule as date_from. A malformed value is a 400
+          explode: false
+          in: query
+          name: date_to
+          schema:
+            description: YYYY-MM-DD, INCLUSIVE upper bound, same ordinal and the same precision rule as date_from. A malformed value is a 400
+            type: string
+        - description: "Original-language gate on the PARENT WORK: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty feed, never a 400. This is the work's original language, NOT the language of the release — for that use lang= below"
+          explode: false
+          in: query
+          name: olang
+          schema:
+            description: "Original-language gate on the PARENT WORK: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty feed, never a 400. This is the work's original language, NOT the language of the release — for that use lang= below"
+            type: string
+        - description: "RELEASE-language gate: comma-separated BCP-47 tags, or 'all'. Default (absent) = NO gate. Matched over COALESCE(release.lang, work.olang): the store-SKU lanes (dlsite / getchu) create one release per work and record no language of its own, and such a SKU is by construction in its work's original language — so lang=ja matches them, while the item still prints the raw (possibly empty) release lang. An OPEN vocabulary: an unknown tag is an empty feed, never a 400"
+          explode: false
+          in: query
+          name: lang
+          schema:
+            description: "RELEASE-language gate: comma-separated BCP-47 tags, or 'all'. Default (absent) = NO gate. Matched over COALESCE(release.lang, work.olang): the store-SKU lanes (dlsite / getchu) create one release per work and record no language of its own, and such a SKU is by construction in its work's original language — so lang=ja matches them, while the item still prints the raw (possibly empty) release lang. An OPEN vocabulary: an unknown tag is an empty feed, never a 400"
+            type: string
+        - description: "Comma-separated CLOSED vocabulary: default,digital,physical,trial,patch — the five strings each item's kind key prints. An unknown token is a 400. DEFAULT (absent) = default,digital,physical ONLY: this is a 发售动态 surface, so demos and translation patches are EXCLUDED unless you ask for them. Pass kind=default,digital,physical,trial,patch for the genuinely unfiltered feed, or kind=patch to watch localisations land"
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: "Comma-separated CLOSED vocabulary: default,digital,physical,trial,patch — the five strings each item's kind key prints. An unknown token is a 400. DEFAULT (absent) = default,digital,physical ONLY: this is a 发售动态 surface, so demos and translation patches are EXCLUDED unless you ask for them. Pass kind=default,digital,physical,trial,patch for the genuinely unfiltered feed, or kind=patch to watch localisations land"
+            type: string
+        - description: Gate on the release's official flag; absent = no gate. The flag is written by the VNDB release lane only, where false means a fan translation or unofficial edition — a row WITHOUT the key counts as OFFICIAL, because every other lane materialises store SKUs (dlsite worknos, getchu product pages) which are official by construction. official=true therefore drops only the explicitly-unofficial rows; official=false selects exactly those
+          explode: false
+          in: query
+          name: official
+          schema:
+            description: Gate on the release's official flag; absent = no gate. The flag is written by the VNDB release lane only, where false means a fan translation or unofficial edition — a row WITHOUT the key counts as OFFICIAL, because every other lane materialises store SKUs (dlsite worknos, getchu product pages) which are official by construction. official=true therefore drops only the explicitly-unofficial rows; official=false selects exactly those
+            enum:
+              - "true"
+              - "false"
+            type: string
+        - description: "vndb platform code (win/and/ios/…) matched against the release's PRIMARY platform — the release leg of the works-list filter of the same name, verbatim. A release's platforms[] display list is not filtered on. OPEN vocabulary: an unknown code is an empty feed, never a 400"
+          explode: false
+          in: query
+          name: platform
+          schema:
+            description: "vndb platform code (win/and/ios/…) matched against the release's PRIMARY platform — the release leg of the works-list filter of the same name, verbatim. A release's platforms[] display list is not filtered on. OPEN vocabulary: an unknown code is an empty feed, never a 400"
+            type: string
+        - description: "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis on the parent work (the values claimed_by.content_limit renders), gating FEED MEMBERSHIP and the count alike. An unknown token is a 400 (a CLOSED vocabulary, unlike olang / lang / platform above). Absent = no gate (both values). NOT content_rating: that is the AGE axis (what the GAME is rated), this is whether the material you would RENDER is safe to publish. It rides in the ETag population key, so an sfw-gated and an ungated caller never share a validator"
+          explode: false
+          in: query
+          name: content_limit
+          schema:
+            description: "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis on the parent work (the values claimed_by.content_limit renders), gating FEED MEMBERSHIP and the count alike. An unknown token is a 400 (a CLOSED vocabulary, unlike olang / lang / platform above). Absent = no gate (both values). NOT content_rating: that is the AGE axis (what the GAME is rated), this is whether the material you would RENDER is safe to publish. It rides in the ETag population key, so an sfw-gated and an ungated caller never share a validator"
+            type: string
+        - description: Opaque keyset cursor from a prior next_cursor; omit for the first page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque keyset cursor from a prior next_cursor; omit for the first page
+            type: string
+        - description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
+            format: int64
+            type: integer
+        - description: true/1 = include releases of r18 works (default false = dropped)
+          explode: false
+          in: query
+          name: nsfw
+          schema:
+            description: true/1 = include releases of r18 works (default false = dropped)
+            type: boolean
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim, applied to each item's attached work block (unknown tokens ignored). The RELEASE's own refs[] are always present and are not affected by this parameter"
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim, applied to each item's attached work block (unknown tokens ignored). The RELEASE's own refs[] are always present and are not affected by this parameter"
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePublicReleaseFeedData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Release-grain new-releases timeline: every dated release row, ports and re-editions included (date keyset)"
       tags:
         - catalog-public
   /v1/catalog/resolve:
