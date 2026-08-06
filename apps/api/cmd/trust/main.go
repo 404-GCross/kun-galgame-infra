@@ -106,9 +106,12 @@ func main() {
 	// degraded WITHOUT dialing (fail-closed; the queue never backs up). It also
 	// records Tier0 word-list matches into tier0_matched before each gateway call
 	// (step 05; pure recording, never changes status).
+	// KUN_TRUST_SCAN_MODE=live (wave 07) additionally lets a FLAGGED verdict open an
+	// ai_text review item and queue a hide disposition for the callback worker to
+	// deliver; anything else keeps the original record-only shadow posture.
 	aiGateway := service.NewAIGatewayClient(cfg.AIClient.BaseURL, cfg.AIClient.ClientID, cfg.AIClient.ClientSecret)
-	scanWorker := service.NewScanWorker(trustDB.DB(), aiGateway, termSvc)
-	slog.Info("trust scan worker", "gateway_configured", aiGateway.Configured())
+	scanWorker := service.NewScanWorker(trustDB.DB(), aiGateway, termSvc, service.WithScanMode(cfg.TrustScanMode))
+	slog.Info("trust scan worker", "gateway_configured", aiGateway.Configured(), "mode", cfg.TrustScanMode)
 
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())

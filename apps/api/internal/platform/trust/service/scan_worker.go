@@ -35,10 +35,17 @@ import (
 // tier0_matched. This is PURE RECORDING — it never changes status semantics
 // (scored/degraded stays gateway-driven) and never enqueues (the shadow
 // invariant is untouched). It runs even on the env-empty degraded drain.
+//
+// LIVE MODE (wave 07, doc 18 §6 P2): with mode=ScanModeLive a FLAGGED verdict
+// additionally opens an ai_text review item and queues a hide disposition
+// (enforceFlagged), inside the same transaction as the verdict — so a subject is
+// never left scored-but-unenforced by a crash between the two. Shadow behaviour
+// is byte-for-byte unchanged; the mode is startup configuration, never per-row.
 type ScanWorker struct {
 	db        *gorm.DB
 	gateway   ScanGateway
 	tier0     Tier0Matcher
+	mode      int16
 	batchSize int
 	interval  time.Duration
 	now       func() time.Time
@@ -51,16 +58,41 @@ type Tier0Matcher interface {
 	Tier0Matches(ctx context.Context, site, text string) ([]string, error)
 }
 
-// NewScanWorker builds the worker with production defaults. tier0 may be nil
-// (then tier0_matched is left NULL = not evaluated).
-func NewScanWorker(db *gorm.DB, gateway ScanGateway, tier0 Tier0Matcher) *ScanWorker {
-	return &ScanWorker{
+// NewScanWorker builds the worker with production defaults, in shadow mode.
+// tier0 may be nil (then tier0_matched is left NULL = not evaluated). Shadow is
+// the default so that merely deploying wave 07 changes nothing: enforcement is
+// opted into explicitly via WithScanMode / KUN_TRUST_SCAN_MODE.
+func NewScanWorker(db *gorm.DB, gateway ScanGateway, tier0 Tier0Matcher, opts ...ScanWorkerOption) *ScanWorker {
+	w := &ScanWorker{
 		db:        db,
 		gateway:   gateway,
 		tier0:     tier0,
+		mode:      model.ScanModeShadow,
 		batchSize: scanBatchSize,
 		interval:  scanInterval,
 		now:       time.Now,
+	}
+	for _, o := range opts {
+		o(w)
+	}
+	return w
+}
+
+// ScanWorkerOption configures an optional worker behaviour.
+type ScanWorkerOption func(*ScanWorker)
+
+// WithScanMode sets the enforcement posture from its configuration name
+// ("live"; anything else, including a typo or an empty env, is shadow). It takes
+// the NAME rather than the constant so the one place that decides what counts as
+// "live" is here — a misspelled KUN_TRUST_SCAN_MODE must degrade to the safe
+// posture, never to enforcement.
+func WithScanMode(name string) ScanWorkerOption {
+	return func(w *ScanWorker) {
+		if name == "live" {
+			w.mode = model.ScanModeLive
+			return
+		}
+		w.mode = model.ScanModeShadow
 	}
 }
 
@@ -68,7 +100,8 @@ func NewScanWorker(db *gorm.DB, gateway ScanGateway, tier0 Tier0Matcher) *ScanWo
 // are logged, never fatal — the loop keeps running.
 func (w *ScanWorker) Run(ctx context.Context) {
 	slog.Info("trust scan worker starting",
-		"interval", w.interval.String(), "batch", w.batchSize, "gateway_configured", w.gateway.Configured())
+		"interval", w.interval.String(), "batch", w.batchSize,
+		"gateway_configured", w.gateway.Configured(), "mode", scanModeName(w.mode))
 	t := time.NewTicker(w.interval)
 	defer t.Stop()
 	for {
@@ -160,6 +193,7 @@ func (w *ScanWorker) tier0Matched(ctx context.Context, r *model.TrustScanResult)
 func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict, tier0 datatypes.JSON) error {
 	updates := map[string]any{
 		"status":    model.ScanStatusScored,
+		"mode":      w.mode,
 		"flagged":   v.Flagged,
 		"channel":   v.Channel,
 		"scored_at": w.now(),
@@ -178,11 +212,21 @@ func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v Gateway
 		updates["categories"] = datatypes.JSON(b)
 	}
 	if v.Flagged {
-		slog.Info("trust scan flagged (shadow)",
+		slog.Info("trust scan flagged",
 			"scan_id", r.ID, "site", r.Site, "subject_kind", r.SubjectKind, "subject_id", r.SubjectID,
-			"channel", v.Channel, "categories", v.Categories)
+			"channel", v.Channel, "categories", v.Categories, "enforced", w.mode == model.ScanModeLive)
 	}
-	return tx.Model(&model.TrustScanResult{}).Where("id = ?", r.ID).Updates(updates).Error
+	if err := tx.Model(&model.TrustScanResult{}).Where("id = ?", r.ID).Updates(updates).Error; err != nil {
+		return err
+	}
+	// Live mode only, and only on a conviction: open the inbox item + queue the
+	// hide. Sharing this transaction with the verdict is the point — a crash can
+	// leave the subject neither scored nor enforced, but never one without the
+	// other.
+	if w.mode == model.ScanModeLive && v.Flagged {
+		return w.enforceFlagged(tx, r, v)
+	}
+	return nil
 }
 
 // markDegraded records a drain: status flips to degraded (plus the Tier0 record,
@@ -191,7 +235,7 @@ func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v Gateway
 // reads as "processed, no verdict". Terminal — the worker never re-claims it
 // (env-ready powers on for NEW rows, not a re-scan of drained ones, this step).
 func (w *ScanWorker) markDegraded(tx *gorm.DB, r *model.TrustScanResult, tier0 datatypes.JSON) error {
-	updates := map[string]any{"status": model.ScanStatusDegraded}
+	updates := map[string]any{"status": model.ScanStatusDegraded, "mode": w.mode}
 	if tier0 != nil {
 		updates["tier0_matched"] = tier0
 	}

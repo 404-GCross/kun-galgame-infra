@@ -87,6 +87,9 @@ func (s *ScanService) Ingest(ctx context.Context, p ScanParams) (ScanResult, err
 	row := model.TrustScanResult{
 		Site: site, SubjectKind: p.SubjectKind, SubjectID: p.SubjectID,
 		AuthorID: p.AuthorID, ContentText: text,
+		// Mode starts at shadow because intake does not know the worker's posture;
+		// the worker stamps its OWN mode on the terminal update, so a scored row
+		// always records the posture that actually governed it.
 		Status: model.ScanStatusPending, Mode: model.ScanModeShadow,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {

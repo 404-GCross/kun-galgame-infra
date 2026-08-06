@@ -51,6 +51,12 @@ type Config struct {
 	// only when this is true AND the trust client is configured; any check
 	// error/timeout fails OPEN (posting is never blocked).
 	TrustCheckEnabled bool
+	// TrustScanMode is the scan worker's enforcement posture: "shadow" (default —
+	// record a verdict and nothing else) or "live" (a flagged verdict also opens an
+	// ai_text review item and queues a hide disposition, wave 07). Default shadow
+	// for the same reason as the two gates above: deploying the capability must
+	// never be what turns it on. Any unrecognised value is treated as shadow.
+	TrustScanMode string
 	// DevPortalClientIDs is the developer-platform client fence allowlist: the
 	// OAuth client ids permitted to reach the /dev/* self-service face with a
 	// user token (docs/developer-platform/03-auth-and-tiers.md). First-party
@@ -580,6 +586,7 @@ func Load() (*Config, error) {
 	cfg.DevPortalClientIDs = splitCSV(getEnv("KUN_DEV_PORTAL_CLIENT_IDS", ""))
 	cfg.TrustScanEnabled, _ = strconv.ParseBool(getEnv("KUN_TRUST_SCAN_ENABLED", "false"))
 	cfg.TrustCheckEnabled, _ = strconv.ParseBool(getEnv("KUN_TRUST_CHECK_ENABLED", "false"))
+	cfg.TrustScanMode = getEnv("KUN_TRUST_SCAN_MODE", "shadow")
 
 	// Second image identity for galgame-image-refping (see Config.GalgameImageClient).
 	// Set KUN_GALGAME_IMAGE_CLIENT_ID / _SECRET in the oauth container to the

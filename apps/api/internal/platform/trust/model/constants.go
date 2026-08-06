@@ -94,12 +94,17 @@ const (
 	ScanStatusDegraded int16 = 2
 )
 
-// Scan mode (trust_scan_result.mode) — 0=shadow is the ONLY mode this step
-// ships and is hardcoded at intake. Shadow means the pipeline records a verdict
-// and NOTHING else: no review item, no callback, no enforcement. live/enqueue
-// modes (feeding the inbox) are P2 (doc 18 §6; step 03 explicitly out of scope).
+// Scan mode (trust_scan_result.mode) — how far a verdict is allowed to act.
+// shadow records a verdict and NOTHING else: no review item, no callback, no
+// enforcement. live additionally makes a FLAGGED verdict open an ai_text review
+// item and queue a hide disposition, which the callback worker delivers (doc 18
+// §6 P2, landed in wave 07). The mode is chosen per worker at startup
+// (KUN_TRUST_SCAN_MODE) and stamped on each row it scores, so the corpus stays
+// self-describing: a row records the posture that governed it, and rows scored
+// under either mode remain comparable calibration samples.
 const (
 	ScanModeShadow int16 = 0
+	ScanModeLive   int16 = 1
 )
 
 // Tier0 term kind (trust_term.kind) — the deterministic word-list enforcement
