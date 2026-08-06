@@ -516,6 +516,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/user/catalog/claims/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The claims the BEARER TOKEN'S OWN USER has acted on, on the token client's catalog site: current state, latest transition and reason, most recent activity first (cursor: before=last_event_id). The total is the per-user statistic — 'published by me' is this call with claim_state=live&limit=1 */
+        get: operations["listCatalogClaimsMine"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/user/catalog/edit/proposals": {
         parameters: {
             query?: never;
@@ -646,6 +663,40 @@ export interface paths {
         get: operations["getEditSchemaUser"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/catalog/works/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit a work for review AS THE BEARER TOKEN'S OWN USER: mints it in the pending claim state (registry row + content + birth event, one transaction) and stamps the submitter as its owner. The submitting tenant is the token client's catalog site and the submitter is the token's user; the body names neither. product_work_id is OPTIONAL — omit it and the registry issues the identity, the claim adopting the minted work id (returned as product_work_id). IDEMPOTENCY is the S2S op's: with product_work_id a repeat is a 409 echoing the existing work (matched_by=claim); without it a repeat is recognized only by the identity anchors the payload's links assert (matched_by=anchor), and a submission carrying neither WILL mint a second work if retried */
+        post: operations["submitCatalogWorkUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/catalog/works/{id}/claim-actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move a claim through its lifecycle AS THE BEARER TOKEN'S OWN USER: claim / submit / publish / withdraw (the token's user must be the entry's owner) or approve / decline / ban / unban (the token's roles must carry catalog.claim.review). 409 on an illegal transition, echoing the current state; 403 on another user's or another tenant's claim */
+        post: operations["actOnCatalogClaimUser"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1802,6 +1853,21 @@ export interface components {
             /** Format: int32 */
             status: number;
         };
+        UserClaimActionRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/UserClaimActionRequest.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: int64
+             * @description The product-side work id to anchor (claim only)
+             */
+            product_work_id?: number;
+            /** @description Moderator note; REQUIRED for decline, recorded on the event */
+            reason?: string;
+        };
         UserClaimItem: {
             /** Format: int64 */
             acted_count: number;
@@ -1883,6 +1949,25 @@ export interface components {
              * @description Target revision seq to restore
              */
             to_seq: number;
+        };
+        UserWorkSubmitRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/UserWorkSubmitRequest.json
+             */
+            readonly $schema?: string;
+            /** @description Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets */
+            fields: {
+                [key: string]: unknown;
+            };
+            /**
+             * Format: int64
+             * @description The product-side work id to anchor this submission at. OMIT IT to have the registry issue the identity: the claim then adopts the minted work id, which the response returns. Idempotency depends on this choice — see the endpoint summary
+             */
+            product_work_id?: number;
+            /** @description Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA */
+            released?: components["schemas"]["WorkSubmitDate"];
         };
         VoiceName: {
             /** Format: int64 */
@@ -3485,6 +3570,42 @@ export interface operations {
             };
         };
     };
+    listCatalogClaimsMine: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state */
+                claim_state?: string;
+                /** @description Exclusive cursor: return works whose last_event_id is smaller (0 = first page) */
+                before?: number;
+                /** @description Page size (default 20, max 100) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCursorPageUserClaimItem"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
     createEditProposalUser: {
         parameters: {
             query?: never;
@@ -3741,6 +3862,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeEditSchemaResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    submitCatalogWorkUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserWorkSubmitRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeWorkSubmitResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    actOnCatalogClaimUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                /** @description claim | submit | publish | withdraw | approve | decline | ban | unban */
+                action: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserClaimActionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeClaimActionResult"];
                 };
             };
             /** @description Error */
