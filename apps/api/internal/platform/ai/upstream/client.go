@@ -17,6 +17,17 @@ import (
 	"time"
 )
 
+// llmTimeout bounds one Tier2 chat-completion. It is deliberately generous: the
+// LLM tier is reached ONLY from the async scan worker (never a user request
+// path — see the package doc on moderate-text), and the production channel is
+// slow. Measured 2026-08-06 over 482 live calls: successful ones averaged 6.8s
+// and peaked at 27.2s, while 48.8% of calls died at exactly 30,004ms — they were
+// not upstream failures, they were this timeout cutting off answers that were
+// still coming. 90s leaves ~3x headroom over the observed peak. The trust-side
+// scan gateway timeout MUST stay above this (it is 120s) or it severs the call
+// first and the extra budget here buys nothing.
+const llmTimeout = 90 * time.Second
+
 // Client is a minimal OpenAI-compatible chat-completions client.
 type Client struct {
 	baseURL string
@@ -33,7 +44,7 @@ func NewClient(baseURL, token, model string) *Client {
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
 		model:   model,
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    &http.Client{Timeout: llmTimeout},
 	}
 }
 

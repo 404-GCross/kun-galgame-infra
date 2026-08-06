@@ -45,6 +45,13 @@ type GatewayVerdict struct {
 // the client is NOT configured and the worker degrades without dialing. Zero new
 // Go dependencies — hand-written on net/http, mirroring the callback worker + the
 // ai upstream client.
+// gatewayTimeout bounds one moderate-text round trip to the AI gateway. It must
+// stay ABOVE the gateway's own Tier2 LLM timeout (90s, ai/upstream.llmTimeout):
+// the gateway fails open on its own slow upstream and still answers, so cutting
+// it off from out here would discard a verdict it was about to give. This is the
+// async scan worker's call — no user request waits on it.
+const gatewayTimeout = 120 * time.Second
+
 type AIGatewayClient struct {
 	baseURL  string
 	clientID string
@@ -59,7 +66,7 @@ func NewAIGatewayClient(baseURL, clientID, secret string) *AIGatewayClient {
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		clientID: clientID,
 		secret:   secret,
-		http:     &http.Client{Timeout: 30 * time.Second},
+		http:     &http.Client{Timeout: gatewayTimeout},
 	}
 }
 
