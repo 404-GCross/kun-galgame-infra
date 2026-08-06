@@ -36,6 +36,11 @@ func Run(db *gorm.DB) error {
 		// Tier0 deterministic word list (step 05); no FK — a per-site (or global)
 		// registry of normalized substrings.
 		&model.TrustTerm{},
+		// Per-site moderation posture (step 07 M0); no FK — site is a bare tenant
+		// string here as everywhere else in this schema. Every column is a
+		// nullable override, so an absent row = today's platform-wide behaviour
+		// and creating the table changes nothing.
+		&model.TrustSitePolicy{},
 	); err != nil {
 		return fmt.Errorf("trust automigrate: %w", err)
 	}
@@ -45,7 +50,30 @@ func Run(db *gorm.DB) error {
 	if err := seedReasons(db); err != nil {
 		return err
 	}
-	return classifyImportedTermPurpose(db)
+	if err := classifyImportedTermPurpose(db); err != nil {
+		return err
+	}
+	return backfillGatewayFlagged(db)
+}
+
+// backfillGatewayFlagged seeds the new gateway_flagged column from flagged for
+// rows scored before the column existed. That copy is exactly right TODAY,
+// because today flagged IS the gateway's verdict — trust stores the boolean the
+// gateway returned and adds nothing of its own.
+//
+// It stops being right the moment step 07 M0-B lets a site re-derive flagged
+// from score against its own threshold. This backfill must therefore be DELETED
+// in the same commit that starts re-deriving, not left to run on: from then on
+// it would copy trust's own re-derived verdict into the column whose entire job
+// is to remember what the gateway said instead.
+func backfillGatewayFlagged(db *gorm.DB) error {
+	if err := db.Exec(`
+		UPDATE trust_scan_result
+		   SET gateway_flagged = flagged
+		 WHERE gateway_flagged IS NULL AND flagged IS NOT NULL`).Error; err != nil {
+		return fmt.Errorf("backfill gateway_flagged: %w", err)
+	}
+	return nil
 }
 
 // compliancePurposeSources are the imported lexicons whose terms exist for LEGAL

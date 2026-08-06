@@ -41,6 +41,12 @@ const tabs = computed(() => [
     count: 0
   },
   {
+    to: '/trust/site-policies',
+    label: '站点策略',
+    icon: 'lucide:sliders-horizontal',
+    count: 0
+  },
+  {
     to: '/trust/dead-letters',
     label: '回调死信',
     icon: 'lucide:mail-warning',

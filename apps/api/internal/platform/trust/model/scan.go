@@ -52,9 +52,21 @@ type TrustScanResult struct {
 	Status int16 `gorm:"not null;column:status" json:"status"`
 	// Flagged / Score / Categories are the scored-path verdict fields (NULL until
 	// scored; a degraded row leaves them NULL).
-	Flagged    *bool          `gorm:"column:flagged" json:"flagged"`
-	Score      *float32       `gorm:"type:real;column:score" json:"score"`
-	Categories datatypes.JSON `gorm:"type:jsonb;column:categories" json:"categories,omitempty"`
+	Flagged *bool `gorm:"column:flagged" json:"flagged"`
+	// GatewayFlagged preserves the AI gateway's OWN boolean verdict, unchanged by
+	// any site policy. Today it is identical to Flagged; it is stored separately
+	// starting now because step 07 M0-B lets a site re-derive Flagged from Score
+	// against its own threshold, and the day that lands, Flagged stops meaning
+	// what it meant in every row written before it.
+	//
+	// Recording it one deploy EARLY is the whole point: a calibration corpus is
+	// only useful if rows from different eras answer the same question, and there
+	// is no way to reconstruct the gateway's verdict after the fact from a score
+	// and a threshold that has since changed. NULL on rows written before this
+	// column existed (and on degraded rows, which have no verdict at all).
+	GatewayFlagged *bool `gorm:"column:gateway_flagged" json:"gateway_flagged"`
+	Score          *float32       `gorm:"type:real;column:score" json:"score"`
+	Categories     datatypes.JSON `gorm:"type:jsonb;column:categories" json:"categories,omitempty"`
 	// Channel is the upstream channel/model that scored ('' until scored). A
 	// bookkeeping label → DDL DEFAULT '' stays.
 	Channel string `gorm:"not null;default:'';column:channel" json:"channel"`

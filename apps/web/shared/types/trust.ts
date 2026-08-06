@@ -40,3 +40,11 @@ export type TrustCreateTermRequest = Schemas['CreateTermRequest']
 
 // Dead-letter dispositions
 export type TrustDispositionPage = Schemas['PageDispositionView']
+
+// Per-site moderation posture (step 07 M0). A null override on a policy means
+// the site INHERITS the platform default — which is why the response carries
+// `defaults` alongside the rows: rendering "继承" without the value it resolves
+// to would leave an operator unable to judge the setting.
+export type TrustSitePolicy = Schemas['SitePolicyView']
+export type TrustSitePoliciesResponse = Schemas['SitePoliciesResponse']
+export type TrustUpsertSitePolicyRequest = Schemas['UpsertSitePolicyRequest']

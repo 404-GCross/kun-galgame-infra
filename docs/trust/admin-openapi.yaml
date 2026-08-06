@@ -434,6 +434,48 @@ components:
         - code
         - message
       type: object
+    EnvelopeSitePoliciesResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeSitePoliciesResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/SitePoliciesResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeSitePolicyView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeSitePolicyView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/SitePolicyView"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeSubjectKindView:
       additionalProperties: false
       properties:
@@ -593,6 +635,26 @@ components:
         notify_on_dismiss:
           type: boolean
       type: object
+    PlatformDefaultsView:
+      additionalProperties: false
+      properties:
+        aggregate_threshold:
+          format: float
+          type: number
+        auto_hide_enabled:
+          type: boolean
+        sample_rate:
+          format: double
+          type: number
+        scan_mode:
+          format: int32
+          type: integer
+      required:
+        - scan_mode
+        - sample_rate
+        - aggregate_threshold
+        - auto_hide_enabled
+      type: object
     ReasonView:
       additionalProperties: false
       properties:
@@ -745,6 +807,74 @@ components:
         - status
         - created_at
       type: object
+    SitePoliciesResponse:
+      additionalProperties: false
+      properties:
+        defaults:
+          $ref: "#/components/schemas/PlatformDefaultsView"
+        policies:
+          items:
+            $ref: "#/components/schemas/SitePolicyView"
+          type:
+            - array
+            - "null"
+      required:
+        - policies
+        - defaults
+      type: object
+    SitePolicyView:
+      additionalProperties: false
+      properties:
+        aggregate_threshold:
+          description: report weight that opens a review item; null = inherit
+          format: float
+          type:
+            - number
+            - "null"
+        auto_hide_enabled:
+          description: may a live-mode flag queue a hide, or only open an item for a human; null = inherit
+          type:
+            - boolean
+            - "null"
+        created_at:
+          format: date-time
+          type: string
+        flag_threshold:
+          description: score at or above which this site treats content as flagged; null = defer to the AI gateway's own verdict
+          format: float
+          type:
+            - number
+            - "null"
+        note:
+          description: why this site is set the way it is
+          type: string
+        sample_rate:
+          description: share of CLEAN verdicts drawn for human calibration; null = inherit
+          format: double
+          type:
+            - number
+            - "null"
+        scan_mode:
+          description: 0=shadow 1=live; null = inherit the platform default
+          format: int32
+          type:
+            - integer
+            - "null"
+        site:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - site
+        - scan_mode
+        - sample_rate
+        - flag_threshold
+        - aggregate_threshold
+        - auto_hide_enabled
+        - created_at
+        - updated_at
+      type: object
     SubjectKindView:
       additionalProperties: false
       properties:
@@ -824,6 +954,38 @@ components:
       required:
         - terms
         - total
+      type: object
+    UpsertSitePolicyRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/UpsertSitePolicyRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        aggregate_threshold:
+          description: omit/null = inherit
+          format: float
+          type: number
+        auto_hide_enabled:
+          description: omit/null = inherit
+          type: boolean
+        flag_threshold:
+          description: omit/null = defer to the AI gateway's verdict
+          format: float
+          type: number
+        note:
+          type: string
+        sample_rate:
+          description: omit/null = inherit
+          format: double
+          type: number
+        scan_mode:
+          description: 0=shadow 1=live; omit/null = inherit the platform default
+          format: int32
+          type: integer
       type: object
 info:
   title: KUN Trust Admin API
@@ -1132,6 +1294,60 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Decide a review item (dismissed / actioned; actioned writes a disposition)
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/site-policies:
+    get:
+      description: Platform staff with trust.term_manage (admin/ren) only. A null override means the site inherits the platform default.
+      operationId: listTrustSitePolicies
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeSitePoliciesResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List per-site moderation postures, with the platform defaults they inherit from
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/site-policies/{site}:
+    put:
+      description: Platform staff with trust.term_manage (admin/ren) only. A null override means the site inherits the platform default.
+      operationId: upsertTrustSitePolicy
+      parameters:
+        - description: the tenant site key (kungal / moyu / letmoe …)
+          in: path
+          name: site
+          required: true
+          schema:
+            description: the tenant site key (kungal / moyu / letmoe …)
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertSitePolicyRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeSitePolicyView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Write a site's moderation posture wholesale (omitted fields are CLEARED back to the platform default)
       tags:
         - trust-admin
   /api/v1/admin/trust/subject-kinds:

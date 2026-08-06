@@ -60,6 +60,24 @@ export const TERM_PURPOSE_COLORS: Record<number, TrustChipColor> = {
   1: 'info'
 }
 
+// trust_scan_result.mode / trust_site_policy.scan_mode — how far a verdict is
+// allowed to act. shadow records and does nothing else; live additionally opens
+// a review item (and, unless auto-hide is off, queues a hide).
+export const SCAN_MODE = {
+  shadow: 0,
+  live: 1
+} as const
+
+export const SCAN_MODE_LABELS: Record<number, string> = {
+  0: '影子(只记录)',
+  1: '执法(开单)'
+}
+
+export const SCAN_MODE_COLORS: Record<number, TrustChipColor> = {
+  0: 'default',
+  1: 'warning'
+}
+
 export const REVIEW_SOURCE = {
   reports: 0,
   aiText: 1,

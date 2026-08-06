@@ -65,6 +65,13 @@ const (
 	scanSamplePriority float32 = 0.05
 )
 
+// policyCacheTTL bounds how long a per-site posture change takes to reach an
+// instance that did not perform the write (step 07 M0). It matches termCacheTTL
+// deliberately: both are operator-facing knobs whose edits are rare, and an
+// operator who has just flipped a site to shadow should not have to wonder for
+// minutes whether it took effect across the fleet.
+const policyCacheTTL = 60 * time.Second
+
 // termCacheTTL is how long the Tier0 matcher serves its in-memory snapshot of
 // active terms before reloading from the DB (step 05). Admin create/deprecate
 // invalidates the snapshot in-process immediately; across instances staleness

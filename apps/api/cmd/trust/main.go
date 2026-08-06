@@ -73,7 +73,24 @@ func main() {
 
 	// Domain services. The reporter weigher reads the main DB (users + roles).
 	weigher := service.NewDBWeigher(application.DB.DB())
-	reportSvc := service.NewReportService(trustDB.DB(), weigher)
+
+	// Per-site moderation posture (step 07 M0). ONE instance is shared by the
+	// scan worker, the report intake and the admin face, so an operator's write
+	// invalidates the cache every reader is looking at rather than each holding
+	// its own stale copy. The env/constant values below are the PLATFORM
+	// DEFAULTS: a site with no policy row resolves to exactly them, which is why
+	// introducing the table changes nothing until somebody writes to it.
+	policySvc := service.NewPolicyService(trustDB.DB(), service.PlatformDefaults{
+		ScanMode:   service.ScanModeFromName(cfg.TrustScanMode),
+		SampleRate: cfg.TrustScanSampleRate,
+		// The one default that is a code constant rather than an env var; it moves
+		// into the table the first time a site needs a different number.
+		AggregateThreshold: service.DefaultAggregateThreshold(),
+		// Live has always implied auto-hide, so that is what a site inherits.
+		AutoHideEnabled: true,
+	})
+
+	reportSvc := service.NewReportService(trustDB.DB(), weigher, service.WithReportPolicy(policySvc))
 	reviewSvc := service.NewReviewService(trustDB.DB())
 	registrySvc := service.NewRegistryService(trustDB.DB())
 	dispositionSvc := service.NewDispositionService(trustDB.DB())
@@ -108,12 +125,15 @@ func main() {
 	// (step 05; pure recording, never changes status).
 	// KUN_TRUST_SCAN_MODE=live (wave 07) additionally lets a FLAGGED verdict open an
 	// ai_text review item and queue a hide disposition for the callback worker to
-	// deliver; anything else keeps the original record-only shadow posture.
+	// deliver; anything else keeps the original record-only shadow posture. Since
+	// step 07 M0 that env is the PLATFORM DEFAULT: it governs every site that has
+	// not set its own posture in trust_site_policy.
 	aiGateway := service.NewAIGatewayClient(cfg.AIClient.BaseURL, cfg.AIClient.ClientID, cfg.AIClient.ClientSecret)
 	scanWorker := service.NewScanWorker(trustDB.DB(), aiGateway, termSvc,
 		service.WithScanMode(cfg.TrustScanMode),
-		service.WithSampleRate(cfg.TrustScanSampleRate))
-	slog.Info("trust scan worker", "gateway_configured", aiGateway.Configured(), "mode", cfg.TrustScanMode)
+		service.WithSampleRate(cfg.TrustScanSampleRate),
+		service.WithPolicy(policySvc))
+	slog.Info("trust scan worker", "gateway_configured", aiGateway.Configured(), "default_mode", cfg.TrustScanMode)
 
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())
@@ -139,7 +159,7 @@ func main() {
 	// clientRepo (main DB) resolves a site-scoped moderator's token client to its
 	// catalog_site for admin-face site scoping (step 04). termSvc backs the Tier0
 	// admin CRUD surface (step 05).
-	trustHandler.SetupAdmin(application.Fiber, reviewSvc, registrySvc, dispositionSvc, termSvc, clientRepo)
+	trustHandler.SetupAdmin(application.Fiber, reviewSvc, registrySvc, dispositionSvc, termSvc, policySvc, clientRepo)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root.
 	application.Fiber.Get("/openapi.json", func(c fiber.Ctx) error {

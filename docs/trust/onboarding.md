@@ -104,6 +104,22 @@ Response: { "report_id": ..., "review_item_id": ... }        # review_item_id �
 | **moyu** | ❌ 未接 | 全套:client + kinds 注册 + §3 三面 |
 | **letmoe**(community 原语) | ⚠️ 半接:**check 闸已生效**(check 不查注册表,全局词全租户适用);scan 事件在发但受理面 422 丢弃 | 注册表加 `(letmoe, community_post)` 一行即完整(建议随 letmoe 上线 runbook 做) |
 
+## 4.1 站点策略:尺度归你,不归平台
+
+审核尺度**按站可调**,记在 `trust_site_policy`(管理端 `/trust/site-policies`)。每一项都可以留空,**留空 = 继承平台默认**——所以没建行的站行为和过去完全一致。
+
+| 项 | 含义 | 建议新站起手 |
+|---|---|---|
+| `scan_mode` | `shadow` 只记录 / `live` 开审核单 | **shadow**,先看自己的分数分布 |
+| `auto_hide_enabled` | live 时是否允许自动隐藏 | **关**——先只让人看见,别让分类器直接下架 |
+| `sample_rate` | 清白判定的抽检比例(唯一能测漏判的手段) | 先 0,通电后再开 |
+| `flag_threshold` | 本站认定"命中"的分数线;留空=采用网关自己的判定 | 留空 |
+| `aggregate_threshold` | 多少举报权重开单 | 留空,按平台默认 |
+
+**「留空」和「填成跟默认一样的值」不是一回事**:以后平台默认变了,留空的站跟着变,填死的站不变。所以只在你真的有主张时才填。
+
+新站的正常路径是 **shadow 一段时间 → 看分布 → live 但 auto-hide 关 → 有把握再开自动隐藏**。跳过任何一步都等于拿真实用户当校准样本。
+
 ## 5. 接入 checklist(新站/新内容类型,照做即可)
 
 1. **S2S client**:找 infra 在 `oauth_clients` 铸一行(id + sha256 secret + `catalog_site=<你的 site>`)。秘钥经 Dokploy 面板 env 注入你的服务,永不进 git。**你不需要 forwarder allowlist**(那是中继专用)。
@@ -133,7 +149,8 @@ Response: { "report_id": ..., "review_item_id": ... }        # review_item_id �
 5. **接举报(有 UI 就接)**:reason 列表动态拉取,带 snapshot。
 6. **env 纪律**:两个功能各自独立开关、默认关(参考 community 的 `KUN_TRUST_SCAN_ENABLED` / `KUN_TRUST_CHECK_ENABLED` 形态),compose 显式写 `"false"` 行方便通电 grep;**不要**借"client 配没配"当开关。
 7. **验证**:开开关后发一条测试内容 → trust 库 `trust_scan_result` 应出现你的 site/kind 行并在 ~60s 内变 `status=1`(scored);check 面可 curl 冒烟(带一个已知 suspect 词应得 `hold`)。
-8. **存量内容**:不要往 scan 面灌历史数据(worker 是为增量设计的)。存量走离线批扫工具(`cmd/scan-backlog`,infra 仓),产出高危 worklist 后按需入收件箱。
+8. **策略行**:通电前找 infra 在 `/trust/site-policies` 给你的站写一行 `scan_mode=shadow`(见 §4.1)。不写这行 = 直接继承平台默认姿态,对新站通常太狠。
+9. **存量内容**:不要往 scan 面灌历史数据(worker 是为增量设计的)。存量走离线批扫工具(`cmd/scan-backlog`,infra 仓),产出高危 worklist 后按需入收件箱。
 
 ## 6. 红线(违反=打回)
 

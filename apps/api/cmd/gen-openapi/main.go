@@ -79,7 +79,7 @@ func main() {
 	case *trust:
 		api = trustHandler.Setup(app, nil, nil, nil, nil, nil)
 	case *trustAdmin:
-		api = trustHandler.SetupAdmin(app, nil, nil, nil, nil, nil)
+		api = trustHandler.SetupAdmin(app, nil, nil, nil, nil, nil, nil)
 	case *ai:
 		api = aiHandler.Setup(app, nil)
 	case *aiAdmin:

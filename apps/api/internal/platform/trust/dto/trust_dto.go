@@ -330,3 +330,50 @@ type PatchReasonRequest struct {
 type OKResponse struct {
 	OK bool `json:"ok"`
 }
+
+// SitePolicyView is one site's moderation posture (step 07 M0). Every override
+// is nullable and a null means "no opinion — inherit the platform default",
+// which is a different statement from "set to the same value as the default":
+// changing a default later moves the first and leaves the second alone.
+type SitePolicyView struct {
+	Site               string    `json:"site"`
+	ScanMode           *int16    `json:"scan_mode" doc:"0=shadow 1=live; null = inherit the platform default"`
+	SampleRate         *float64  `json:"sample_rate" doc:"share of CLEAN verdicts drawn for human calibration; null = inherit"`
+	FlagThreshold      *float32  `json:"flag_threshold" doc:"score at or above which this site treats content as flagged; null = defer to the AI gateway's own verdict"`
+	AggregateThreshold *float32  `json:"aggregate_threshold" doc:"report weight that opens a review item; null = inherit"`
+	AutoHideEnabled    *bool     `json:"auto_hide_enabled" doc:"may a live-mode flag queue a hide, or only open an item for a human; null = inherit"`
+	Note               *string   `json:"note,omitempty" doc:"why this site is set the way it is"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// PlatformDefaultsView is what a null override actually resolves to. The console
+// needs it to render "inherits (live)" rather than a bare "inherits", which
+// would leave an operator unable to judge the decision the page exists for.
+type PlatformDefaultsView struct {
+	ScanMode           int16   `json:"scan_mode"`
+	SampleRate         float64 `json:"sample_rate"`
+	AggregateThreshold float32 `json:"aggregate_threshold"`
+	AutoHideEnabled    bool    `json:"auto_hide_enabled"`
+}
+
+// SitePoliciesResponse lists every stored policy plus the baseline they inherit
+// from. Sites with no row are absent from Policies — their posture is exactly
+// Defaults.
+type SitePoliciesResponse struct {
+	Policies []SitePolicyView     `json:"policies"`
+	Defaults PlatformDefaultsView `json:"defaults"`
+}
+
+// UpsertSitePolicyRequest writes a site's overrides WHOLESALE: every field is
+// applied, null included. It is deliberately not a patch — "clear this override"
+// is the operation an operator needs most when backing a site out of a posture
+// that is not working, and a patch cannot express it.
+type UpsertSitePolicyRequest struct {
+	ScanMode           *int16   `json:"scan_mode,omitempty" doc:"0=shadow 1=live; omit/null = inherit the platform default"`
+	SampleRate         *float64 `json:"sample_rate,omitempty" doc:"omit/null = inherit"`
+	FlagThreshold      *float32 `json:"flag_threshold,omitempty" doc:"omit/null = defer to the AI gateway's verdict"`
+	AggregateThreshold *float32 `json:"aggregate_threshold,omitempty" doc:"omit/null = inherit"`
+	AutoHideEnabled    *bool    `json:"auto_hide_enabled,omitempty" doc:"omit/null = inherit"`
+	Note               *string  `json:"note,omitempty"`
+}

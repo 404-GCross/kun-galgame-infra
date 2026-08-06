@@ -168,6 +168,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/trust/site-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List per-site moderation postures, with the platform defaults they inherit from
+         * @description Platform staff with trust.term_manage (admin/ren) only. A null override means the site inherits the platform default.
+         */
+        get: operations["listTrustSitePolicies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/trust/site-policies/{site}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write a site's moderation posture wholesale (omitted fields are CLEARED back to the platform default)
+         * @description Platform staff with trust.term_manage (admin/ren) only. A null override means the site inherits the platform default.
+         */
+        put: operations["upsertTrustSitePolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/trust/subject-kinds": {
         parameters: {
             query?: never;
@@ -528,6 +568,30 @@ export interface components {
             data?: components["schemas"]["ReviewItemDetail"];
             message: string;
         };
+        EnvelopeSitePoliciesResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeSitePoliciesResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["SitePoliciesResponse"];
+            message: string;
+        };
+        EnvelopeSitePolicyView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeSitePolicyView.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["SitePolicyView"];
+            message: string;
+        };
         EnvelopeSubjectKindView: {
             /**
              * Format: uri
@@ -612,6 +676,15 @@ export interface components {
             is_deprecated?: boolean;
             notify_on_dismiss?: boolean;
         };
+        PlatformDefaultsView: {
+            /** Format: float */
+            aggregate_threshold: number;
+            auto_hide_enabled: boolean;
+            /** Format: double */
+            sample_rate: number;
+            /** Format: int32 */
+            scan_mode: number;
+        };
         ReasonView: {
             /** Format: int64 */
             id: number;
@@ -694,6 +767,41 @@ export interface components {
              */
             subject_reach?: number;
         };
+        SitePoliciesResponse: {
+            defaults: components["schemas"]["PlatformDefaultsView"];
+            policies: components["schemas"]["SitePolicyView"][] | null;
+        };
+        SitePolicyView: {
+            /**
+             * Format: float
+             * @description report weight that opens a review item; null = inherit
+             */
+            aggregate_threshold: number | null;
+            /** @description may a live-mode flag queue a hide, or only open an item for a human; null = inherit */
+            auto_hide_enabled: boolean | null;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: float
+             * @description score at or above which this site treats content as flagged; null = defer to the AI gateway's own verdict
+             */
+            flag_threshold: number | null;
+            /** @description why this site is set the way it is */
+            note?: string;
+            /**
+             * Format: double
+             * @description share of CLEAN verdicts drawn for human calibration; null = inherit
+             */
+            sample_rate: number | null;
+            /**
+             * Format: int32
+             * @description 0=shadow 1=live; null = inherit the platform default
+             */
+            scan_mode: number | null;
+            site: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         SubjectKindView: {
             callback_url?: string;
             /** Format: date-time */
@@ -731,6 +839,37 @@ export interface components {
             terms: components["schemas"]["TermView"][] | null;
             /** Format: int64 */
             total: number;
+        };
+        UpsertSitePolicyRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/UpsertSitePolicyRequest.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: float
+             * @description omit/null = inherit
+             */
+            aggregate_threshold?: number;
+            /** @description omit/null = inherit */
+            auto_hide_enabled?: boolean;
+            /**
+             * Format: float
+             * @description omit/null = defer to the AI gateway's verdict
+             */
+            flag_threshold?: number;
+            note?: string;
+            /**
+             * Format: double
+             * @description omit/null = inherit
+             */
+            sample_rate?: number;
+            /**
+             * Format: int32
+             * @description 0=shadow 1=live; omit/null = inherit the platform default
+             */
+            scan_mode?: number;
         };
     };
     responses: never;
@@ -1030,6 +1169,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeDecideData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    listTrustSitePolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSitePoliciesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    upsertTrustSitePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description the tenant site key (kungal / moyu / letmoe …) */
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertSitePolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeSitePolicyView"];
                 };
             };
             /** @description Error */

@@ -17,12 +17,38 @@ import (
 type ReportService struct {
 	db      *gorm.DB
 	weigher Weigher
+	// policy supplies the per-site aggregate threshold; nil = the platform
+	// constant governs every site (step 07 M0).
+	policy *PolicyService
 }
 
 // NewReportService builds the intake service over the trust DB + a reporter
-// weigher (main-DB backed in production, faked in tests).
-func NewReportService(db *gorm.DB, weigher Weigher) *ReportService {
-	return &ReportService{db: db, weigher: weigher}
+// weigher (main-DB backed in production, faked in tests). The optional policy
+// resolver makes the aggregate threshold per-site: how many complaints mean
+// something is a property of a community's size and temperament, and a small
+// site and a large forum do not agree on it.
+func NewReportService(db *gorm.DB, weigher Weigher, opts ...ReportServiceOption) *ReportService {
+	s := &ReportService{db: db, weigher: weigher}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
+
+// ReportServiceOption configures an optional intake behaviour.
+type ReportServiceOption func(*ReportService)
+
+// WithReportPolicy attaches the per-site policy resolver.
+func WithReportPolicy(p *PolicyService) ReportServiceOption {
+	return func(s *ReportService) { s.policy = p }
+}
+
+// aggregateThresholdFor is the report weight that opens an item for one site.
+func (s *ReportService) aggregateThresholdFor(site string) float32 {
+	if s.policy == nil {
+		return aggregateThreshold
+	}
+	return s.policy.Resolve(site).AggregateThreshold
 }
 
 // ReportParams is a normalized intake request. Site is derived from the
@@ -183,7 +209,7 @@ func (s *ReportService) aggregate(tx *gorm.DB, p ReportParams, reportID int64, w
 		Select("COALESCE(SUM(weight), 0)").Scan(&sum).Error; err != nil {
 		return nil, err
 	}
-	if !weight.Staff && sum < aggregateThreshold {
+	if !weight.Staff && sum < s.aggregateThresholdFor(p.Site) {
 		return nil, nil // below threshold → the report stays received, unlinked
 	}
 

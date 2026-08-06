@@ -22,6 +22,8 @@ type AdminServer struct {
 	registry     *service.RegistryService
 	dispositions *service.DispositionService
 	terms        *service.TermService
+	// policies owns the per-site moderation posture (step 07 M0).
+	policies *service.PolicyService
 	// clients resolves a site-scoped caller's token client to its catalog_site.
 	// Per-request main-DB lookup, no cache (章程 04 ruling 3 — admin volume).
 	clients clientSiteLookup
@@ -34,7 +36,7 @@ type AdminServer struct {
 // admitted by the prefix gate but rejected there). clients supplies the
 // catalog_site binding for site-scoped callers. Callable with nil deps for spec
 // export (handlers are never invoked then).
-func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service.RegistryService, dispositions *service.DispositionService, terms *service.TermService, clients clientSiteLookup) huma.API {
+func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service.RegistryService, dispositions *service.DispositionService, terms *service.TermService, policies *service.PolicyService, clients clientSiteLookup) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Trust Admin API", "1.0.0")
@@ -45,7 +47,7 @@ func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(AdminBridge)
 
-	s := &AdminServer{review: review, registry: registry, dispositions: dispositions, terms: terms, clients: clients}
+	s := &AdminServer{review: review, registry: registry, dispositions: dispositions, terms: terms, policies: policies, clients: clients}
 	s.register(api)
 	return api
 }
@@ -105,6 +107,7 @@ func (s *AdminServer) register(api huma.API) {
 		Description: platformOnly}, s.redeliverDisposition)
 
 	s.registerTerms(api)
+	s.registerPolicies(api)
 }
 
 // ---- scope resolution ----

@@ -42,10 +42,20 @@ import (
 // (enforceFlagged), inside the same transaction as the verdict — so a subject is
 // never left scored-but-unenforced by a crash between the two. Shadow behaviour
 // is byte-for-byte unchanged; the mode is startup configuration, never per-row.
+// PER-SITE POSTURE (step 07 M0): mode and sampleRate below are the PLATFORM
+// DEFAULTS, not the posture in force. Every row is governed by policy.Resolve(
+// row.Site), which returns those defaults unless the site has said otherwise —
+// so a site with no policy row behaves exactly as it did before the table
+// existed. Resolution happens per row rather than per worker because one worker
+// drains every tenant's queue: the posture belongs to the content, not to the
+// process that happens to pick it up.
 type ScanWorker struct {
-	db         *gorm.DB
-	gateway    ScanGateway
-	tier0      Tier0Matcher
+	db      *gorm.DB
+	gateway ScanGateway
+	tier0   Tier0Matcher
+	// policy resolves the per-site posture; nil = no table lookup, the platform
+	// defaults govern every site (the shape the unit tests use).
+	policy     *PolicyService
 	mode       int16
 	sampleRate float64
 	rand       func() float64
@@ -94,13 +104,18 @@ type ScanWorkerOption func(*ScanWorker)
 // "live" is here — a misspelled KUN_TRUST_SCAN_MODE must degrade to the safe
 // posture, never to enforcement.
 func WithScanMode(name string) ScanWorkerOption {
-	return func(w *ScanWorker) {
-		if name == "live" {
-			w.mode = model.ScanModeLive
-			return
-		}
-		w.mode = model.ScanModeShadow
+	return func(w *ScanWorker) { w.mode = ScanModeFromName(name) }
+}
+
+// ScanModeFromName is the ONE place that decides what counts as "live". A
+// misspelled KUN_TRUST_SCAN_MODE, or an empty one, must degrade to the safe
+// posture — never to enforcement — so anything that is not exactly "live" is
+// shadow.
+func ScanModeFromName(name string) int16 {
+	if name == "live" {
+		return model.ScanModeLive
 	}
+	return model.ScanModeShadow
 }
 
 // WithSampleRate sets the share of CLEAN verdicts drawn into the inbox as
@@ -126,13 +141,39 @@ func WithSampleRate(rate float64) ScanWorkerOption {
 	}
 }
 
+// WithPolicy gives the worker the per-site policy resolver. main passes the same
+// instance the admin face writes through, so an operator's change reaches the
+// worker as soon as the write invalidates the cache rather than a TTL later.
+func WithPolicy(p *PolicyService) ScanWorkerOption {
+	return func(w *ScanWorker) { w.policy = p }
+}
+
+// policyFor is the single place a row's governing posture is decided. Without a
+// resolver (unit tests) it reports the worker's own defaults, so the two paths
+// cannot drift in what "no override" means.
+func (w *ScanWorker) policyFor(site string) ResolvedPolicy {
+	if w.policy == nil {
+		return ResolvedPolicy{
+			ScanMode:        w.mode,
+			SampleRate:      w.sampleRate,
+			AutoHideEnabled: true,
+		}
+	}
+	return w.policy.Resolve(site)
+}
+
 // Run drives ScorePending on the worker interval until ctx is cancelled. Errors
 // are logged, never fatal — the loop keeps running.
 func (w *ScanWorker) Run(ctx context.Context) {
+	// The posture is logged as the PLATFORM DEFAULT, since that is all the worker
+	// knows at startup — a site with an override is governed by the table, and
+	// the console is where that is visible. Naming it "default" in the line keeps
+	// an operator from reading this as the posture in force everywhere.
 	slog.Info("trust scan worker starting",
 		"interval", w.interval.String(), "batch", w.batchSize,
-		"gateway_configured", w.gateway.Configured(), "mode", scanModeName(w.mode),
-		"sample_rate", w.sampleRate)
+		"gateway_configured", w.gateway.Configured(),
+		"default_mode", scanModeName(w.mode), "default_sample_rate", w.sampleRate,
+		"per_site_policy", w.policy != nil)
 	t := time.NewTicker(w.interval)
 	defer t.Stop()
 	for {
@@ -179,21 +220,22 @@ func (w *ScanWorker) scoreOne(ctx context.Context, tx *gorm.DB, r *model.TrustSc
 	// env-empty drain lands a calibration sample. Pure recording — it never
 	// influences the status decision below.
 	tier0 := w.tier0Matched(ctx, r)
+	pol := w.policyFor(r.Site)
 
 	// Env empty → drain without a network call (fail-closed: no unbounded backlog).
 	if !w.gateway.Configured() {
-		return w.markDegraded(tx, r, tier0)
+		return w.markDegraded(tx, r, tier0, pol)
 	}
 	verdict, err := w.gateway.Moderate(ctx, r.ContentText, r.AuthorID)
 	if err != nil {
 		slog.Warn("trust scan gateway call failed; draining to degraded", "scan_id", r.ID, "err", err)
-		return w.markDegraded(tx, r, tier0)
+		return w.markDegraded(tx, r, tier0, pol)
 	}
 	if verdict.Degraded {
 		// The gateway reported its own fail-open path (upstream down / over budget).
-		return w.markDegraded(tx, r, tier0)
+		return w.markDegraded(tx, r, tier0, pol)
 	}
-	return w.markScored(tx, r, verdict, tier0)
+	return w.markScored(tx, r, verdict, tier0, pol)
 }
 
 // tier0Matched runs the word-list matcher and marshals the result to jsonb: an
@@ -221,13 +263,18 @@ func (w *ScanWorker) tier0Matched(ctx context.Context, r *model.TrustScanResult)
 // Uses a map update so a false `flagged` is written explicitly (a scored,
 // not-flagged row is flagged=false, distinct from a pending/degraded NULL). A
 // flagged verdict logs one info line — a shadow-period observation surface.
-func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict, tier0 datatypes.JSON) error {
+func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict, tier0 datatypes.JSON, pol ResolvedPolicy) error {
 	updates := map[string]any{
-		"status":    model.ScanStatusScored,
-		"mode":      w.mode,
-		"flagged":   v.Flagged,
-		"channel":   v.Channel,
-		"scored_at": w.now(),
+		"status": model.ScanStatusScored,
+		"mode":   pol.ScanMode,
+		// flagged and gateway_flagged are written from the SAME value today. They
+		// are separate columns because M0-B lets a site re-derive flagged from
+		// score against its own threshold, and gateway_flagged is what keeps rows
+		// from before and after that change comparable.
+		"flagged":         v.Flagged,
+		"gateway_flagged": v.Flagged,
+		"channel":         v.Channel,
+		"scored_at":       w.now(),
 	}
 	if tier0 != nil {
 		updates["tier0_matched"] = tier0
@@ -245,7 +292,7 @@ func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v Gateway
 	if v.Flagged {
 		slog.Info("trust scan flagged",
 			"scan_id", r.ID, "site", r.Site, "subject_kind", r.SubjectKind, "subject_id", r.SubjectID,
-			"channel", v.Channel, "categories", v.Categories, "enforced", w.mode == model.ScanModeLive)
+			"channel", v.Channel, "categories", v.Categories, "enforced", pol.ScanMode == model.ScanModeLive)
 	}
 	if err := tx.Model(&model.TrustScanResult{}).Where("id = ?", r.ID).Updates(updates).Error; err != nil {
 		return err
@@ -255,15 +302,15 @@ func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v Gateway
 	// leave the subject neither scored nor enforced, but never one without the
 	// other.
 	if v.Flagged {
-		if w.mode == model.ScanModeLive {
-			return w.enforceFlagged(tx, r, v)
+		if pol.ScanMode == model.ScanModeLive {
+			return w.enforceFlagged(tx, r, v, pol)
 		}
 		return nil
 	}
 	// Cleared. Occasionally send one to a human anyway — the false-negative
 	// instrument. Runs in BOTH modes: it enforces nothing, so it does not belong
 	// to the live posture.
-	return w.maybeSampleClean(tx, r, v)
+	return w.maybeSampleClean(tx, r, v, pol)
 }
 
 // markDegraded records a drain: status flips to degraded (plus the Tier0 record,
@@ -271,8 +318,8 @@ func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v Gateway
 // values (flagged/score/categories/scored_at NULL, channel ”), so a degraded row
 // reads as "processed, no verdict". Terminal — the worker never re-claims it
 // (env-ready powers on for NEW rows, not a re-scan of drained ones, this step).
-func (w *ScanWorker) markDegraded(tx *gorm.DB, r *model.TrustScanResult, tier0 datatypes.JSON) error {
-	updates := map[string]any{"status": model.ScanStatusDegraded, "mode": w.mode}
+func (w *ScanWorker) markDegraded(tx *gorm.DB, r *model.TrustScanResult, tier0 datatypes.JSON, pol ResolvedPolicy) error {
+	updates := map[string]any{"status": model.ScanStatusDegraded, "mode": pol.ScanMode}
 	if tier0 != nil {
 		updates["tier0_matched"] = tier0
 	}

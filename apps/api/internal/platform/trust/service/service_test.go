@@ -53,7 +53,7 @@ func cleanTables(t *testing.T) {
 	for _, table := range []string{
 		"trust_audit_log", "trust_disposition", "trust_report",
 		"trust_review_item", "trust_subject_kind", "trust_scan_result",
-		"trust_term",
+		"trust_term", "trust_site_policy",
 	} {
 		if err := testDB.Exec("TRUNCATE " + table + " RESTART IDENTITY CASCADE").Error; err != nil {
 			t.Fatalf("truncate %s: %v", table, err)

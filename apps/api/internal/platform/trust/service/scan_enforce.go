@@ -52,13 +52,25 @@ const scanNoteExcerptRunes = 200
 // A disposition gets callback_status=pending only when the subject_kind carries
 // a callback_url; without one the item is human-only enforcement and simply
 // waits in the inbox (the same rule Decide follows).
-func (w *ScanWorker) enforceFlagged(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict) error {
+func (w *ScanWorker) enforceFlagged(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict, pol ResolvedPolicy) error {
 	itemID, created, err := w.openScanReviewItem(tx, r, v)
 	if err != nil {
 		return err
 	}
 	if !created {
 		return nil // an open item already carries this subject — signal merged, no second hide
+	}
+	// A site may run live for VISIBILITY without granting the classifier the
+	// power to take content down: the item is open and a human will see it, but
+	// nothing is hidden until they say so. This is the posture a site should
+	// normally hold when it first leaves shadow, and the reason auto-hide is a
+	// separate switch from the mode rather than implied by it.
+	if !pol.AutoHideEnabled {
+		return AppendAudit(tx, AuditEntry{
+			Action: "scan_auto_queued",
+			Site:   strptr(r.Site), SubjectKind: strptr(r.SubjectKind), SubjectID: strptr(r.SubjectID),
+			ReasonCode: strptr(scanReasonCode),
+		})
 	}
 
 	var kind model.TrustSubjectKind
@@ -160,8 +172,11 @@ func (w *ScanWorker) openScanReviewItem(tx *gorm.DB, r *model.TrustScanResult, v
 //     item, the sample is skipped entirely — a subject under review is not a
 //     random draw, and folding a calibration item into a real one would corrupt
 //     both the case and the measurement.
-func (w *ScanWorker) maybeSampleClean(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict) error {
-	if w.sampleRate <= 0 || w.rand() >= w.sampleRate {
+func (w *ScanWorker) maybeSampleClean(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict, pol ResolvedPolicy) error {
+	// Per-site rather than global for a measurement reason: with one rate, a
+	// busy site's draws swamp a quiet one's, and the quiet site's false-negative
+	// rate stays unmeasurable however long you wait.
+	if pol.SampleRate <= 0 || w.rand() >= pol.SampleRate {
 		return nil
 	}
 
