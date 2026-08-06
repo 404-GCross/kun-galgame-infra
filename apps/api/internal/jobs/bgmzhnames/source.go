@@ -6,7 +6,6 @@ import (
 
 	"api/internal/platform/catalog/model"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -28,73 +27,43 @@ func resolveBangumiSource(ctx context.Context, db *gorm.DB) (int16, error) {
 	return id, nil
 }
 
-// anchoredChar is one live character joined to its Bangumi staging row.
-type anchoredChar struct {
-	EntityID   int64          `gorm:"column:entity_id"`
-	ExternalID string         `gorm:"column:external_id"`
-	Infobox    datatypes.JSON `gorm:"column:infobox_parsed"`
+// characterLane is the original wave: character anchors → catalog_character_alias.
+// It is the ONE lane with a touch discipline, because a character's names are
+// rendered by the works whose roster lists it.
+func characterLane() laneSpec {
+	return laneSpec{
+		load: loadAnchoredCharacters,
+		preload: func(ctx context.Context, db *gorm.DB, ids []int64) (map[int64]*zhAliasState, error) {
+			return preloadZhAliasesBy(ctx, db, "catalog_character_alias", "character_id", ids)
+		},
+		hostWorks: preloadHostWorks,
+		insert:    insertCharacterAlias,
+	}
 }
 
-// loadAnchored resolves every live character carrying an EXACT bangumi anchor,
-// with its parsed infobox. DISTINCT ON keeps ONE anchor per character (lowest
-// external id, numerically — bangumi ids are all-numeric), so a character with
-// two anchors is projected once and deterministically.
+// loadAnchoredCharacters resolves every live character carrying an EXACT
+// bangumi anchor, with its parsed infobox. DISTINCT ON keeps ONE anchor per
+// character (lowest external id, numerically — bangumi ids are all-numeric), so
+// a character with two anchors is projected once and deterministically.
 //
 // The infobox guard deliberately does NOT live in this query: loading the dirty
 // rows too is what lets the run report how many it refused (skipped_guard)
 // rather than silently narrowing its own universe.
-func loadAnchored(ctx context.Context, db *gorm.DB, sourceID int16, limit, offset int) ([]anchoredChar, error) {
-	const query = `SELECT DISTINCT ON (c.id) c.id AS entity_id, r.external_id, sb.infobox_parsed
+func loadAnchoredCharacters(ctx context.Context, db *gorm.DB, sourceID int16, limit, offset int) ([]anchoredEntity, error) {
+	const query = `SELECT DISTINCT ON (c.id) c.id AS entity_id, c.id AS owner_id,
+			'' AS owner_name, r.external_id, sb.infobox_parsed
 		FROM catalog_character c
 		JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = c.id
 			AND r.source_id = ? AND r.link_kind = ?
 		JOIN src_bangumi.character sb ON sb.id = r.external_id::bigint
 		WHERE c.deleted_at IS NULL
 		ORDER BY c.id, r.external_id::bigint`
-	var out []anchoredChar
+	var out []anchoredEntity
 	if err := db.WithContext(ctx).
 		Raw(query, model.EntityTypeCharacter, sourceID, model.LinkKindExact).Scan(&out).Error; err != nil {
 		return nil, fmt.Errorf("load anchored characters: %w", err)
 	}
 	return window(out, limit, offset), nil
-}
-
-// zhAliasState is what a character already carries in zh-Hans: the exact names
-// (the uniqueness key's third component is the language, so only zh-Hans rows
-// can collide) and whether one of them is already the locale primary.
-type zhAliasState struct {
-	names      map[string]bool
-	hasPrimary bool
-}
-
-// preloadZhAliases loads that state for the candidate characters. It is the
-// PRIMARY skip — the ON CONFLICT clause on the write is only the backstop —
-// and the source of the "never steal an existing primary" judgement.
-func preloadZhAliases(ctx context.Context, db *gorm.DB, ids []int64) (map[int64]*zhAliasState, error) {
-	out := make(map[int64]*zhAliasState, len(ids))
-	for start := 0; start < len(ids); start += preloadChunk {
-		end := min(start+preloadChunk, len(ids))
-		var rows []struct {
-			CharacterID int64  `gorm:"column:character_id"`
-			Name        string `gorm:"column:name"`
-			IsPrimary   bool   `gorm:"column:is_primary_for_locale"`
-		}
-		if err := db.WithContext(ctx).Raw(`SELECT character_id, name, is_primary_for_locale
-			FROM catalog_character_alias WHERE lang = ? AND character_id IN ?`,
-			LangZhHans, ids[start:end]).Scan(&rows).Error; err != nil {
-			return nil, fmt.Errorf("preload zh-Hans aliases: %w", err)
-		}
-		for _, r := range rows {
-			st := out[r.CharacterID]
-			if st == nil {
-				st = &zhAliasState{names: map[string]bool{}}
-				out[r.CharacterID] = st
-			}
-			st.names[r.Name] = true
-			st.hasPrimary = st.hasPrimary || r.IsPrimary
-		}
-	}
-	return out, nil
 }
 
 // preloadHostWorks maps each candidate character to the live works whose roster
@@ -124,7 +93,7 @@ func preloadHostWorks(ctx context.Context, db *gorm.DB, ids []int64) (map[int64]
 }
 
 // window applies offset/limit in Go after DISTINCT ON, so they slice distinct
-// characters (the dlsitemedia / entityintros chunking discipline).
+// entities (the dlsitemedia / entityintros chunking discipline).
 func window[T any](out []T, limit, offset int) []T {
 	if offset > 0 {
 		if offset >= len(out) {

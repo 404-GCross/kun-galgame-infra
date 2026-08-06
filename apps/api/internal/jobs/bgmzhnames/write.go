@@ -14,6 +14,7 @@ import (
 // writer turns decided plans into alias rows and collects the touch set.
 type writer struct {
 	db        *gorm.DB
+	spec      laneSpec
 	existing  map[int64]*zhAliasState
 	hostWorks map[int64][]int64
 	stats     *Stats
@@ -21,22 +22,22 @@ type writer struct {
 	touched   []int64
 }
 
-// write plans (and in apply mode inserts) one character's names.
+// write plans (and in apply mode inserts) one entity's names.
 //
 // Two rules meet here:
 //
-//   - fill-missing is per (character, name), NOT per language: the unique key is
-//     (character_id, name, lang), so a character that already has a zh-Hans name
-//     can still gain another one. A name it already carries is skipped.
-//   - the locale primary is claimed by at most one row, and only when the
-//     character has none. The main `简体中文名` is first in the plan, so it is the
-//     one that claims it; an existing primary — a human edit or an earlier run —
-//     is never flipped.
+//   - fill-missing is per (owner, name), NOT per language: the unique key is
+//     (owner_id, name, lang), so an owner that already has a zh-Hans name can
+//     still gain another one. A name it already carries is skipped.
+//   - the locale primary is claimed by at most one row, and only when the owner
+//     has none. The main `简体中文名` is first in the plan, so it is the one that
+//     claims it; an existing primary — a human edit or an earlier run — is never
+//     flipped.
 func (w *writer) write(ctx context.Context, p plan) {
-	state := w.existing[p.CharacterID]
+	state := w.existing[p.OwnerID]
 	if state == nil {
 		state = &zhAliasState{names: map[string]bool{}}
-		w.existing[p.CharacterID] = state
+		w.existing[p.OwnerID] = state
 	}
 	wroteAny := false
 	for _, name := range p.Names {
@@ -50,16 +51,17 @@ func (w *writer) write(ctx context.Context, p plan) {
 
 		// The decided plan must be identical in dry and apply: mark the name (and
 		// the primary claim) as taken either way, so the forecast does not count
-		// the same character's second name as a second primary.
+		// the same entity's second name as a second primary.
 		state.names[name] = true
 		state.hasPrimary = true
 		if !w.apply {
 			continue
 		}
-		inserted, err := insertAlias(ctx, w.db, p.CharacterID, name, primary)
+		inserted, err := w.spec.insert(ctx, w.db, p.OwnerID, name, primary)
 		if err != nil {
 			w.stats.Errors++
-			slog.Warn("bgm-zh-names write", "character", p.CharacterID, "external", p.ExternalID, "name", name, "err", err)
+			slog.Warn("bgm-zh-names write", "entity", p.EntityID, "owner", p.OwnerID,
+				"external", p.ExternalID, "name", name, "err", err)
 			continue
 		}
 		if !inserted { // concurrent writer / backstop — the row is already there
@@ -72,13 +74,13 @@ func (w *writer) write(ctx context.Context, p plan) {
 		}
 		wroteAny = true
 	}
-	// One touch per character that actually gained rows, however many it gained.
+	// One touch per entity that actually gained rows, however many it gained.
 	if wroteAny {
-		w.touched = append(w.touched, w.hostWorks[p.CharacterID]...)
+		w.touched = append(w.touched, w.hostWorks[p.OwnerID]...)
 	}
 }
 
-func insertAlias(ctx context.Context, db *gorm.DB, characterID int64, name string, primary bool) (bool, error) {
+func insertCharacterAlias(ctx context.Context, db *gorm.DB, characterID int64, name string, primary bool) (bool, error) {
 	res := db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "character_id"}, {Name: "name"}, {Name: "lang"}},
 		DoNothing: true,
@@ -94,7 +96,8 @@ func insertAlias(ctx context.Context, db *gorm.DB, characterID int64, name strin
 
 // flushTouch bumps catalog_work.updated_at once per host work that actually
 // gained a name, and records how many distinct works that was. A run that wrote
-// nothing has an empty set and moves no watermark.
+// nothing has an empty set and moves no watermark; a lane with no touch
+// discipline (label / person) never gets here at all.
 func (w *writer) flushTouch(ctx context.Context) error {
 	seen := make(map[int64]struct{}, len(w.touched))
 	ids := make([]int64, 0, len(w.touched))
@@ -117,6 +120,6 @@ func (w *writer) collect(p plan, name string, primary bool) {
 		return
 	}
 	w.stats.Samples = append(w.stats.Samples, Sample{
-		CharacterID: p.CharacterID, ExternalID: p.ExternalID, Name: name, Primary: primary,
+		EntityID: p.EntityID, OwnerID: p.OwnerID, ExternalID: p.ExternalID, Name: name, Primary: primary,
 	})
 }

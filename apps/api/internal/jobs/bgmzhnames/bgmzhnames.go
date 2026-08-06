@@ -1,13 +1,23 @@
-// Package bgmzhnames projects the Simplified-Chinese character names carried by
-// the Bangumi infobox into catalog_character_alias (refs/proj/151). It is a
-// zero-parsing-dependency wave: the anchors already exist
-// (catalog_external_ref entity_type=character, source=bangumi, link_kind=exact),
-// the staging mirror already holds the parsed infobox, and the only work is
-// deciding which of its name fields are Chinese and writing them.
+// Package bgmzhnames projects the Simplified-Chinese names carried by the
+// Bangumi infobox into the catalog's alias tables. It started as the character
+// wave (refs/proj/151) and now covers three entity families through one
+// --lane switch (refs/proj/175 wave A):
 //
-// Supply, in document order per character:
+//	character  catalog_character anchors  → catalog_character_alias
+//	person     catalog_person anchors     → catalog_name_alias (primary credit name)
+//	label      catalog_label anchors      → catalog_label_alias
 //
-//   - the `简体中文名` field's scalar Value — the character's main Chinese name;
+// All three are zero-parsing-dependency waves: the anchors already exist
+// (catalog_external_ref, source=bangumi, link_kind=exact), the staging mirror
+// already holds the parsed infobox, and the only work is deciding which of its
+// name fields are Chinese and writing them. Bangumi files companies and groups
+// in the same `person` table as individuals, with the same infobox shape, so
+// the person and label lanes share one staging join and the parse layer is
+// identical across all three.
+//
+// Supply, in document order per entity:
+//
+//   - the `简体中文名` field's scalar Value — the entity's main Chinese name;
 //   - the Chinese-DECLARING items of the `别名` array (`中文名`, `第二中文名`,
 //     `第三中文名`, `第四中文名`, and their traditional/译名 spellings).
 //
@@ -26,17 +36,26 @@
 //
 // Write shape (no new schema, no migration):
 //
-//   - catalog_character_alias, lang='zh-Hans', kind=AliasKindTranslation, no latin.
-//   - The unique key is (character_id, name, lang), so an INSERT … ON CONFLICT
-//     DO NOTHING is idempotent by construction: a name the character already
+//   - lang='zh-Hans', kind=AliasKindTranslation, no latin.
+//   - The unique key is (owner, name, lang), so an INSERT … ON CONFLICT
+//     DO NOTHING is idempotent by construction: a name the owner already
 //     carries in zh-Hans — from a human edit or an earlier run — is absorbed.
-//   - is_primary_for_locale is set on at most ONE row per character, and only
-//     when that character has NO zh-Hans primary yet. An existing primary is
+//   - is_primary_for_locale is set on at most ONE row per owner, and only
+//     when that owner has NO zh-Hans primary yet. An existing primary is
 //     never flipped: the wave adds names, it does not re-elect them.
-//   - Real writes bump the host works' updated_at through repository.TouchWorks
-//     (the step-117/120 changes-feed discipline). A character written once is
-//     touched once even if it gained several names, and a run that writes
-//     nothing touches nothing.
+//   - The person and label lanes drop a projected name that is ALREADY the
+//     owner's own display name (213 persons / 72 labels): the read faces hide
+//     such a row, so writing it would only cost a dead row that claims the
+//     locale primary.
+//
+// TOUCH DISCIPLINE IS PER LANE, and only the character lane has one. A
+// character's names are rendered by the works whose roster lists it, so a real
+// write bumps those works' updated_at through repository.TouchWorks (the
+// step-117/120 changes-feed discipline); a character written once is touched
+// once even if it gained several names, and a run that writes nothing touches
+// nothing. Persons and labels reach no work read face with their alias sets —
+// the same finding personmint and labellogos already recorded — so those lanes
+// touch nothing at all. See labelLane / personLane for the full argument.
 //
 // --dsn is ALWAYS explicit — a bare run cannot touch a live DB. Dry-run is the
 // default; --apply writes.
@@ -62,29 +81,39 @@ const LangZhHans = "zh-Hans"
 const maxSamples = 10
 
 // Opts configures a run. Apply=false is a dry-run forecast. DSN is REQUIRED.
+// An empty Lane means LaneCharacter, so an existing invocation keeps its
+// meaning.
 type Opts struct {
 	Apply  bool
 	DSN    string
+	Lane   Lane
 	Limit  int
 	Offset int
 }
 
-// Sample is one decided name, for dry-run logging and human review.
+// Sample is one decided name, for dry-run logging and human review. EntityID is
+// the anchored entity (character / person / label); OwnerID is the row the
+// alias hangs off, which differs from it only on the person lane.
 type Sample struct {
-	CharacterID int64
-	ExternalID  string
-	Name        string
-	Primary     bool
+	EntityID   int64
+	OwnerID    int64
+	ExternalID string
+	Name       string
+	Primary    bool
 }
 
 // Stats reports the run. The DECIDED counters (Candidates / WouldInsert /
 // SkippedDup / SkippedGuard) are identical in dry and apply; Inserted /
 // PrimarySet / Touched / Conflict / Errors only move in apply.
 type Stats struct {
-	// Anchored is every live character carrying a bangumi EXACT anchor — the
-	// universe this wave looks at.
+	// Anchored is every live entity carrying a bangumi EXACT anchor — the
+	// universe this lane looks at.
 	Anchored int
-	// SkippedGuard counts characters whose infobox_parsed carries no usable
+	// SkippedNoOwner counts anchored entities with no row to hang an alias off.
+	// Person lane only: a person whose primary_credit_name_id is NULL. Choosing
+	// one of its other credit names would be an identity judgement.
+	SkippedNoOwner int
+	// SkippedGuard counts entities whose infobox_parsed carries no usable
 	// Fields ARRAY (missing, JSON null, or a scalar dirty value — the step-81
 	// charattrs finding). Nothing is read out of them.
 	SkippedGuard int
@@ -93,11 +122,14 @@ type Stats struct {
 	// SkippedNonChinese counts NAME values dropped by the Chinese test
 	// (Latin-only transcriptions, sentinels, kana-bearing values).
 	SkippedNonChinese int
-	// Candidates counts characters with at least one projected Chinese name.
+	// SkippedSameAsOwner counts names identical to the owner's own display name
+	// (person / label lanes only — see laneSpec.dropOwnerName).
+	SkippedSameAsOwner int
+	// Candidates counts entities with at least one projected Chinese name.
 	Candidates int
-	// Names is every projected (character, name) pair, deduplicated per character.
+	// Names is every projected (owner, name) pair, deduplicated per entity.
 	Names int
-	// WouldInsert / SkippedDup split Names against what the character already
+	// WouldInsert / SkippedDup split Names against what the owner already
 	// carries in zh-Hans.
 	WouldInsert int
 	SkippedDup  int
@@ -111,11 +143,15 @@ type Stats struct {
 	Samples    []Sample
 }
 
-// Run resolves the anchored characters, projects their Chinese names and
+// Run resolves the lane's anchored entities, projects their Chinese names and
 // forecasts (dry) or writes (apply) the alias rows.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess — pass the rehearsal copy locally, the live catalog only in the acceptance run")
+	}
+	spec, err := laneFor(opts.Lane)
+	if err != nil {
+		return nil, err
 	}
 	db, err := openGorm(opts.DSN)
 	if err != nil {
@@ -128,15 +164,19 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := loadAnchored(ctx, db, sourceID, opts.Limit, opts.Offset)
+	rows, err := spec.load(ctx, db, sourceID, opts.Limit, opts.Offset)
 	if err != nil {
 		return nil, err
 	}
 	st := &Stats{Anchored: len(rows)}
 
-	// Project first, so the preloads only pay for characters that have supply.
+	// Project first, so the preloads only pay for entities that have supply.
 	plans := make([]plan, 0, len(rows))
 	for _, r := range rows {
+		if r.OwnerID == nil {
+			st.SkippedNoOwner++
+			continue
+		}
 		fields, ok := parseFields(r.Infobox)
 		if !ok {
 			st.SkippedGuard++
@@ -144,56 +184,87 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		}
 		names, rejected := projectNames(fields)
 		st.SkippedNonChinese += rejected
+		if spec.dropOwnerName {
+			names = dropName(names, r.OwnerName, &st.SkippedSameAsOwner)
+		}
 		if len(names) == 0 {
 			st.NoSupply++
 			continue
 		}
 		st.Candidates++
 		st.Names += len(names)
-		plans = append(plans, plan{CharacterID: r.EntityID, ExternalID: r.ExternalID, Names: names})
+		plans = append(plans, plan{
+			EntityID: r.EntityID, OwnerID: *r.OwnerID, ExternalID: r.ExternalID, Names: names,
+		})
 	}
-	ids := make([]int64, len(plans))
+	owners := make([]int64, len(plans))
 	for i, p := range plans {
-		ids[i] = p.CharacterID
+		owners[i] = p.OwnerID
 	}
-	existing, err := preloadZhAliases(ctx, db, ids)
+	existing, err := spec.preload(ctx, db, owners)
 	if err != nil {
 		return nil, err
 	}
-	hosts, err := preloadHostWorks(ctx, db, ids)
-	if err != nil {
-		return nil, err
+	hosts := map[int64][]int64{}
+	if spec.hostWorks != nil {
+		if hosts, err = spec.hostWorks(ctx, db, owners); err != nil {
+			return nil, err
+		}
 	}
-	slog.Info("bgm-zh-names candidates", "anchored", st.Anchored, "candidates", st.Candidates,
+	lane := opts.Lane
+	if lane == "" {
+		lane = LaneCharacter
+	}
+	slog.Info("bgm-zh-names candidates", "lane", lane, "anchored", st.Anchored, "candidates", st.Candidates,
 		"names", st.Names, "skipped_guard", st.SkippedGuard, "no_supply", st.NoSupply,
 		"apply", opts.Apply, "offset", opts.Offset, "limit", opts.Limit)
 
-	w := &writer{db: db, existing: existing, hostWorks: hosts, stats: st, apply: opts.Apply}
+	w := &writer{db: db, spec: spec, existing: existing, hostWorks: hosts, stats: st, apply: opts.Apply}
 	for _, p := range plans {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		w.write(ctx, p)
 	}
-	if opts.Apply {
+	if opts.Apply && spec.hostWorks != nil {
 		if err := w.flushTouch(ctx); err != nil {
 			return nil, fmt.Errorf("touch host works: %w", err)
 		}
 	}
-	slog.Info("bgm-zh-names done", "apply", opts.Apply,
-		"anchored", st.Anchored, "skipped_guard", st.SkippedGuard, "no_supply", st.NoSupply,
-		"skipped_non_chinese", st.SkippedNonChinese, "candidates", st.Candidates, "names", st.Names,
+	slog.Info("bgm-zh-names done", "lane", lane, "apply", opts.Apply,
+		"anchored", st.Anchored, "skipped_no_owner", st.SkippedNoOwner,
+		"skipped_guard", st.SkippedGuard, "no_supply", st.NoSupply,
+		"skipped_non_chinese", st.SkippedNonChinese, "skipped_same_as_owner", st.SkippedSameAsOwner,
+		"candidates", st.Candidates, "names", st.Names,
 		"would_insert", st.WouldInsert, "skipped_dup", st.SkippedDup,
 		"inserted", st.Inserted, "primary_set", st.PrimarySet, "conflict", st.Conflict,
 		"touched_works", st.Touched, "errors", st.Errors)
 	return st, nil
 }
 
-// plan is one character's decided name list, in write order.
+// plan is one entity's decided name list, in write order.
 type plan struct {
-	CharacterID int64
-	ExternalID  string
-	Names       []string
+	EntityID   int64
+	OwnerID    int64
+	ExternalID string
+	Names      []string
+}
+
+// dropName removes the owner's own display name from a projected list,
+// counting what it removed. An empty owner name removes nothing.
+func dropName(names []string, owner string, counter *int) []string {
+	if owner == "" {
+		return names
+	}
+	out := names[:0]
+	for _, n := range names {
+		if n == owner {
+			*counter++
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
