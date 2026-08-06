@@ -894,6 +894,10 @@ func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.P
 // kind columns describe the alias row's provenance, and every downstream
 // consumer of this field (search-as-you-type matching, "also known as" lines)
 // wants the strings. A richer shape stays available as a later addition.
+//
+// Search-hint rows (AliasKindSearchHint) are excluded: findability-only by the
+// kind's own contract, never displayed — e.g. the verbatim DLsite slash string
+// a heal demoted (refs/proj/175).
 func (s *PublicService) labelAliases(ctx context.Context, labelID int64) ([]string, error) {
 	var rows []struct {
 		Name string `gorm:"column:name"`
@@ -901,8 +905,8 @@ func (s *PublicService) labelAliases(ctx context.Context, labelID int64) ([]stri
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT a.name FROM catalog_label_alias a
 		JOIN catalog_label l ON l.id = a.label_id
-		WHERE a.label_id = ? AND a.name <> l.display_name
-		ORDER BY a.name, a.id`, labelID).Scan(&rows).Error; err != nil {
+		WHERE a.label_id = ? AND a.name <> l.display_name AND a.kind <> ?
+		ORDER BY a.name, a.id`, labelID, model.AliasKindSearchHint).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]string, 0, len(rows))
@@ -1479,6 +1483,8 @@ func (s *PublicService) characterIntros(ctx context.Context, characterID int64) 
 // No link-visibility gate is needed: an alias is a spelling of THIS name, not
 // an assertion about the person behind it, so it discloses nothing the head
 // name does not already disclose.
+//
+// Search-hint rows (AliasKindSearchHint) are excluded, as in labelAliases.
 func (s *PublicService) nameAliases(ctx context.Context, nameID int64) ([]string, error) {
 	var rows []struct {
 		Name string `gorm:"column:name"`
@@ -1486,8 +1492,8 @@ func (s *PublicService) nameAliases(ctx context.Context, nameID int64) ([]string
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT a.name FROM catalog_name_alias a
 		JOIN catalog_credit_name cn ON cn.id = a.credit_name_id
-		WHERE a.credit_name_id = ? AND a.name <> cn.name
-		ORDER BY a.name, a.id`, nameID).Scan(&rows).Error; err != nil {
+		WHERE a.credit_name_id = ? AND a.name <> cn.name AND a.kind <> ?
+		ORDER BY a.name, a.id`, nameID, model.AliasKindSearchHint).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]string, 0, len(rows))

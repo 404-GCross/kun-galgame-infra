@@ -864,6 +864,12 @@ func TestPublicNameAliases(t *testing.T) {
 	createNameAlias(t, head.ID, "绪方刚志", "")   // same spelling, other lang → renders once
 	createNameAlias(t, head.ID, "緒方剛志", "ja") // the name itself → excluded
 	createNameAlias(t, sibling.ID, "尾形武", "zh-Hans")
+	// A search hint is findability-only by its kind's contract — never displayed.
+	hint := &model.CatalogNameAlias{CreditNameID: head.ID, Name: "ogatakoji-hint",
+		Kind: model.AliasKindSearchHint}
+	if err := testDB.Create(hint).Error; err != nil {
+		t.Fatalf("create search hint: %v", err)
+	}
 
 	rec, found, err := svc.Name(ctx, head.ID, false, false, 50, 0)
 	if err != nil || !found {

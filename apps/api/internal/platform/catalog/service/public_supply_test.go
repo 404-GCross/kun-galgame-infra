@@ -356,11 +356,16 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("attach r18 label: %v", err)
 	}
-	for _, a := range []struct{ name, lang string }{
-		{"Milk Soft", "en"}, {"みるくそふと", "ja"}, {"Milk Soft", "ja"},
+	for _, a := range []struct {
+		name, lang string
+		kind       int16
+	}{
+		{"Milk Soft", "en", 0}, {"みるくそふと", "ja", 0}, {"Milk Soft", "ja", 0},
+		// A search hint is findability-only by its kind's contract — never displayed.
+		{"milksoft-hint", "", model.AliasKindSearchHint},
 	} {
 		if err := testDB.Create(&model.CatalogLabelAlias{
-			LabelID: labelID, Name: a.name, Lang: a.lang, Kind: 0,
+			LabelID: labelID, Name: a.name, Lang: a.lang, Kind: a.kind,
 		}).Error; err != nil {
 			t.Fatalf("create alias: %v", err)
 		}
