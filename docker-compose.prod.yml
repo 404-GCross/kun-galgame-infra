@@ -520,6 +520,13 @@ services:
       KUN_AI_CLIENT_BASE_URL: http://ai:9284
       KUN_AI_CLIENT_ID: "ba21dfba94274c134e01ede5eaa7c391"
       KUN_AI_CLIENT_SECRET: ${KUN_AI_CLIENT_SECRET:-}
+      # Wave 07: what the scan worker DOES with a flagged verdict. "shadow" (the
+      # default, and what any unrecognised value degrades to) only records it;
+      # "live" also opens a trust review item and queues the hide callback.
+      # It has to be named HERE — compose forwards only the variables it lists,
+      # so setting this in the Dokploy panel alone never reaches the container
+      # (2026-08-06: a panel-only KUN_TRUST_SCAN_MODE=live was a silent no-op).
+      KUN_TRUST_SCAN_MODE: ${KUN_TRUST_SCAN_MODE:-shadow}
     # Internal only — product backends reach it at http://trust:9283 over
     # dokploy-network.
     expose: ["9283"]
