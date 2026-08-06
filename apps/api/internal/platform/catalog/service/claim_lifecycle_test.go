@@ -330,3 +330,86 @@ func TestSearchWorksBBucketSupply(t *testing.T) {
 		}
 	}
 }
+
+// ---- RequireOwner (wave 179) -----------------------------------------------
+
+// ownerOfWork reads the stamped creator, which is the fact RequireOwner checks.
+func ownerOfWork(t *testing.T, workID int64) *int64 {
+	t.Helper()
+	var got *int64
+	if err := testDB.Raw(`SELECT owner_user_id FROM catalog_work WHERE id = ?`, workID).Scan(&got).Error; err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// TestClaimRequireOwner pins the user-face tooth: with RequireOwner set, the
+// three owner actions are refused unless the caller IS the entry's stamped
+// owner — and the S2S posture (the flag unset) is untouched by any of it.
+func TestClaimRequireOwner(t *testing.T) {
+	s := newLifecycle(t)
+	work := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "所有者テスト")
+	product := int64(4179)
+
+	// `claim` never meets the check: it is the birth of the ownership, so a
+	// caller with RequireOwner set claims a work nobody owns yet — and comes out
+	// of it as the owner.
+	act(t, s, work.ID, ClaimActionClaim, ClaimActionParams{
+		Site: "kungal", ProductWorkID: &product, ActorUID: 71, RequireOwner: true,
+	})
+	owner := ownerOfWork(t, work.ID)
+	if owner == nil || *owner != 71 {
+		t.Fatalf("claim must stamp the claimant as owner: %v", owner)
+	}
+
+	// A different user, same tenant: the tenancy check passes and this one does
+	// not. Nothing moved.
+	_, err := s.Act(context.Background(), ClaimActionParams{
+		WorkID: work.ID, Action: ClaimActionSubmit, Site: "kungal", ActorUID: 72, RequireOwner: true,
+	})
+	var notOwned *ClaimNotOwnedError
+	if !errors.As(err, &notOwned) {
+		t.Fatalf("a stranger's submit: %v", err)
+	}
+	if got := claimStateOfWork(t, work.ID); got == nil || *got != model.ClaimStateDraft {
+		t.Fatalf("the refusal moved the claim: %v", got)
+	}
+
+	// The owner's own submit lands.
+	act(t, s, work.ID, ClaimActionSubmit, ClaimActionParams{
+		Site: "kungal", ActorUID: 71, RequireOwner: true,
+	})
+	if got := claimStateOfWork(t, work.ID); got == nil || *got != model.ClaimStatePending {
+		t.Fatalf("the owner's submit: %v", got)
+	}
+
+	// The S2S plane is unchanged: without the flag, the very caller refused
+	// above moves the same claim, because there the uid is asserted by a backend
+	// that authenticated it and only the tenant is the registry's business.
+	act(t, s, work.ID, ClaimActionWithdraw, ClaimActionParams{Site: "kungal", ActorUID: 72})
+	if got := claimStateOfWork(t, work.ID); got == nil || *got != model.ClaimStateDraft {
+		t.Fatalf("the S2S withdraw: %v", got)
+	}
+
+	// A work with NO owner refuses every owner action on the user face: an entry
+	// nobody is recorded as having created is nobody's to move there.
+	orphan := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "無主テスト")
+	claimWork(t, orphan.ID, "kungal", 4180)
+	if err := testDB.Exec(`UPDATE catalog_work SET claim_state = ? WHERE id = ?`,
+		model.ClaimStateDraft, orphan.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Act(context.Background(), ClaimActionParams{
+		WorkID: orphan.ID, Action: ClaimActionPublish, Site: "kungal", ActorUID: 71, RequireOwner: true,
+	})
+	if !errors.As(err, &notOwned) {
+		t.Fatalf("an unowned work's publish: %v", err)
+	}
+
+	// …and the review actions ignore the flag entirely: their authority was
+	// settled by the permission check at the face, not by ownership.
+	act(t, s, work.ID, ClaimActionBan, ClaimActionParams{Site: "kungal", ActorUID: 99, RequireOwner: true})
+	if got := claimStateOfWork(t, work.ID); got == nil || *got != model.ClaimStateHidden {
+		t.Fatalf("ban with RequireOwner: %v", got)
+	}
+}

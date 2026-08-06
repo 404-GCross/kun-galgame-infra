@@ -45,7 +45,7 @@ func userVoteApp(db *gorm.DB, clients fakeClientLookup) *fiber.App {
 	app := fiber.New()
 	verifier := oidctoken.NewVerifier(userTestSecret, nil) // HS256-only (no JWKS)
 	app.Use(UserPrefix, middleware.JWTAuth(verifier), UserGate(clients))
-	SetupUser(app, service.NewCoverVoteService(db), nil, nil)
+	SetupUser(app, service.NewCoverVoteService(db), nil, nil, nil)
 	return app
 }
 

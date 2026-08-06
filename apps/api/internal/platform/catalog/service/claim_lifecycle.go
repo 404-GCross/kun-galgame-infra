@@ -127,6 +127,30 @@ func (e *ClaimOwnershipError) Error() string {
 	return fmt.Sprintf("work %d is claimed by site %q", e.WorkID, e.OwningSite)
 }
 
+// ClaimNotOwnedError is a caller moving a claim they did not create. It is the
+// PERSONAL half of the ownership question — ClaimOwnershipError above is the
+// tenant half — and it exists because the two faces know different things: an
+// S2S backend asserts a uid it authenticated itself and is believed, while a
+// user token IS the uid, so the registry can and must check it against the
+// owner it stamped at the claim's birth. Only a request that asks for the check
+// (ClaimActionParams.RequireOwner) can meet this error.
+type ClaimNotOwnedError struct {
+	WorkID   int64
+	ActorUID int64
+}
+
+func (e *ClaimNotOwnedError) Error() string {
+	return fmt.Sprintf("work %d was not created by user %d", e.WorkID, e.ActorUID)
+}
+
+// ownedActions are the three owner actions that move an EXISTING claim, and
+// therefore the three RequireOwner can be checked against. `claim` is absent by
+// construction: it is the birth of the claim, so there is no owner yet to
+// compare the caller to — the same reason the tenancy check exempts it.
+var ownedActions = map[ClaimAction]bool{
+	ClaimActionSubmit: true, ClaimActionPublish: true, ClaimActionWithdraw: true,
+}
+
 // ErrClaimReasonRequired: decline must say why (the reason reaches the
 // submitter through the event feed, and a decline nobody can act on is the
 // wiki's worst moderation habit).
@@ -147,6 +171,13 @@ type ClaimActionParams struct {
 	ProductWorkID *int64
 	ActorUID      int64
 	Reason        string
+	// RequireOwner asks the service to check ActorUID against the work's stamped
+	// owner for the three owner actions (wave 179). It is set by the USER-token
+	// face alone: there the uid is the token's and an unowned or foreign entry is
+	// simply not this person's to move. The S2S and staff faces leave it false —
+	// a product backend asserting a uid it authenticated is trusted with its own
+	// tenant's claims exactly as before, so nothing about the S2S contract moves.
+	RequireOwner bool
 }
 
 // ClaimActionResult is what happened, in the vocabulary the wire speaks.
@@ -211,6 +242,16 @@ func (s *ClaimLifecycleService) Act(ctx context.Context, p ClaimActionParams) (*
 		// there is no owner yet, which is the point of the action.
 		if p.Site != "" && p.Action != ClaimActionClaim && work.Site != nil && *work.Site != p.Site {
 			return &ClaimOwnershipError{WorkID: p.WorkID, OwningSite: *work.Site}
+		}
+		// Personal ownership, when the face asked for it. Inside the FOR UPDATE
+		// so it cannot race the stamping a concurrent `claim` performs two
+		// branches below: whatever owner this transaction sees is the one that
+		// will still be there when it commits. A row with NO owner refuses too —
+		// an entry nobody is recorded as having created is nobody's to move on a
+		// face whose entire premise is that identity is not asserted.
+		if p.RequireOwner && ownedActions[p.Action] &&
+			(work.OwnerUserID == nil || *work.OwnerUserID != p.ActorUID) {
+			return &ClaimNotOwnedError{WorkID: p.WorkID, ActorUID: p.ActorUID}
 		}
 
 		target := rule.to

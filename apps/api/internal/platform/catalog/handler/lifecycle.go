@@ -205,6 +205,7 @@ func claimErr(err error) error {
 	var (
 		transition *service.ClaimTransitionError
 		ownership  *service.ClaimOwnershipError
+		notOwned   *service.ClaimNotOwnedError
 	)
 	switch {
 	case stderrors.Is(err, gorm.ErrRecordNotFound):
@@ -214,6 +215,10 @@ func claimErr(err error) error {
 			dto.ClaimTransitionInfo{CurrentState: transition.Current, AllowedFrom: transition.Allowed})
 	case stderrors.As(err, &ownership):
 		return apiErrMsg(http.StatusForbidden, errors.ErrForbidden, ownership.Error())
+	// The user face's personal-ownership refusal (wave 179): the same 403 the
+	// tenant refusal answers with, because to the caller both mean "not yours".
+	case stderrors.As(err, &notOwned):
+		return apiErrMsg(http.StatusForbidden, errors.ErrForbidden, notOwned.Error())
 	case stderrors.Is(err, service.ErrClaimReasonRequired),
 		stderrors.Is(err, service.ErrClaimTargetRequired):
 		return apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed, err.Error())
