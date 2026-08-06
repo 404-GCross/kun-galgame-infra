@@ -1,0 +1,122 @@
+// catalog-char-xsrc builds the wave-177 cross-source character duplicate
+// candidates (refs/proj/177): live single-source characters co-resident on a
+// work with a character of a different single source, whose names differ only
+// by transliteration / itaiji / spelling — the pair shape the roster-era exact
+// matcher missed (硯川・e・涙香 vs 硯川・ユーフラジー・涙香).
+//
+// Three evidence tiers, ALL adjudicated by the LLM (never auto-merged here):
+//
+//	1  folded-name equality (NFKC + separators + itaiji, aliases expanded)
+//	2  voice-actor bridge: the same credit name voices both sides on the
+//	   shared work (bucket character_cv, the wave-156 calibrated lane)
+//	3  name similarity (shared segment / contiguous LCS) without a CV bridge
+//
+// The binary has two DB-free-ends: -mode packets talks to the database and
+// writes pairs.jsonl (join metadata) + packets.jsonl (evidence packets for
+// cmd/catalog-adjudicate); -mode emit joins the verdicts back and writes the
+// worklist for cmd/catalog-dedup-batch plus the human-review tail. The merge
+// itself always runs through the dedup-batch proposal path
+// (-note "rule:catalog-dedup step-177").
+//
+//	go run ./cmd/catalog-char-xsrc -mode packets -pairs pairs.jsonl -packets packets.jsonl
+//	go run ./cmd/catalog-char-xsrc -mode emit -pairs pairs.jsonl -verdicts verdicts.jsonl \
+//	    -worklist worklist.jsonl -review review.txt
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log/slog"
+	"os"
+
+	"api/internal/infrastructure/database"
+	"api/pkg/config"
+	"api/pkg/logger"
+
+	"github.com/joho/godotenv"
+	"gorm.io/gorm"
+)
+
+func main() {
+	mode := flag.String("mode", "", "packets | emit")
+	pairsPath := flag.String("pairs", "pairs.jsonl", "pair metadata JSONL (written by packets, read by emit)")
+	packetsPath := flag.String("packets", "packets.jsonl", "evidence packets JSONL for catalog-adjudicate (packets mode)")
+	verdictsPath := flag.String("verdicts", "", "verdicts JSONL from catalog-adjudicate (emit mode)")
+	worklistPath := flag.String("worklist", "worklist.jsonl", "merge worklist for catalog-dedup-batch (emit mode)")
+	reviewPath := flag.String("review", "review.txt", "human-review tail (emit mode)")
+	flag.Parse()
+
+	switch *mode {
+	case "packets":
+		_ = godotenv.Load("apps/api/.env")
+		cfg, err := config.Load()
+		if err != nil {
+			slog.Error("load config", "error", err)
+			os.Exit(1)
+		}
+		logger.Init(cfg.Server.Env)
+		catalogDB, err := database.NewPostgresDB(cfg.CatalogDatabase)
+		if err != nil {
+			slog.Error("catalog db connect", "error", err)
+			os.Exit(1)
+		}
+		defer catalogDB.Close()
+		if err := runPackets(catalogDB.DB(), *pairsPath, *packetsPath); err != nil {
+			slog.Error("packets", "error", err)
+			os.Exit(1)
+		}
+	case "emit":
+		logger.Init("development")
+		if *verdictsPath == "" {
+			fmt.Fprintln(os.Stderr, "-verdicts is required in emit mode")
+			os.Exit(2)
+		}
+		if err := runEmit(*pairsPath, *verdictsPath, *worklistPath, *reviewPath, os.Stdout); err != nil {
+			slog.Error("emit", "error", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown -mode %q (packets | emit)\n", *mode)
+		os.Exit(2)
+	}
+}
+
+// runPackets is the database end: compute the tiered pairs, then write the
+// join metadata and the rendered evidence packets side by side.
+func runPackets(db *gorm.DB, pairsPath, packetsPath string) error {
+	pairs, info, err := buildPairs(db)
+	if err != nil {
+		return err
+	}
+	titles, err := loadWorkTitles(db, pairs)
+	if err != nil {
+		return err
+	}
+
+	pf, err := os.Create(pairsPath)
+	if err != nil {
+		return err
+	}
+	defer pf.Close()
+	kf, err := os.Create(packetsPath)
+	if err != nil {
+		return err
+	}
+	defer kf.Close()
+	pe, ke := json.NewEncoder(pf), json.NewEncoder(kf)
+
+	tiers := map[int]int{}
+	for _, p := range pairs {
+		tiers[p.Tier]++
+		if err := pe.Encode(p); err != nil {
+			return err
+		}
+		if err := ke.Encode(packetFor(p, info, titles)); err != nil {
+			return err
+		}
+	}
+	slog.Info("packets built", "pairs", len(pairs),
+		"tier1_fold_equal", tiers[1], "tier2_va_bridge", tiers[2], "tier3_name_similar", tiers[3])
+	return nil
+}
