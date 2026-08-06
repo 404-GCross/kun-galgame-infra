@@ -73,6 +73,15 @@ const sourceOptions = computed(() => [
   }))
 ])
 
+// The classifier score reads on the same 0-1 scale the AI gateway emits. 0.4 is
+// where the cascade escalates to the LLM tier, so anything at or above it is a
+// verdict a second model already looked at; the bands here mirror that.
+const scoreColor = (score: number) => {
+  if (score >= 0.8) return 'danger'
+  if (score >= 0.4) return 'warning'
+  return 'default'
+}
+
 const claiming = ref(0)
 const claim = async (item: TrustReviewItem) => {
   claiming.value = item.id
@@ -156,6 +165,7 @@ const onDecided = async () => {
             <th class="px-3 py-2 text-left font-medium">站点</th>
             <th class="px-3 py-2 text-left font-medium">主体</th>
             <th class="px-3 py-2 text-left font-medium">来源</th>
+            <th class="px-3 py-2 text-right font-medium">AI 分</th>
             <th class="px-3 py-2 text-right font-medium">严重度</th>
             <th class="px-3 py-2 text-right font-medium">权重</th>
             <th class="px-3 py-2 text-left font-medium">状态</th>
@@ -178,6 +188,20 @@ const onDecided = async () => {
             </td>
             <td class="px-3 py-2">
               {{ REVIEW_SOURCE_LABELS[item.source] ?? item.source }}
+            </td>
+            <td class="px-3 py-2 text-right">
+              <!-- The classifier verdict that opened (or was merged into) this
+                   item. Only AI sources carry one, so a report-only item shows
+                   a dash rather than a misleading 0.00. -->
+              <KunChip
+                v-if="item.classifier_score != null"
+                :color="scoreColor(item.classifier_score)"
+                variant="flat"
+                size="xs"
+              >
+                {{ item.classifier_score.toFixed(2) }}
+              </KunChip>
+              <span v-else class="text-default-300">-</span>
             </td>
             <td class="px-3 py-2 text-right">{{ item.severity ?? '-' }}</td>
             <td class="px-3 py-2 text-right">
@@ -219,7 +243,7 @@ const onDecided = async () => {
             </td>
           </tr>
           <tr v-if="!items.length && !error">
-            <td colspan="8" class="text-default-400 px-3 py-10 text-center">
+            <td colspan="9" class="text-default-400 px-3 py-10 text-center">
               {{ isLoading ? '加载中…' : '没有匹配的审核项' }}
             </td>
           </tr>

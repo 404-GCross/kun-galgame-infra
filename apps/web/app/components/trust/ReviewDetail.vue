@@ -138,6 +138,10 @@ const submit = async () => {
       <span>站点:{{ item.site }}</span>
       <span>来源:{{ REVIEW_SOURCE_LABELS[item.source] ?? item.source }}</span>
       <span>优先级:{{ item.priority?.toFixed(2) }}</span>
+      <!-- Present only on AI-sourced items; a report-only item has no score. -->
+      <span v-if="item.classifier_score != null">
+        AI 分:{{ item.classifier_score.toFixed(2) }}
+      </span>
       <span>严重度:{{ item.severity ?? '-' }}</span>
       <span>权重合计:{{ item.report_weight_sum?.toFixed(1) ?? '-' }}</span>
       <span v-if="item.claimed_by">认领人:{{ item.claimed_by }}</span>
