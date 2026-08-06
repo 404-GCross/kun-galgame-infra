@@ -306,6 +306,10 @@ components:
         subject_kind:
           description: registered subject kind (e.g. community_post)
           type: string
+        subject_reach:
+          description: optional audience the content has reached (views or nearest equivalent); ranks the review queue and re-ranks an already-open item upward as the number grows
+          format: int64
+          type: integer
         weight_sum:
           description: accumulated signal weight (idempotent update takes the max)
           format: float
@@ -491,6 +495,10 @@ components:
         subject_kind:
           description: registered subject kind for this site (e.g. community_post)
           type: string
+        subject_reach:
+          description: optional audience the content has reached so far (views or the product's nearest equivalent); ranks the review queue — omitted or 0 contributes no boost
+          format: int64
+          type: integer
         text:
           description: the UGC text to scan (capped at ~8000 runes; excess is truncated and recorded)
           type: string

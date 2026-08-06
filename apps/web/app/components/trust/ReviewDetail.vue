@@ -7,6 +7,7 @@
 // disposition server-side.
 import {
   REVIEW_STATUS,
+  REVIEW_SOURCE,
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_COLORS,
   REVIEW_SOURCE_LABELS,
@@ -31,6 +32,7 @@ const api = useApi('trust')
 
 const item = computed(() => props.detail.item)
 const reports = computed(() => props.detail.reports ?? [])
+const isSample = computed(() => item.value.source === REVIEW_SOURCE.aiSample)
 
 // A decision is only allowed while the item is pending or claimed.
 const canDecide = computed(
@@ -142,9 +144,31 @@ const submit = async () => {
       <span v-if="item.classifier_score != null">
         AI 分:{{ item.classifier_score.toFixed(2) }}
       </span>
+      <!-- Snapshot taken when the item opened, not a live figure. -->
+      <span v-if="item.subject_reach != null">
+        触达:{{ item.subject_reach.toLocaleString() }}
+      </span>
       <span>严重度:{{ item.severity ?? '-' }}</span>
       <span>权重合计:{{ item.report_weight_sum?.toFixed(1) ?? '-' }}</span>
       <span v-if="item.claimed_by">认领人:{{ item.claimed_by }}</span>
+    </div>
+
+    <!-- A calibration draw is a QUESTION, not an accusation. Without saying so
+         plainly a reviewer reads it as one more case to dispose of, dismisses
+         the batch unexamined, and the false-negative measurement silently
+         reads zero — which looks exactly like a pipeline that misses nothing. -->
+    <div
+      v-if="isSample"
+      class="border-default-200 bg-content2 rounded-lg border p-3 text-sm"
+    >
+      <p class="text-foreground font-medium">抽检项 · 分类器判定为「无问题」</p>
+      <p class="text-default-500 mt-1">
+        这条是随机抽出来复核的,不是被举报或被判违规的内容。请判断分类器放行得对不对:确实没问题就
+        <span class="text-foreground font-medium">驳回</span>
+        ;如果我们漏了什么,就
+        <span class="text-foreground font-medium">处置</span>
+        ——后者正是这套抽检要找的东西。
+      </p>
     </div>
 
     <div v-if="item.context_note" class="bg-content2 rounded-lg p-2 text-sm">

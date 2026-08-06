@@ -673,7 +673,7 @@ export interface components {
             site: string;
             /**
              * Format: int32
-             * @description 0=reports 1=ai_text 2=ai_image 3=community_forward 4=mislabel 5=manual
+             * @description 0=reports 1=ai_text 2=ai_image 3=community_forward 4=mislabel 5=manual 6=ai_sample (a clean verdict drawn at random for calibration — never enforced)
              */
             source: number;
             /**
@@ -683,6 +683,11 @@ export interface components {
             status: number;
             subject_id: string;
             subject_kind: string;
+            /**
+             * Format: int64
+             * @description audience the content had reached when the item opened (snapshot); absent = the product does not report it
+             */
+            subject_reach?: number;
         };
         SubjectKindView: {
             callback_url?: string;

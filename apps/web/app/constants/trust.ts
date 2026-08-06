@@ -40,15 +40,29 @@ export const REVIEW_STATUS_COLORS: Record<number, TrustChipColor> = {
   3: 'default'
 }
 
+export const REVIEW_SOURCE = {
+  reports: 0,
+  aiText: 1,
+  aiImage: 2,
+  communityForward: 3,
+  mislabel: 4,
+  manual: 5,
+  aiSample: 6
+} as const
+
 // review_item.source: 0=reports 1=ai_text 2=ai_image 3=community_forward
-// 4=mislabel 5=manual
+// 4=mislabel 5=manual 6=ai_sample
 export const REVIEW_SOURCE_LABELS: Record<number, string> = {
   0: '举报',
   1: 'AI 文本',
   2: 'AI 图像',
   3: '社区转交',
   4: '错误标注',
-  5: '人工'
+  5: '人工',
+  // A clean verdict drawn at random so a human can confirm the classifier was
+  // right to clear it — the only source that measures what the pipeline MISSES.
+  // Never enforced: nothing is hidden by a calibration draw.
+  6: '抽检'
 }
 
 // disposition.action: 0=none 1=hide 2=remove 3=warn_user 4=restrict

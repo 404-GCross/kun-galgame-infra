@@ -7,6 +7,7 @@
 import {
   TRUST_FILTER_ALL,
   REVIEW_STATUS,
+  REVIEW_SOURCE,
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_COLORS,
   REVIEW_SOURCE_LABELS
@@ -81,6 +82,18 @@ const scoreColor = (score: number) => {
   if (score >= 0.4) return 'warning'
   return 'default'
 }
+
+// Reach is a snapshot of how many people had seen the content when the item
+// opened. It spans orders of magnitude (a 3-view reply next to a 300k-view
+// topic), so it is rendered compactly — the magnitude is the decision-relevant
+// part, not the exact figure.
+const formatReach = (reach: number) =>
+  new Intl.NumberFormat('zh-CN', { notation: 'compact' }).format(reach)
+
+// A calibration draw is a question ("did we miss anything?"), not an accusation,
+// and it must not read like one in a queue full of real cases.
+const isSample = (item: TrustReviewItem) =>
+  item.source === REVIEW_SOURCE.aiSample
 
 const claiming = ref(0)
 const claim = async (item: TrustReviewItem) => {
@@ -166,6 +179,7 @@ const onDecided = async () => {
             <th class="px-3 py-2 text-left font-medium">主体</th>
             <th class="px-3 py-2 text-left font-medium">来源</th>
             <th class="px-3 py-2 text-right font-medium">AI 分</th>
+            <th class="px-3 py-2 text-right font-medium">触达</th>
             <th class="px-3 py-2 text-right font-medium">严重度</th>
             <th class="px-3 py-2 text-right font-medium">权重</th>
             <th class="px-3 py-2 text-left font-medium">状态</th>
@@ -178,6 +192,7 @@ const onDecided = async () => {
             v-for="item in items"
             :key="item.id"
             class="border-default-200 border-t align-top"
+            :class="isSample(item) ? 'bg-content2/40' : ''"
           >
             <td class="px-3 py-2">{{ item.site }}</td>
             <td class="px-3 py-2">
@@ -187,7 +202,17 @@ const onDecided = async () => {
               <span class="font-mono">{{ item.subject_id }}</span>
             </td>
             <td class="px-3 py-2">
-              {{ REVIEW_SOURCE_LABELS[item.source] ?? item.source }}
+              <KunChip
+                v-if="isSample(item)"
+                color="default"
+                variant="flat"
+                size="xs"
+              >
+                {{ REVIEW_SOURCE_LABELS[item.source] }}
+              </KunChip>
+              <template v-else>
+                {{ REVIEW_SOURCE_LABELS[item.source] ?? item.source }}
+              </template>
             </td>
             <td class="px-3 py-2 text-right">
               <!-- The classifier verdict that opened (or was merged into) this
@@ -202,6 +227,15 @@ const onDecided = async () => {
                 {{ item.classifier_score.toFixed(2) }}
               </KunChip>
               <span v-else class="text-default-300">-</span>
+            </td>
+            <td class="text-default-500 px-3 py-2 text-right">
+              <!-- Snapshot at open time, not a live count — the queue's order
+                   would be unstable under a reviewer otherwise. -->
+              {{
+                item.subject_reach != null
+                  ? formatReach(item.subject_reach)
+                  : '-'
+              }}
             </td>
             <td class="px-3 py-2 text-right">{{ item.severity ?? '-' }}</td>
             <td class="px-3 py-2 text-right">
@@ -243,7 +277,7 @@ const onDecided = async () => {
             </td>
           </tr>
           <tr v-if="!items.length && !error">
-            <td colspan="9" class="text-default-400 px-3 py-10 text-center">
+            <td colspan="10" class="text-default-400 px-3 py-10 text-center">
               {{ isLoading ? '加载中…' : '没有匹配的审核项' }}
             </td>
           </tr>
