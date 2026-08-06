@@ -91,6 +91,10 @@ components:
         note:
           description: optional operator memo
           type: string
+        purpose:
+          description: 0=abuse (default; precision-prunable against the AI classifier) 1=compliance (legal/regulatory — exempt from precision pruning, since the abuse classifier does not judge that question)
+          format: int32
+          type: integer
         site:
           description: tenant site; null = global (applies to every site)
           type: string
@@ -788,6 +792,10 @@ components:
           type: integer
         note:
           type: string
+        purpose:
+          description: 0=abuse 1=compliance (exempt from precision-based retirement)
+          format: int32
+          type: integer
         site:
           description: null = global (applies to every site)
           type: string
@@ -797,6 +805,7 @@ components:
         - id
         - term_norm
         - kind
+        - purpose
         - is_deprecated
         - created_at
       type: object
@@ -1256,6 +1265,15 @@ paths:
           schema:
             default: -1
             description: 0=suspect 1=banned; -1 = all
+            format: int32
+            type: integer
+        - description: 0=abuse 1=compliance; -1 = all
+          explode: false
+          in: query
+          name: purpose
+          schema:
+            default: -1
+            description: 0=abuse 1=compliance; -1 = all
             format: int32
             type: integer
         - description: include retired terms

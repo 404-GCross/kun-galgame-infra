@@ -39,7 +39,52 @@ func Run(db *gorm.DB) error {
 	if err := rawSQL(db); err != nil {
 		return err
 	}
-	return seedReasons(db)
+	if err := seedReasons(db); err != nil {
+		return err
+	}
+	return classifyImportedTermPurpose(db)
+}
+
+// compliancePurposeSources are the imported lexicons whose terms exist for LEGAL
+// / REGULATORY filtering rather than to catch abuse. They are listed by their
+// import note (the source filename cmd/import-trust-terms records) because that
+// is the only provenance the rows carry.
+//
+// The distinction is not editorial fussiness, it is what keeps the precision
+// pruner honest: the abuse classifier never judges political speech as abuse, so
+// it scores every term here at ~0% precision no matter how well the term works.
+// Without this list, one -drop-unevidenced run would silently empty the entire
+// compliance lexicon while producing a report that looked fully evidence-based.
+//
+// The two large mixed lexicons (零时-Tencent / 网易前端过滤敏感词库) are
+// deliberately NOT here: they are majority abuse/noise — every measured false
+// positive found so far came from them — and marking them compliance wholesale
+// would freeze that noise in place permanently. They stay prunable; the pruner's
+// review bucket is where anything questionable in them surfaces for a human.
+var compliancePurposeSources = []string{
+	"GFW补充词库.txt",
+	"反动词库.txt",
+	"政治类型.txt",
+	"贪腐词库.txt",
+	"民生词库.txt",
+	"新思想启蒙.txt",
+	"暴恐词库.txt",
+	"涉枪涉爆.txt",
+	"COVID-19词库.txt",
+}
+
+// classifyImportedTermPurpose backfills purpose=compliance for the lexicons
+// above. Idempotent (a re-run rewrites the same rows to the same value) and
+// scoped by note, so a term an operator later reclassifies by hand is only
+// reverted if it still carries the original import note — which is the correct
+// behaviour for a provenance-driven default.
+func classifyImportedTermPurpose(db *gorm.DB) error {
+	if err := db.Model(&model.TrustTerm{}).
+		Where("note IN ? AND purpose <> ?", compliancePurposeSources, model.TermPurposeCompliance).
+		Update("purpose", model.TermPurposeCompliance).Error; err != nil {
+		return fmt.Errorf("classify imported term purpose: %w", err)
+	}
+	return nil
 }
 
 // rawSQL is the post-AutoMigrate section: the indexes AutoMigrate cannot

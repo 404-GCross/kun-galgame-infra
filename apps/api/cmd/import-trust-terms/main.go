@@ -14,6 +14,10 @@
 //
 //	-site       target scope; "" (default) = a GLOBAL term (stored site NULL).
 //	-kind       enforcement intent: 0=suspect (default) / 1=banned (explicit).
+//	-purpose    why the terms are listed: 0=abuse (default) / 1=compliance.
+//	            Compliance terms are exempt from precision-based retirement
+//	            (cmd/trust-term-prune) because the abuse classifier does not
+//	            judge the question they answer — see the model comment.
 //	-note       operator memo; "" (default) = the per-file source filename.
 //	-min-runes  drop terms whose POST-Normalize rune count is below this (3).
 //	-apply      write; default is a dry-run preview (nothing is inserted).
@@ -40,6 +44,7 @@ import (
 func main() {
 	site := flag.String("site", "", `target site scope ("" = global, stored site NULL)`)
 	kind := flag.Int("kind", int(model.TermKindSuspect), "enforcement intent: 0=suspect, 1=banned")
+	purpose := flag.Int("purpose", int(model.TermPurposeAbuse), "why listed: 0=abuse, 1=compliance")
 	note := flag.String("note", "", "operator memo (default: the source filename, per file)")
 	minRunes := flag.Int("min-runes", 3, "drop terms with fewer runes than this AFTER normalization")
 	apply := flag.Bool("apply", false, "write to the database (default: dry-run preview)")
@@ -49,6 +54,10 @@ func main() {
 	if len(files) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: import-trust-terms [flags] <file.txt ...>")
 		flag.PrintDefaults()
+		os.Exit(2)
+	}
+	if *purpose != int(model.TermPurposeAbuse) && *purpose != int(model.TermPurposeCompliance) {
+		fmt.Fprintf(os.Stderr, "invalid -purpose %d: must be 0 (abuse) or 1 (compliance)\n", *purpose)
 		os.Exit(2)
 	}
 	if *kind != int(model.TermKindSuspect) && *kind != int(model.TermKindBanned) {
@@ -83,6 +92,7 @@ func main() {
 	ic := importConfig{
 		site:     scope,
 		kind:     int16(*kind),
+		purpose:  int16(*purpose),
 		note:     *note,
 		minRunes: *minRunes,
 		apply:    *apply,

@@ -61,6 +61,9 @@ var (
 	// ErrTermInvalidKind is returned when a Tier0 term kind is neither suspect(0)
 	// nor banned(1).
 	ErrTermInvalidKind = errors.New("trust: term kind must be suspect(0) or banned(1)")
+	// ErrTermInvalidPurpose is returned when a Tier0 term purpose is neither
+	// abuse(0) nor compliance(1).
+	ErrTermInvalidPurpose = errors.New("trust: term purpose must be abuse(0) or compliance(1)")
 	// ErrTermExists is returned when creating a Tier0 term whose (site-or-global,
 	// norm) already has an ACTIVE row (deprecate + re-create, never duplicate).
 	ErrTermExists = errors.New("trust: an active term with this norm already exists for the site")

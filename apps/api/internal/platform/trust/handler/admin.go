@@ -485,7 +485,8 @@ func mapAdminErr(op string, err error) *houseError {
 		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, err.Error())
 	case stderrors.Is(err, service.ErrInvalidDecision),
 		stderrors.Is(err, service.ErrTermEmpty),
-		stderrors.Is(err, service.ErrTermInvalidKind):
+		stderrors.Is(err, service.ErrTermInvalidKind),
+		stderrors.Is(err, service.ErrTermInvalidPurpose):
 		return apiErrMsg(http.StatusBadRequest, errors.ErrValidationFailed, err.Error())
 	default:
 		slog.Error("trust admin "+op, "err", err)

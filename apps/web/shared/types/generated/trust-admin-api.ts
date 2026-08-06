@@ -334,6 +334,11 @@ export interface components {
             kind: number;
             /** @description optional operator memo */
             note?: string;
+            /**
+             * Format: int32
+             * @description 0=abuse (default; precision-prunable against the AI classifier) 1=compliance (legal/regulatory — exempt from precision pruning, since the abuse classifier does not judge that question)
+             */
+            purpose?: number;
             /** @description tenant site; null = global (applies to every site) */
             site?: string;
             /** @description the raw term (normalized server-side before storage) */
@@ -713,6 +718,11 @@ export interface components {
              */
             kind: number;
             note?: string;
+            /**
+             * Format: int32
+             * @description 0=abuse 1=compliance (exempt from precision-based retirement)
+             */
+            purpose: number;
             /** @description null = global (applies to every site) */
             site?: string;
             term_norm: string;
@@ -1173,6 +1183,8 @@ export interface operations {
                 site?: string;
                 /** @description 0=suspect 1=banned; -1 = all */
                 kind?: number;
+                /** @description 0=abuse 1=compliance; -1 = all */
+                purpose?: number;
                 /** @description include retired terms */
                 include_deprecated?: boolean;
                 /** @description substring search over the normalized term (the raw input is normalized the same way before matching) */

@@ -221,6 +221,10 @@ func (s *TermService) invalidate() {
 type TermFilters struct {
 	Site              string
 	Kind              *int16
+	// Purpose nil = both. Filtering by it is how an operator audits one lexicon
+	// at a time — the compliance list and the abuse list are maintained on
+	// completely different evidence, so they are rarely reviewed together.
+	Purpose           *int16
 	IncludeDeprecated bool
 	Query             string
 	Page              int
@@ -236,6 +240,9 @@ func (s *TermService) List(ctx context.Context, f TermFilters) ([]model.TrustTer
 	}
 	if f.Kind != nil {
 		q = q.Where("kind = ?", *f.Kind)
+	}
+	if f.Purpose != nil {
+		q = q.Where("purpose = ?", *f.Purpose)
 	}
 	if !f.IncludeDeprecated {
 		q = q.Where("is_deprecated = false")
@@ -280,6 +287,9 @@ type CreateTermParams struct {
 	Site    *string
 	Term    string
 	Kind    int16
+	// Purpose decides what evidence may later retire the term; see
+	// model.TrustTerm. Defaults to abuse (the zero) when a caller omits it.
+	Purpose int16
 	Note    *string
 }
 
@@ -290,6 +300,9 @@ func (s *TermService) Create(ctx context.Context, p CreateTermParams) (*model.Tr
 	if p.Kind != model.TermKindSuspect && p.Kind != model.TermKindBanned {
 		return nil, ErrTermInvalidKind
 	}
+	if p.Purpose != model.TermPurposeAbuse && p.Purpose != model.TermPurposeCompliance {
+		return nil, ErrTermInvalidPurpose
+	}
 	site := p.Site
 	if site != nil && strings.TrimSpace(*site) == "" {
 		site = nil // an empty per-site value is a global term
@@ -298,7 +311,10 @@ func (s *TermService) Create(ctx context.Context, p CreateTermParams) (*model.Tr
 	if normTerm == "" {
 		return nil, ErrTermEmpty
 	}
-	term := model.TrustTerm{Site: site, TermNorm: normTerm, Kind: p.Kind, Note: p.Note, IsDeprecated: false}
+	term := model.TrustTerm{
+		Site: site, TermNorm: normTerm, Kind: p.Kind, Purpose: p.Purpose,
+		Note: p.Note, IsDeprecated: false,
+	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var n int64
 		if err := tx.Model(&model.TrustTerm{}).

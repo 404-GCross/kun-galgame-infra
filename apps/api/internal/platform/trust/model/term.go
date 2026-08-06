@@ -34,6 +34,22 @@ type TrustTerm struct {
 	// Kind is the enforcement intent: 0=suspect (hold — enqueue, do not block)
 	// / 1=banned (deny — the sync check rejects). A meaningful zero → NO default.
 	Kind int16 `gorm:"not null;column:kind" json:"kind"`
+	// Purpose is WHY the term is listed, and it exists because the two reasons
+	// cannot be judged by the same evidence:
+	//
+	//   0=abuse      spam / harassment / scam. The AI classifier is an
+	//                independent second opinion on the same question, so a term
+	//                that fires on content the classifier clears is measurably a
+	//                false positive — precision-prunable (cmd/trust-term-prune).
+	//   1=compliance legal / regulatory filtering. The abuse classifier does NOT
+	//                judge this question at all, so it scores such a term ~0%
+	//                precision even when the term is doing its job perfectly.
+	//                Auto-retiring on that number would silently empty the
+	//                compliance list; these are reported for human review only.
+	//
+	// A meaningful zero (abuse is the default reason a term exists) → NO default
+	// tag; the service and the importer write it explicitly.
+	Purpose int16 `gorm:"not null;column:purpose" json:"purpose"`
 	// Note is an optional operator memo (why the term is listed).
 	Note *string `gorm:"column:note" json:"note,omitempty"`
 	// IsDeprecated retires the term (registry rows are never deleted). Creation

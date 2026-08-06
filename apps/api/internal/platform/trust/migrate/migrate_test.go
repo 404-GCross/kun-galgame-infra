@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"api/internal/platform/trust/dbtest"
+	"api/internal/platform/trust/model"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -161,4 +162,61 @@ func columnDefault(t *testing.T, table, column string) string {
 		return ""
 	}
 	return *def
+}
+
+// TestClassifyImportedTermPurpose pins the backfill that protects the
+// compliance lexicon from the precision pruner. Getting this wrong is not a
+// cosmetic bug: an unclassified compliance term is judged by an abuse
+// classifier that never asks its question, scores ~0% precision forever, and is
+// retired by the first pruning run that includes it.
+func TestClassifyImportedTermPurpose(t *testing.T) {
+	db := testDB
+	if err := db.Exec("TRUNCATE trust_term RESTART IDENTITY CASCADE").Error; err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	note := func(s string) *string { return &s }
+	seed := []model.TrustTerm{
+		{TermNorm: "political-a", Kind: model.TermKindSuspect, Note: note("反动词库.txt")},
+		{TermNorm: "political-b", Kind: model.TermKindSuspect, Note: note("GFW补充词库.txt")},
+		{TermNorm: "spam-a", Kind: model.TermKindSuspect, Note: note("广告类型.txt")},
+		{TermNorm: "mixed-a", Kind: model.TermKindSuspect, Note: note("零时-Tencent.txt")},
+		{TermNorm: "handmade", Kind: model.TermKindSuspect},
+	}
+	for i := range seed {
+		if err := db.Create(&seed[i]).Error; err != nil {
+			t.Fatalf("seed %s: %v", seed[i].TermNorm, err)
+		}
+	}
+
+	// Re-running the migration is what performs the backfill; it must also be
+	// idempotent, since it runs on every single deploy.
+	for pass := 1; pass <= 2; pass++ {
+		if err := Run(db); err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		for _, tc := range []struct {
+			term string
+			want int16
+		}{
+			{"political-a", model.TermPurposeCompliance},
+			{"political-b", model.TermPurposeCompliance},
+			// Ad/spam lexicons ARE abuse — they must stay prunable.
+			{"spam-a", model.TermPurposeAbuse},
+			// The big mixed lexicons stay prunable on purpose: every measured
+			// false positive so far came from them, and freezing them as
+			// compliance would make that noise permanent.
+			{"mixed-a", model.TermPurposeAbuse},
+			// A hand-made term has no import provenance to classify by.
+			{"handmade", model.TermPurposeAbuse},
+		} {
+			var got model.TrustTerm
+			if err := db.Where("term_norm = ?", tc.term).Take(&got).Error; err != nil {
+				t.Fatalf("pass %d: reload %s: %v", pass, tc.term, err)
+			}
+			if got.Purpose != tc.want {
+				t.Errorf("pass %d: %s purpose = %d, want %d", pass, tc.term, got.Purpose, tc.want)
+			}
+		}
+	}
 }

@@ -287,6 +287,7 @@ type TermView struct {
 	Site         *string   `json:"site,omitempty" doc:"null = global (applies to every site)"`
 	TermNorm     string    `json:"term_norm"`
 	Kind         int16     `json:"kind" doc:"0=suspect (hold) 1=banned (deny)"`
+	Purpose      int16     `json:"purpose" doc:"0=abuse 1=compliance (exempt from precision-based retirement)"`
 	Note         *string   `json:"note,omitempty"`
 	IsDeprecated bool      `json:"is_deprecated"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -306,6 +307,7 @@ type CreateTermRequest struct {
 	Site *string `json:"site,omitempty" doc:"tenant site; null = global (applies to every site)"`
 	Term string  `json:"term" doc:"the raw term (normalized server-side before storage)"`
 	Kind int16   `json:"kind" doc:"0=suspect (hold — enqueue, don't block) 1=banned (deny — the sync check rejects)"`
+	Purpose int16 `json:"purpose,omitempty" doc:"0=abuse (default; precision-prunable against the AI classifier) 1=compliance (legal/regulatory — exempt from precision pruning, since the abuse classifier does not judge that question)"`
 	Note *string `json:"note,omitempty" doc:"optional operator memo"`
 }
 

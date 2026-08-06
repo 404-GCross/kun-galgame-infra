@@ -40,6 +40,26 @@ export const REVIEW_STATUS_COLORS: Record<number, TrustChipColor> = {
   3: 'default'
 }
 
+// trust_term.purpose — WHY a term is listed, which decides what evidence may
+// retire it. An abuse term answers the same question the AI classifier answers,
+// so classifier disagreement measures it. A compliance term answers a question
+// that classifier never asks, so the same number reads ~0% however well the term
+// works — it is exempt from precision-based retirement.
+export const TERM_PURPOSE = {
+  abuse: 0,
+  compliance: 1
+} as const
+
+export const TERM_PURPOSE_LABELS: Record<number, string> = {
+  0: '滥用',
+  1: '合规'
+}
+
+export const TERM_PURPOSE_COLORS: Record<number, TrustChipColor> = {
+  0: 'default',
+  1: 'info'
+}
+
 export const REVIEW_SOURCE = {
   reports: 0,
   aiText: 1,

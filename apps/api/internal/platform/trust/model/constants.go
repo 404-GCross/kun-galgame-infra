@@ -123,3 +123,13 @@ const (
 	TermKindSuspect int16 = 0
 	TermKindBanned  int16 = 1
 )
+
+// Tier0 term purpose (trust_term.purpose) — WHY the term is listed, which
+// determines what evidence can judge it. abuse terms answer the same question
+// the AI classifier answers, so classifier disagreement measures them; a
+// compliance term answers a question the abuse classifier does not ask at all,
+// so that same number is meaningless for it and must never retire it.
+const (
+	TermPurposeAbuse      int16 = 0
+	TermPurposeCompliance int16 = 1
+)

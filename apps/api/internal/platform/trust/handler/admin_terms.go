@@ -32,6 +32,7 @@ func (s *AdminServer) registerTerms(api huma.API) {
 type listTermsInput struct {
 	Site              string `query:"site" doc:"filter to one site; empty = all (global + every site)"`
 	Kind              int16  `query:"kind" default:"-1" doc:"0=suspect 1=banned; -1 = all"`
+	Purpose           int16  `query:"purpose" default:"-1" doc:"0=abuse 1=compliance; -1 = all"`
 	IncludeDeprecated bool   `query:"include_deprecated" doc:"include retired terms"`
 	Q                 string `query:"q" doc:"substring search over the normalized term (the raw input is normalized the same way before matching)"`
 	Page              int    `query:"page" doc:"1-based page number"`
@@ -46,7 +47,8 @@ func (s *AdminServer) listTerms(ctx context.Context, in *listTermsInput) (*terms
 		return nil, he
 	}
 	terms, total, err := s.terms.List(ctx, service.TermFilters{
-		Site: in.Site, Kind: optionalFilter(in.Kind), IncludeDeprecated: in.IncludeDeprecated,
+		Site: in.Site, Kind: optionalFilter(in.Kind), Purpose: optionalFilter(in.Purpose),
+		IncludeDeprecated: in.IncludeDeprecated,
 		Query: in.Q, Page: in.Page, Limit: in.Limit,
 	})
 	if err != nil {
@@ -66,7 +68,7 @@ func (s *AdminServer) createTerm(ctx context.Context, in *createTermInput) (*ter
 	}
 	term, err := s.terms.Create(ctx, service.CreateTermParams{
 		ActorID: adminIDFromCtx(ctx), Site: in.Body.Site, Term: in.Body.Term,
-		Kind: in.Body.Kind, Note: in.Body.Note,
+		Kind: in.Body.Kind, Purpose: in.Body.Purpose, Note: in.Body.Note,
 	})
 	if err != nil {
 		return nil, mapAdminErr("create term", err)
@@ -92,7 +94,7 @@ func (s *AdminServer) deprecateTerm(ctx context.Context, in *deprecateTermInput)
 // toTermView projects a term model to its wire view.
 func toTermView(t model.TrustTerm) dto.TermView {
 	return dto.TermView{
-		ID: t.ID, Site: t.Site, TermNorm: t.TermNorm, Kind: t.Kind,
+		ID: t.ID, Site: t.Site, TermNorm: t.TermNorm, Kind: t.Kind, Purpose: t.Purpose,
 		Note: t.Note, IsDeprecated: t.IsDeprecated, CreatedAt: t.CreatedAt,
 	}
 }

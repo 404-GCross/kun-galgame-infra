@@ -17,6 +17,9 @@ import {
   TERM_KIND,
   TERM_KIND_LABELS,
   TERM_KIND_COLORS,
+  TERM_PURPOSE,
+  TERM_PURPOSE_LABELS,
+  TERM_PURPOSE_COLORS,
   TRUST_FILTER_ALL
 } from '~/constants/trust'
 
@@ -28,13 +31,16 @@ const api = useApi('trust')
 // a substring scan over the whole table.
 const site = ref('')
 const kind = ref<number>(TRUST_FILTER_ALL)
+// The two lexicons are maintained on completely different evidence, so they are
+// rarely audited together — filtering by purpose is how an operator works one.
+const purpose = ref<number>(TRUST_FILTER_ALL)
 const includeDeprecated = ref(false)
 const searchInput = ref('')
 const search = ref('')
 const page = ref(1)
 const limit = 50
 
-watch([site, kind, includeDeprecated, search], () => {
+watch([site, kind, purpose, includeDeprecated, search], () => {
   page.value = 1
 })
 
@@ -58,6 +64,7 @@ const {
     query: computed(() => ({
       site: site.value || undefined,
       kind: kind.value,
+      purpose: purpose.value,
       include_deprecated: includeDeprecated.value || undefined,
       q: search.value || undefined,
       page: page.value,
@@ -76,6 +83,18 @@ const kindFilterOptions = [
   { value: TERM_KIND.suspect, label: TERM_KIND_LABELS[TERM_KIND.suspect]! },
   { value: TERM_KIND.banned, label: TERM_KIND_LABELS[TERM_KIND.banned]! }
 ]
+const purposeFilterOptions = [
+  { value: TRUST_FILTER_ALL, label: '全部用途' },
+  { value: TERM_PURPOSE.abuse, label: TERM_PURPOSE_LABELS[TERM_PURPOSE.abuse]! },
+  {
+    value: TERM_PURPOSE.compliance,
+    label: TERM_PURPOSE_LABELS[TERM_PURPOSE.compliance]!
+  }
+]
+const purposeCreateOptions = [
+  { value: TERM_PURPOSE.abuse, label: '滥用(可按精度自动退役)' },
+  { value: TERM_PURPOSE.compliance, label: '合规(豁免精度退役)' }
+]
 const kindCreateOptions = [
   { value: TERM_KIND.suspect, label: TERM_KIND_LABELS[TERM_KIND.suspect]! },
   { value: TERM_KIND.banned, label: TERM_KIND_LABELS[TERM_KIND.banned]! }
@@ -86,6 +105,7 @@ const createOpen = ref(false)
 const form = reactive({
   term: '',
   kind: TERM_KIND.suspect as number,
+  purpose: TERM_PURPOSE.abuse as number,
   site: '',
   note: ''
 })
@@ -94,6 +114,7 @@ const creating = ref(false)
 const openCreate = () => {
   form.term = ''
   form.kind = TERM_KIND.suspect
+  form.purpose = TERM_PURPOSE.abuse
   form.site = site.value || ''
   form.note = ''
   createOpen.value = true
@@ -108,7 +129,8 @@ const create = async () => {
   try {
     const body: TrustCreateTermRequest = {
       term: form.term.trim(),
-      kind: form.kind
+      kind: form.kind,
+      purpose: form.purpose
     }
     if (form.site.trim()) body.site = form.site.trim()
     if (form.note.trim()) body.note = form.note.trim()
@@ -205,6 +227,11 @@ const confirmDeprecate = async () => {
         </KunButton>
         <KunInput v-model="site" placeholder="按站点过滤" class="w-36" />
         <KunSelect v-model="kind" :options="kindFilterOptions" class="w-40" />
+        <KunSelect
+          v-model="purpose"
+          :options="purposeFilterOptions"
+          class="w-40"
+        />
         <KunSwitch v-model="includeDeprecated" label="含已弃用" />
       </form>
 
@@ -216,6 +243,7 @@ const confirmDeprecate = async () => {
             <tr>
               <th class="px-2 py-2 text-left font-medium">词条(归一化)</th>
               <th class="px-2 py-2 text-left font-medium">类型</th>
+              <th class="px-2 py-2 text-left font-medium">用途</th>
               <th class="px-2 py-2 text-left font-medium">归属</th>
               <th class="px-2 py-2 text-left font-medium">备注</th>
               <th class="px-2 py-2 text-left font-medium">状态</th>
@@ -237,6 +265,17 @@ const confirmDeprecate = async () => {
                   size="xs"
                 >
                   {{ TERM_KIND_LABELS[t.kind] || t.kind }}
+                </KunChip>
+              </td>
+              <td class="px-2 py-2">
+                <!-- Compliance terms are exempt from precision-based retirement;
+                     the pruner can only nominate them for human review. -->
+                <KunChip
+                  :color="TERM_PURPOSE_COLORS[t.purpose]"
+                  variant="flat"
+                  size="xs"
+                >
+                  {{ TERM_PURPOSE_LABELS[t.purpose] ?? t.purpose }}
                 </KunChip>
               </td>
               <td class="px-2 py-2">
@@ -274,7 +313,7 @@ const confirmDeprecate = async () => {
               </td>
             </tr>
             <tr v-if="!terms.length && !error">
-              <td colspan="6" class="text-default-400 px-2 py-8 text-center">
+              <td colspan="7" class="text-default-400 px-2 py-8 text-center">
                 {{
                   isLoading ? '加载中…' : search ? '没有匹配的词条' : '暂无词条'
                 }}
@@ -306,6 +345,11 @@ const confirmDeprecate = async () => {
             v-model="form.kind"
             label="类型"
             :options="kindCreateOptions"
+          />
+          <KunSelect
+            v-model="form.purpose"
+            label="用途"
+            :options="purposeCreateOptions"
           />
           <KunInput
             v-model="form.site"

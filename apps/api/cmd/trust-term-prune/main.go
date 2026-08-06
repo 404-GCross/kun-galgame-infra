@@ -26,6 +26,11 @@
 //	-max-precision   deprecate evidenced terms scoring BELOW this (0.10 = 10%).
 //	-drop-unevidenced  also deprecate terms with fewer than -min-hits matches —
 //	                 "never demonstrated value", a weaker claim than "measured bad".
+//
+// Terms with purpose=compliance are NEVER retired by this tool. Their precision
+// is measured against an abuse classifier that does not judge compliance
+// content, so the number reads ~0% however well the term works; they are printed
+// for human review instead.
 //	-backup          write the full affected set to this JSON file before writing.
 //	-apply           write; default is a dry-run report (nothing is changed).
 //
@@ -58,6 +63,7 @@ type termStat struct {
 	ID        int64   `json:"id"`
 	Term      string  `json:"term"`
 	Kind      int16   `json:"kind"`
+	Purpose   int16   `json:"purpose"`
 	Site      *string `json:"site,omitempty"`
 	Note      *string `json:"note,omitempty"`
 	Hits      int64   `json:"hits"`
@@ -103,8 +109,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	doomed := classify(stats, *minHits, *maxPrecision, *dropUnevidenced)
-	report(stats, doomed, corpus, *minHits, *maxPrecision)
+	doomed, review := classify(stats, *minHits, *maxPrecision, *dropUnevidenced)
+	report(stats, doomed, review, corpus, *minHits, *maxPrecision)
 
 	if len(doomed) == 0 {
 		slog.Info("nothing to retire under this policy")
@@ -155,7 +161,7 @@ func collect(db *gorm.DB, source string) ([]termStat, int64, error) {
 		           count(*) FILTER (WHERE flagged) AS flagged
 		      FROM matched GROUP BY term
 		)
-		SELECT t.id, t.term_norm AS term, t.kind, t.site, t.note,
+		SELECT t.id, t.term_norm AS term, t.kind, t.purpose, t.site, t.note,
 		       coalesce(p.hits, 0) AS hits,
 		       coalesce(p.flagged, 0) AS flagged
 		  FROM trust_term t
@@ -181,28 +187,40 @@ func collect(db *gorm.DB, source string) ([]termStat, int64, error) {
 // term that never fired at all ("unevidenced"). They are different assertions —
 // the first is proof of harm, the second only absence of value — so the second
 // is opt-in.
-func classify(stats []termStat, minHits int64, maxPrecision float64, dropUnevidenced bool) []termStat {
-	var doomed []termStat
+// A COMPLIANCE term is never auto-retired, whatever its precision reads. The
+// number the policy tests is agreement with the ABUSE classifier, and a
+// compliance term answers a question that classifier never asks — so it scores
+// ~0% precision while working perfectly. Judging it by that number would empty
+// the compliance lexicon and produce a report that looked fully evidence-based
+// while doing it. Such terms go to a review bucket for a human instead.
+func classify(stats []termStat, minHits int64, maxPrecision float64, dropUnevidenced bool) (doomed, review []termStat) {
 	for _, s := range stats {
+		var reason string
 		switch {
 		case s.Hits >= minHits && s.Precision < maxPrecision:
-			s.Reason = fmt.Sprintf("measured: %d hits, %d flagged, precision %.4f < %.4f",
+			reason = fmt.Sprintf("measured: %d hits, %d flagged, precision %.4f < %.4f",
 				s.Hits, s.Flagged, s.Precision, maxPrecision)
-			doomed = append(doomed, s)
 		case s.Hits < minHits && dropUnevidenced:
-			s.Reason = fmt.Sprintf("unevidenced: %d hits (< %d), never demonstrated value",
+			reason = fmt.Sprintf("unevidenced: %d hits (< %d), never demonstrated value",
 				s.Hits, minHits)
-			doomed = append(doomed, s)
+		default:
+			continue
 		}
+		s.Reason = reason
+		if s.Purpose == model.TermPurposeCompliance {
+			review = append(review, s)
+			continue
+		}
+		doomed = append(doomed, s)
 	}
-	return doomed
+	return doomed, review
 }
 
 // report prints the decision's basis before anything is written. A pruning run
 // that only says "retired 46,000 terms" is unreviewable; the operator needs the
 // corpus size, the survivors, and the worst offenders by volume to judge whether
 // the policy did what they meant.
-func report(stats, doomed []termStat, corpus int64, minHits int64, maxPrecision float64) {
+func report(stats, doomed, review []termStat, corpus int64, minHits int64, maxPrecision float64) {
 	var fired, totalHits, totalFlagged int64
 	for _, s := range stats {
 		if s.Hits > 0 {
@@ -238,7 +256,24 @@ func report(stats, doomed []termStat, corpus int64, minHits int64, maxPrecision 
 		fmt.Printf("  %-24s %7d %7d  %6.2f%%  %s\n",
 			s.Term, s.Hits, s.Flagged, s.Precision*100, verdict)
 	}
+	if len(review) > 0 {
+		fmt.Printf("\nCompliance terms failing the policy (NOT retired — a human decides):\n")
+		for _, s := range review {
+			fmt.Printf("  %-24s %7d %7d  %6.2f%%  %s\n",
+				s.Term, s.Hits, s.Flagged, s.Precision*100, noteOf(s))
+		}
+		fmt.Println("  (the abuse classifier does not judge compliance content; this number" +
+			"\n   cannot convict these terms, only nominate them for review)")
+	}
+
 	fmt.Printf("\nWould retire %d of %d terms.\n\n", len(doomed), len(stats))
+}
+
+func noteOf(s termStat) string {
+	if s.Note == nil {
+		return ""
+	}
+	return *s.Note
 }
 
 func writeBackup(path string, doomed []termStat) error {

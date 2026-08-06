@@ -28,6 +28,9 @@ type importConfig struct {
 	// kind is the enforcement intent written explicitly onto every row
 	// (0=suspect / 1=banned) — an INTENT column, so never left to a DB default.
 	kind int16
+	// purpose is why the terms are listed, written explicitly onto every row.
+	// It decides which evidence may later retire them (see model.TrustTerm).
+	purpose int16
 	// note is the operator memo flag. Empty = per-file default (the source
 	// filename); non-empty = a fixed memo applied to every file's rows.
 	note string
@@ -154,6 +157,7 @@ func processFile(name string, r io.Reader, cfg importConfig, seen, existing map[
 			Site:         cfg.site,
 			TermNorm:     normed,
 			Kind:         cfg.kind,
+			Purpose:      cfg.purpose,
 			Note:         note,
 			IsDeprecated: false,
 		})
