@@ -43,12 +43,41 @@ var staffNoteRole = map[string]int64{
 	"graphic":                  roleArtWorker,
 	"2d graphics":              roleArtWorker,
 	"cg":                       roleArtWorker,
+	"image editing":            roleArtWorker, // 改图 (fan-TL image work)
+	"image editor":             roleArtWorker,
+	"logo design":              roleTitleDesign,
+	"logo designer":            roleTitleDesign,
+	"logo artist":              roleTitleDesign,
+	"logo":                     roleTitleDesign,
+	"title logo design":        roleTitleDesign,
 	"backgrounds":              roleBackground,
 	"background":               roleBackground,
 	"royalty-free backgrounds": roleBackground,
 	"coloring":                 roleColoring,
 	"cg coloring":              roleColoring,
 	"cg supervision":           roleCGSupervision,
+
+	// movie (OP/ED/demo video production) — same population as the Bangumi
+	// side of 动画制作: role 114's live holders (神月社, プリズムビジョン, …)
+	// are exactly the top names in these note buckets, so this mapping is a
+	// dedupe, not a guess. Qualified forms ("producer, ed movie",
+	// "movie assistance") stay unmapped for the composite wave.
+	"movie":                    roleAnimationWork,
+	"movies":                   roleAnimationWork,
+	"op movie":                 roleAnimationWork,
+	"ed movie":                 roleAnimationWork,
+	"demo movie":               roleAnimationWork,
+	"opening movie":            roleAnimationWork,
+	"pv movie":                 roleAnimationWork,
+	"promotion movie":          roleAnimationWork,
+	"op, ed movie":             roleAnimationWork,
+	"op & ed movie":            roleAnimationWork,
+	"op/ed movie":              roleAnimationWork,
+	"movie production":         roleAnimationWork,
+	"op movie production":      roleAnimationWork,
+	"opening movie production": roleAnimationWork,
+	"movie design":             roleAnimationWork,
+	"movie designer":           roleAnimationWork,
 
 	// music / sound
 	"op lyrics":         roleThemeSongLyrics,
@@ -88,6 +117,7 @@ var staffNoteRole = map[string]int64{
 const (
 	roleOtherStaffID    int64 = 2   // other-staff 其他 (the bucket being refined)
 	roleQARole          int64 = 5   // qa QA (debug ≈ デバッグ)
+	roleAnimationWork   int64 = 114 // animation-work 动画制作 (OP/ED/demo movie)
 	roleCGSupervision   int64 = 143 // cg-监修 CG 监修
 	roleStaging         int64 = 178 // episode-direction 演出
 	roleExecProducer    int64 = 179 // executive-producer 执行制片人
@@ -102,6 +132,7 @@ const (
 	roleSoundEffects    int64 = 261 // sound-effects 音效
 	roleSpecialThanks   int64 = 267 // special-thanks 特别鸣谢
 	roleThemeSongLyrics int64 = 279 // theme-song-lyrics 主题歌作词
+	roleTitleDesign     int64 = 281 // title-design 标题设计 (game logo)
 	roleColoring        int64 = 289 // 上色
 	rolePlanningJP      int64 = 291 // 企画 (the one in live use; generated 224 is empty)
 	roleCooperation     int64 = 305 // 协力 (in live use; generated 121 is empty)

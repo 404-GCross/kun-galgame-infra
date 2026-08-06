@@ -152,8 +152,8 @@ func TestVNDBCreditsWave_RefinesStaffNotes(t *testing.T) {
 	seedVNDBStaff(t, "s3", "ja")
 	seedVNDBAlias(t, 30, "s3", "かつらぎ", "")
 	seedVNDBAlias(t, 31, "s3", "ムービー屋", "")
-	seedVNStaff(t, "v200", 30, "staff", "Programming") // refined → 程序
-	seedVNStaff(t, "v200", 31, "staff", "OP movie")    // unmapped note → 其他
+	seedVNStaff(t, "v200", 30, "staff", "Programming")      // refined → 程序
+	seedVNStaff(t, "v200", 31, "staff", "Movie assistance") // unmapped note → 其他
 
 	st, err := New(testDB, nil, Options{Source: "vndb"}).Run("vndb")
 	require.NoError(t, err)
@@ -162,7 +162,7 @@ func TestVNDBCreditsWave_RefinesStaffNotes(t *testing.T) {
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
 		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=238 AND note='Programming'`, work)))
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
-		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=2 AND note='OP movie'`, work)))
+		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=2 AND note='Movie assistance'`, work)))
 
 	for note, roleID := range StaffNoteRoleTable() {
 		assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
