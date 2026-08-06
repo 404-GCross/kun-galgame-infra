@@ -138,7 +138,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 - 错误:preset 不在闭集/缺文件 → 400;配额超限/审核拒绝 → 400(message 区分);图床身份未配置 → 503;图床异常 → 502。
 - **注意:本端点是纯 Fiber 路由,不在生成的 openapi.yaml 里**(multipart 不入 Huma 面);鉴权同前缀 Basic S2S。
 
-## 3. Admin 三桶(Bearer JWT + **ren 超管角色**,前缀 `/api/v1/admin/catalog`)
+## 3. Admin 四桶(Bearer JWT + **ren 超管角色**,前缀 `/api/v1/admin/catalog`)
 
 人审治理面,把「机器不敢自动终判」的三类东西交给人:
 
@@ -147,6 +147,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 | **candidates** | `GET /candidates` · `POST /candidates/decide` | 匹配候选(如共享 twitter/pixiv handle 的名义对)——判「同一人/不是」 |
 | **proposals** | `GET /proposals` · `POST /proposals/{id}/{action}` | 合并提案(把两个实体判为同一个)——approve/reject |
 | **refs** | `GET /refs/probable` · `POST /refs/confirm` · `POST /refs/reject` | probable(1)级来源锚——升为 exact 或驳回 |
+| **image-references** | `GET /image-references?hash=` · `POST /image-references/detach` | 某个图片 hash 被哪些 catalog 行引用(封面/截图/角色胸像/角色立绘/会社 logo/人物照片六种),以及一次性摘除这些引用——删图前的预检,避免删掉字节留下空画廊 |
 
 admin 面走 oauth 的共享 JWT 中间件 + `RequireRole("ren")`(**超管专属**——目录人审是高权限运营面,普通 admin 不放行);**不经 site 绑定列**(它是运营人审,不是产品 S2S)。
 

@@ -35,7 +35,7 @@ func TestSetupLifecycle_RegistersOperations(t *testing.T) {
 }
 
 func TestSetupAdmin_RegistersClaimQueue(t *testing.T) {
-	api := SetupAdmin(fiber.New(), nil, nil, nil)
+	api := SetupAdmin(fiber.New(), nil, nil, nil, nil)
 	paths := api.OpenAPI().Paths
 	for _, p := range []string{
 		"/api/v1/admin/catalog/claims/pending",

@@ -27,6 +27,11 @@ func TestAdminGate_SplitsClaimReviewFromCuration(t *testing.T) {
 		{[]string{"admin"}, "/api/v1/admin/catalog/candidates", fiber.StatusForbidden},
 		{[]string{"ren"}, "/api/v1/admin/catalog/claims/pending", fiber.StatusOK},
 		{[]string{"ren"}, "/api/v1/admin/catalog/candidates", fiber.StatusOK},
+		// The image-reference check hangs off the curation branch: it edits the
+		// registry's own rows, so a moderator must not reach it.
+		{[]string{"moderator"}, "/api/v1/admin/catalog/image-references", fiber.StatusForbidden},
+		{[]string{"ren"}, "/api/v1/admin/catalog/image-references", fiber.StatusOK},
+		{[]string{"ren"}, "/api/v1/admin/catalog/image-references/detach", fiber.StatusOK},
 		{[]string{"user"}, "/api/v1/admin/catalog/claims/pending", fiber.StatusForbidden},
 		{[]string{"creator"}, "/api/v1/admin/catalog/claims/pending", fiber.StatusForbidden},
 	}

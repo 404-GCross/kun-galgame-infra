@@ -61,7 +61,7 @@ func main() {
 		// Same for the claim-lifecycle face (wave 155): actions + the two feeds.
 		catHandler.SetupLifecycle(api, nil, nil, nil)
 	case *catalogAdmin:
-		api = catHandler.SetupAdmin(app, nil, nil, nil)
+		api = catHandler.SetupAdmin(app, nil, nil, nil, nil)
 	case *catalogPublic:
 		api = catHandler.SetupCatalogPublicSpec(app)
 	case *community:

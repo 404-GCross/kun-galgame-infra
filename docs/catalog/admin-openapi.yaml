@@ -162,6 +162,38 @@ components:
         - b_id
         - action
       type: object
+    DetachImageReferencesData:
+      additionalProperties: false
+      properties:
+        removed:
+          additionalProperties:
+            format: int64
+            type: integer
+          description: Rows released per kind
+          type: object
+        total_removed:
+          format: int64
+          type: integer
+      required:
+        - removed
+        - total_removed
+      type: object
+    DetachImageReferencesInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/DetachImageReferencesInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        hash:
+          description: The image's sha-256 (64 hex characters)
+          type: string
+      required:
+        - hash
+      type: object
     DetachNameData:
       additionalProperties: false
       properties:
@@ -248,6 +280,27 @@ components:
         - code
         - message
       type: object
+    EnvelopeDetachImageReferencesData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeDetachImageReferencesData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/DetachImageReferencesData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeDetachNameData:
       additionalProperties: false
       properties:
@@ -263,6 +316,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/DetachNameData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeImageReferencesData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeImageReferencesData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ImageReferencesData"
         message:
           type: string
       required:
@@ -414,6 +488,40 @@ components:
       required:
         - code
         - message
+      type: object
+    ImageReferenceItem:
+      additionalProperties: false
+      properties:
+        entity_id:
+          description: The owning work / character / label / person
+          format: int64
+          type: integer
+        kind:
+          description: work_cover / work_screenshot / character_bust / character_figure / label_logo / person_photo
+          type: string
+        label:
+          description: The owning entity's display name
+          type: string
+      required:
+        - kind
+        - entity_id
+        - label
+      type: object
+    ImageReferencesData:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/ImageReferenceItem"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
       type: object
     PageCandidateItem:
       additionalProperties: false
@@ -892,6 +1000,58 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Approve / decline / ban / unban a claim (decline and ban record the reason on the event)
+      tags:
+        - catalog-admin
+  /api/v1/admin/catalog/image-references:
+    get:
+      operationId: listCatalogImageReferences
+      parameters:
+        - description: The image's sha-256 (64 hex characters)
+          explode: false
+          in: query
+          name: hash
+          schema:
+            description: The image's sha-256 (64 hex characters)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeImageReferencesData"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List the catalog rows that reference an image hash (the pre-delete check)
+      tags:
+        - catalog-admin
+  /api/v1/admin/catalog/image-references/detach:
+    post:
+      operationId: detachCatalogImageReferences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetachImageReferencesInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeDetachImageReferencesData"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Release every catalog reference to an image hash (run before deleting the bytes)
       tags:
         - catalog-admin
   /api/v1/admin/catalog/names/detach:

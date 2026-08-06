@@ -44,7 +44,7 @@ func TestSetup_RegistersS2SOperations(t *testing.T) {
 // TestSetupAdmin_RegistersQueueOperations: spec smoke for the three review
 // buckets (what cmd/gen-openapi -catalog-admin exports).
 func TestSetupAdmin_RegistersQueueOperations(t *testing.T) {
-	api := SetupAdmin(fiber.New(), nil, nil, nil)
+	api := SetupAdmin(fiber.New(), nil, nil, nil, nil)
 	paths := api.OpenAPI().Paths
 	for _, p := range []string{
 		"/api/v1/admin/catalog/candidates",
@@ -91,7 +91,7 @@ func TestAdminGate_403WithoutRole(t *testing.T) {
 			c.Locals("user_roles", roles)
 			return c.Next()
 		}, middleware.RequirePermission(perm.Resolver, perm.Review))
-		SetupAdmin(app, nil, nil, nil)
+		SetupAdmin(app, nil, nil, nil, nil)
 
 		resp, err := app.Test(httptest.NewRequest("GET", "/api/v1/admin/catalog/candidates", nil))
 		require.NoError(t, err)

@@ -72,6 +72,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/catalog/image-references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the catalog rows that reference an image hash (the pre-delete check) */
+        get: operations["listCatalogImageReferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/image-references/detach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Release every catalog reference to an image hash (run before deleting the bytes) */
+        post: operations["detachCatalogImageReferences"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/catalog/names/detach": {
         parameters: {
             query?: never;
@@ -258,6 +292,24 @@ export interface components {
              */
             target_id?: number;
         };
+        DetachImageReferencesData: {
+            /** @description Rows released per kind */
+            removed: {
+                [key: string]: number;
+            };
+            /** Format: int64 */
+            total_removed: number;
+        };
+        DetachImageReferencesInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/DetachImageReferencesInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description The image's sha-256 (64 hex characters) */
+            hash: string;
+        };
         DetachNameData: {
             detached: boolean;
         };
@@ -307,6 +359,18 @@ export interface components {
             data?: components["schemas"]["DecideCandidateData"];
             message: string;
         };
+        EnvelopeDetachImageReferencesData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeDetachImageReferencesData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["DetachImageReferencesData"];
+            message: string;
+        };
         EnvelopeDetachNameData: {
             /**
              * Format: uri
@@ -317,6 +381,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["DetachNameData"];
+            message: string;
+        };
+        EnvelopeImageReferencesData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeImageReferencesData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["ImageReferencesData"];
             message: string;
         };
         EnvelopePageCandidateItem: {
@@ -402,6 +478,22 @@ export interface components {
             code: number;
             data?: unknown;
             message: string;
+        };
+        ImageReferenceItem: {
+            /**
+             * Format: int64
+             * @description The owning work / character / label / person
+             */
+            entity_id: number;
+            /** @description work_cover / work_screenshot / character_bust / character_figure / label_logo / person_photo */
+            kind: string;
+            /** @description The owning entity's display name */
+            label: string;
+        };
+        ImageReferencesData: {
+            items: components["schemas"]["ImageReferenceItem"][] | null;
+            /** Format: int64 */
+            total: number;
         };
         PageCandidateItem: {
             items: components["schemas"]["CandidateItem"][] | null;
@@ -679,6 +771,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeClaimActionResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    listCatalogImageReferences: {
+        parameters: {
+            query?: {
+                /** @description The image's sha-256 (64 hex characters) */
+                hash?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeImageReferencesData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    detachCatalogImageReferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DetachImageReferencesInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeDetachImageReferencesData"];
                 };
             };
             /** @description Error */

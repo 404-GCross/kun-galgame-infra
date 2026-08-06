@@ -18,9 +18,10 @@ import (
 
 // AdminServer holds the dependencies of the review-queue operations.
 type AdminServer struct {
-	queues *service.AdminQueueService
-	merge  *service.MergeService
-	claims *service.ClaimLifecycleService
+	queues    *service.AdminQueueService
+	merge     *service.MergeService
+	claims    *service.ClaimLifecycleService
+	imageRefs *service.ImageReferenceService
 }
 
 // SetupAdmin builds the admin review-queue Huma API (doc 17 §5 buckets:
@@ -29,7 +30,7 @@ type AdminServer struct {
 // permission, ren) on the /api/v1/admin/catalog prefix BEFORE this — Huma registers on the
 // app, so the group middleware does not cover these routes. Callable with
 // nil services for spec export.
-func SetupAdmin(app *fiber.App, queues *service.AdminQueueService, merge *service.MergeService, claims *service.ClaimLifecycleService) huma.API {
+func SetupAdmin(app *fiber.App, queues *service.AdminQueueService, merge *service.MergeService, claims *service.ClaimLifecycleService, imageRefs *service.ImageReferenceService) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Catalog Admin API", "1.0.0")
@@ -40,7 +41,7 @@ func SetupAdmin(app *fiber.App, queues *service.AdminQueueService, merge *servic
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(AdminBridge)
 
-	s := &AdminServer{queues: queues, merge: merge, claims: claims}
+	s := &AdminServer{queues: queues, merge: merge, claims: claims, imageRefs: imageRefs}
 	s.register(api)
 	s.registerClaims(api)
 	return api
@@ -80,6 +81,105 @@ func (s *AdminServer) register(api huma.API) {
 		OperationID: "rejectCatalogRef", Method: http.MethodPost, Path: "/api/v1/admin/catalog/refs/reject",
 		Summary: "Reject a wrong external ref: deletes it and records first-class negative knowledge (reason required)", Tags: tags,
 	}, s.rejectRef)
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogImageReferences", Method: http.MethodGet, Path: "/api/v1/admin/catalog/image-references",
+		Summary: "List the catalog rows that reference an image hash (the pre-delete check)", Tags: tags,
+	}, s.listImageReferences)
+	huma.Register(api, huma.Operation{
+		OperationID: "detachCatalogImageReferences", Method: http.MethodPost, Path: "/api/v1/admin/catalog/image-references/detach",
+		Summary: "Release every catalog reference to an image hash (run before deleting the bytes)", Tags: tags,
+	}, s.detachImageReferences)
+}
+
+// ---- image references ----
+
+// The image service keys bytes by hash and catalog keys references by row, and
+// neither knows about the other: deleting an image whose hash a catalog row
+// still names leaves a blank frame that becomes permanent once the 30-day GC
+// window closes. These two operations are how the admin console asks before it
+// destroys — and how it lets go of the reference when the operator says so.
+
+type imageReferencesInput struct {
+	Hash string `query:"hash" doc:"The image's sha-256 (64 hex characters)"`
+}
+
+type imageReferenceItem struct {
+	Kind     string `json:"kind" doc:"work_cover / work_screenshot / character_bust / character_figure / label_logo / person_photo"`
+	EntityID int64  `json:"entity_id" doc:"The owning work / character / label / person"`
+	Label    string `json:"label" doc:"The owning entity's display name"`
+}
+
+type imageReferencesData struct {
+	Items []imageReferenceItem `json:"items"`
+	Total int                  `json:"total"`
+}
+
+type imageReferencesOutput struct {
+	Body Envelope[imageReferencesData]
+}
+
+// validImageHash keeps a malformed hash from reaching six table scans. The
+// image service's hashes are lowercase sha-256 hex.
+func validImageHash(hash string) bool {
+	if len(hash) != 64 {
+		return false
+	}
+	for _, c := range hash {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *AdminServer) listImageReferences(ctx context.Context, in *imageReferencesInput) (*imageReferencesOutput, error) {
+	if !validImageHash(in.Hash) {
+		return nil, apiErrMsg(http.StatusBadRequest, errors.ErrValidationFailed, "hash must be 64 lowercase hex characters")
+	}
+	refs, err := s.imageRefs.List(ctx, in.Hash)
+	if err != nil {
+		slog.Error("catalog admin list image references", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	// A hash nothing references is 200 with an empty list, not 404: that is the
+	// console's ordinary case (most images are not catalog media at all), and a
+	// 404 would read as "the check failed" and get clicked through.
+	items := make([]imageReferenceItem, 0, len(refs))
+	for _, r := range refs {
+		items = append(items, imageReferenceItem{Kind: r.Kind, EntityID: r.EntityID, Label: r.Label})
+	}
+	return &imageReferencesOutput{Body: okEnvelope(imageReferencesData{Items: items, Total: len(items)})}, nil
+}
+
+type detachImageReferencesInput struct {
+	Body struct {
+		Hash string `json:"hash" doc:"The image's sha-256 (64 hex characters)"`
+	}
+}
+
+type detachImageReferencesData struct {
+	Removed      map[string]int64 `json:"removed" doc:"Rows released per kind"`
+	TotalRemoved int64            `json:"total_removed"`
+}
+
+type detachImageReferencesOutput struct {
+	Body Envelope[detachImageReferencesData]
+}
+
+func (s *AdminServer) detachImageReferences(ctx context.Context, in *detachImageReferencesInput) (*detachImageReferencesOutput, error) {
+	if !validImageHash(in.Body.Hash) {
+		return nil, apiErrMsg(http.StatusBadRequest, errors.ErrValidationFailed, "hash must be 64 lowercase hex characters")
+	}
+	removed, err := s.imageRefs.Detach(ctx, in.Body.Hash)
+	if err != nil {
+		slog.Error("catalog admin detach image references", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	var total int64
+	for _, n := range removed {
+		total += n
+	}
+	return &detachImageReferencesOutput{Body: okEnvelope(detachImageReferencesData{Removed: removed, TotalRemoved: total})}, nil
 }
 
 // ---- candidates ----

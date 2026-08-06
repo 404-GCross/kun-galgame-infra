@@ -134,7 +134,8 @@ func main() {
 
 	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher, statsSvc)
 	claimSvc := service.NewClaimLifecycleService(catalogDB.DB())
-	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc, claimSvc)
+	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc, claimSvc,
+		service.NewImageReferenceService(catalogDB.DB()))
 
 	// Editing engine (E0): the media-agnostic edit_proposal primitive. This
 	// is the ASSEMBLY POINT (charter ruling 1) — the engine itself knows no
