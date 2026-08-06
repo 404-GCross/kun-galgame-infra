@@ -47,6 +47,7 @@ type ScanRequest struct {
 	SubjectID   string `json:"subject_id" doc:"the subject's stable id in the product"`
 	Text        string `json:"text" doc:"the UGC text to scan (capped at ~8000 runes; excess is truncated and recorded)"`
 	AuthorID    *int64 `json:"author_id,omitempty" doc:"optional content author's global id (attribution/repeat-offender signal); not the tenant"`
+	SubjectReach *int64 `json:"subject_reach,omitempty" doc:"optional audience the content has reached so far (views or the product's nearest equivalent); ranks the review queue — omitted or 0 contributes no boost"`
 }
 
 // ScanResponse is the intake outcome (an accept-type endpoint: the row lands
@@ -118,10 +119,11 @@ type ReviewItemView struct {
 	Site            string     `json:"site"`
 	SubjectKind     string     `json:"subject_kind"`
 	SubjectID       string     `json:"subject_id"`
-	Source          int16      `json:"source" doc:"0=reports 1=ai_text 2=ai_image 3=community_forward 4=mislabel 5=manual"`
+	Source          int16      `json:"source" doc:"0=reports 1=ai_text 2=ai_image 3=community_forward 4=mislabel 5=manual 6=ai_sample (a clean verdict drawn at random for calibration — never enforced)"`
 	Severity        *int16     `json:"severity,omitempty"`
 	ClassifierScore *float32   `json:"classifier_score,omitempty"`
 	ReportWeightSum *float32   `json:"report_weight_sum,omitempty"`
+	SubjectReach    *int64     `json:"subject_reach,omitempty" doc:"audience the content had reached when the item opened (snapshot); absent = the product does not report it"`
 	Priority        float32    `json:"priority"`
 	ContextNote     *string    `json:"context_note,omitempty" doc:"non-report evidence excerpt (community forward / ai_text)"`
 	Status          int16      `json:"status" doc:"0=pending 1=claimed 2=actioned 3=dismissed"`
@@ -253,6 +255,7 @@ type ForwardRequest struct {
 	Severity     *int16   `json:"severity,omitempty"`
 	WeightSum    *float32 `json:"weight_sum,omitempty" doc:"accumulated signal weight (idempotent update takes the max)"`
 	ContextNote  *string  `json:"context_note,omitempty" doc:"reviewer-facing evidence excerpt"`
+	SubjectReach *int64   `json:"subject_reach,omitempty" doc:"optional audience the content has reached (views or nearest equivalent); ranks the review queue and re-ranks an already-open item upward as the number grows"`
 	ForwarderRef *string  `json:"forwarder_ref,omitempty" doc:"caller-side trace ref (informational)"`
 }
 

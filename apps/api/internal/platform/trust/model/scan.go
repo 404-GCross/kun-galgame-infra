@@ -34,6 +34,14 @@ type TrustScanResult struct {
 	// AuthorID is the optional content author's global id (attribution / repeat-
 	// offender signal); NULL for anonymous / system content.
 	AuthorID *int64 `gorm:"column:author_id" json:"author_id"`
+	// SubjectReach is the audience the content had reached at scan time, carried
+	// through to the review item it opens so the inbox can rank a widely-seen
+	// violation above an unseen one. NULL = not reported by the product.
+	//
+	// On a publish-time scan this is legitimately 0 or NULL (nothing has been
+	// seen yet); reach becomes meaningful on the RE-scan that every edit triggers,
+	// and on the community-forward path, which fires long after publication.
+	SubjectReach *int64 `gorm:"column:subject_reach" json:"subject_reach"`
 	// ContentText is the text to scan — the only UGC body trust persists. Never
 	// serialized (json:"-"). Capped at intake (maxScanTextRunes) with truncation
 	// recorded; a caller re-scan on edit is a NEW row (scan events are naturally

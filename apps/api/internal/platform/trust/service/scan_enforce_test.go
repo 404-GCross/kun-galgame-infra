@@ -277,3 +277,93 @@ func TestScanModeParsing(t *testing.T) {
 		}
 	}
 }
+
+// TestScanLiveModeCarriesReachIntoPriority: the reach a product reports at scan
+// time must reach the queue's ordering, not just the row. A reach snapshot that
+// is stored but not ranked would look correct in the console and change nothing
+// about which item a reviewer sees first — the entire point of the feature.
+func TestScanLiveModeCarriesReachIntoPriority(t *testing.T) {
+	cleanTables(t)
+	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
+
+	reach := int64(10_000)
+	r := model.TrustScanResult{
+		Site: tSite, SubjectKind: tKind, SubjectID: "reach-1",
+		ContentText: "convict me", SubjectReach: &reach,
+		Status:      model.ScanStatusPending, Mode: model.ScanModeShadow,
+	}
+	if err := testDB.Create(&r).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := liveWorker(0.8).ScorePending(context.Background()); err != nil {
+		t.Fatalf("score pending: %v", err)
+	}
+
+	var item model.TrustReviewItem
+	if err := testDB.Where("subject_id = ?", "reach-1").Take(&item).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if item.SubjectReach == nil || *item.SubjectReach != reach {
+		t.Fatalf("subject_reach = %v, want %d", item.SubjectReach, reach)
+	}
+	unboosted := scanPriority(f32(0.8))
+	if item.Priority <= unboosted {
+		t.Fatalf("priority %.3f was not lifted by reach (unboosted %.3f)", item.Priority, unboosted)
+	}
+	if want := rankPriority(unboosted, &reach); item.Priority != want {
+		t.Fatalf("priority = %.4f, want %.4f", item.Priority, want)
+	}
+}
+
+// TestScanRescanRepricesOpenItemUpward: the slow-burn case — an item opened
+// while the post was obscure, re-scanned (every edit does) once it has been
+// widely seen. It must climb, because that is precisely the item a reviewer most
+// needs pulled forward, and it must not fork a second item doing so.
+func TestScanRescanRepricesOpenItemUpward(t *testing.T) {
+	cleanTables(t)
+	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
+
+	seed := func(subject string, reach int64) {
+		t.Helper()
+		row := model.TrustScanResult{
+			Site: tSite, SubjectKind: tKind, SubjectID: subject,
+			ContentText: "convict me", SubjectReach: &reach,
+			Status:      model.ScanStatusPending, Mode: model.ScanModeShadow,
+		}
+		if err := testDB.Create(&row).Error; err != nil {
+			t.Fatalf("seed %s: %v", subject, err)
+		}
+	}
+
+	seed("burn-1", 20)
+	if _, err := liveWorker(0.6).ScorePending(context.Background()); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	var first model.TrustReviewItem
+	if err := testDB.Where("subject_id = ?", "burn-1").Take(&first).Error; err != nil {
+		t.Fatalf("reload after first pass: %v", err)
+	}
+
+	seed("burn-1", 250_000)
+	if _, err := liveWorker(0.6).ScorePending(context.Background()); err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+
+	if n := countRows(t, &model.TrustReviewItem{}, "subject_id = ?", "burn-1"); n != 1 {
+		t.Fatalf("items = %d, want 1 (reprice must not fork — invariant 4)", n)
+	}
+	var second model.TrustReviewItem
+	if err := testDB.Take(&second, first.ID).Error; err != nil {
+		t.Fatalf("reload after second pass: %v", err)
+	}
+	if second.SubjectReach == nil || *second.SubjectReach != 250_000 {
+		t.Fatalf("subject_reach = %v, want the grown 250000", second.SubjectReach)
+	}
+	if second.Priority <= first.Priority {
+		t.Fatalf("priority did not climb with reach: %.3f → %.3f", first.Priority, second.Priority)
+	}
+	// Still only the one hide from the original conviction.
+	if n := countRows(t, &model.TrustDisposition{}); n != 1 {
+		t.Fatalf("dispositions = %d, want 1", n)
+	}
+}

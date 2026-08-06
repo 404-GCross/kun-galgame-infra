@@ -67,7 +67,8 @@ func toReviewItemView(it model.TrustReviewItem) dto.ReviewItemView {
 	return dto.ReviewItemView{
 		ID: it.ID, Site: it.Site, SubjectKind: it.SubjectKind, SubjectID: it.SubjectID,
 		Source: it.Source, Severity: it.Severity, ClassifierScore: it.ClassifierScore,
-		ReportWeightSum: it.ReportWeightSum, Priority: it.Priority, ContextNote: it.ContextNote, Status: it.Status,
+		ReportWeightSum: it.ReportWeightSum, SubjectReach: it.SubjectReach,
+		Priority: it.Priority, ContextNote: it.ContextNote, Status: it.Status,
 		ClaimedBy: it.ClaimedBy, ClaimedAt: it.ClaimedAt,
 		DecidedBy: it.DecidedBy, DecidedAt: it.DecidedAt, CreatedAt: it.CreatedAt,
 	}

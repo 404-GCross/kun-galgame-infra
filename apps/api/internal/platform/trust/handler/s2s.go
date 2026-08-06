@@ -84,6 +84,7 @@ func (s *Server) forwardReviewItem(ctx context.Context, in *forwardInput) (*forw
 		CallerClientID: callerClientID(ctx),
 		Site:           in.Body.Site, SubjectKind: in.Body.SubjectKind, SubjectID: in.Body.SubjectID,
 		Severity: in.Body.Severity, WeightSum: in.Body.WeightSum, ContextNote: in.Body.ContextNote,
+		SubjectReach: in.Body.SubjectReach,
 	})
 	if err != nil {
 		return nil, mapForwardErr("forward", err)
@@ -183,6 +184,7 @@ func (s *Server) submitScan(ctx context.Context, in *submitScanInput) (*submitSc
 		Site:           boundSite, WireSite: in.Body.Site,
 		SubjectKind: in.Body.SubjectKind, SubjectID: in.Body.SubjectID,
 		Text: in.Body.Text, AuthorID: in.Body.AuthorID,
+		SubjectReach: in.Body.SubjectReach,
 	})
 	if err != nil {
 		// mapForwardErr covers both the allowlist 403 and the registry 422 the scan

@@ -190,8 +190,14 @@ func (s *ReportService) aggregate(tx *gorm.DB, p ReportParams, reportID int64, w
 	item := model.TrustReviewItem{
 		Site: p.Site, SubjectKind: p.SubjectKind, SubjectID: p.SubjectID,
 		Source: model.ReviewSourceReports, Severity: &severity,
-		ReportWeightSum: &sum, Priority: float32(severity),
-		Status: model.ReviewStatusPending,
+		ReportWeightSum: &sum,
+		// Reach is nil on this path by construction: a report comes from an end
+		// user, who has no idea how many people saw the thing. It is not lost —
+		// a later scan or forward on the same subject fills it and re-ranks the
+		// open item. Routed through rankPriority anyway so there is exactly one
+		// ordering model, not one that skips a source.
+		Priority: rankPriority(float32(severity), nil),
+		Status:   model.ReviewStatusPending,
 	}
 	res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item)
 	if res.Error != nil {

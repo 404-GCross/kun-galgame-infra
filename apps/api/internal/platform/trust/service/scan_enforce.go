@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"unicode/utf8"
 
@@ -107,6 +108,12 @@ func (w *ScanWorker) openScanReviewItem(tx *gorm.DB, r *model.TrustScanResult, v
 		// Fill only when empty — a later scan never clobbers the first evidence.
 		updates["context_note"] = gorm.Expr(
 			"CASE WHEN context_note IS NULL OR context_note = '' THEN ? ELSE context_note END", note)
+		// Every edit re-scans, so this is where a subject that has kept accruing
+		// views since the item opened gets re-ranked.
+		if reach := maxReach(open.SubjectReach, r.SubjectReach); reach != nil {
+			updates["subject_reach"] = *reach
+			updates["priority"] = repriceForReach(open.Priority, open.SubjectReach, reach)
+		}
 		if err := tx.Model(&model.TrustReviewItem{}).Where("id = ?", open.ID).Updates(updates).Error; err != nil {
 			return 0, false, err
 		}
@@ -118,7 +125,9 @@ func (w *ScanWorker) openScanReviewItem(tx *gorm.DB, r *model.TrustScanResult, v
 	item := model.TrustReviewItem{
 		Site: r.Site, SubjectKind: r.SubjectKind, SubjectID: r.SubjectID,
 		Source: model.ReviewSourceAIText, ClassifierScore: v.Score,
-		ContextNote: &note, Priority: scanPriority(v.Score), Status: model.ReviewStatusPending,
+		ContextNote: &note, SubjectReach: r.SubjectReach,
+		Priority: rankPriority(scanPriority(v.Score), r.SubjectReach),
+		Status:   model.ReviewStatusPending,
 	}
 	res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item)
 	if res.Error != nil {
@@ -135,6 +144,76 @@ func (w *ScanWorker) openScanReviewItem(tx *gorm.DB, r *model.TrustScanResult, v
 		return item.ID, false, nil
 	}
 	return item.ID, true, nil
+}
+
+// maybeSampleClean draws a CLEARED scan into the inbox with probability
+// sampleRate, so a human periodically checks what the classifier waved through.
+//
+// The three properties that make this safe to leave on permanently:
+//
+//   - It never enforces. No disposition, no callback, nothing is hidden. The
+//     item exists to be looked at and dismissed.
+//   - It never competes with real work. A sample lands at scanSamplePriority,
+//     below every genuine signal, so it is only ever reached by a reviewer who
+//     has already cleared the queue.
+//   - It never disturbs an in-flight case. If the subject already has an open
+//     item, the sample is skipped entirely — a subject under review is not a
+//     random draw, and folding a calibration item into a real one would corrupt
+//     both the case and the measurement.
+func (w *ScanWorker) maybeSampleClean(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict) error {
+	if w.sampleRate <= 0 || w.rand() >= w.sampleRate {
+		return nil
+	}
+
+	var open int64
+	if err := tx.Model(&model.TrustReviewItem{}).
+		Where("site = ? AND subject_kind = ? AND subject_id = ? AND status IN ?",
+			r.Site, r.SubjectKind, r.SubjectID,
+			[]int16{model.ReviewStatusPending, model.ReviewStatusClaimed}).
+		Count(&open).Error; err != nil {
+		return err
+	}
+	if open > 0 {
+		return nil
+	}
+
+	note := scanSampleNote(r, v)
+	item := model.TrustReviewItem{
+		Site: r.Site, SubjectKind: r.SubjectKind, SubjectID: r.SubjectID,
+		Source: model.ReviewSourceAISample, ClassifierScore: v.Score,
+		ContextNote: &note, SubjectReach: r.SubjectReach,
+		// Deliberately NOT reach-boosted: a sample must stay at the bottom of the
+		// queue whatever its subject's reach, or a popular post would turn a
+		// calibration draw into an urgent-looking item.
+		Priority: scanSamplePriority, Status: model.ReviewStatusPending,
+	}
+	// DoNothing covers the race with a concurrent opener; a lost sample is a lost
+	// data point, never an error worth failing the scan transaction over.
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item).Error; err != nil {
+		return err
+	}
+	slog.Info("trust scan sampled clean verdict",
+		"scan_id", r.ID, "site", r.Site, "subject_kind", r.SubjectKind, "subject_id", r.SubjectID)
+	return AppendAudit(tx, AuditEntry{
+		Action: "scan_sampled_clean",
+		Site:   strptr(r.Site), SubjectKind: strptr(r.SubjectKind), SubjectID: strptr(r.SubjectID),
+	})
+}
+
+// scanSampleNote tells the reviewer what they are looking at and what the
+// answer means — a sample is a QUESTION ("did we miss anything here?"), not an
+// accusation, and a reviewer who reads it as one will dismiss the whole batch
+// without looking and the measurement will silently read zero.
+func scanSampleNote(r *model.TrustScanResult, v GatewayVerdict) string {
+	var b strings.Builder
+	b.WriteString("[calibration] the classifier cleared this")
+	if v.Score != nil {
+		fmt.Fprintf(&b, " (score=%.3f)", *v.Score)
+	}
+	b.WriteString(" — it was drawn at random to check that verdict. ")
+	b.WriteString("Dismiss if it is genuinely fine; action it if we missed something.\n")
+	b.WriteString(excerptRunes(r.ContentText, scanNoteExcerptRunes))
+	return b.String()
 }
 
 // scanPriority ranks an AI-opened item by the classifier's confidence. The

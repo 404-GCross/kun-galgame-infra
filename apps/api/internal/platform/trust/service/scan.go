@@ -46,6 +46,10 @@ type ScanParams struct {
 	SubjectID      string
 	Text           string
 	AuthorID       *int64
+	// SubjectReach is the audience the content had reached at scan time (nil =
+	// the product does not report it). Carried to the review item this scan may
+	// open, where it ranks the queue.
+	SubjectReach *int64
 }
 
 // ScanResult is the intake outcome: the row id and whether the text was capped.
@@ -86,7 +90,7 @@ func (s *ScanService) Ingest(ctx context.Context, p ScanParams) (ScanResult, err
 
 	row := model.TrustScanResult{
 		Site: site, SubjectKind: p.SubjectKind, SubjectID: p.SubjectID,
-		AuthorID: p.AuthorID, ContentText: text,
+		AuthorID: p.AuthorID, ContentText: text, SubjectReach: p.SubjectReach,
 		// Mode starts at shadow because intake does not know the worker's posture;
 		// the worker stamps its OWN mode on the terminal update, so a scored row
 		// always records the posture that actually governed it.

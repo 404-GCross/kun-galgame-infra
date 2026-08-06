@@ -64,6 +64,15 @@ type TrustReviewItem struct {
 	Severity        *int16   `gorm:"column:severity" json:"severity"`
 	ClassifierScore *float32 `gorm:"type:real;column:classifier_score" json:"classifier_score"`
 	ReportWeightSum *float32 `gorm:"type:real;column:report_weight_sum" json:"report_weight_sum"`
+	// SubjectReach is how many people the content had reached when the item was
+	// opened (views, or the product's nearest equivalent). NULL = the product did
+	// not report it, which is the pre-existing behaviour and contributes NO boost
+	// — reach can only ever raise an item's priority, never sink one.
+	//
+	// It is deliberately a SNAPSHOT, not a live number: a reviewer needs to know
+	// how much damage was done by the time the item opened, and re-reading it
+	// later would make the queue's ordering unstable under them.
+	SubjectReach *int64 `gorm:"column:subject_reach" json:"subject_reach"`
 	// Priority ≈ reach × severity ÷ cost, recomputable. Intent value written
 	// explicitly (章程 ruling 4 lists priority) → NO default tag.
 	Priority float32 `gorm:"type:real;not null;column:priority" json:"priority"`

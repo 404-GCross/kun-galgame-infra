@@ -46,6 +46,11 @@ type ForwardParams struct {
 	Severity       *int16
 	WeightSum      *float32
 	ContextNote    *string
+	// SubjectReach is the audience the content had reached when the site forwarded
+	// it (nil = not reported). The forward path is where reach is most meaningful:
+	// unlike a publish-time scan it fires long after publication, so the number is
+	// real rather than structurally zero.
+	SubjectReach *int64
 }
 
 // ForwardResult is the forward outcome: the review item and whether it was newly
@@ -96,6 +101,13 @@ func (s *ForwardService) Forward(ctx context.Context, p ForwardParams) (ForwardR
 				updates["context_note"] = gorm.Expr(
 					"CASE WHEN context_note IS NULL OR context_note = '' THEN ? ELSE context_note END", *p.ContextNote)
 			}
+			// A subject that has since been seen more widely is re-ranked, not just
+			// re-noted — this is the path by which a slow-burning item climbs the
+			// queue while it sits in it.
+			if reach := maxReach(open.SubjectReach, p.SubjectReach); reach != nil {
+				updates["subject_reach"] = *reach
+				updates["priority"] = repriceForReach(open.Priority, open.SubjectReach, reach)
+			}
 			if len(updates) > 0 {
 				if err := tx.Model(&model.TrustReviewItem{}).Where("id = ?", open.ID).Updates(updates).Error; err != nil {
 					return err
@@ -111,7 +123,9 @@ func (s *ForwardService) Forward(ctx context.Context, p ForwardParams) (ForwardR
 			Site: p.Site, SubjectKind: p.SubjectKind, SubjectID: p.SubjectID,
 			Source: model.ReviewSourceCommunityForward, Severity: p.Severity,
 			ReportWeightSum: p.WeightSum, ContextNote: p.ContextNote,
-			Priority: forwardPriority(p.Severity), Status: model.ReviewStatusPending,
+			SubjectReach: p.SubjectReach,
+			Priority:     rankPriority(forwardPriority(p.Severity), p.SubjectReach),
+			Status:       model.ReviewStatusPending,
 		}
 		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item)
 		if res.Error != nil {
