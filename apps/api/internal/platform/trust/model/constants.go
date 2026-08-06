@@ -49,6 +49,13 @@ const (
 	ReviewSourceCommunityForward int16 = 3
 	ReviewSourceMislabel         int16 = 4
 	ReviewSourceManual           int16 = 5
+	// ReviewSourceAISample is a CALIBRATION item: a scan the classifier judged
+	// clean, drawn at random so a human can confirm it really was. It is the only
+	// source that measures FALSE NEGATIVES — every other source starts from
+	// something already suspected, so without this the inbox can only ever tell
+	// you about content the pipeline already caught. A sample item never carries
+	// a disposition and never hides anything.
+	ReviewSourceAISample int16 = 6
 )
 
 // Review-item status (trust_review_item.status). pending/claimed are the OPEN

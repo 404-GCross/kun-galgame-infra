@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math/rand/v2"
 	"time"
 
 	"api/internal/platform/trust/model"
@@ -42,13 +43,15 @@ import (
 // never left scored-but-unenforced by a crash between the two. Shadow behaviour
 // is byte-for-byte unchanged; the mode is startup configuration, never per-row.
 type ScanWorker struct {
-	db        *gorm.DB
-	gateway   ScanGateway
-	tier0     Tier0Matcher
-	mode      int16
-	batchSize int
-	interval  time.Duration
-	now       func() time.Time
+	db         *gorm.DB
+	gateway    ScanGateway
+	tier0      Tier0Matcher
+	mode       int16
+	sampleRate float64
+	rand       func() float64
+	batchSize  int
+	interval   time.Duration
+	now        func() time.Time
 }
 
 // Tier0Matcher is the scan worker's SOLE contact with the Tier0 word list: given
@@ -64,13 +67,17 @@ type Tier0Matcher interface {
 // opted into explicitly via WithScanMode / KUN_TRUST_SCAN_MODE.
 func NewScanWorker(db *gorm.DB, gateway ScanGateway, tier0 Tier0Matcher, opts ...ScanWorkerOption) *ScanWorker {
 	w := &ScanWorker{
-		db:        db,
-		gateway:   gateway,
-		tier0:     tier0,
-		mode:      model.ScanModeShadow,
-		batchSize: scanBatchSize,
-		interval:  scanInterval,
-		now:       time.Now,
+		db:      db,
+		gateway: gateway,
+		tier0:   tier0,
+		mode:    model.ScanModeShadow,
+		// Sampling is OFF by default and independent of the mode: it is a
+		// measurement, not enforcement, so it must not ride in on the live switch.
+		sampleRate: 0,
+		rand:       rand.Float64,
+		batchSize:  scanBatchSize,
+		interval:   scanInterval,
+		now:        time.Now,
 	}
 	for _, o := range opts {
 		o(w)
@@ -96,12 +103,36 @@ func WithScanMode(name string) ScanWorkerOption {
 	}
 }
 
+// WithSampleRate sets the share of CLEAN verdicts drawn into the inbox as
+// calibration items (0 = off, the default; 0.005 = one in two hundred).
+//
+// This is the only instrument that can measure the pipeline's FALSE NEGATIVE
+// rate. Every other item in the inbox arrives because something already
+// suspected it, so the inbox on its own can tell you how often the classifier is
+// wrong when it fires — and nothing whatsoever about how often it stays silent
+// when it should not. Without a sample the 94% of content scoring below 0.1 is
+// simply unexamined, and a model that quietly degrades looks exactly like a
+// model that is working.
+//
+// Out-of-range values clamp to off rather than erroring: a fat-fingered env var
+// must not flood a human queue, and must not stop the worker from starting.
+func WithSampleRate(rate float64) ScanWorkerOption {
+	return func(w *ScanWorker) {
+		if rate <= 0 || rate > maxScanSampleRate {
+			w.sampleRate = 0
+			return
+		}
+		w.sampleRate = rate
+	}
+}
+
 // Run drives ScorePending on the worker interval until ctx is cancelled. Errors
 // are logged, never fatal — the loop keeps running.
 func (w *ScanWorker) Run(ctx context.Context) {
 	slog.Info("trust scan worker starting",
 		"interval", w.interval.String(), "batch", w.batchSize,
-		"gateway_configured", w.gateway.Configured(), "mode", scanModeName(w.mode))
+		"gateway_configured", w.gateway.Configured(), "mode", scanModeName(w.mode),
+		"sample_rate", w.sampleRate)
 	t := time.NewTicker(w.interval)
 	defer t.Stop()
 	for {
@@ -223,10 +254,16 @@ func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v Gateway
 	// hide. Sharing this transaction with the verdict is the point — a crash can
 	// leave the subject neither scored nor enforced, but never one without the
 	// other.
-	if w.mode == model.ScanModeLive && v.Flagged {
-		return w.enforceFlagged(tx, r, v)
+	if v.Flagged {
+		if w.mode == model.ScanModeLive {
+			return w.enforceFlagged(tx, r, v)
+		}
+		return nil
 	}
-	return nil
+	// Cleared. Occasionally send one to a human anyway — the false-negative
+	// instrument. Runs in BOTH modes: it enforces nothing, so it does not belong
+	// to the live posture.
+	return w.maybeSampleClean(tx, r, v)
 }
 
 // markDegraded records a drain: status flips to degraded (plus the Tier0 record,

@@ -57,6 +57,14 @@ type Config struct {
 	// for the same reason as the two gates above: deploying the capability must
 	// never be what turns it on. Any unrecognised value is treated as shadow.
 	TrustScanMode string
+	// TrustScanSampleRate is the share of CLEAN scan verdicts drawn into the
+	// review inbox as calibration items, so a human periodically audits what the
+	// classifier waved through (0 = off, the default; 0.005 = one in two hundred).
+	// It is the only measurement of the pipeline's FALSE NEGATIVE rate — every
+	// other inbox source starts from something already suspected. Independent of
+	// TrustScanMode: sampling enforces nothing, so it must not ride in on live.
+	// An unparseable or out-of-range value degrades to off.
+	TrustScanSampleRate float64
 	// DevPortalClientIDs is the developer-platform client fence allowlist: the
 	// OAuth client ids permitted to reach the /dev/* self-service face with a
 	// user token (docs/developer-platform/03-auth-and-tiers.md). First-party
@@ -587,6 +595,9 @@ func Load() (*Config, error) {
 	cfg.TrustScanEnabled, _ = strconv.ParseBool(getEnv("KUN_TRUST_SCAN_ENABLED", "false"))
 	cfg.TrustCheckEnabled, _ = strconv.ParseBool(getEnv("KUN_TRUST_CHECK_ENABLED", "false"))
 	cfg.TrustScanMode = getEnv("KUN_TRUST_SCAN_MODE", "shadow")
+	// A parse failure yields 0 = off, which is the safe posture (the service must
+	// still start; it just does not sample).
+	cfg.TrustScanSampleRate, _ = strconv.ParseFloat(getEnv("KUN_TRUST_SCAN_SAMPLE_RATE", "0"), 64)
 
 	// Second image identity for galgame-image-refping (see Config.GalgameImageClient).
 	// Set KUN_GALGAME_IMAGE_CLIENT_ID / _SECRET in the oauth container to the

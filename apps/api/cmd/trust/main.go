@@ -110,7 +110,9 @@ func main() {
 	// ai_text review item and queue a hide disposition for the callback worker to
 	// deliver; anything else keeps the original record-only shadow posture.
 	aiGateway := service.NewAIGatewayClient(cfg.AIClient.BaseURL, cfg.AIClient.ClientID, cfg.AIClient.ClientSecret)
-	scanWorker := service.NewScanWorker(trustDB.DB(), aiGateway, termSvc, service.WithScanMode(cfg.TrustScanMode))
+	scanWorker := service.NewScanWorker(trustDB.DB(), aiGateway, termSvc,
+		service.WithScanMode(cfg.TrustScanMode),
+		service.WithSampleRate(cfg.TrustScanSampleRate))
 	slog.Info("trust scan worker", "gateway_configured", aiGateway.Configured(), "mode", cfg.TrustScanMode)
 
 	application.Fiber.Use(middleware.RequestID())

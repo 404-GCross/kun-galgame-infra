@@ -49,6 +49,20 @@ const (
 	scanBatchSize = 20
 	// scanInterval is the scoring worker tick (doc 18 §6 low-volume shadow cadence).
 	scanInterval = 60 * time.Second
+
+	// maxScanSampleRate bounds the clean-verdict calibration sample. Human review
+	// is a FIXED-capacity queue — the one resource in this system that cannot be
+	// scaled by turning a knob — so a sample rate is capped at a level that can
+	// never drown real work no matter what an operator types. At the observed
+	// ~480 scans/day, 5% is ~24 items/day; the intended setting is far lower
+	// (0.005 ≈ 2/day), and anything above this cap reads as a typo and disables
+	// sampling instead.
+	maxScanSampleRate = 0.05
+
+	// scanSamplePriority parks calibration items below every real signal. Report
+	// severities occupy 0-5 and reach can lift those to 20; 0.05 sorts under all
+	// of it, so a sample is only ever reached on an otherwise-clear queue.
+	scanSamplePriority float32 = 0.05
 )
 
 // termCacheTTL is how long the Tier0 matcher serves its in-memory snapshot of
