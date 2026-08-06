@@ -599,8 +599,10 @@ type CharacterDetailResponse struct {
 type CharacterTrait struct {
 	ID           int64  `json:"id"`
 	Name         string `json:"name" doc:"verbatim VNDB English trait name"`
+	NameZh       string `json:"name_zh,omitempty" doc:"Simplified-Chinese trait name; absent when the vocabulary row has none yet"`
 	GroupTID     string `json:"group_tid" doc:"VNDB root-group tid (i1=Hair, i35=Eyes, …); empty when the trait is itself a root"`
 	GroupName    string `json:"group_name,omitempty" doc:"root-group display name; absent for a root trait"`
+	GroupNameZh  string `json:"group_name_zh,omitempty" doc:"Simplified-Chinese root-group name; absent for a root trait or an unrendered group"`
 	Sexual       bool   `json:"sexual,omitempty" doc:"the trait belongs to a sexual trait family — consumers gate rendering themselves"`
 	SpoilerLevel int16  `json:"spoiler_level" doc:"per-character spoiler grade: 0 none / 1 minor / 2 major"`
 	Lie          bool   `json:"lie,omitempty" doc:"presented as true in-story but actually a lie (VNDB flag)"`

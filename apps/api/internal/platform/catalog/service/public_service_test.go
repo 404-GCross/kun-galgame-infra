@@ -731,16 +731,17 @@ func TestPublicCharacterTraits(t *testing.T) {
 	if err := testDB.Create(ch).Error; err != nil {
 		t.Fatalf("create character: %v", err)
 	}
-	mkTrait := func(tid, name string, sexual bool) int64 {
-		tr := &model.CatalogCharacterTrait{VndbTID: tid, Name: name, Sexual: sexual, Searchable: true, Applicable: true}
+	mkTrait := func(tid, gid, name, nameZh string, sexual bool) int64 {
+		tr := &model.CatalogCharacterTrait{VndbTID: tid, Name: name, NameZh: nameZh, GroupTID: gid, Sexual: sexual, Searchable: true, Applicable: true}
 		if err := testDB.Create(tr).Error; err != nil {
 			t.Fatalf("create trait %s: %v", name, err)
 		}
 		return tr.ID
 	}
-	tSafe := mkTrait("i1", "Long Hair", false)
-	tSexual := mkTrait("i2", "Sexual Trait", true)
-	tSpoiler := mkTrait("i3", "Hidden Past", false)
+	mkTrait("i0", "", "Hair", "毛发", false) // root group
+	tSafe := mkTrait("i1", "i0", "Long Hair", "长发", false)
+	tSexual := mkTrait("i2", "", "Sexual Trait", "", true)
+	tSpoiler := mkTrait("i3", "", "Hidden Past", "", false)
 	link := func(traitID int64, spoiler int16) {
 		if err := testDB.Create(&model.CatalogCharacterTraitLink{CharacterID: ch.ID, TraitID: traitID, SpoilerLevel: spoiler}).Error; err != nil {
 			t.Fatalf("link trait: %v", err)
@@ -756,6 +757,17 @@ func TestPublicCharacterTraits(t *testing.T) {
 	}
 	if len(rec.Traits) != 1 || rec.Traits[0].Name != "Long Hair" {
 		t.Fatalf("default traits = %+v (want safe only)", rec.Traits)
+	}
+	// wave 176: the Chinese name and its group's Chinese name ride along, and
+	// stay empty (omitempty on the wire) where the vocabulary has none.
+	if rec.Traits[0].NameZh != "长发" || rec.Traits[0].GroupZh != "毛发" {
+		t.Fatalf("zh names = %q / %q (want 长发 / 毛发)", rec.Traits[0].NameZh, rec.Traits[0].GroupZh)
+	}
+	recNSFW, _, _ := svc.Character(ctx, ch.ID, false, true, 0, 50, 0)
+	for _, tr := range recNSFW.Traits {
+		if tr.Name == "Sexual Trait" && (tr.NameZh != "" || tr.GroupZh != "") {
+			t.Fatalf("unrendered trait leaked zh fields: %+v", tr)
+		}
 	}
 	rec, _, _ = svc.Character(ctx, ch.ID, false, true, 0, 50, 0)
 	if len(rec.Traits) != 2 {

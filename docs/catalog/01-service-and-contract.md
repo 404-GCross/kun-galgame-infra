@@ -123,7 +123,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 角色实体自述,letmoe/kungal 角色页直达即自足(§2.4 的 `characters` 投影给的是 work 内花名册摘要,本端点给的是角色本体)。
 
-- 响应 `data`:`id` · `display_name` · `latin` · `lang` · **`gender`**(1=male/2=female/3=other;缺省=unknown,无 0 值)· `description` · **`instance_of`**(跨宇宙变体的基底角色 id,VNDB instance_of;非变体则缺省)· **`image_hash`**(**胸像**内容哈希,step 47 VNDB 波前恒缺省)· **`figure_hash`**(**全身立绘**内容哈希,167 §11 Getchu 波;与 `image_hash` 是不同资产,不是它的回落)· **典型集物理属性**(step 81 字段 PR C2,真列平铺,均缺省=unknown、无有意义 0 值):`birthday_month`/`birthday_day`(月/日;年份不上列——见 `extra`)· `blood_type`(1=A/2=B/3=AB/4=O)· `height_cm` · `weight_kg` · `bust_cm`/`waist_cm`/`hip_cm` · `cup`(逐字大写罩杯 token)· **`extra`**(受治理长尾,源命名空间 `{"bgm": {…}}`:未晋升为真列的 Bangumi infobox 字段——星座/年龄/属性/趣味…,以及被剔出真列的生日年份/越界测量值原样保留;值为字符串或字符串数组;无长尾则缺省)· **`attr_sources`**(真列属性的来源归因 `{列名 → source key}`,如 `{"gender":"vndb","blood_type":"bangumi"}`,取自各属性列 field_provenance 的最新 writer;无填充属性则缺省)· **`aliases`**(书写变体,各 `id`/`name`/`latin`/`lang`/`kind`(0=translation/1=spelling_variant/2=search_hint)/`is_primary_for_locale`;无别名序列化 `[]`)· **`intros`**(多语言角色简介,step 65 字段 PR C1:统一形状 `[{ lang, intro, source_id, machine? }]`,与 §2.4 work `intro` 块同形;一语言一元素,同语言多源**先按 `provenance` 升序(源行 0 优先于机翻行 1)再按 `source_id` 升序**取一;`machine: true` 仅出现在被浮出的机翻行上(实体简介机翻波 refs/proj/172:同 work 的 step-75 契约——填缺 zh-Hans、沿用源行 `source_id`、`src_hash`/`mt_model` 落库、**永不遮蔽源行**);**角色是 catalog 原生实体,无 claimed/bodyless 之分、无桥接**——恒读 `catalog_character_intro` 原生行;源料 = Bangumi 角色 summary(假名启发式 ja/zh-Hans)+ VNDB 角色 description(en,`[spoiler]` 段**整段剔除**后落库)+ Getchu ja(refs/proj/167)+ 机翻 zh-Hans;无简介序列化 `[]`)· **`traits`**(VNDB trait 集,step 93:统一形状 `[{ id, name, group_tid, group_name?, sexual?, spoiler_level, lie? }]`,按 `(group_tid, gorder, name)` 排序令组内连续;`?spoilers=0|1|2` 封顶 spoiler_level(**默认 0——不显式要就永不泄剧透**);`name`/`group_name` 为 VNDB 英文原样(zh 本地化=未来波,alias/description 已入库作原料);`sexual` 标志随行——catalog 是 R18 面,消费端自行门控(step 81 BWH/cup 先例);`lie`=VNDB「表面为真实为谎」语义原样;词表单源(vndb_tid UNIQUE 即 source map,无 map 表);无 trait 序列化 `[]`)。
+- 响应 `data`:`id` · `display_name` · `latin` · `lang` · **`gender`**(1=male/2=female/3=other;缺省=unknown,无 0 值)· `description` · **`instance_of`**(跨宇宙变体的基底角色 id,VNDB instance_of;非变体则缺省)· **`image_hash`**(**胸像**内容哈希,step 47 VNDB 波前恒缺省)· **`figure_hash`**(**全身立绘**内容哈希,167 §11 Getchu 波;与 `image_hash` 是不同资产,不是它的回落)· **典型集物理属性**(step 81 字段 PR C2,真列平铺,均缺省=unknown、无有意义 0 值):`birthday_month`/`birthday_day`(月/日;年份不上列——见 `extra`)· `blood_type`(1=A/2=B/3=AB/4=O)· `height_cm` · `weight_kg` · `bust_cm`/`waist_cm`/`hip_cm` · `cup`(逐字大写罩杯 token)· **`extra`**(受治理长尾,源命名空间 `{"bgm": {…}}`:未晋升为真列的 Bangumi infobox 字段——星座/年龄/属性/趣味…,以及被剔出真列的生日年份/越界测量值原样保留;值为字符串或字符串数组;无长尾则缺省)· **`attr_sources`**(真列属性的来源归因 `{列名 → source key}`,如 `{"gender":"vndb","blood_type":"bangumi"}`,取自各属性列 field_provenance 的最新 writer;无填充属性则缺省)· **`aliases`**(书写变体,各 `id`/`name`/`latin`/`lang`/`kind`(0=translation/1=spelling_variant/2=search_hint)/`is_primary_for_locale`;无别名序列化 `[]`)· **`intros`**(多语言角色简介,step 65 字段 PR C1:统一形状 `[{ lang, intro, source_id, machine? }]`,与 §2.4 work `intro` 块同形;一语言一元素,同语言多源**先按 `provenance` 升序(源行 0 优先于机翻行 1)再按 `source_id` 升序**取一;`machine: true` 仅出现在被浮出的机翻行上(实体简介机翻波 refs/proj/172:同 work 的 step-75 契约——填缺 zh-Hans、沿用源行 `source_id`、`src_hash`/`mt_model` 落库、**永不遮蔽源行**);**角色是 catalog 原生实体,无 claimed/bodyless 之分、无桥接**——恒读 `catalog_character_intro` 原生行;源料 = Bangumi 角色 summary(假名启发式 ja/zh-Hans)+ VNDB 角色 description(en,`[spoiler]` 段**整段剔除**后落库)+ Getchu ja(refs/proj/167)+ 机翻 zh-Hans;无简介序列化 `[]`)· **`traits`**(VNDB trait 集,step 93:统一形状 `[{ id, name, name_zh?, group_tid, group_name?, group_name_zh?, sexual?, spoiler_level, lie? }]`,按 `(group_tid, gorder, name)` 排序令组内连续;`?spoilers=0|1|2` 封顶 spoiler_level(**默认 0——不显式要就永不泄剧透**);`name`/`group_name` 为 VNDB 英文原样;**`name_zh`/`group_name_zh` 是词表的简体中文名(wave 176)**,取自 `catalog_character_trait.name_zh`(组名同经 group_tid 自连接解析),**无中文名时整个字段缺省**——消费端回落英文原名,而不是渲染空串;来源记在 `name_zh_provenance`(0=策展词表/人工,1=机翻,仅 `name_zh` 非空时有意义,策展永不被机翻覆盖),该列**不上读面**;`sexual` 标志随行——catalog 是 R18 面,消费端自行门控(step 81 BWH/cup 先例);`lie`=VNDB「表面为真实为谎」语义原样;词表单源(vndb_tid UNIQUE 即 source map,无 map 表);无 trait 序列化 `[]`)。
   - 属性来源与 survivorship(step 81):真列由 `internal/jobs/charattrs` 从 VNDB 类型列(优先)与 Bangumi infobox(补缺)回填;同字段两源都有 → VNDB 胜(类型列 > 自由文本正则);人工编辑(`field_provenance` writer=`user`)永不被回填覆盖。
 - 缺失 id → 404(与 labels/{id}/works、by-anchor 同义)。
 
@@ -139,6 +139,8 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 - **注意:本端点是纯 Fiber 路由,不在生成的 openapi.yaml 里**(multipart 不入 Huma 面);鉴权同前缀 Basic S2S。
 
 ### 2.13 `PUT|DELETE /catalog/works/{workID}/covers/{coverID}/vote` — 最佳封面投票(写,wave 175)
+
+> ⚠️ **一等站点已不推荐用本对端点(wave 176 起)**:断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户投票。有用户令牌的场景请改用 **§4 用户写面** `PUT|DELETE /api/v1/user/catalog/works/{workID}/covers/{coverID}/vote`(actor/site 均取自已验令牌,无可撒谎的字段)。本对端点**不删除**:它服务于「后端自己认证了用户、无法转交用户令牌」的正当 S2S 场景(批量迁移、无浏览器的同步任务)。两面共用同一 service 与同一张表,故「一人一作一票」跨面成立。
 
 用户为一部作品**票选最佳封面**。写路径只写 `catalog_cover_vote` 一张表——**绝不写 `sort_order`/`portrait_pinned`**:票是**参考数据**,编辑的钉子恒压过它,下游各面自行决定拿票数做什么;NSFW 裁剪仍在读面按既有 `catalog_work_cover.sexual`/`violence` 走,写侧不设 NSFW 闸。本波只做**封面**(截图/立绘不做,也不设通用 `entity_type` 列)。
 
@@ -162,7 +164,40 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 admin 面走 oauth 的共享 JWT 中间件 + `RequireRole("ren")`(**超管专属**——目录人审是高权限运营面,普通 admin 不放行);**不经 site 绑定列**(它是运营人审,不是产品 S2S)。
 
-## 4. 鉴权形态
+## 4. 用户令牌写面(Bearer JWT + `catalog:edit`,前缀 `/api/v1/user/catalog`;wave 176)
+
+catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
+
+> **actor 取自已验令牌,租户取自签发该令牌的 client——身份的任何一部分都不从请求体读。**
+
+这正是与 S2S 写面的唯一区别。S2S 面上产品后端说「kungal 的用户 5 干的」,catalog 因为后端自证了身份而采信;后端一个 bug 或一次凭据泄漏,就能以任何人的名义写。本面上**没有可以撒谎的字段**:uid = 令牌 `id` claim,site = 令牌 `client_id` 对应 `oauth_clients.catalog_site`,两者都在服务端解出。
+
+**鉴权链**(路径域 Fiber 中间件,顺序即拒绝顺序):
+
+| 步 | 检查 | 失败 |
+|----|------|------|
+| 1 | `middleware.JWTAuth`:签名/过期(与 admin 面同一 accept-both verifier) | **401**(JWKS 不可达 → **503**,是本服务的故障而非调用方的) |
+| 2 | 令牌 `id` claim > 0 | **401**(「令牌不指名任何用户」——票永不系统归因) |
+| 3 | `scope` 含 **`catalog:edit`**(空格分隔,**整词**匹配) | **403**(message 点名缺失的 scope) |
+| 4 | `client_id` claim 非空 | **403** |
+| 5 | 该 client 在 `oauth_clients` 存在且 `catalog_site` 非空 | **403** |
+
+第 4 步即「**一等登录令牌(`/auth/login`)被拒**」的原因:它没有 `client_id`(RFC 9068 §2.2 对它是可选),因而没有可归属的站点;若允许它自报 site,就等于把本面存在的意义(消灭断言)重新打开。用户令牌须经 OAuth 授权码流从某个 client 取得。
+
+- **scope**:`catalog:edit` 是**用户 scope**(经 OP 同意页授予),与开发者平台的 **API key scope**(`internal/platform/devapi`,如 `catalog:read`)是两套凭据、两个命名空间,不可混用。常量落在 catalog handler 包内,与 image 服务把 `image:upload` 写在自己鉴权中间件旁的先例一致。
+- **前缀不相交**:`/api/v1/user/catalog` 与 `/api/v1/catalog`、`/api/v1/admin/catalog` 三者互不为前缀——Huma 注册在 Fiber **app** 上,路径域 `Use` 是唯一的闸,前缀一旦互相包含,S2S 的 Basic 链就会拦在用户调用前面。
+- **spec**:两个写面同在 `docs/catalog/openapi.yaml`(tag `catalog-user`);运行时它是**独立的 humafiber API**,只是共用一份契约文档,便于调用方并排比较「断言 actor」与「令牌即 actor」。
+
+### 4.1 `PUT|DELETE /user/catalog/works/{workID}/covers/{coverID}/vote` — 最佳封面投票(写)
+
+用户写面的**首批 op**。语义、service、表、拒绝映射与 §2.13 **逐字相同**,只有两个身份值的来路不同:
+
+- **无请求体**。S2S 面要断言的两个值(`site`、`actor.user_id`),恰是本面拒绝从线上读的两个值。
+- 响应同形:`{ cover_id, vote_count, voted }`。
+- 一人一作一票、`PUT` 到另一张封面 = 票搬家、`DELETE` 幂等 200、作品/封面不可投 → 404 —— 这些是**表的唯一键与 service 的规则**,不是某一张脸的意见,故跨面成立。
+- `site` 仍只作来源标注、不入唯一键:同一个人经两个 client 登录投票,仍是**一张会移动的票**。
+
+## 5. 鉴权形态
 
 - **S2S face(`/api/v1/catalog/*`)**:`Authorization: Basic <b64(client_id:client_secret)>`,对 `oauth_clients` 注册表校验。任何有效一等 client 可**认证**;但——
 - **写路径 per-client site 绑定**:`oauth_clients.catalog_site`(可空 text,size 64,无唯一约束——一站可多 client)。`POST /catalog/works/claim` 要求认证 client 的 `catalog_site` **非空**且 **== 请求体 `site`**,否则 **403**(未绑定或站点不匹配的信息写在 message)。未绑定的 client 根本不能 claim。**只读端点(resolve / redirects / by-anchor / credits / search)不受此限。** `site` 值即租户键(写入 `catalog_work.site`),**无白名单/注册表**——合法性只由「client 绑定值 == 请求 site」把关;新增消费站 = 给其 client 设 `catalog_site`,别无它步。
@@ -170,16 +205,17 @@ admin 面走 oauth 的共享 JWT 中间件 + `RequireRole("ren")`(**超管专属
   - galgame wiki(第一消费站):`UPDATE oauth_clients SET catalog_site='galgame_wiki' WHERE image_site_key='galgame_wiki' AND id <> 'galgame-wiki-admin';`
   - **letmoe(第二消费站,同人为主)**:`UPDATE oauth_clients SET catalog_site='letmoe' WHERE <letmoe client 定位>;`(dev = 本地主库执行即可复现;**prod = 用户 ops**,随 letmoe 上线 runbook 同批,核验 `SELECT id,catalog_site FROM oauth_clients WHERE catalog_site='letmoe'` 命中 letmoe 机密 client)。
 - **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ **ren 角色(超管专属)**,与 site 绑定列无关。
+- **user face(`/api/v1/user/catalog/*`,wave 176)**:Bearer **用户**访问令牌(同一 accept-both verifier)+ `catalog:edit` scope + **client 绑定**。这里 `oauth_clients.catalog_site` 的用法与 S2S 写面**不同**:S2S 校验「绑定值 == 请求体 site」,user face **根本不收 site**——绑定值**就是**写入的租户。因此新增消费站的动作仍是同一条(给其 client 设 `catalog_site`),但一等登录令牌(无 `client_id`)在本面**永远**拿不到租户,只能走 OAuth 授权码流取得 client 绑定令牌。详见 §4。
 - **编辑引擎提案桥面（过渡参考，09-open-api-phase2 06b）**：catalog 进程另托一个 galgame-family 的**平台提案面** `/internal/edit/*`（create / mine / get-own / withdraw + schema/snapshot 只读投影），走 devapi 双凭证链——scope **`galgame:propose`**、计量 face **`galgame_internal_propose`**；actor 取自已验用户 JWT（plain：trust 0 / roles ∅ / 非 owner），租户由 key 的 `oauth_clients.catalog_site` 反查（请求**不收** site/actor 断言）。它是**纯 Fiber、不进本目录 spec**（`openapi.yaml` 仅含 S2S face）；编辑引擎的 S2S 面（`/api/v1/catalog/edit/*`，断言式 actor + 审核三件套）不变。**桥面不立独立契约文档**，第三方实际开放另议。
 - `GET /openapi.json`(S2S spec)、`GET /healthz` 无鉴权。
 
-## 5. 生成 spec
+## 6. 生成 spec
 
 - S2S:`go run ./cmd/gen-openapi -catalog -o docs/catalog/openapi.yaml`(OpenAPI 3.1)。
 - admin:`go run ./cmd/gen-openapi -catalog-admin -o docs/catalog/admin-openapi.yaml`。
 - 契约以生成的 spec 为准(Huma code-first,DTO 即契约);本 markdown 是语义说明。
 
-## 6. 运维注记
+## 7. 运维注记
 
 - **schema 迁移**:`cmd/migrate-catalog` 是 `kun_catalog` 的**唯一** schema 入口,幂等(AutoMigrate + `IF NOT EXISTS` 原始 SQL + 存在性守卫 seed)。生产随部署自动跑(compose `migrate-catalog` gate,catalog 服务 `depends_on: service_completed_successfully`);catalog 服务自身**不跑迁移**,只连接 + 就绪检查。
 - ⚠️ **导入类 cmd 不随部署自动跑**:`reconcile-galgame-works` / `import-*` / `reindex-catalog` 等是手动运维工具(经 `tools` 镜像 + env-file),**部署不会触发**。跑完批量导入后需**手动** `reindex-catalog` 重建搜索索引(批量脚本不走写穿钩子)。

@@ -155,6 +155,21 @@ type CatalogCharacterTrait struct {
 	VndbTID string `gorm:"column:vndb_tid;not null;uniqueIndex:uq_catalog_character_trait_vndb_tid" json:"vndb_tid"`
 	// Name is the verbatim VNDB English trait name.
 	Name string `gorm:"not null" json:"name"`
+	// NameZh is the Simplified-Chinese rendering of Name (wave 176). '' = none
+	// yet, which is the honest state for a trait nobody has rendered — the read
+	// faces omit the field rather than echoing the English twice. A DEFAULT ''
+	// is correct here (unlike the intro-table provenance columns): every
+	// pre-existing row genuinely has no Chinese name, so AutoMigrate's
+	// `ADD COLUMN … NOT NULL DEFAULT ''` writes the right value and no
+	// preMigrate backfill block is needed.
+	NameZh string `gorm:"column:name_zh;not null;default:''" json:"name_zh"`
+	// NameZhProvenance records WHERE NameZh came from: 0 = curated (the MIT
+	// community dictionary / a human), 1 = machine translation. Meaningful only
+	// when NameZh != '' — an empty name has no provenance — which is why a
+	// plain default:0 carries no zero-value trap: the '' rows the default lands
+	// on are exactly the rows whose provenance nobody reads. Curated beats
+	// machine: the ingest path may overwrite a 1 but never a 0.
+	NameZhProvenance int16 `gorm:"column:name_zh_provenance;not null;default:0" json:"name_zh_provenance"`
 	// GroupTID is the verbatim VNDB root-group tid; '' = this row is a root.
 	// NOT NULL with no default: the importer always writes it explicitly ('' is
 	// a meaningful value — the default-tag zero-value trap avoided).

@@ -1411,12 +1411,15 @@ func (s *PublicService) characterTraits(ctx context.Context, characterID int64, 
 	var rows []struct {
 		ID           int64
 		Name         string
+		NameZh       string `gorm:"column:name_zh"`
 		GroupName    *string
+		GroupNameZh  *string `gorm:"column:group_name_zh"`
 		Sexual       bool
 		SpoilerLevel int16
 		Lie          bool
 	}
-	if err := s.db.WithContext(ctx).Raw(`SELECT t.id, t.name, g.name AS group_name,
+	if err := s.db.WithContext(ctx).Raw(`SELECT t.id, t.name, t.name_zh,
+			g.name AS group_name, g.name_zh AS group_name_zh,
 			t.sexual, l.spoiler_level, l.lie
 		FROM catalog_character_trait_link l
 		JOIN catalog_character_trait t ON t.id = l.trait_id
@@ -1429,7 +1432,8 @@ func (s *PublicService) characterTraits(ctx context.Context, characterID int64, 
 	out := make([]dto.PublicCharacterTrait, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, dto.PublicCharacterTrait{
-			ID: r.ID, Name: r.Name, Group: derefStrPub(r.GroupName),
+			ID: r.ID, Name: r.Name, NameZh: r.NameZh,
+			Group: derefStrPub(r.GroupName), GroupZh: derefStrPub(r.GroupNameZh),
 			Spoiler: r.SpoilerLevel, Sexual: r.Sexual, Lie: r.Lie,
 		})
 	}

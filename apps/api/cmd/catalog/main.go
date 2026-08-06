@@ -10,6 +10,7 @@
 //	GET  /api/v1/catalog/redirects          — S2S redirect keyset feed (cleanup crons)
 //	POST /api/v1/catalog/works/claim        — S2S work claim/registration
 //	GET  /api/v1/admin/catalog/*            — admin review queues (JWT + admin role)
+//	PUT  /api/v1/user/catalog/*             — user-token write plane (Bearer JWT + catalog:edit)
 //	GET  /openapi.json                       — S2S OpenAPI 3.1 spec (no auth)
 //	GET  /healthz                            — no auth
 //
@@ -132,6 +133,15 @@ func main() {
 	application.Fiber.Use("/api/v1/admin/catalog",
 		middleware.JWTAuth(tokenVerifier), catHandler.AdminGate())
 
+	// User face (wave 176): the end user's own access token writes here. Same
+	// verifier as the admin face, then UserGate — the catalog:edit scope plus
+	// the token's client, whose oauth_clients.catalog_site IS the tenant of the
+	// write. Nothing about identity is read from the body. The prefix is a third
+	// disjoint one, so neither the S2S Basic chain nor the admin permission gate
+	// can intercept these calls.
+	application.Fiber.Use(catHandler.UserPrefix,
+		middleware.JWTAuth(tokenVerifier), catHandler.UserGate(clientRepo))
+
 	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher, statsSvc)
 	claimSvc := service.NewClaimLifecycleService(catalogDB.DB())
 	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc, claimSvc,
@@ -195,7 +205,13 @@ func main() {
 	// The best-cover vote face (wave 175): two advisory ops on the same S2S API
 	// and the same asserted-actor convention. It writes catalog_cover_vote and
 	// nothing else — the editorial cover columns are not its to move.
-	catHandler.SetupCoverVotes(s2sAPI, service.NewCoverVoteService(catalogDB.DB()))
+	coverVoteSvc := service.NewCoverVoteService(catalogDB.DB())
+	catHandler.SetupCoverVotes(s2sAPI, coverVoteSvc)
+	// The same vote service on the user plane (wave 176), where the ballot's
+	// owner and site come from the verified token instead of the body. One
+	// service, two faces: the rule that a user holds one ballot per work holds
+	// across both, because it is the table's unique key, not a face's opinion.
+	catHandler.SetupUser(application.Fiber, coverVoteSvc)
 
 	// NextMoe open API: serve the frozen public spec unauthenticated at its face
 	// root — the machine-readable contract itself must not need a key. Built ONCE

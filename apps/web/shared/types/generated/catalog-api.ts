@@ -516,6 +516,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/user/catalog/works/{workID}/covers/{coverID}/vote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Vote for this work's best cover AS THE BEARER TOKEN'S OWN USER. No body: the voter is the token's user and the site is the token's client's catalog site. ONE ballot per user per WORK — voting a different cover MOVES the vote. Advisory only: votes never reorder covers and never touch the editorial pins */
+        put: operations["voteCatalogWorkCoverUser"];
+        post?: never;
+        /** Withdraw the bearer token's own best-cover vote on this work. Idempotent (no vote to withdraw is still a 200); the cover id is part of the symmetric path and need not match the voted one — a user holds at most one ballot per work */
+        delete: operations["unvoteCatalogWorkCoverUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -615,6 +633,8 @@ export interface components {
         CharacterTrait: {
             /** @description root-group display name; absent for a root trait */
             group_name?: string;
+            /** @description Simplified-Chinese root-group name; absent for a root trait or an unrendered group */
+            group_name_zh?: string;
             /** @description VNDB root-group tid (i1=Hair, i35=Eyes, …); empty when the trait is itself a root */
             group_tid: string;
             /** Format: int64 */
@@ -623,6 +643,8 @@ export interface components {
             lie?: boolean;
             /** @description verbatim VNDB English trait name */
             name: string;
+            /** @description Simplified-Chinese trait name; absent when the vocabulary row has none yet */
+            name_zh?: string;
             /** @description the trait belongs to a sexual trait family — consumers gate rendering themselves */
             sexual?: boolean;
             /**
@@ -3246,6 +3268,74 @@ export interface operations {
                 "application/json": components["schemas"]["CoverVoteRequest"];
             };
         };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCoverVoteResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    voteCatalogWorkCoverUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Catalog work id */
+                workID: number;
+                /** @description catalog_work_cover row id, as returned by the work detail's covers[].id */
+                coverID: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCoverVoteResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    unvoteCatalogWorkCoverUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Catalog work id */
+                workID: number;
+                /** @description catalog_work_cover row id, as returned by the work detail's covers[].id */
+                coverID: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {

@@ -62,6 +62,11 @@ func main() {
 		catHandler.SetupLifecycle(api, nil, nil, nil)
 		// Same for the best-cover vote face (wave 175): the two advisory ops.
 		catHandler.SetupCoverVotes(api, nil)
+		// The user-token write plane (wave 176) registers on its OWN humafiber
+		// API at runtime (a disjoint prefix with its own auth chain), but it is
+		// the same contract document: a consumer picking between "assert the
+		// actor" and "let the token be the actor" reads both here.
+		catHandler.RegisterUserOps(api, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil, nil, nil)
 	case *catalogPublic:

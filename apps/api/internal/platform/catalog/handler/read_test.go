@@ -1807,16 +1807,19 @@ func TestCharacterDetailTraits(t *testing.T) {
 	chBare := model.CatalogCharacter{DisplayName: "特性なし"}
 	require.NoError(t, db.Create(&chBare).Error)
 
-	mkTrait := func(tid, gid, name string, sexual bool) int64 {
-		tr := model.CatalogCharacterTrait{VndbTID: tid, Name: name, GroupTID: gid, Sexual: sexual, Searchable: true, Applicable: true}
+	// nameZh is set on some rows and left empty on others: wave 176 renders the
+	// Chinese name only where the vocabulary has one, and omits the field
+	// otherwise rather than echoing the English twice.
+	mkTrait := func(tid, gid, name, nameZh string, sexual bool) int64 {
+		tr := model.CatalogCharacterTrait{VndbTID: tid, Name: name, NameZh: nameZh, GroupTID: gid, Sexual: sexual, Searchable: true, Applicable: true}
 		require.NoError(t, db.Create(&tr).Error)
 		return tr.ID
 	}
-	mkTrait("i1", "", "Hair", false) // root group
-	mkTrait("i43", "", "Engages in (Sexual)", true)
-	blond := mkTrait("i10", "i1", "Blond Hair", false)
-	long := mkTrait("i11", "i1", "Long Hair", false)
-	sexualX := mkTrait("i50", "i43", "Sexual X", true)
+	mkTrait("i1", "", "Hair", "毛发", false) // root group
+	mkTrait("i43", "", "Engages in (Sexual)", "", true)
+	blond := mkTrait("i10", "i1", "Blond Hair", "金发", false)
+	long := mkTrait("i11", "i1", "Long Hair", "长发", false)
+	sexualX := mkTrait("i50", "i43", "Sexual X", "", true)
 	for _, l := range []model.CatalogCharacterTraitLink{
 		{CharacterID: ch.ID, TraitID: blond, SpoilerLevel: 0},
 		{CharacterID: ch.ID, TraitID: long, SpoilerLevel: 2}, // major spoiler
@@ -1836,9 +1839,13 @@ func TestCharacterDetailTraits(t *testing.T) {
 	assert.Equal(t, "Blond Hair", t0["name"])
 	assert.Equal(t, "i1", t0["group_tid"])
 	assert.Equal(t, "Hair", t0["group_name"], "group name resolved via self-join")
+	assert.Equal(t, "金发", t0["name_zh"], "the Chinese trait name rides the read face")
+	assert.Equal(t, "毛发", t0["group_name_zh"], "the group's Chinese name resolves via the same self-join")
 	assert.Nil(t, t0["sexual"], "sexual=false omitted")
 	t1 := traits[1].(map[string]any)
 	assert.Equal(t, "Sexual X", t1["name"])
+	assert.Nil(t, t1["name_zh"], "an unrendered trait omits name_zh instead of echoing English")
+	assert.Nil(t, t1["group_name_zh"], "and so does its unrendered group")
 	assert.Equal(t, true, t1["sexual"])
 	assert.Equal(t, true, t1["lie"], "lie flag rides verbatim")
 

@@ -213,6 +213,9 @@ components:
         group_name:
           description: root-group display name; absent for a root trait
           type: string
+        group_name_zh:
+          description: Simplified-Chinese root-group name; absent for a root trait or an unrendered group
+          type: string
         group_tid:
           description: VNDB root-group tid (i1=Hair, i35=Eyes, …); empty when the trait is itself a root
           type: string
@@ -224,6 +227,9 @@ components:
           type: boolean
         name:
           description: verbatim VNDB English trait name
+          type: string
+        name_zh:
+          description: Simplified-Chinese trait name; absent when the vocabulary row has none yet
           type: string
         sexual:
           description: the trait belongs to a sexual trait family — consumers gate rendering themselves
@@ -4369,3 +4375,78 @@ paths:
       summary: "Record the asserted user's vote for this work's best cover. ONE ballot per user per WORK: voting a different cover MOVES the vote rather than adding one. Returns the voted cover's new total. Advisory only — votes never reorder covers and never touch the editorial pins"
       tags:
         - catalog-s2s
+  /api/v1/user/catalog/works/{workID}/covers/{coverID}/vote:
+    delete:
+      operationId: unvoteCatalogWorkCoverUser
+      parameters:
+        - description: Catalog work id
+          in: path
+          name: workID
+          required: true
+          schema:
+            description: Catalog work id
+            format: int64
+            minimum: 1
+            type: integer
+        - description: catalog_work_cover row id, as returned by the work detail's covers[].id
+          in: path
+          name: coverID
+          required: true
+          schema:
+            description: catalog_work_cover row id, as returned by the work detail's covers[].id
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeCoverVoteResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Withdraw the bearer token's own best-cover vote on this work. Idempotent (no vote to withdraw is still a 200); the cover id is part of the symmetric path and need not match the voted one — a user holds at most one ballot per work
+      tags:
+        - catalog-user
+    put:
+      operationId: voteCatalogWorkCoverUser
+      parameters:
+        - description: Catalog work id
+          in: path
+          name: workID
+          required: true
+          schema:
+            description: Catalog work id
+            format: int64
+            minimum: 1
+            type: integer
+        - description: catalog_work_cover row id, as returned by the work detail's covers[].id
+          in: path
+          name: coverID
+          required: true
+          schema:
+            description: catalog_work_cover row id, as returned by the work detail's covers[].id
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeCoverVoteResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "Vote for this work's best cover AS THE BEARER TOKEN'S OWN USER. No body: the voter is the token's user and the site is the token's client's catalog site. ONE ballot per user per WORK — voting a different cover MOVES the vote. Advisory only: votes never reorder covers and never touch the editorial pins"
+      tags:
+        - catalog-user

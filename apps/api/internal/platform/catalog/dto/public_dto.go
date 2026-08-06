@@ -690,9 +690,14 @@ type PublicRelease struct {
 // PublicCharacterTrait is one VNDB trait on a character (group is the root
 // group's display name, "" when the trait itself is a root).
 type PublicCharacterTrait struct {
-	ID      int64  `json:"id"`
-	Name    string `json:"name"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	// NameZh / GroupZh are the Simplified-Chinese renderings (wave 176), both
+	// omitted when the vocabulary row carries none — a consumer falls back to
+	// the English name rather than rendering an empty chip.
+	NameZh  string `json:"name_zh,omitempty"`
 	Group   string `json:"group,omitempty"`
+	GroupZh string `json:"group_zh,omitempty"`
 	Spoiler int16  `json:"spoiler" doc:"0=none 1=minor 2=major"`
 	Sexual  bool   `json:"sexual"`
 	Lie     bool   `json:"lie"`

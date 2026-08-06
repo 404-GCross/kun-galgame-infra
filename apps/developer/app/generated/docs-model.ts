@@ -2100,6 +2100,10 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "group_zh",
+                                  "type": "string"
+                                },
+                                {
                                   "name": "id",
                                   "required": true,
                                   "format": "int64",
@@ -2113,6 +2117,10 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "name",
                                   "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "name_zh",
                                   "type": "string"
                                 },
                                 {
@@ -3348,6 +3356,10 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "group_zh",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
@@ -3361,6 +3373,10 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "name",
                                       "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "name_zh",
                                       "type": "string"
                                     },
                                     {
@@ -4282,6 +4298,10 @@ export const docsModel: DocsModel = {
                                             "type": "string"
                                           },
                                           {
+                                            "name": "group_zh",
+                                            "type": "string"
+                                          },
+                                          {
                                             "name": "id",
                                             "required": true,
                                             "format": "int64",
@@ -4295,6 +4315,10 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "name",
                                             "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "name_zh",
                                             "type": "string"
                                           },
                                           {
