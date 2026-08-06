@@ -2,6 +2,8 @@ package importer
 
 import (
 	"maps"
+	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -19,24 +21,31 @@ import (
 //     role and can never re-insert the 其他 edge a backfill moved away (the
 //     unique index includes role_id, so a moved row would not conflict with a
 //     其他 re-insert — the importer-rerun-resurrection trap);
-//   - cmd/refine-staff-notes moves the existing edges with the same table.
+//   - cmd/refine-staff-notes moves the existing edges with the same resolver.
 //
 // Mapping discipline: EXACT normalized note match (lowercased, trimmed) onto
-// an EXISTING vocabulary role — no new roles, no substring guessing, and
-// composite notes ("Planning, script") stay unmapped rather than half-mapped.
+// an EXISTING vocabulary role — no new roles, no substring guessing. A
+// composite note ("Planning, script") splits into components only when EVERY
+// component is itself a table key — one unknown word and the whole note stays
+// in the bucket rather than half-mapping (RefineVNDBStaffRoles).
 // Notably `Script`/`Scripting` map to 程序, not 脚本: VNDB credits writers
 // under its dedicated scenario role, so a staff-role Script note is engine
 // scripting (スクリプト) — sampled holders overlap same-work scenario credits
 // only 20%, and the frequent names are known scripters.
 var staffNoteRole = map[string]int64{
 	// engine / code
-	"script":      roleProgram,
-	"scripting":   roleProgram,
-	"programming": roleProgram,
-	"program":     roleProgram,
-	"programmer":  roleProgram,
-	"coding":      roleProgram,
-	"hacking":     roleProgram, // fan-TL engine work
+	"script":          roleProgram,
+	"scripting":       roleProgram,
+	"programming":     roleProgram,
+	"program":         roleProgram,
+	"programmer":      roleProgram,
+	"coding":          roleProgram,
+	"hacking":         roleProgram, // fan-TL engine work
+	"ui programmer":   roleProgram,
+	"ui programming":  roleProgram,
+	"gui programmer":  roleProgram,
+	"gui programming": roleProgram,
+	"gui coding":      roleProgram,
 
 	// art
 	"graphics":                 roleArtWorker,
@@ -45,6 +54,18 @@ var staffNoteRole = map[string]int64{
 	"cg":                       roleArtWorker,
 	"image editing":            roleArtWorker, // 改图 (fan-TL image work)
 	"image editor":             roleArtWorker,
+	"gui":                      roleArtWorker, // interface art, not engine work
+	"ui":                       roleArtWorker,
+	"ui design":                roleArtWorker,
+	"gui design":               roleArtWorker,
+	"ui designer":              roleArtWorker,
+	"gui designer":             roleArtWorker,
+	"ui artist":                roleArtWorker,
+	"gui artist":               roleArtWorker,
+	"ui art":                   roleArtWorker,
+	"gui art":                  roleArtWorker,
+	"interface design":         roleArtWorker,
+	"interface":                roleArtWorker,
 	"logo design":              roleTitleDesign,
 	"logo designer":            roleTitleDesign,
 	"logo artist":              roleTitleDesign,
@@ -109,6 +130,13 @@ var staffNoteRole = map[string]int64{
 	"pr":                 rolePublicity,
 	"debug":              roleQARole,
 	"special thanks":     roleSpecialThanks,
+
+	// localization — only the bare forms: qualified positions (localization
+	// producer/director/manager …) are management roles the vocabulary has no
+	// faithful row for, and mapping them to 翻译 would misstate the work.
+	"localization": roleTranslator,
+	"localisation": roleTranslator,
+	"translation":  roleTranslator,
 }
 
 // Target role ids — all EXISTING catalog_role rows (seed-owned generated
@@ -116,6 +144,7 @@ var staffNoteRole = map[string]int64{
 // comments are catalog_role.key.
 const (
 	roleOtherStaffID    int64 = 2   // other-staff 其他 (the bucket being refined)
+	roleTranslator      int64 = 3   // translator 翻译 (bare localization forms)
 	roleQARole          int64 = 5   // qa QA (debug ≈ デバッグ)
 	roleAnimationWork   int64 = 114 // animation-work 动画制作 (OP/ED/demo movie)
 	roleCGSupervision   int64 = 143 // cg-监修 CG 监修
@@ -142,16 +171,45 @@ const (
 	roleBackground      int64 = 319 // 背景 (in live use; 136 is empty)
 )
 
-// RefineVNDBStaffRole answers the role a VNDB staff credit lands under: for
-// the 其他 bucket it consults the note table, everything else passes through.
-func RefineVNDBStaffRole(roleID int64, note string) int64 {
+// staffNoteSeparators split a composite note into position components. "/" is
+// safe only because exact table keys ("op/ed movie") are matched first.
+var staffNoteSeparators = regexp.MustCompile(`[,&/]`)
+
+// RefineVNDBStaffRoles answers the role(s) a VNDB staff credit lands under.
+// For the 其他 bucket: an exact table key wins outright; otherwise the note
+// splits into components and refines only when EVERY component is a table key
+// ("Planning, script" → 企画+程序), deduped in note order — one unknown word
+// and the whole note stays in the bucket. Everything else passes through.
+func RefineVNDBStaffRoles(roleID int64, note string) []int64 {
 	if roleID != roleOtherStaffID {
-		return roleID
+		return []int64{roleID}
 	}
-	if refined, ok := staffNoteRole[NormalizeStaffNote(note)]; ok {
-		return refined
+	folded := NormalizeStaffNote(note)
+	if refined, ok := staffNoteRole[folded]; ok {
+		return []int64{refined}
 	}
-	return roleID
+	parts := staffNoteSeparators.Split(folded, -1)
+	if len(parts) < 2 {
+		return []int64{roleID}
+	}
+	var roles []int64
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		refined, ok := staffNoteRole[part]
+		if !ok {
+			return []int64{roleID} // never half-map a composite
+		}
+		if !slices.Contains(roles, refined) {
+			roles = append(roles, refined)
+		}
+	}
+	if len(roles) == 0 {
+		return []int64{roleID}
+	}
+	return roles
 }
 
 // NormalizeStaffNote is the match key: notes arrive with stray case and
@@ -160,9 +218,8 @@ func NormalizeStaffNote(note string) string {
 	return strings.ToLower(strings.TrimSpace(note))
 }
 
-// StaffNoteRoleTable exposes a copy of the note→role table for the backfill
-// tool, grouped nowhere — the tool iterates it verbatim so the two writers
-// cannot drift.
+// StaffNoteRoleTable exposes a copy of the note→role table so tests can
+// assert every target id is a seeded vocabulary row.
 func StaffNoteRoleTable() map[string]int64 {
 	return maps.Clone(staffNoteRole)
 }

@@ -152,17 +152,23 @@ func TestVNDBCreditsWave_RefinesStaffNotes(t *testing.T) {
 	seedVNDBStaff(t, "s3", "ja")
 	seedVNDBAlias(t, 30, "s3", "かつらぎ", "")
 	seedVNDBAlias(t, 31, "s3", "ムービー屋", "")
+	seedVNDBAlias(t, 32, "s3", "多芸な人", "")
 	seedVNStaff(t, "v200", 30, "staff", "Programming")      // refined → 程序
 	seedVNStaff(t, "v200", 31, "staff", "Movie assistance") // unmapped note → 其他
+	seedVNStaff(t, "v200", 32, "staff", "Planning, script") // composite → 企画 + 程序
 
 	st, err := New(testDB, nil, Options{Source: "vndb"}).Run("vndb")
 	require.NoError(t, err)
-	assert.Equal(t, 2, st.CreditsWritten)
+	assert.Equal(t, 4, st.CreditsWritten, "composite note plans one credit per position")
 
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
 		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=238 AND note='Programming'`, work)))
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
 		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=2 AND note='Movie assistance'`, work)))
+
+	// The composite row lands as two credits sharing the verbatim note.
+	assert.Equal(t, int64(2), scalarInt(t, fmt.Sprintf(
+		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND note='Planning, script' AND role_id IN (291,238)`, work)))
 
 	for note, roleID := range StaffNoteRoleTable() {
 		assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
