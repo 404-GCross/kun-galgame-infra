@@ -211,7 +211,14 @@ func main() {
 	// owner and site come from the verified token instead of the body. One
 	// service, two faces: the rule that a user holds one ballot per work holds
 	// across both, because it is the table's unique key, not a face's opinion.
-	catHandler.SetupUser(application.Fiber, coverVoteSvc)
+	// …and, from wave 177, the SAME editing engine and per-family resolvers the
+	// S2S face above was set up with. The user plane files proposals through
+	// one engine, one registry and one set of site overlays; only the actor's
+	// provenance differs (token-derived instead of body-asserted), so a second
+	// engine here would be a second policy universe waiting to disagree.
+	catHandler.SetupUser(application.Fiber, coverVoteSvc, editEngine, catHandler.PermResolvers{
+		"catalog": catalogPerm.Resolver,
+	})
 
 	// NextMoe open API: serve the frozen public spec unauthenticated at its face
 	// root — the machine-readable contract itself must not need a key. Built ONCE

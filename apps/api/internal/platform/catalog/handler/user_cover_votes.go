@@ -7,6 +7,7 @@ import (
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/service"
+	"api/internal/platform/editing"
 	"api/pkg/errors"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -32,8 +33,12 @@ type UserServer struct{ votes *service.CoverVoteService }
 // /api/v1/user/catalog prefix BEFORE this — Huma registers on the app, so the
 // group middleware does not cover these routes, and that prefix is disjoint
 // from /api/v1/catalog and /api/v1/admin/catalog so neither of those chains can
-// intercept a user call. Callable with a nil service for spec export.
-func SetupUser(app *fiber.App, votes *service.CoverVoteService) huma.API {
+// intercept a user call. Callable with nil dependencies for spec export.
+//
+// The editing engine and its per-family permission resolvers are the SAME
+// instances the S2S face was set up with (wave 177) — one engine, two faces, so
+// the policy a proposal meets never depends on which door it came through.
+func SetupUser(app *fiber.App, votes *service.CoverVoteService, engine *editing.Engine, perms PermResolvers) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Catalog User API", "1.0.0")
@@ -45,6 +50,7 @@ func SetupUser(app *fiber.App, votes *service.CoverVoteService) huma.API {
 	api.UseMiddleware(UserBridge)
 
 	RegisterUserOps(api, votes)
+	RegisterUserEditOps(api, engine, perms)
 	return api
 }
 

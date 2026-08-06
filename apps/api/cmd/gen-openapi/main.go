@@ -67,6 +67,9 @@ func main() {
 		// the same contract document: a consumer picking between "assert the
 		// actor" and "let the token be the actor" reads both here.
 		catHandler.RegisterUserOps(api, nil)
+		// The user plane's editing ops (wave 177) — the same three verbs the
+		// S2S edit face offers, with the actor derived from the token.
+		catHandler.RegisterUserEditOps(api, nil, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil, nil, nil)
 	case *catalogPublic:

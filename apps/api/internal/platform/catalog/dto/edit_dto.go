@@ -32,6 +32,21 @@ type EditProposalCreateRequest struct {
 	Actor      EditActor      `json:"actor"`
 }
 
+// UserEditProposalCreateRequest is EditProposalCreateRequest as the USER-TOKEN
+// face accepts it (wave 177): the same proposal, minus `actor` and minus `site`.
+// Both are derived server-side from the verified token — the proposer from its
+// `id` claim and its role union, the tenant from the token client's
+// catalog_site binding — so there is deliberately no wire field for either.
+// Written out explicitly rather than embedded (Huma anonymous-embed trap), and
+// kept a separate type rather than a variant of the S2S one precisely so no
+// future field can be added to both by accident.
+type UserEditProposalCreateRequest struct {
+	EntityType string         `json:"entity_type" minLength:"1" doc:"Registered entity type, e.g. catalog.work"`
+	EntityID   int64          `json:"entity_id" minimum:"1"`
+	Patch      map[string]any `json:"patch" doc:"Field-key → new-value document (registered keys only)"`
+	Note       string         `json:"note,omitempty" maxLength:"2000"`
+}
+
 type EditProposalCreateResponse struct {
 	Proposal EditProposalView  `json:"proposal"`
 	Merged   bool              `json:"merged" doc:"true when the direct-edit sugar landed the patch immediately"`

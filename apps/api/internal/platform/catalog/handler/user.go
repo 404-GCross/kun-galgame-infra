@@ -60,7 +60,10 @@ const ScopeCatalogEdit = "catalog:edit"
 // UserPrefix is the mount point of the user-token write plane.
 const UserPrefix = "/api/v1/user/catalog"
 
-const ctxKeyUserID ctxKey = "catalog:user_id"
+const (
+	ctxKeyUserID    ctxKey = "catalog:user_id"
+	ctxKeyUserRoles ctxKey = "catalog:user_roles"
+)
 
 // OAuthClientLookup is the slice of the OAuth client registry this face needs:
 // resolve the token's client to learn its catalog site. *siteRepo.OAuthClientRepository
@@ -125,14 +128,23 @@ func hasScope(scope, want string) bool {
 	return false
 }
 
-// UserBridge lifts the two things the ops are allowed to know about the caller
-// — the token's user id and the client UserGate resolved — into the Huma
-// context. Both are derived from the verified token; neither can be influenced
-// by the request body.
+// UserBridge lifts the three things the ops are allowed to know about the
+// caller — the token's user id, the token's role union, and the client UserGate
+// resolved — into the Huma context. All three are derived from the verified
+// token; none can be influenced by the request body.
+//
+// The roles arrive as middleware.JWTAuth's `user_roles` local, which is the
+// union of the global `roles` claim with the token's `site_roles` (a site-local
+// moderator is a moderator only through that site's client). The editing face
+// (wave 177) feeds them straight into the family's permission resolver, so a
+// staff token automerges here for exactly the reason it automerges over S2S.
 func UserBridge(ctx huma.Context, next func(huma.Context)) {
 	fc := humafiber.Unwrap(ctx)
 	if id, ok := fc.Locals("user_id").(uint); ok {
 		ctx = huma.WithValue(ctx, ctxKeyUserID, int64(id))
+	}
+	if roles, ok := fc.Locals("user_roles").([]string); ok {
+		ctx = huma.WithValue(ctx, ctxKeyUserRoles, roles)
 	}
 	if client, ok := fc.Locals(localClient).(*siteModel.OAuthClient); ok {
 		ctx = huma.WithValue(ctx, ctxKeyClient, client)
@@ -143,6 +155,11 @@ func UserBridge(ctx huma.Context, next func(huma.Context)) {
 func userIDFromCtx(ctx context.Context) int64 {
 	id, _ := ctx.Value(ctxKeyUserID).(int64)
 	return id
+}
+
+func userRolesFromCtx(ctx context.Context) []string {
+	roles, _ := ctx.Value(ctxKeyUserRoles).([]string)
+	return roles
 }
 
 // userActor is the ops' single entry point to "who is writing, and for whom".

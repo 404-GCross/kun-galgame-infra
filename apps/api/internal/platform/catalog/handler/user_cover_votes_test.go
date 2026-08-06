@@ -45,15 +45,23 @@ func userVoteApp(db *gorm.DB, clients fakeClientLookup) *fiber.App {
 	app := fiber.New()
 	verifier := oidctoken.NewVerifier(userTestSecret, nil) // HS256-only (no JWKS)
 	app.Use(UserPrefix, middleware.JWTAuth(verifier), UserGate(clients))
-	SetupUser(app, service.NewCoverVoteService(db))
+	SetupUser(app, service.NewCoverVoteService(db), nil, nil)
 	return app
 }
 
-// userToken mints the access token the OP would have issued.
+// userToken mints the access token the OP would have issued, for the ordinary
+// logged-in user.
 func userToken(t *testing.T, uid uint, scope, clientID string) string {
 	t.Helper()
+	return userTokenRoles(t, uid, scope, clientID, "user")
+}
+
+// userTokenRoles is userToken with an explicit role set — the editing face
+// (wave 177) resolves permissions from exactly these claims.
+func userTokenRoles(t *testing.T, uid uint, scope, clientID string, roles ...string) string {
+	t.Helper()
 	tok, err := utils.GenerateAccessToken(userTestSecret, utils.TokenClaims{
-		ID: uid, Scope: scope, ClientID: clientID, Roles: []string{"user"},
+		ID: uid, Scope: scope, ClientID: clientID, Roles: roles,
 	}, time.Hour)
 	require.NoError(t, err)
 	return tok

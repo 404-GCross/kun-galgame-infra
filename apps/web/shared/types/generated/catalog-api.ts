@@ -516,6 +516,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/user/catalog/edit/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** File an edit proposal AS THE BEARER TOKEN'S OWN USER (automerges into a direct edit when the caller's token roles already carry the review capability). The proposer and the filing tenant are derived from the token; the body carries neither */
+        post: operations["createEditProposalUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/catalog/edit/proposals/{id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw one's OWN open proposal. Bodiless: the only identity involved is the token's, and the engine refuses any proposal the token's user did not file */
+        post: operations["withdrawEditProposalUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/catalog/edit/schema/{entity_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Field schema + THIS TOKEN's evaluated field-level capabilities. Same projection as the S2S op, with no actor query parameters at all: a caller cannot ask what some other user would be allowed to do */
+        get: operations["getEditSchemaUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/user/catalog/works/{workID}/covers/{coverID}/vote": {
         parameters: {
             query?: never;
@@ -1687,6 +1738,23 @@ export interface components {
             site: string;
             /** Format: int64 */
             work_id: number;
+        };
+        UserEditProposalCreateRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/UserEditProposalCreateRequest.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            entity_id: number;
+            /** @description Registered entity type, e.g. catalog.work */
+            entity_type: string;
+            note?: string;
+            /** @description Field-key → new-value document (registered keys only) */
+            patch: {
+                [key: string]: unknown;
+            };
         };
         VoiceName: {
             /** Format: int64 */
@@ -3276,6 +3344,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeCoverVoteResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    createEditProposalUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserEditProposalCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditProposalCreateResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    withdrawEditProposalUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Proposal id (must be one the token's user filed) */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditProposalView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    getEditSchemaUser: {
+        parameters: {
+            query?: {
+                /** @description Entity-aware projection subject (0 = type-level projection) */
+                entity_id?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Registered entity type, e.g. catalog.work */
+                entity_type: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditSchemaResponse"];
                 };
             };
             /** @description Error */

@@ -2291,6 +2291,36 @@ components:
         - first_acted_at
         - acted_count
       type: object
+    UserEditProposalCreateRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/UserEditProposalCreateRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        entity_id:
+          format: int64
+          minimum: 1
+          type: integer
+        entity_type:
+          description: Registered entity type, e.g. catalog.work
+          minLength: 1
+          type: string
+        note:
+          maxLength: 2000
+          type: string
+        patch:
+          additionalProperties: {}
+          description: Field-key → new-value document (registered keys only)
+          type: object
+      required:
+        - entity_type
+        - entity_id
+        - patch
+      type: object
     VoiceName:
       additionalProperties: false
       properties:
@@ -4375,6 +4405,95 @@ paths:
       summary: "Record the asserted user's vote for this work's best cover. ONE ballot per user per WORK: voting a different cover MOVES the vote rather than adding one. Returns the voted cover's new total. Advisory only — votes never reorder covers and never touch the editorial pins"
       tags:
         - catalog-s2s
+  /api/v1/user/catalog/edit/proposals:
+    post:
+      operationId: createEditProposalUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserEditProposalCreateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalCreateResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: File an edit proposal AS THE BEARER TOKEN'S OWN USER (automerges into a direct edit when the caller's token roles already carry the review capability). The proposer and the filing tenant are derived from the token; the body carries neither
+      tags:
+        - catalog-user
+  /api/v1/user/catalog/edit/proposals/{id}/withdraw:
+    post:
+      operationId: withdrawEditProposalUser
+      parameters:
+        - description: Proposal id (must be one the token's user filed)
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Proposal id (must be one the token's user filed)
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "Withdraw one's OWN open proposal. Bodiless: the only identity involved is the token's, and the engine refuses any proposal the token's user did not file"
+      tags:
+        - catalog-user
+  /api/v1/user/catalog/edit/schema/{entity_type}:
+    get:
+      operationId: getEditSchemaUser
+      parameters:
+        - description: Registered entity type, e.g. catalog.work
+          in: path
+          name: entity_type
+          required: true
+          schema:
+            description: Registered entity type, e.g. catalog.work
+            type: string
+        - description: Entity-aware projection subject (0 = type-level projection)
+          explode: false
+          in: query
+          name: entity_id
+          schema:
+            description: Entity-aware projection subject (0 = type-level projection)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditSchemaResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "Field schema + THIS TOKEN's evaluated field-level capabilities. Same projection as the S2S op, with no actor query parameters at all: a caller cannot ask what some other user would be allowed to do"
+      tags:
+        - catalog-user
   /api/v1/user/catalog/works/{workID}/covers/{coverID}/vote:
     delete:
       operationId: unvoteCatalogWorkCoverUser
