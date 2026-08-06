@@ -15,15 +15,28 @@ import (
 // entityTypeOf maps a class label to its EntityType* constant. Both the
 // person-anchored (step 49) and the orphan (step 50) credit-name classes are
 // credit_name entities; step 156's worklist-only person class is the person
-// entity.
+// entity, and step 175's worklist-only label class is the label entity.
 func entityTypeOf(class string) int16 {
 	switch class {
 	case classCreditName, classOrphanCreditName, classMixedCreditName:
 		return model.EntityTypeCreditName
 	case classPerson:
 		return model.EntityTypePerson
+	case classLabel:
+		return model.EntityTypeLabel
 	}
 	return model.EntityTypeCharacter
+}
+
+// executableEntityTypes bounds what -mode execute will ever touch: a second
+// safety net under the note tag, so a proposal of a type this binary has no
+// class for is never executed by it even if it somehow carries a matching note.
+// EVERY class added above must be added here too — a class that proposes but is
+// missing from this list opens proposals that silently never execute (the label
+// class did exactly that until step 175 extended the list).
+var executableEntityTypes = []int16{
+	model.EntityTypeCharacter, model.EntityTypeCreditName,
+	model.EntityTypePerson, model.EntityTypeLabel,
 }
 
 // runDetect is the dry report: every class's group counts, the guard counters,
@@ -228,9 +241,8 @@ func runExecute(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.Me
 	resolve *service.ResolveService, actor int64, note string, limit int, run bool) error {
 	var props []model.CatalogMergeProposal
 	q := db.WithContext(ctx).
-		Where("status = ? AND execute_after <= now() AND note LIKE ? AND entity_type IN (?, ?, ?)",
-			model.ProposalStatusApproved, "%"+note+"%",
-			model.EntityTypeCharacter, model.EntityTypeCreditName, model.EntityTypePerson).
+		Where("status = ? AND execute_after <= now() AND note LIKE ? AND entity_type IN ?",
+			model.ProposalStatusApproved, "%"+note+"%", executableEntityTypes).
 		Order("id")
 	if limit > 0 {
 		q = q.Limit(limit)

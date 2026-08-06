@@ -36,6 +36,16 @@ const (
 	// person sits one level below the credited name and never reaches a work's
 	// read face (the wave-118 touch matrix).
 	classPerson = "person"
+	// classLabel (step 175) merges two catalog_label entities. Like the person
+	// class it has NO SQL detector and is reachable only through -worklist:
+	// "these two brands are one brand" is a curation judgement (the wave-175
+	// case is one DLsite maker page imported twice under two maker ids), and
+	// same-name labels are routinely NOT the same brand — the slash-name survey
+	// that opened this wave is a catalogue of names that look alike on purpose.
+	// The merge itself is fully implemented in the shared machinery: the label
+	// rehang moves brand edges, aliases, intros and credits, and DOES collect
+	// the host work ids, because a work renders its labels.
+	classLabel = "label"
 )
 
 // mergeGroup is one resolved dedup group: a survivor entity that absorbs its

@@ -40,7 +40,8 @@
 // (worklist.go) instead of a detector class; proposals carry their own wave tag,
 // which -note overrides so two worklist waves never address each other's cooled
 // proposals. The worklist is also the ONLY way to reach the person class
-// (step 156): person equivalence is an identity judgement, never a SQL signal.
+// (step 156) and the label class (step 175): person equivalence and brand
+// equivalence are curation judgements, never a SQL signal.
 //
 //	go run ./cmd/catalog-dedup-batch -actor 1 -mode propose -worklist w.jsonl -run
 //	go run ./cmd/catalog-dedup-batch -actor 1 -mode execute -worklist w.jsonl -run
