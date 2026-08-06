@@ -10,8 +10,8 @@
 
 | # | 文件 | 内容 | 状态 |
 |---|------|------|------|
-| 01 | [service-and-contract.md](./01-service-and-contract.md) | 服务定位、registry/body 分界、S2S 三端点(resolve/redirects/claim)语义与 site 绑定、admin 三桶概述、鉴权形态、生成 spec、运维注记 | 已完成 |
-| — | [openapi.yaml](./openapi.yaml) | S2S face 的 OpenAPI 3.1(`gen-openapi -catalog` 生成) | 生成物 |
+| 01 | [service-and-contract.md](./01-service-and-contract.md) | 服务定位、registry/body 分界、S2S 三端点(resolve/redirects/claim)语义与 site 绑定、admin 三桶概述、**用户令牌写面(§4)**、鉴权形态、生成 spec、运维注记 | 已完成 |
+| — | [openapi.yaml](./openapi.yaml) | S2S face **+ 用户写面**的 OpenAPI 3.1(`gen-openapi -catalog` 生成) | 生成物 |
 | — | [admin-openapi.yaml](./admin-openapi.yaml) | admin review 队列的 OpenAPI 3.1(`gen-openapi -catalog-admin` 生成) | 生成物 |
 
 ## 一句话总结

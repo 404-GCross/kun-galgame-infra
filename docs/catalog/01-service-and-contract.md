@@ -140,6 +140,8 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 ### 2.13 `PUT|DELETE /catalog/works/{workID}/covers/{coverID}/vote` — 最佳封面投票(写,wave 175)
 
+> ⚠️ **一等站点已不推荐用本对端点(wave 176 起)**:断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户投票。有用户令牌的场景请改用 **§4 用户写面** `PUT|DELETE /api/v1/user/catalog/works/{workID}/covers/{coverID}/vote`(actor/site 均取自已验令牌,无可撒谎的字段)。本对端点**不删除**:它服务于「后端自己认证了用户、无法转交用户令牌」的正当 S2S 场景(批量迁移、无浏览器的同步任务)。两面共用同一 service 与同一张表,故「一人一作一票」跨面成立。
+
 用户为一部作品**票选最佳封面**。写路径只写 `catalog_cover_vote` 一张表——**绝不写 `sort_order`/`portrait_pinned`**:票是**参考数据**,编辑的钉子恒压过它,下游各面自行决定拿票数做什么;NSFW 裁剪仍在读面按既有 `catalog_work_cover.sexual`/`violence` 走,写侧不设 NSFW 闸。本波只做**封面**(截图/立绘不做,也不设通用 `entity_type` 列)。
 
 - 请求体同本服务其余断言式写路径:`{"site":"kungal","actor":{"user_id":N}}`;`site` 按 client 的 `catalog_site` 绑定强校验(投票是写),`actor.user_id` **必须 > 0**(票是某个人的口味,永不系统归因——`user_id<=0` 在断言 actor 的 schema 闸即被拒)。`site` 只作**来源标注**、**不入唯一键**:同一个人从两个站投,仍是**一张会移动的票**。
@@ -162,7 +164,40 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 admin 面走 oauth 的共享 JWT 中间件 + `RequireRole("ren")`(**超管专属**——目录人审是高权限运营面,普通 admin 不放行);**不经 site 绑定列**(它是运营人审,不是产品 S2S)。
 
-## 4. 鉴权形态
+## 4. 用户令牌写面(Bearer JWT + `catalog:edit`,前缀 `/api/v1/user/catalog`;wave 176)
+
+catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
+
+> **actor 取自已验令牌,租户取自签发该令牌的 client——身份的任何一部分都不从请求体读。**
+
+这正是与 S2S 写面的唯一区别。S2S 面上产品后端说「kungal 的用户 5 干的」,catalog 因为后端自证了身份而采信;后端一个 bug 或一次凭据泄漏,就能以任何人的名义写。本面上**没有可以撒谎的字段**:uid = 令牌 `id` claim,site = 令牌 `client_id` 对应 `oauth_clients.catalog_site`,两者都在服务端解出。
+
+**鉴权链**(路径域 Fiber 中间件,顺序即拒绝顺序):
+
+| 步 | 检查 | 失败 |
+|----|------|------|
+| 1 | `middleware.JWTAuth`:签名/过期(与 admin 面同一 accept-both verifier) | **401**(JWKS 不可达 → **503**,是本服务的故障而非调用方的) |
+| 2 | 令牌 `id` claim > 0 | **401**(「令牌不指名任何用户」——票永不系统归因) |
+| 3 | `scope` 含 **`catalog:edit`**(空格分隔,**整词**匹配) | **403**(message 点名缺失的 scope) |
+| 4 | `client_id` claim 非空 | **403** |
+| 5 | 该 client 在 `oauth_clients` 存在且 `catalog_site` 非空 | **403** |
+
+第 4 步即「**一等登录令牌(`/auth/login`)被拒**」的原因:它没有 `client_id`(RFC 9068 §2.2 对它是可选),因而没有可归属的站点;若允许它自报 site,就等于把本面存在的意义(消灭断言)重新打开。用户令牌须经 OAuth 授权码流从某个 client 取得。
+
+- **scope**:`catalog:edit` 是**用户 scope**(经 OP 同意页授予),与开发者平台的 **API key scope**(`internal/platform/devapi`,如 `catalog:read`)是两套凭据、两个命名空间,不可混用。常量落在 catalog handler 包内,与 image 服务把 `image:upload` 写在自己鉴权中间件旁的先例一致。
+- **前缀不相交**:`/api/v1/user/catalog` 与 `/api/v1/catalog`、`/api/v1/admin/catalog` 三者互不为前缀——Huma 注册在 Fiber **app** 上,路径域 `Use` 是唯一的闸,前缀一旦互相包含,S2S 的 Basic 链就会拦在用户调用前面。
+- **spec**:两个写面同在 `docs/catalog/openapi.yaml`(tag `catalog-user`);运行时它是**独立的 humafiber API**,只是共用一份契约文档,便于调用方并排比较「断言 actor」与「令牌即 actor」。
+
+### 4.1 `PUT|DELETE /user/catalog/works/{workID}/covers/{coverID}/vote` — 最佳封面投票(写)
+
+用户写面的**首批 op**。语义、service、表、拒绝映射与 §2.13 **逐字相同**,只有两个身份值的来路不同:
+
+- **无请求体**。S2S 面要断言的两个值(`site`、`actor.user_id`),恰是本面拒绝从线上读的两个值。
+- 响应同形:`{ cover_id, vote_count, voted }`。
+- 一人一作一票、`PUT` 到另一张封面 = 票搬家、`DELETE` 幂等 200、作品/封面不可投 → 404 —— 这些是**表的唯一键与 service 的规则**,不是某一张脸的意见,故跨面成立。
+- `site` 仍只作来源标注、不入唯一键:同一个人经两个 client 登录投票,仍是**一张会移动的票**。
+
+## 5. 鉴权形态
 
 - **S2S face(`/api/v1/catalog/*`)**:`Authorization: Basic <b64(client_id:client_secret)>`,对 `oauth_clients` 注册表校验。任何有效一等 client 可**认证**;但——
 - **写路径 per-client site 绑定**:`oauth_clients.catalog_site`(可空 text,size 64,无唯一约束——一站可多 client)。`POST /catalog/works/claim` 要求认证 client 的 `catalog_site` **非空**且 **== 请求体 `site`**,否则 **403**(未绑定或站点不匹配的信息写在 message)。未绑定的 client 根本不能 claim。**只读端点(resolve / redirects / by-anchor / credits / search)不受此限。** `site` 值即租户键(写入 `catalog_work.site`),**无白名单/注册表**——合法性只由「client 绑定值 == 请求 site」把关;新增消费站 = 给其 client 设 `catalog_site`,别无它步。
@@ -170,16 +205,17 @@ admin 面走 oauth 的共享 JWT 中间件 + `RequireRole("ren")`(**超管专属
   - galgame wiki(第一消费站):`UPDATE oauth_clients SET catalog_site='galgame_wiki' WHERE image_site_key='galgame_wiki' AND id <> 'galgame-wiki-admin';`
   - **letmoe(第二消费站,同人为主)**:`UPDATE oauth_clients SET catalog_site='letmoe' WHERE <letmoe client 定位>;`(dev = 本地主库执行即可复现;**prod = 用户 ops**,随 letmoe 上线 runbook 同批,核验 `SELECT id,catalog_site FROM oauth_clients WHERE catalog_site='letmoe'` 命中 letmoe 机密 client)。
 - **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ **ren 角色(超管专属)**,与 site 绑定列无关。
+- **user face(`/api/v1/user/catalog/*`,wave 176)**:Bearer **用户**访问令牌(同一 accept-both verifier)+ `catalog:edit` scope + **client 绑定**。这里 `oauth_clients.catalog_site` 的用法与 S2S 写面**不同**:S2S 校验「绑定值 == 请求体 site」,user face **根本不收 site**——绑定值**就是**写入的租户。因此新增消费站的动作仍是同一条(给其 client 设 `catalog_site`),但一等登录令牌(无 `client_id`)在本面**永远**拿不到租户,只能走 OAuth 授权码流取得 client 绑定令牌。详见 §4。
 - **编辑引擎提案桥面（过渡参考，09-open-api-phase2 06b）**：catalog 进程另托一个 galgame-family 的**平台提案面** `/internal/edit/*`（create / mine / get-own / withdraw + schema/snapshot 只读投影），走 devapi 双凭证链——scope **`galgame:propose`**、计量 face **`galgame_internal_propose`**；actor 取自已验用户 JWT（plain：trust 0 / roles ∅ / 非 owner），租户由 key 的 `oauth_clients.catalog_site` 反查（请求**不收** site/actor 断言）。它是**纯 Fiber、不进本目录 spec**（`openapi.yaml` 仅含 S2S face）；编辑引擎的 S2S 面（`/api/v1/catalog/edit/*`，断言式 actor + 审核三件套）不变。**桥面不立独立契约文档**，第三方实际开放另议。
 - `GET /openapi.json`(S2S spec)、`GET /healthz` 无鉴权。
 
-## 5. 生成 spec
+## 6. 生成 spec
 
 - S2S:`go run ./cmd/gen-openapi -catalog -o docs/catalog/openapi.yaml`(OpenAPI 3.1)。
 - admin:`go run ./cmd/gen-openapi -catalog-admin -o docs/catalog/admin-openapi.yaml`。
 - 契约以生成的 spec 为准(Huma code-first,DTO 即契约);本 markdown 是语义说明。
 
-## 6. 运维注记
+## 7. 运维注记
 
 - **schema 迁移**:`cmd/migrate-catalog` 是 `kun_catalog` 的**唯一** schema 入口,幂等(AutoMigrate + `IF NOT EXISTS` 原始 SQL + 存在性守卫 seed)。生产随部署自动跑(compose `migrate-catalog` gate,catalog 服务 `depends_on: service_completed_successfully`);catalog 服务自身**不跑迁移**,只连接 + 就绪检查。
 - ⚠️ **导入类 cmd 不随部署自动跑**:`reconcile-galgame-works` / `import-*` / `reindex-catalog` 等是手动运维工具(经 `tools` 镜像 + env-file),**部署不会触发**。跑完批量导入后需**手动** `reindex-catalog` 重建搜索索引(批量脚本不走写穿钩子)。
