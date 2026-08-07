@@ -123,3 +123,47 @@ type CatalogLabelIntro struct {
 }
 
 func (CatalogLabelIntro) TableName() string { return "catalog_label_intro" }
+
+// CatalogLabelRelation is a label↔label corporate-structure edge (wave 186):
+// the parent/subsidiary, imprint, spin-off and succession facts VNDB's
+// producers_relations publishes and no catalog table held until now.
+//
+// SEMANTICS — a row reads "other_label_id is <relation> of label_id". So
+// (label_id=Key, other_label_id=VisualArt's, relation=Parent) means
+// "VisualArt's is the parent of Key".
+//
+// The graph is stored MIRRORED: every fact is written twice, once per
+// direction, with the inverse relation code (parent↔subsidiary,
+// imprint↔imprint_of, spawned↔origin, succeeded_by↔formerly). That is the
+// upstream's own shape, and it means a reader NEVER inverts: the label detail
+// face selects `WHERE label_id = ?` and renders what it finds, full stop.
+//
+// It is deliberately NOT CatalogEntityRelation. That table is a curated,
+// single-row, registry-typed edge whose reverse phrase the read path composes;
+// this one is a source-owned mirrored graph rebuilt wholesale per source, with
+// a code vocabulary that ships with code (constants, not registry rows — the
+// LabelKind rationale verbatim). Folding the two would force one of them to
+// give up its rebuild story.
+//
+// Composite PK (label_id, other_label_id, relation, source_id) — the PK IS the
+// uniqueness (CatalogWorkLabel's shape), and source_id is inside it so two
+// sources may assert the same edge without fighting. SourceID is NOT NULL and
+// carries no `default:` tag: every row here comes from an import that knows its
+// source (the default-tag zero-value trap).
+type CatalogLabelRelation struct {
+	LabelID      int64 `gorm:"primaryKey;autoIncrement:false" json:"label_id"`
+	OtherLabelID int64 `gorm:"primaryKey;autoIncrement:false;index" json:"other_label_id"` // reverse lookups
+	// Relation is a LabelRelation* constant — see constants.go for the
+	// vocabulary and its inverse pairing.
+	Relation int16 `gorm:"primaryKey;autoIncrement:false" json:"relation"`
+	SourceID int16 `gorm:"primaryKey;autoIncrement:false" json:"source_id"`
+	// MatchedBy is 'rule:<rule-id>' provenance, the external_ref convention.
+	MatchedBy string    `gorm:"not null" json:"matched_by"`
+	CreatedAt time.Time `json:"created_at"`
+
+	Label      *CatalogLabel  `gorm:"foreignKey:LabelID" json:"label,omitempty"`
+	OtherLabel *CatalogLabel  `gorm:"foreignKey:OtherLabelID" json:"other_label,omitempty"`
+	Source     *CatalogSource `gorm:"foreignKey:SourceID" json:"source,omitempty"`
+}
+
+func (CatalogLabelRelation) TableName() string { return "catalog_label_relation" }

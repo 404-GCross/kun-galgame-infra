@@ -5,9 +5,10 @@
 // the character tables (chars — full columns since step 72 — chars_names,
 // chars_vns, images with character "ch" portraits only, chars_traits), the
 // staff family (staff, staff_alias, vn_staff, vn_seiyuu), the vocabularies
-// (traits, tags + their parent edges, tags_vn votes), producers, and the
-// releases family (releases + vn/producers/platforms/titles child tables).
-// See the srcvndb package doc.
+// (traits, tags + their parent edges, tags_vn votes), producers, the
+// releases family (releases + vn/producers/platforms/titles child tables), and
+// the link graph (extlinks plus the vn/producers/staff/releases junctions, and
+// the mirrored producers_relations edges). See the srcvndb package doc.
 //
 //	# extract the dump's db/ directory somewhere first:
 //	#   zstd -dc vndb-db-latest.tar.zst | tar -x

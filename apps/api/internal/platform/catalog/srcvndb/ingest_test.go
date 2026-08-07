@@ -132,6 +132,12 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 		"src_vndb.extlinks":          3,
 		"src_vndb.releases_extlinks": 3,
 		"src_vndb.releases_titles":   2,
+		// wave 186: the remaining extlink junctions plus the producer relation
+		// graph, which VNDB exports mirrored (one row per direction).
+		"src_vndb.vn_extlinks":         3,
+		"src_vndb.producers_extlinks":  2,
+		"src_vndb.staff_extlinks":      1,
+		"src_vndb.producers_relations": 2,
 	} {
 		assert.Equal(t, want, count(table), table)
 	}
@@ -249,6 +255,26 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.Equal(t, "seq", rel.Relation)
 	assert.True(t, rel.Official)
 
+	// wave 186 extlink junctions: each row round-trips on its natural composite
+	// key (entity id + extlinks.id), and one entity may carry several links.
+	var vlink VNExtlink
+	require.NoError(t, testDB.Where("id = ? AND link = ?", "v1", 3).First(&vlink).Error)
+	var v1Links int64
+	require.NoError(t, testDB.Model(&VNExtlink{}).Where("id = ?", "v1").Count(&v1Links).Error)
+	assert.EqualValues(t, 2, v1Links, "one vn carries two links")
+	var plink ProducerExtlink
+	require.NoError(t, testDB.Where("id = ? AND link = ?", "p2", 2).First(&plink).Error)
+	var slink StaffExtlink
+	require.NoError(t, testDB.Where("id = ? AND link = ?", "s1", 3).First(&slink).Error)
+
+	// producers_relations arrives mirrored: both directions are present with the
+	// inverse relation code (par/sub), so a consumer never has to invert an edge.
+	var sub, par ProducerRelation
+	require.NoError(t, testDB.Where("id = ? AND pid = ?", "p1", "p2").First(&sub).Error)
+	assert.Equal(t, "sub", sub.Relation)
+	require.NoError(t, testDB.Where("id = ? AND pid = ?", "p2", "p1").First(&par).Error)
+	assert.Equal(t, "par", par.Relation, "mirrored direction carries the inverse code")
+
 	// Re-run reproduces identical counts (whole-table replacement).
 	_, err = Run(testDB, "testdata", "")
 	require.NoError(t, err)
@@ -257,6 +283,8 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.Equal(t, int64(2), count("src_vndb.releases"))
 	assert.Equal(t, int64(3), count("src_vndb.tags_vn"))
 	assert.Equal(t, int64(3), count("src_vndb.vn_staff"))
+	assert.Equal(t, int64(3), count("src_vndb.vn_extlinks"))
+	assert.Equal(t, int64(2), count("src_vndb.producers_relations"))
 
 	// --only reloads a single file.
 	_, err = Run(testDB, "testdata", "chars")

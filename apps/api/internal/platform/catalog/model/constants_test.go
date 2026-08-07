@@ -57,6 +57,12 @@ func TestConstantGroupsHaveUniqueValues(t *testing.T) {
 			ProposalStatusRejected, ProposalStatusWithdrawn,
 		},
 		"spoiler": {SpoilerNone, SpoilerMild, SpoilerSevere},
+		"label_relation": {
+			LabelRelationParent, LabelRelationSubsidiary,
+			LabelRelationImprint, LabelRelationImprintOf,
+			LabelRelationSpawned, LabelRelationOrigin,
+			LabelRelationSucceededBy, LabelRelationFormerly,
+		},
 	}
 	for name, values := range groups {
 		seen := make(map[int16]bool, len(values))
@@ -109,6 +115,30 @@ func TestDisplayLimitKeyIsATwoValuePartition(t *testing.T) {
 		DisplayLimitKey(&wiki, &pwid, false, ContentRatingR18),
 		DisplayLimitKey(nil, nil, false, ContentRatingR18),
 		"an r18 game reads sfw when claimed with safe material, nsfw when bodyless")
+}
+
+// The label-relation vocabulary is four INVERSE PAIRS, and the mirrored graph
+// depends on that: a writer that produced a code with no counterpart here would
+// leave a one-directional edge no reverse read could ever find. Every code also
+// needs a public spelling, or the read face silently drops the row.
+func TestLabelRelationVocabularyPairsAndRenders(t *testing.T) {
+	inverse := map[int16]int16{
+		LabelRelationParent:      LabelRelationSubsidiary,
+		LabelRelationImprint:     LabelRelationImprintOf,
+		LabelRelationSpawned:     LabelRelationOrigin,
+		LabelRelationSucceededBy: LabelRelationFormerly,
+	}
+	for a, b := range inverse {
+		assert.NotEqual(t, a, b, "a relation is never its own inverse")
+		assert.Contains(t, LabelRelationKey, a)
+		assert.Contains(t, LabelRelationKey, b)
+	}
+	// Both halves of every pair, and nothing else, are in the public map.
+	assert.Len(t, LabelRelationKey, 2*len(inverse))
+	assert.Equal(t, "imprint_of", LabelRelationKey[LabelRelationImprintOf])
+	assert.Equal(t, "succeeded_by", LabelRelationKey[LabelRelationSucceededBy])
+	// 0 has no meaning: an unset relation must never render as a fact.
+	assert.NotContains(t, LabelRelationKey, int16(0))
 }
 
 // The polymorphic discriminator values are pinned forever — renumbering them

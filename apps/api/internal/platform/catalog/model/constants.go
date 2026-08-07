@@ -92,6 +92,50 @@ const (
 	LabelKindGroup        int16 = 5 // group/unit (组合, e.g. Bangumi person type 3)
 )
 
+// LabelRelation — the corporate-structure vocabulary of a
+// catalog_label_relation edge (wave 186), read as "other_label_id is <relation>
+// of label_id". Constants, not a registry, for the LabelKind reason: the set is
+// small and every new value ships with code.
+//
+// The vocabulary is four INVERSE PAIRS, and the pairing is load-bearing: the
+// graph is stored mirrored, so writing a fact means writing the edge under one
+// code and its mirror under the code opposite it here.
+//
+//	Parent      ↔ Subsidiary   the corporate ownership axis
+//	Imprint     ↔ ImprintOf    a brand operating under another label
+//	Spawned     ↔ Origin       a spin-off and the label it came out of
+//	SucceededBy ↔ Formerly     the succession axis (renamed / reorganized)
+//
+// 0 is deliberately absent: an unset relation is not a fact, and leaving the
+// zero value unassigned makes a forgotten column write fail a CHECK-free table
+// loudly at read time instead of silently rendering "parent".
+const (
+	LabelRelationParent      int16 = 1
+	LabelRelationSubsidiary  int16 = 2
+	LabelRelationImprint     int16 = 3
+	LabelRelationImprintOf   int16 = 4
+	LabelRelationSpawned     int16 = 5
+	LabelRelationOrigin      int16 = 6
+	LabelRelationSucceededBy int16 = 7
+	LabelRelationFormerly    int16 = 8
+)
+
+// LabelRelationKey is the PUBLIC spelling of that vocabulary — the strings the
+// label detail face renders in relations[].relation. It lives here, next to the
+// codes, so the wire word and the stored code can never drift apart; a code
+// outside the map has no public spelling and the read face drops the row rather
+// than inventing one.
+var LabelRelationKey = map[int16]string{
+	LabelRelationParent:      "parent",
+	LabelRelationSubsidiary:  "subsidiary",
+	LabelRelationImprint:     "imprint",
+	LabelRelationImprintOf:   "imprint_of",
+	LabelRelationSpawned:     "spawned",
+	LabelRelationOrigin:      "origin",
+	LabelRelationSucceededBy: "succeeded_by",
+	LabelRelationFormerly:    "formerly",
+}
+
 // WorkLabelKind — the attribution nature of a catalog_work_label edge:
 // organizational responsibility for a work (who published/made it), which is
 // DISTINCT from an authorship credit (catalog_credit, "who performed a role").

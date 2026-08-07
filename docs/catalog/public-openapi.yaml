@@ -1196,6 +1196,12 @@ components:
           type:
             - array
             - "null"
+        relations:
+          items:
+            $ref: "#/components/schemas/PublicLabelRelation"
+          type:
+            - array
+            - "null"
         work_count:
           format: int64
           type: integer
@@ -1215,6 +1221,7 @@ components:
         - refs
         - intros
         - links
+        - relations
       type: object
     PublicLabelIntro:
       additionalProperties: false
@@ -1266,6 +1273,22 @@ components:
         - kind
         - work_count
         - logo_hash
+      type: object
+    PublicLabelRelation:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+        relation:
+          description: parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads "<name> is the <relation> of this label"
+          type: string
+      required:
+        - id
+        - name
+        - relation
       type: object
     PublicLabelWork:
       additionalProperties: false
@@ -1429,6 +1452,12 @@ components:
             - "null"
         latin:
           type: string
+        links:
+          items:
+            $ref: "#/components/schemas/PublicPersonLink"
+          type:
+            - array
+            - "null"
         name:
           $ref: "#/components/schemas/PublicNameBuckets"
         next_offset:
@@ -1458,6 +1487,7 @@ components:
         - siblings
         - aliases
         - photo_hash
+        - links
         - intros
         - refs
       type: object
@@ -1515,6 +1545,17 @@ components:
       required:
         - role_key
         - role_name
+      type: object
+    PublicPersonLink:
+      additionalProperties: false
+      properties:
+        source:
+          type: string
+        url:
+          type: string
+      required:
+        - source
+        - url
       type: object
     PublicPlatform:
       additionalProperties: false

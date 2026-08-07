@@ -80,6 +80,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogEntityRelation{},
 		&model.CatalogWorkLabel{},     // work↔label attribution edge (step 18)
 		&model.CatalogWorkCharacter{}, // work↔character roster edge (step 45)
+		&model.CatalogLabelRelation{}, // label↔label corporate-structure edge (wave 186)
 
 		// Engine facet (refs/plans/10 W0 ruling 4): the wiki family's engine
 		// layer has no upstream to regenerate from, so it is migrated rather

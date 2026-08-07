@@ -3033,6 +3033,34 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
+                            "name": "relations",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "relation",
+                                  "required": true,
+                                  "doc": "parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<name> is the <relation> of this label\"",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "name": "work_count",
                             "required": true,
                             "format": "int64",
@@ -3642,6 +3670,34 @@ export const docsModel: DocsModel = {
                                 }
                               },
                               {
+                                "name": "relations",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "relation",
+                                      "required": true,
+                                      "doc": "parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<name> is the <relation> of this label\"",
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
                                 "name": "work_count",
                                 "required": true,
                                 "format": "int64",
@@ -3893,6 +3949,27 @@ export const docsModel: DocsModel = {
                               {
                                 "name": "latin",
                                 "type": "string"
+                              },
+                              {
+                                "name": "links",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "source",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
                               },
                               {
                                 "name": "name",
@@ -4589,6 +4666,34 @@ export const docsModel: DocsModel = {
                                       }
                                     },
                                     {
+                                      "name": "relations",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "id",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "name",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "relation",
+                                            "required": true,
+                                            "doc": "parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<name> is the <relation> of this label\"",
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
                                       "name": "work_count",
                                       "required": true,
                                       "format": "int64",
@@ -4840,6 +4945,27 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "latin",
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "links",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "source",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "url",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     },
                                     {
                                       "name": "name",
@@ -5316,6 +5442,27 @@ export const docsModel: DocsModel = {
                           {
                             "name": "latin",
                             "type": "string"
+                          },
+                          {
+                            "name": "links",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "url",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "name",

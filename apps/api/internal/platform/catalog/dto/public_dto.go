@@ -321,6 +321,14 @@ type PublicName struct {
 	BirthY    *int16 `json:"birth_y,omitempty" doc:"fuzzy birth date, year; absent = not recorded at this precision"`
 	BirthM    *int16 `json:"birth_m,omitempty" doc:"fuzzy birth date, month"`
 	BirthD    *int16 `json:"birth_d,omitempty" doc:"fuzzy birth date, day"`
+	// Links is the PERSON's non-identity web presence (wave 186): the official
+	// site / twitter / pixiv / ci-en pages filed as entity_type=0,
+	// link_kind=related refs, rendered through the same template table the work
+	// and label faces use. It rides the person_id gate for the same reason the
+	// other five do — a homepage is a person fact, and publishing it under a
+	// link the doctrine is withholding would leak the association itself. An
+	// orphan name (and a hidden link) yields [], never null.
+	Links []PublicPersonLink `json:"links"`
 	// Intros is the multilingual description set (wave 108): bridged at read
 	// time from the credit name's OWN bangumi anchor (per-name provenance —
 	// never a person-identity assertion; person resolution stays frozen).
@@ -392,11 +400,34 @@ type PublicLabelIntro struct {
 }
 
 // PublicLabelLink is one non-identity web-presence link of a label (official
-// site / twitter / ci-en), rendered as an absolute URL. It projects the label's
-// entity_type=3, link_kind=related refs; the exact/probable identity anchors
-// NEVER surface here (identity anchors and web links never cross). source is
-// the catalog_source key.
+// site / twitter / ci-en / steam / pixiv / web), rendered as an absolute URL. It
+// projects the label's entity_type=3, link_kind=related refs; the exact/probable
+// identity anchors NEVER surface here (identity anchors and web links never
+// cross). source is the catalog_source key.
 type PublicLabelLink struct {
+	Source string `json:"source"`
+	URL    string `json:"url"`
+}
+
+// PublicLabelRelation is one label↔label corporate-structure edge as the label
+// detail face renders it (wave 186): the OTHER label, and what it is to the
+// label being viewed. relation reads "<name> is the <relation> of this label"
+// — parent | subsidiary | imprint | imprint_of | spawned | origin |
+// succeeded_by | formerly.
+//
+// The graph is stored mirrored, so this face never inverts anything: it selects
+// the rows filed under this label and renders them as they stand.
+type PublicLabelRelation struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Relation string `json:"relation" doc:"parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<name> is the <relation> of this label\""`
+}
+
+// PublicPersonLink is one non-identity web-presence link of a PERSON (wave
+// 186), the same shape and the same rendering table as PublicLabelLink. It
+// projects the person's entity_type=0, link_kind=related refs; identity anchors
+// never surface here.
+type PublicPersonLink struct {
 	Source string `json:"source"`
 	URL    string `json:"url"`
 }
@@ -427,11 +458,16 @@ type PublicLabel struct {
 	LogoHash string `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
 	// Refs are the EXACT identity anchors (doc 106 G4); links stays the
 	// separate non-identity web-presence projection — the two never mix.
-	Refs       []PublicCatalogRef `json:"refs"`
-	Intros     []PublicLabelIntro `json:"intros"`
-	Links      []PublicLabelLink  `json:"links"`
-	Works      []PublicLabelWork  `json:"works,omitempty"`
-	NextOffset *int               `json:"next_offset,omitempty"`
+	Refs   []PublicCatalogRef `json:"refs"`
+	Intros []PublicLabelIntro `json:"intros"`
+	Links  []PublicLabelLink  `json:"links"`
+	// Relations is the corporate-structure neighbourhood (wave 186,
+	// catalog_label_relation): the parent company, the subsidiaries, the
+	// imprints, the spin-offs and the succession line. Always present ([] when
+	// the label has none), exactly like links.
+	Relations  []PublicLabelRelation `json:"relations"`
+	Works      []PublicLabelWork     `json:"works,omitempty"`
+	NextOffset *int                  `json:"next_offset,omitempty"`
 }
 
 // PublicEntityHit is one entity-search hit (name / character / label / work /

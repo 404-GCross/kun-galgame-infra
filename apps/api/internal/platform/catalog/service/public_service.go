@@ -683,9 +683,18 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 		BirthY:    res.Head.BirthY,
 		BirthM:    res.Head.BirthM,
 		BirthD:    res.Head.BirthD,
+		// links is always present, [] when the person has none — or when there
+		// is no visible person at all (see the gate below).
+		Links: []dto.PublicPersonLink{},
 	}
 	if res.Head.PersonID != nil {
 		p.PersonID = *res.Head.PersonID
+		// The person's web presence rides the SAME gate as the rest of the
+		// person block: NameWorks nils PersonID out when the credit_name→person
+		// link is hidden, so an unset id means there is nothing to publish here.
+		if p.Links, err = s.personLinks(ctx, p.PersonID); err != nil {
+			return dto.PublicName{}, false, err
+		}
 	}
 	for _, sib := range res.Siblings {
 		p.Siblings = append(p.Siblings, dto.PublicSiblingName{
@@ -824,6 +833,9 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks, nsfw boo
 	if l.Links, err = s.labelLinks(ctx, id); err != nil {
 		return dto.PublicLabel{}, false, err
 	}
+	if l.Relations, err = s.labelRelations(ctx, id); err != nil {
+		return dto.PublicLabel{}, false, err
+	}
 	if l.Refs, err = s.entityRefs(ctx, model.EntityTypeLabel, id); err != nil {
 		return dto.PublicLabel{}, false, err
 	}
@@ -943,29 +955,74 @@ func (s *PublicService) labelLinks(ctx context.Context, labelID int64) ([]dto.Pu
 	}
 	out := make([]dto.PublicLabelLink, 0, len(rows))
 	for _, r := range rows {
-		if url, ok := labelLinkURL(r.Source, r.ExternalID); ok {
-			out = append(out, dto.PublicLabelLink{Source: r.Source, URL: url})
+		if url, ok := relatedLinkURL(r.Source, r.ExternalID); ok {
+			out = append(out, dto.PublicLabelLink{Source: publicSourceKey(r.Source), URL: url})
 		}
 	}
 	return out, nil
 }
 
-// labelLinkURL renders a related-link external id to its absolute URL per
-// source. E2b stores official_site scheme- and trailing-slash-stripped (so an
-// https:// prefix is exact), twitter as a bare lowercase handle, and ci-en as
-// the numeric creator id. An unknown source returns ok=false (no template — the
-// URL is never guessed).
-func labelLinkURL(source, externalID string) (string, bool) {
-	switch source {
-	case "official_site":
-		return "https://" + externalID, true
-	case "twitter":
-		return "https://x.com/" + externalID, true
-	case "cien":
-		return "https://ci-en.dlsite.com/creator/" + externalID, true
-	default:
-		return "", false
+// labelRelations projects a label's corporate-structure neighbourhood (wave
+// 186) from catalog_label_relation. The graph is stored MIRRORED — every fact
+// is present under both endpoints with the inverse relation code — so this
+// query is a plain `WHERE label_id = ?` and NEVER inverts anything: what it
+// finds filed under the label is what the label's page says.
+//
+// A relation code with no public spelling is dropped rather than rendered as a
+// number (model.LabelRelationKey is the one vocabulary). The other end is
+// joined for its display name and soft-deleted labels are excluded — a merged-
+// away label must not surface as a structural fact. Deterministic
+// (relation, name, id); empty → [].
+func (s *PublicService) labelRelations(ctx context.Context, labelID int64) ([]dto.PublicLabelRelation, error) {
+	var rows []struct {
+		ID       int64  `gorm:"column:id"`
+		Name     string `gorm:"column:display_name"`
+		Relation int16  `gorm:"column:relation"`
 	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT other.id, other.display_name, r.relation
+		FROM catalog_label_relation r
+		JOIN catalog_label other ON other.id = r.other_label_id AND other.deleted_at IS NULL
+		WHERE r.label_id = ?
+		ORDER BY r.relation, other.display_name, other.id`, labelID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicLabelRelation, 0, len(rows))
+	for _, r := range rows {
+		key, ok := model.LabelRelationKey[r.Relation]
+		if !ok {
+			continue
+		}
+		out = append(out, dto.PublicLabelRelation{ID: r.ID, Name: r.Name, Relation: key})
+	}
+	return out, nil
+}
+
+// personLinks projects a PERSON's non-identity web-presence links from its
+// entity_type=0, link_kind=related refs — labelLinks' query with the person
+// discriminator, through the same shared template table. The exact/probable
+// identity anchors are excluded at the query level (identity anchors and web
+// links never cross). Deterministic (source_id, external_id); empty → [].
+func (s *PublicService) personLinks(ctx context.Context, personID int64) ([]dto.PublicPersonLink, error) {
+	var rows []struct {
+		Source     string `gorm:"column:source"`
+		ExternalID string `gorm:"column:external_id"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT src.key AS source, r.external_id
+		FROM catalog_external_ref r JOIN catalog_source src ON src.id = r.source_id
+		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ?
+		ORDER BY r.source_id, r.external_id`,
+		model.EntityTypePerson, personID, model.LinkKindRelated).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicPersonLink, 0, len(rows))
+	for _, r := range rows {
+		if url, ok := relatedLinkURL(r.Source, r.ExternalID); ok {
+			out = append(out, dto.PublicPersonLink{Source: publicSourceKey(r.Source), URL: url})
+		}
+	}
+	return out, nil
 }
 
 // workEngines projects a work's engine attributions (A2-1e). Deterministic by
@@ -1013,37 +1070,46 @@ func (s *PublicService) workLinks(ctx context.Context, workID int64) ([]dto.Publ
 	}
 	out := make([]dto.PublicWorkLink, 0, len(rows))
 	for _, r := range rows {
-		if url, ok := workLinkURL(r.Source, r.ExternalID); ok {
+		if url, ok := relatedLinkURL(r.Source, r.ExternalID); ok {
 			out = append(out, dto.PublicWorkLink{Source: publicSourceKey(r.Source), URL: url})
 		}
 	}
 	return out, nil
 }
 
-// workLinkURL renders a work-level related-link external id to its absolute
-// URL. The templates are the exact inverses of the parsers the rescue step used
-// to mint these rows (internal/jobs/wikirescue/link.go), which is why they are
-// safe to apply rather than guesses:
+// relatedLinkURL renders a link_kind=related external id to its absolute URL.
+// It is the ONE template table of the public face: works, labels and persons
+// all store their web presence in the same catalog_external_ref rows under the
+// same source keys, so a per-face copy of these templates is not a variation
+// point — it is a drift bug waiting to happen. (It was one: the label face
+// carried three of these six templates and silently dropped every steam / pixiv
+// / web row a label actually had.)
 //
-//	web      the external_id IS the full URL (that is the whole point of the
-//	         `web` source — a link whose host we do not model)
-//	twitter  a bare lowercase handle
-//	cien     the numeric ci-en creator id
-//	steam    the numeric app id
-//	pixiv    the numeric user id
-//	dlsite   an RJ/VJ/BJ work number
-//	dmm      a storefront product code
+// The templates are the exact inverses of the parsers that mint these rows
+// (internal/jobs/wikirescue/link.go for the work lane, the E2b org/label
+// enrichment for the label lane), which is why they are safe to apply rather
+// than guesses:
+//
+//	web            the external_id IS the full URL (that is the whole point of
+//	               the `web` source — a link whose host we do not model)
+//	official_site  a host+path with the scheme and trailing slash stripped
+//	twitter        a bare lowercase handle
+//	cien           the numeric ci-en creator id
+//	steam          the numeric app id
+//	pixiv          the numeric user id
 //
 // dlsite and dmm are deliberately ABSENT: their storefront URLs are
 // section-dependent (dlsite maniax/home/pro/soft; dmm digital/dlsoft), and the
 // registry stores only the bare code, so any single template would be a guess
 // that 404s for part of the population. Those two anchors stay reachable as
 // data through the source key; the face never invents an address for them. An
-// unknown source is skipped for the same reason (labelLinkURL's rule verbatim).
-func workLinkURL(source, externalID string) (string, bool) {
+// unknown source is skipped for the same reason.
+func relatedLinkURL(source, externalID string) (string, bool) {
 	switch source {
 	case "web":
 		return externalID, true
+	case "official_site":
+		return "https://" + externalID, true
 	case "twitter":
 		return "https://x.com/" + externalID, true
 	case "cien":
@@ -1052,8 +1118,6 @@ func workLinkURL(source, externalID string) (string, bool) {
 		return "https://store.steampowered.com/app/" + externalID, true
 	case "pixiv":
 		return "https://www.pixiv.net/users/" + externalID, true
-	case "official_site":
-		return "https://" + externalID, true
 	default:
 		return "", false
 	}
