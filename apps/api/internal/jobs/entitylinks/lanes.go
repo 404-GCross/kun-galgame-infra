@@ -30,12 +30,16 @@ const vnChainQuery = `
 // releaseChainQuery is the one lane whose anchor entity is not the target
 // entity: VNDB hangs the storefront/website links off the RELEASE ("r123"), so
 // the chain is release anchor → catalog_release.work_id → work. Same shape as
-// internal/jobs/getchurefs.
+// internal/jobs/getchurefs. Only OFFICIAL releases feed the work grain: an
+// unofficial release's website is a fan-patch/mirror page (4pda forum threads
+// were reaching Steins;Gate as "official_site" before this guard), which is
+// not a fact about the work.
 const releaseChainQuery = `
 	SELECT rel.work_id AS entity_id, e.site AS site, e.value AS value
 	FROM catalog_external_ref vr
 	JOIN catalog_release rel ON rel.id = vr.entity_id AND rel.deleted_at IS NULL
 	JOIN src_vndb.releases_extlinks jx ON jx.id = vr.external_id
+	JOIN src_vndb.releases sr ON sr.id = jx.id AND sr.official
 	JOIN src_vndb.extlinks e ON e.id = jx.link
 	WHERE vr.entity_type = ? AND vr.source_id = ? AND vr.link_kind = 0
 	  AND e.site IN ? AND coalesce(e.value, '') <> ''

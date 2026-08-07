@@ -48,7 +48,7 @@ func cleanAll(t *testing.T) {
 	for _, tbl := range []string{
 		"catalog_external_ref", "catalog_match_rejection", "catalog_release",
 		"catalog_work", "catalog_label", "catalog_person",
-		"src_vndb.extlinks", "src_vndb.releases_extlinks", "src_vndb.vn_extlinks",
+		"src_vndb.extlinks", "src_vndb.releases", "src_vndb.releases_extlinks", "src_vndb.vn_extlinks",
 		"src_vndb.producers_extlinks", "src_vndb.staff_extlinks",
 		"src_bangumi.subject",
 	} {
@@ -91,6 +91,19 @@ func mkRef(t *testing.T, entityType int16, entityID int64, source int16, ext str
 		EntityType: entityType, EntityID: entityID, SourceID: source,
 		ExternalID: ext, LinkKind: kind, MatchedBy: "rule:test",
 	}).Error)
+}
+
+// mkVndbRelease stages one src_vndb.releases row — the release chain only
+// feeds the work grain from OFFICIAL releases, so every fixture states the
+// flag explicitly.
+func mkVndbRelease(t *testing.T, id string, official bool) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(
+		`INSERT INTO src_vndb.releases
+		   (id, gtin, olang, released, voiced, reso_x, reso_y, ani_story, ani_ero,
+		    has_ero, patch, freeware, official, catalog, notes, engine)
+		 VALUES (?, 0, 'ja', 20200101, 0, 0, 0, 0, 0,
+		    false, false, false, ?, '', '', '')`, id, official).Error)
 }
 
 // mkExtlink stages one shared extlink pool row and hangs it off an owner
@@ -151,9 +164,13 @@ func TestWorkLane(t *testing.T) {
 
 	mkWork(t, 901)
 	mkRelease(t, 9011, 901)
+	mkRelease(t, 9012, 901)
 	vndb, bangumi := sourceID(t, "vndb"), sourceID(t, "bangumi")
 	site, web := sourceID(t, "official_site"), sourceID(t, "web")
+	mkVndbRelease(t, "r1", true)
+	mkVndbRelease(t, "r2", false)
 	mkRef(t, model.EntityTypeRelease, 9011, vndb, "r1", model.LinkKindExact)
+	mkRef(t, model.EntityTypeRelease, 9012, vndb, "r2", model.LinkKindExact)
 	mkRef(t, model.EntityTypeWork, 901, vndb, "v901", model.LinkKindExact)
 	mkRef(t, model.EntityTypeWork, 901, bangumi, "9001", model.LinkKindExact)
 
@@ -164,6 +181,9 @@ func TestWorkLane(t *testing.T) {
 		"src_vndb.releases_extlinks", "r1")
 	mkExtlink(t, 4, "dlsite", "RJ012345", "src_vndb.releases_extlinks", "r1")
 	mkExtlink(t, 5, "wikidata", "4242", "src_vndb.vn_extlinks", "v901")
+	// An UNOFFICIAL release's website (fan patch / mirror page) never reaches
+	// the work grain — the release chain filters on src_vndb.releases.official.
+	mkExtlink(t, 6, "website", "https://fanpatch.example.org/sg", "src_vndb.releases_extlinks", "r2")
 	mkSubject(t, 9001, `{"Fields":[{"Key":"官网","Value":"http://windmill.suki.jp/"}]}`)
 
 	ctx := context.Background()
@@ -188,6 +208,8 @@ func TestWorkLane(t *testing.T) {
 	assert.True(t, refExists(t, model.EntityTypeWork, 901, site, "alpha.example.com"))
 	assert.True(t, refExists(t, model.EntityTypeWork, 901, web, "https://www.wikidata.org/wiki/Q4242"))
 	assert.True(t, refExists(t, model.EntityTypeWork, 901, site, "windmill.suki.jp"))
+	assert.False(t, refExists(t, model.EntityTypeWork, 901, site, "fanpatch.example.org/sg"),
+		"the unofficial release's website must not reach the work")
 
 	var rule string
 	require.NoError(t, testDB.Raw(
