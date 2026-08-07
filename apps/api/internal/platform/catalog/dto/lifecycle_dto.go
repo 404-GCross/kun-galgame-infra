@@ -174,6 +174,13 @@ type EditRevisionFeedItem struct {
 	ProposalID    *int64    `json:"proposal_id"`
 	Site          string    `json:"site"`
 	CreatedAt     time.Time `json:"created_at"`
+	// ProductWorkID is the entity's id ON THE PRODUCT SIDE, projected from
+	// catalog_work's claim columns for entity_type=catalog.work only (wave 180).
+	// A consumer replaying this feed keys its own tables by its own id, and
+	// without this it would have to resolve every entity_id through a second
+	// round trip. NULL whenever the entity is not a claimed work of this
+	// revision's site — including every non-work entity type.
+	ProductWorkID *int64 `json:"product_work_id"`
 }
 
 // EditRevisionFeed is one page of the global revision cursor feed.

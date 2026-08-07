@@ -535,3 +535,39 @@ func stateKeyOf(state int16) string {
 	site, product := "e", int64(0)
 	return model.ClaimStateKey(&site, &product, &state)
 }
+
+// ClaimIdentity is a catalog work's product-side identity: the tenant that
+// claimed it and the id that tenant knows it by.
+type ClaimIdentity struct {
+	Site          string
+	ProductWorkID int64
+}
+
+// ClaimIdentities projects the product-side identity of the given catalog
+// works. It is the revision feed's enrichment (wave 180): a product replaying
+// the editing log keys its own tables by its own id, and the claim columns are
+// the only place that mapping lives. Unclaimed works are simply absent, and the
+// caller matches Site itself — one catalog work is claimed by at most one
+// product, so a revision recorded under a different site must resolve to
+// nothing rather than to another tenant's id.
+func (s *ClaimLifecycleService) ClaimIdentities(ctx context.Context, workIDs []int64) (map[int64]ClaimIdentity, error) {
+	out := map[int64]ClaimIdentity{}
+	if len(workIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		ID            int64
+		Site          string
+		ProductWorkID int64
+	}
+	if err := s.db.WithContext(ctx).Model(&model.CatalogWork{}).
+		Select("id, site, product_work_id").
+		Where("id IN ? AND site IS NOT NULL AND product_work_id IS NOT NULL", workIDs).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.ID] = ClaimIdentity{Site: r.Site, ProductWorkID: r.ProductWorkID}
+	}
+	return out, nil
+}

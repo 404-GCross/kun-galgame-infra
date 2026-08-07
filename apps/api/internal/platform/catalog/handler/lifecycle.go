@@ -73,7 +73,7 @@ func SetupLifecycle(api huma.API, claims *service.ClaimLifecycleService, engine 
 	huma.Register(api, huma.Operation{
 		OperationID: "listCatalogEditRevisions", Method: http.MethodGet,
 		Path:    "/api/v1/catalog/edit-revisions/feed",
-		Summary: "Cursor feed of editing-engine revisions across all entities (ascending id; filterable by entity family/type)",
+		Summary: "Cursor feed of editing-engine revisions across all entities (ascending id; filterable by entity family/type and by site). catalog.work items carry product_work_id, the claiming product's own id for the entity",
 		Tags:    tags,
 	}, s.editRevisions)
 	s.registerUserClaims(api)
@@ -272,6 +272,7 @@ type revisionFeedInput struct {
 	Limit        int    `query:"limit" doc:"Page size (default 200, max 1000)"`
 	EntityFamily string `query:"entity_family" doc:"Restrict to one family, e.g. catalog"`
 	EntityType   string `query:"entity_type" doc:"Restrict to one type, e.g. catalog.work"`
+	Site         string `query:"site" doc:"Restrict to one tenant's revisions, e.g. kungal"`
 }
 
 type revisionFeedOutput struct {
@@ -281,10 +282,15 @@ type revisionFeedOutput struct {
 func (s *LifecycleServer) editRevisions(ctx context.Context, in *revisionFeedInput) (*revisionFeedOutput, error) {
 	revs, err := s.engine.RevisionsSince(ctx, editing.RevisionFeedFilter{
 		Since: in.Since, Limit: in.Limit,
-		EntityFamily: in.EntityFamily, EntityType: in.EntityType,
+		EntityFamily: in.EntityFamily, EntityType: in.EntityType, Site: in.Site,
 	})
 	if err != nil {
 		slog.Error("catalog edit revision feed", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	claims, err := s.workClaims(ctx, revs)
+	if err != nil {
+		slog.Error("catalog edit revision feed claims", "err", err)
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
 	out := dto.EditRevisionFeed{Items: make([]dto.EditRevisionFeedItem, len(revs))}
@@ -295,6 +301,7 @@ func (s *LifecycleServer) editRevisions(ctx context.Context, in *revisionFeedInp
 			ChangedFields: decodeStrings(r.ChangedFields),
 			ActorUID:      r.ActorUID, AmenderUID: r.AmenderUID,
 			ProposalID: r.ProposalID, Site: r.Site, CreatedAt: r.CreatedAt,
+			ProductWorkID: productWorkID(claims, &revs[i]),
 		}
 	}
 	if n := len(revs); n > 0 {
@@ -303,4 +310,38 @@ func (s *LifecycleServer) editRevisions(ctx context.Context, in *revisionFeedInp
 		out.NextSince = in.Since
 	}
 	return &revisionFeedOutput{Body: okEnvelope(out)}, nil
+}
+
+// workClaims loads the product-side identity of every catalog.work this page
+// mentions — one query for the page, not one per item.
+func (s *LifecycleServer) workClaims(ctx context.Context, revs []editing.Revision) (map[int64]service.ClaimIdentity, error) {
+	if s.claims == nil {
+		return nil, nil
+	}
+	seen := map[int64]struct{}{}
+	ids := make([]int64, 0, len(revs))
+	for _, r := range revs {
+		if r.EntityType != editspec.TypeWork {
+			continue
+		}
+		if _, dup := seen[r.EntityID]; dup {
+			continue
+		}
+		seen[r.EntityID] = struct{}{}
+		ids = append(ids, r.EntityID)
+	}
+	return s.claims.ClaimIdentities(ctx, ids)
+}
+
+// productWorkID resolves one revision's product-side id: only for works, and
+// only when the claim's tenant is the revision's own.
+func productWorkID(claims map[int64]service.ClaimIdentity, r *editing.Revision) *int64 {
+	if r.EntityType != editspec.TypeWork {
+		return nil
+	}
+	c, ok := claims[r.EntityID]
+	if !ok || c.Site != r.Site {
+		return nil
+	}
+	return &c.ProductWorkID
 }

@@ -966,6 +966,11 @@ components:
         id:
           format: int64
           type: integer
+        product_work_id:
+          format: int64
+          type:
+            - integer
+            - "null"
         proposal_id:
           format: int64
           type:
@@ -989,6 +994,7 @@ components:
         - proposal_id
         - site
         - created_at
+        - product_work_id
       type: object
     EditRevisionListResponse:
       additionalProperties: false
@@ -3449,6 +3455,13 @@ paths:
           schema:
             description: Restrict to one type, e.g. catalog.work
             type: string
+        - description: Restrict to one tenant's revisions, e.g. kungal
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: Restrict to one tenant's revisions, e.g. kungal
+            type: string
       responses:
         "200":
           content:
@@ -3462,7 +3475,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/HouseError"
           description: Error
-      summary: Cursor feed of editing-engine revisions across all entities (ascending id; filterable by entity family/type)
+      summary: Cursor feed of editing-engine revisions across all entities (ascending id; filterable by entity family/type and by site). catalog.work items carry product_work_id, the claiming product's own id for the entity
       tags:
         - catalog-lifecycle
   /api/v1/catalog/edit/diff:

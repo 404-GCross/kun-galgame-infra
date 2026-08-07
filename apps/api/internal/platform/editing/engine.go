@@ -221,7 +221,10 @@ type RevisionFeedFilter struct {
 	Since        int64
 	EntityFamily string // "" = every family
 	EntityType   string // "" = every type
-	Limit        int    // default 200, max 1000
+	// Site restricts the feed to one tenant's revisions ("" = every site). A
+	// product backend replaying the log only ever wants its own.
+	Site  string
+	Limit int // default 200, max 1000
 }
 
 // RevisionsSince is the engine's read-only projection for downstream cursor
@@ -240,6 +243,9 @@ func (e *Engine) RevisionsSince(ctx context.Context, f RevisionFeedFilter) ([]Re
 	}
 	if f.EntityType != "" {
 		q = q.Where("entity_type = ?", f.EntityType)
+	}
+	if f.Site != "" {
+		q = q.Where("site = ?", f.Site)
 	}
 	var out []Revision
 	if err := q.Order("id ASC").Limit(limit).Find(&out).Error; err != nil {
