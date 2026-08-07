@@ -31,6 +31,21 @@ type PublicHandler struct {
 	// service the internal dashboard uses, through a different, public-only
 	// method. None of the dashboard's telemetry reaches this face.
 	stats *service.StatsService
+	// clients is the OAuth client registry, needed by exactly ONE lane: the
+	// moderator review-queue view (wave 186a), which must resolve the end-user
+	// token's client to learn the tenant it may be served for. Nil = that lane
+	// is unavailable and refuses (403); every other route on this face is a
+	// pure projection and never asks. Installed via WithModeration rather than
+	// the constructor so the frozen public face keeps its signature.
+	clients OAuthClientLookup
+}
+
+// WithModeration installs the OAuth client registry the moderator review-queue
+// view needs. Returns the handler so cmd/catalog can chain it onto the
+// constructor.
+func (h *PublicHandler) WithModeration(clients OAuthClientLookup) *PublicHandler {
+	h.clients = clients
+	return h
 }
 
 // NewPublicHandler builds the public projection handler.
@@ -767,6 +782,16 @@ func (h *PublicHandler) WorksList(c fiber.Ctx) error {
 	// works/search and calendar faces.
 	if f.DisplayLimits, ok = displayLimitsPub(c.Query("content_limit")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadDisplayLimit)
+	}
+	// status (wave 186a): absent/live changes nothing at all; pending is the
+	// moderator review-queue view, which needs a SECOND credential and pins the
+	// page to the token client's own tenant. Every refusal is explicit — this
+	// lane never degrades to the live set.
+	if refusal := h.applyWorksStatus(c, &f); refusal != nil {
+		if refusal.status == fiber.StatusBadRequest {
+			return response.BadRequestMsg(c, errors.ErrInvalidParam, refusal.msg)
+		}
+		return response.ForbiddenMsg(c, errors.ErrForbidden, refusal.msg)
 	}
 	if f.LabelID, ok = posIntQueryPub(c.Query("label_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "label_id must be a positive integer")

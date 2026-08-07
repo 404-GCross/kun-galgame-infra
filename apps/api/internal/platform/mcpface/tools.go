@@ -273,7 +273,11 @@ func (t *tools) catalogCharacterGet(ctx context.Context, req *mcp.CallToolReques
 const descCatalogWorksList = "Browse / filter the catalog works registry — the bulk lane. Filter by content_rating / " +
 	"claimed / label_id / tag_id / series_id / platform / release window; ids=comma-list (max 100) batch-hydrates " +
 	"known ids in one call. sort=id (stable browse, default) or updated (newest-updated first). Keyset-paginated: " +
-	"pass the returned next_cursor to continue. For NATURAL-LANGUAGE title search use catalog_search type=works."
+	"pass the returned next_cursor to continue. For NATURAL-LANGUAGE title search use catalog_search type=works. " +
+	"status=pending asks for the MODERATOR REVIEW QUEUE instead of the live set; it requires a SECOND credential " +
+	"(the moderator's own Bearer access token alongside the API key) and is refused with 403 otherwise. THIS MCP " +
+	"SERVER CARRIES ONE CREDENTIAL ONLY — the API key in the Bearer slot — so status=pending always refuses here; " +
+	"the parameter exists so the refusal is the endpoint's own, not a silently dropped filter."
 
 type catalogWorksListInput struct {
 	ContentRating  string `json:"content_rating,omitempty" jsonschema:"Filter by rating: all_ages, sensitive, or r18 (r18 additionally requires nsfw=true)."`
@@ -289,6 +293,7 @@ type catalogWorksListInput struct {
 	Cursor         string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
 	Limit          int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
 	Nsfw           bool   `json:"nsfw,omitempty" jsonschema:"true = include r18 works (default false = dropped server-side)."`
+	Status         string `json:"status,omitempty" jsonschema:"live (default) = the public live registry set; pending = the moderator review queue, which needs a second end-user credential this MCP transport cannot carry and therefore always 403s here."`
 }
 
 func (t *tools) catalogWorksList(ctx context.Context, req *mcp.CallToolRequest, in catalogWorksListInput) (*mcp.CallToolResult, any, error) {
@@ -306,6 +311,7 @@ func (t *tools) catalogWorksList(ctx context.Context, req *mcp.CallToolRequest, 
 	setStr(q, "cursor", in.Cursor)
 	setInt(q, "limit", in.Limit)
 	setBool(q, "nsfw", in.Nsfw)
+	setStr(q, "status", in.Status)
 	return t.run(ctx, req, "catalog_works_list", "/v1/catalog/works", q)
 }
 

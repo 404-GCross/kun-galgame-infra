@@ -7835,6 +7835,17 @@ export const docsModel: DocsModel = {
                   "doc": "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis, i.e. the values claimed_by.content_limit renders on these very items. An unknown token is a 400. Absent = no gate (both values), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name. This is NOT content_rating: content_rating is the AGE axis (what the GAME is rated), this is whether the material you would RENDER (cover, screenshots, synopsis) is safe to publish — a claimed work reads its wiki body's editorial flag, a bodyless one falls back to r18=nsfw. Unlike the search face this is a live registry predicate, so an editorial change takes effect immediately"
                 },
                 {
+                  "name": "status",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Which population to browse. Absent or live = the public LIVE registry set, byte-identical to every pre-existing call. pending = the MODERATOR REVIEW QUEUE: the works whose claim is submitted and awaiting a curator's decision (claimed_by.state=pending), tenant-pinned. The queue view needs a SECOND credential — the moderator's own OAuth access token in Authorization: Bearer alongside the API key in X-API-Key (the dual-credential transport) — and refuses with 403 unless that token carries a user identity, was issued to a FIRST-PARTY site client bound to a catalog site (a third-party application is never a moderation surface), and holds the catalog.claim.review permission. The page is forcibly scoped to that client's own catalog site: site= may repeat it but naming any other site is a 403, never a silent re-point. Refusals are always explicit — this lane never degrades to the live set, because a moderator handed an empty page would read it as an empty queue. Platform-wide queues stay on the staff face. Passing claim_state= together with status=pending is a 400 (the parameter already IS that gate)",
+                  "enum": [
+                    "live",
+                    "pending"
+                  ]
+                },
+                {
                   "name": "site",
                   "in": "query",
                   "required": false,

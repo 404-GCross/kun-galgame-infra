@@ -302,6 +302,18 @@ wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留�
   - **它不进 OpenAPI**:body 是 multipart,故是普通 Fiber 路由而非 Huma op。契约就写在这里。
 - 其余三条 op 与 §4.1-4.3 同在 `docs/catalog/openapi.yaml`,tag `catalog-user`。
 
+## 4.5 开放面的审核队列视图(wave 186a)
+
+审核队列不止在员工面和用户面各有一份:**开放 API 的 works 列表**也开了一扇按租户钉死的队列门 —— `GET /v1/catalog/works?status=pending`。它在本目录出现,是因为它用的是**本域的权限与租户模型**,虽然端点住在开放面的 spec(`public-openapi.yaml`)里。
+
+- **词面**:`status=live|pending`,缺省 `live` = 今天的公开人口,**与本波前逐字节一致**。`pending` 选的是 `claim_state=pending`(`ClaimLifecycleService.PendingClaims` 读的同一列),**不是**注册行的 status 值 —— 注册行 status 轴 `live|stub|merged` 里根本没有审核态,投稿铸造出来就是 `live`。
+- **双凭据**:机器键走 `X-API-Key`,`Authorization` 留给**审核员本人**的访问令牌(`middleware.OptionalJWT`,永不拦截,故既有调用方零影响)。
+- **四道 403**:无用户身份 / 令牌未绑 client 或 client 未绑 `catalog_site` / **第三方应用**(`owner_user_id` 非空)/ roles 不持 `catalog.claim.review`。
+- **租户钉死**:队列只出该 client 的 `catalog_site`(与 §4 的 `userActor` 同一套推导);`site=` 指名别人的站是 403,**不是**静默改回自己。平台级队列仍只在 admin 面。
+- **拒绝永远响亮**:绝不静默降级回 live 集合 —— 审核员拿到空页会判定队列是空的。
+
+契约与全部条款见 [developer-platform/02 §3.2.9](../developer-platform/02-public-api.md)。
+
 ## 5. 鉴权形态
 
 - **S2S face(`/api/v1/catalog/*`)**:`Authorization: Basic <b64(client_id:client_secret)>`,对 `oauth_clients` 注册表校验。任何有效一等 client 可**认证**;但——

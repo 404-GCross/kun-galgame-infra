@@ -243,7 +243,8 @@ func main() {
 	// read-only bypass (step 03) behind the shared devapi middleware chain; the
 	// S2S (/api/v1/catalog) and admin (/api/v1/admin/catalog) faces are untouched
 	// (disjoint prefixes). Probable anchors and r18 works never surface.
-	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher, statsSvc)
+	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher, statsSvc,
+		clientRepo, tokenVerifier)
 
 	// What is left of the galgame HTTP surface: the /v1/galgame 410 tombstone.
 	//
@@ -316,6 +317,13 @@ func setupPublicCatalog(
 	resolveSvc *service.ResolveService,
 	searcher *catalogSearch.Indexer,
 	statsSvc *service.StatsService,
+	// clientRepo + tokenVerifier are the SECOND credential's two halves (wave
+	// 186a): the works-list review-queue view verifies the caller's own access
+	// token and resolves its client to the one tenant it may serve. They are the
+	// same instances the user/admin faces use, so the JWKS cache is shared and a
+	// client binding cannot be read differently face to face.
+	clientRepo catHandler.OAuthClientLookup,
+	tokenVerifier *oidctoken.Verifier,
 ) {
 	oauthDB := application.DB.DB() // kun_galgame_infra — the developer-platform tables
 
@@ -388,7 +396,12 @@ func setupPublicCatalog(
 	// same catalog_works index the entity autocomplete uses, then re-hydrates
 	// the page from Postgres.
 	publicSvc.WithWorksSearch(searcher)
-	publicH := catHandler.NewPublicHandler(publicSvc, resolveSvc, searcher, statsSvc)
+	// WithModeration hands the public face the OAuth client registry — used by
+	// exactly one lane, the works-list review-queue view (wave 186a), to resolve
+	// the OPTIONAL end-user token's client and pin the queue to that client's
+	// catalog site.
+	publicH := catHandler.NewPublicHandler(publicSvc, resolveSvc, searcher, statsSvc).
+		WithModeration(clientRepo)
 
 	// Meter every response to (client, key, "catalog", day) + async last-used
 	// touch. Placed right after ResolveCredential so a 401 (no/invalid key) is not
@@ -421,7 +434,14 @@ func setupPublicCatalog(
 	// before the /works/:id catch-all. /works/search is the product search face
 	// (A2-1d) and must also precede /works/:id, or "search" would be parsed as
 	// an id.
-	v1.Get("/works", publicH.WorksList)
+	// OptionalJWT on THIS route only: the dual-credential transport keeps the
+	// machine key in X-API-Key and leaves Authorization free for the caller's
+	// own access token (devapi.extractKey), and the works list is the single
+	// public lane that reads one — status=pending, the moderator review queue.
+	// It never blocks: no token, an unparseable one, or the LEGACY transport's
+	// API key sitting in the Bearer slot all fall through untouched, so every
+	// pre-existing caller of this route is byte-identical.
+	v1.Get("/works", middleware.OptionalJWT(tokenVerifier), publicH.WorksList)
 	v1.Get("/works/search", publicH.WorksSearch)
 	v1.Get("/changes", publicH.Changes)
 	// Slim public counts (149b) — the product-facing "how big is this

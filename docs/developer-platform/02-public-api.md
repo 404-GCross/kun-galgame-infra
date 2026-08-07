@@ -44,7 +44,7 @@
 | 公开端点(`/v1`) | scope | 说明 |
 |---|---|---|
 | `GET /v1/catalog/works/{id}` | `catalog:read` | 注册行:display_name / titles / medium / 分级 / 外部锚(来源白名单过滤,见 [06 §11](./06-security-compliance.md))/ **认领指针**(→ 内容面路由,见 [01 §3.3](./01-design.md))+ **全量聚合 facet**(wave 104 加法扩容:popularity/ratings/tags/playtimes/series/platforms/intro/covers/screenshots/characters/labels/releases——source 键归因、CDN 完整 URL、字符串词表);**R18 调用方自控**:`nsfw=1` 出 r18 作品与 r18 关系端(works/lookup/names/characters/labels 同参;characters 另有 `spoilers=0-2` + sexual traits 随 nsfw),缺省隐藏与 Phase-1 逐字节一致;`updated` 恒在(doc 106);`releases[]` 每行带 `id`+`refs[]`,`tags[]` 每行带 canonical `canonical_id/tier/kind`(doc 106,未映射省略)。**A2-1e 加法**:`created`(RFC3339,注册行**进入 catalog 的时刻**——既不是发售日也不是产品侧创建时间)、`engines[]`(`{id,name}`,恒出空为 `[]`)、`links[]`(非身份外链,见 §3.2.2)、`labels[]` 每行 `lang`、`tags[]` 的**安全轴** `spoiler`/`sexual` + `spoilers=0\|1\|2` 参数(见 §3.2.3)。**A2-R1 修复**:`titles[]` 对**认领作品**来自 wiki 桥(四名称列 + 别名,见 §3.2.5)——此前认领作品的中文名/别名整体缺席;`labels[]`/`engines[]` 每行恒带 `work_count`、`tags[]` 映射行带 `work_count`(nsfw 感知,见 §3.2.6) |
-| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/**`engine_id`(A2-1b 第九过滤器,经 `catalog_work_engine`)**/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null。**`include=` 富 brief 块(A2-1a 加法波)**:词表 `names,intros,labels,ratings,covers`(逗号分隔,**未知 token 静默忽略**,§3.5 条款 2);每块按页内 work id **批量加载**(无 N+1),未点名即整块缺席——**缺省(无 `include=`)响应与本波前逐字节相同**。`names`/`intros` 走 D7 四键投影(见 §3.2.1 表①),`labels`/`ratings` 与详情面同形同口径(评分保持源原生分制,不聚合),`covers` 出 `{portrait, banner}` 两槽、每槽带 `width/height/thumbhash`(见 §3.2.1);`ids=` + `include=` 即批量富取(两梯队的 batch 替代面)。**A2-1e**:`include=` 词表加 `refs`(该作品的 **exact 身份锚**,与详情面 `refs[]` 同构——work 级 ∪ release 级去重,exact-only 红线不破),`tag_id` 收**逗号分隔多值 AND**(≤10,见下)。**A2-R1 修复**:`names` 块对**认领作品**来自 wiki 桥(见 §3.2.5);`labels` 块每行恒带 `work_count`(与详情面同数,见 §3.2.6)。**A2-R4 加法**:`claim_state=`(封闭词表 `none\|live\|draft\|pending\|declined\|hidden`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——**与 `works/search` 同名参数逐字同义**,词条成员列表务必传 `claim_state=live` 以排除未发布/未认领行;与搜索面不同,这里是**读时库内谓词,改态立即生效**,见 §3.2.7。**A2-R5 加法**:`content_limit=`(封闭词表 `sfw|nsfw`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——**编辑展示轴,不是年龄轴 `content_rating`**;做可索引面传 `content_limit=sfw`,见 §3.2.8 |
+| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/**`engine_id`(A2-1b 第九过滤器,经 `catalog_work_engine`)**/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null。**`include=` 富 brief 块(A2-1a 加法波)**:词表 `names,intros,labels,ratings,covers`(逗号分隔,**未知 token 静默忽略**,§3.5 条款 2);每块按页内 work id **批量加载**(无 N+1),未点名即整块缺席——**缺省(无 `include=`)响应与本波前逐字节相同**。`names`/`intros` 走 D7 四键投影(见 §3.2.1 表①),`labels`/`ratings` 与详情面同形同口径(评分保持源原生分制,不聚合),`covers` 出 `{portrait, banner}` 两槽、每槽带 `width/height/thumbhash`(见 §3.2.1);`ids=` + `include=` 即批量富取(两梯队的 batch 替代面)。**A2-1e**:`include=` 词表加 `refs`(该作品的 **exact 身份锚**,与详情面 `refs[]` 同构——work 级 ∪ release 级去重,exact-only 红线不破),`tag_id` 收**逗号分隔多值 AND**(≤10,见下)。**A2-R1 修复**:`names` 块对**认领作品**来自 wiki 桥(见 §3.2.5);`labels` 块每行恒带 `work_count`(与详情面同数,见 §3.2.6)。**A2-R4 加法**:`claim_state=`(封闭词表 `none\|live\|draft\|pending\|declined\|hidden`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——**与 `works/search` 同名参数逐字同义**,词条成员列表务必传 `claim_state=live` 以排除未发布/未认领行;与搜索面不同,这里是**读时库内谓词,改态立即生效**,见 §3.2.7。**A2-R5 加法**:`content_limit=`(封闭词表 `sfw|nsfw`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——**编辑展示轴,不是年龄轴 `content_rating`**;做可索引面传 `content_limit=sfw`,见 §3.2.8。**186a 加法**:`status=`(封闭词表 `live|pending`,缺省 `live` = 与本波前逐字节一致)——`pending` 是**审核队列视图**,须**双凭据**(`X-API-Key` 机器键 + 审核员**本人**的 Bearer 令牌)且**按租户钉死**,不满足条件一律 **403**,见 §3.2.9 |
 | `GET /v1/catalog/changes` | `catalog:read` | **增量同步流(doc 106 G2,keyset)**:`{entity_type=work, cursor, limit}` → `[{entity_type, id, updated}]`;`next_cursor` 恒在(续轮询新行);**无 nsfw 门**(id+时间戳=身份非内容,详情跟查再门控)。**删除不经此流**——行离开 LIVE 集(软删/降级/退出 galgame 媒介)后只是从流中**静默消失**,不发 tombstone;**合并型消亡由 `GET /v1/catalog/redirects` 覆盖**(旧 id → canonical id),**镜像型消费者应周期性全量对账**(`works?sort=id` keyset 扫 id 全集,与本地镜像取差集即失效行)。`op` 字段登记为将来的加法扩展位(现不下发,消费端须按 §3.5 条款 2 忽略未知字段)。**流有意滞后 ~5 秒**(2026-07-28 cleanup 波):`updated_at` 是**语句时间**而非提交时间,不设滞后则长事务可能提交出一行 `updated_at` 已落在消费者水位之后的记录 → 该行被**永久跳过**;拒发 5 秒内的新行,使提交耗时 ≤5s 的在途事务不可能被漏掉 |
 | `GET /v1/catalog/stats` | `catalog:read` | **注册表规模计数(149b,无参数)**:`works{total, by_medium[{medium_id, medium, count}]}` 只计 **LIVE 行**(`status=live`、未软删——stub / 已合并 / 软删行不属于目录),`total` = `by_medium` 之和,构造上不可能打架;`entities{labels, characters, credit_names, persons}` 为身份族存量(有软删列的三族只计未软删行;`catalog_credit_name` 无软删列,合并即改写而非立墓碑,故整表计)。**r18 作品计入**——这是不挂任何可渲染内容的聚合数,按 nsfw 拆分反而会公布 r18 人口规模,正是 nsfw 门要藏的东西;故本端点**无 `nsfw` 参数**,每个调用方拿到同一份 payload(`Cache-Control: s-maxage=3600`)。**内部仪表盘不上公开面**:审核队列水位、LLM 判定、锚 source × tier 交叉表、来源新鲜度、孤儿计数、claim 态矩阵是**运维遥测**(它们描述注册表如何被治理),留在 S2S `GET /api/v1/catalog/stats`(见 [catalog/01 §2.7](../catalog/01-service-and-contract.md)),两份 payload 各自独立演进 |
 | `GET /v1/catalog/works/{id}/credits` | `catalog:read` | 该作品的 credits(名义/角色/role) |
@@ -335,6 +335,34 @@ A2-1b 给 **taxonomy 浏览道与其详情面**发了 nsfw 感知的 `work_count
 - **日历另加一条**:该闸参与**分桶成员判定**,因此也进 **ETag 人口键**(`nsfw × olang × content_limit`)——否则两个不同人口会共用校验子而串味。
 - ⚠️ **三面新鲜度不同**:搜索面的 `content_limit` 由 `reindex-catalog`(每日 cron)带进索引;**列表面与日历是读时的库内谓词,编辑一改立即生效**。
 - **消费建议**:要做**可索引面 / SEO 面**的站点,闸 `content_limit=sfw`,并把渲染判定读 `claimed_by.content_limit` —— **不要**拿 `content_rating` 当展示门;年龄门该走 `nsfw=` / `content_rating=`,那是另一回事。
+
+### 3.2.9 works 列表的审核队列视图 `status=`(186a)
+
+`GET /v1/catalog/works` 新增 `status=`,**封闭词表 `live|pending`**,不传 = `live`:
+
+- **`live`(缺省)** —— 今天的公开人口(注册行 `status=live`),**与本波前逐字节一致**;不传这个参数的调用方一个字都不受影响,也不会读你的 `Authorization` 头。
+- **`pending`** —— **审核队列视图**:该租户「已投稿、等裁决」的作品(`claimed_by.state=pending`)。
+
+**为什么词面是 `pending` 而不是注册行的 status 值**:注册行的 status 轴是 `live|stub|merged`,**没有任何审核态**——用户投稿铸造出来就是 `status=live`,「等谁裁决」这件事记在**认领轴** `claim_state=pending` 上(即 admin 面 `PendingClaims` 队列读的那一列)。`stub` 是导入器「元数据不达标」的堆,**构造上未认领**因而不属于任何租户;`merged` 是 404 墓碑。故本参数选的是**审核员真正工作的那个态**,顺带把注册行的 status 轴从 live 放宽到 `live ∪ stub`(投稿后被降级为 stub 的行仍是本租户要审的),**永不含 `merged`**。
+
+**双凭据(Phase-2 裁定 6 的传输形态)**:开放 API 的唯一凭据是**机器键**,它只说明「哪个应用在调」,说明不了「哪个人在调」。审核是**人的权限**,所以队列视图额外读 `Authorization: Bearer <审核员本人的 OAuth access token>`,机器键此时走 `X-API-Key`。该 JWT 是 **OPTIONAL** 的(`middleware.OptionalJWT`,永不拦截),所以既有调用方——包括仍把 API key 放在 Bearer 槽的**旧单凭据形态**——一律不受影响。
+
+**四道门,任一不过即 403**(顺序即代码顺序):
+
+1. 没有已验证的用户身份(只有机器键)；
+2. 令牌未绑 client、client 未注册、或该 client 未绑 `catalog_site` —— 没有可钉的租户；
+3. 令牌签发自**第三方应用**(`oauth_clients.owner_user_id` 非空)—— 第三方 UI **永不是审核面**,后面站着谁都一样(186b 同一条封顶);
+4. 令牌 roles 不持 `catalog.claim.review`。
+
+**租户钉死**:队列只出**该令牌 client 自己的 `catalog_site`**,与用户写面 `userActor` 同一套推导——租户不从查询串来。`site=` 可以**重复**自己那一个值,**指名别人的站是 403**(不是静默改回自己):审核员若拿着「别人的队列」的请求收到自己的队列,页面上每一行都会被误读。**平台级队列不在开放面**,留在员工面(`/api/v1/admin/catalog`),那后面站的是员工 JWT 而不是某产品的令牌。
+
+**其他条款**:
+
+- **拒绝永远是响亮的**,绝不静默降级回 `live` 集合——审核员拿到空页会判定「队列是空的」,那是本视图唯一不能给的错答案。
+- **`status=pending` 与 `claim_state=` 不可同传**(400):本参数**就是**那道 claim 闸,同传等于对同一个问题要两个答案。
+- **词表外 token = 响亮 400**(`status must be live|pending`),与 `sort`/`claim_state`/`content_limit` 同一姿态。
+- ⚠️ **MCP 面拿不到第二凭据**:`catalog_works_list` 工具透传本参数,但 MCP 传输只带**一个**凭据(Bearer 槽里的 API key),故经 MCP 调 `status=pending` **必然 403**。参数照样透传,是为了让拒绝来自端点本身,而不是被静默丢掉的过滤器。
+- ℹ️ **本闸不是「pending 行的封锁线」**:`claim_state=pending` 作为普通过滤器**早已开放**(A2-R4,见 §3.2.7),`status=pending` 提供的是**开箱即用、按租户钉死的队列视图**与它的权限门,不收窄任何既有参数。
 
 ### 3.5 稳定性承诺
 

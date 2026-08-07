@@ -3,7 +3,12 @@
 //
 // Population invariant (both lanes): the public fetchable set — galgame
 // medium, status=live, not soft-deleted — exactly the wave-105 works-index
-// population. The works LIST additionally drops r18 rows unless nsfw; the
+// population. Wave 186a made the works LIST's status axis a FILTER
+// (WorksListFilter.Statuses) whose empty value is still {live}, so the
+// invariant holds for every caller who does not pass the moderator-gated
+// status= parameter; the CHANGES feed keeps the literal, because a public sync
+// watermark that could be widened per caller would hand different consumers
+// different id sets under one cursor. The works LIST additionally drops r18 rows unless nsfw; the
 // CHANGES feed does NOT nsfw-gate (ids + timestamps are identity, not
 // content: the consumer's detail follow-up re-applies the gate, mirroring
 // /v1/galgame/changes and the redirects feed).
@@ -61,8 +66,21 @@ type WorksListFilter struct {
 	// predicate inside the LIMIT, so a claim that moves tenant is reflected on
 	// the very next call — the works search index carries no site facet and
 	// deliberately gains none.
-	Site    string
-	LabelID int64 // via catalog_work_label
+	Site string
+	// Statuses narrows the REGISTRY status axis (catalog_work.status, i.e.
+	// model.WorkStatus*). EMPTY IS NOT "no gate" here — it is {live}, the
+	// population every pre-existing caller of this lane has ever seen, so the
+	// default page stays byte-identical while the axis stops being a literal
+	// buried in the WHERE.
+	//
+	// It is the third axis beside ClaimStates and DisplayLimits and answers a
+	// different question from both: `status` is what the REGISTRY thinks of the
+	// row (live / stub — below the metadata bar / merged — a tombstone),
+	// `claim_state` is what the owning PRODUCT thinks of its claim. Only the
+	// moderator queue view (wave 186a) ever widens it, and never to merged:
+	// status=2 answering anything but 404 is a contract break.
+	Statuses []int16
+	LabelID  int64 // via catalog_work_label
 	// TagIDs are canonical tag ids ANDed together (A2-1e): a work must carry a
 	// source tag mapped to EVERY id, which is what a facet sidebar's "narrow by
 	// another tag" means. One id behaves exactly as the pre-A2-1e scalar did.
@@ -99,8 +117,15 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		limit = 100
 	}
 
-	where := []string{"w.deleted_at IS NULL", "w.status = ?", "w.medium_id = ?"}
-	args := []any{model.WorkStatusLive, galgameMediumID}
+	// The registry status axis. An absent filter is the frozen public default
+	// {live}, so this clause is the same single-value predicate it has always
+	// been unless a caller was explicitly authorized to widen it.
+	statuses := f.Statuses
+	if len(statuses) == 0 {
+		statuses = []int16{model.WorkStatusLive}
+	}
+	where := []string{"w.deleted_at IS NULL", "w.status IN ?", "w.medium_id = ?"}
+	args := []any{statuses, galgameMediumID}
 
 	if !f.NSFW {
 		where = append(where, "w.content_rating <> ?")

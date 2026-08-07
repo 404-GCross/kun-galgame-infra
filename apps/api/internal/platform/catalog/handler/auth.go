@@ -113,6 +113,23 @@ func enforceSiteBinding(client *siteModel.OAuthClient, site string) *houseError 
 	return nil
 }
 
+// isThirdPartyClient reports whether an OAuth client is a THIRD-PARTY developer
+// application rather than one of the platform's own site clients. The
+// discriminator is oauth_clients.owner_user_id: an ecosystem app is owned by
+// the developer who enrolled it, a first-party site client is owned by nobody
+// and belongs through SiteID (see site/model.OAuthClient).
+//
+// It exists because two of this domain's authorities are properties of the PAIR
+// (person × client), not of the person alone (wave 186b): being believed
+// without review (catalog.edit.trusted) and judging other people's submissions
+// (catalog.claim.review). A user's roles travel with their token into whatever
+// app they log into, so without this check any third-party UI holding a
+// catalog:edit grant could borrow a staff member's standing the moment they
+// signed in with it. The cap can only ever REMOVE standing, never add it.
+func isThirdPartyClient(client *siteModel.OAuthClient) bool {
+	return client != nil && client.OwnerUserID != nil
+}
+
 // AdminBridge lifts the operator's user id (set by middleware.JWTAuth from
 // TokenClaims.ID, a uint) into the Huma context so decision endpoints can
 // record who acted. The Fiber layer has already rejected non-admins before
