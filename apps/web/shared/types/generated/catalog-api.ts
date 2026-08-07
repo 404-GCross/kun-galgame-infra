@@ -62,7 +62,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Cursor feed of editing-engine revisions across all entities (ascending id; filterable by entity family/type) */
+        /** Cursor feed of editing-engine revisions across all entities (ascending id; filterable by entity family/type and by site). catalog.work items carry product_work_id, the claiming product's own id for the entity */
         get: operations["listCatalogEditRevisions"];
         put?: never;
         post?: never;
@@ -1230,6 +1230,8 @@ export interface components {
             entity_type: string;
             /** Format: int64 */
             id: number;
+            /** Format: int64 */
+            product_work_id: number | null;
             /** Format: int64 */
             proposal_id: number | null;
             /** Format: int64 */
@@ -2611,6 +2613,8 @@ export interface operations {
                 entity_family?: string;
                 /** @description Restrict to one type, e.g. catalog.work */
                 entity_type?: string;
+                /** @description Restrict to one tenant's revisions, e.g. kungal */
+                site?: string;
             };
             header?: never;
             path?: never;
