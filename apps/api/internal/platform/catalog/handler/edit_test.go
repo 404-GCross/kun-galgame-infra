@@ -122,9 +122,16 @@ func proposeViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers,
 	actor dto.EditActor, entityType string, entityID int64, patch map[string]any, note string,
 ) (*editing.Proposal, *editing.Revision, error) {
 	t.Helper()
+	// Round-trip the patch through JSON so the engine sees what an HTTP body
+	// would give it (all numbers as float64) — field validators assert the
+	// wire shape, not Go-native fixture types.
+	raw, err := json.Marshal(patch)
+	require.NoError(t, err)
+	var wire map[string]any
+	require.NoError(t, json.Unmarshal(raw, &wire))
 	s := &EditServer{engine: engine, perms: perms}
 	return engine.CreateProposal(context.Background(), editing.CreateProposalInput{
-		EntityType: entityType, EntityID: entityID, Patch: patch, Note: note,
+		EntityType: entityType, EntityID: entityID, Patch: wire, Note: note,
 		Actor: s.policyCtx(actor, site, familyOf(entityType)),
 	})
 }
