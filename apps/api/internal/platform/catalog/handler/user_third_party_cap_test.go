@@ -8,6 +8,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"api/internal/platform/catalog/dto"
@@ -83,21 +84,23 @@ func TestUserEdit_ThirdPartyClientFilesAtTierZero(t *testing.T) {
 }
 
 // TestUserEdit_ThirdPartyClientStillProposesOnAnOpenTenant: the cap is a cap on
-// TRUST, not a ban on editing. kungal's overlay is propose=open, so an ordinary
-// member filing through a third-party application still files — and the filing
-// waits in the queue, which is the posture the docs promise (proposals only).
+// STANDING, not a ban on editing. kungal's overlay is propose=open, so a member
+// filing through a third-party application still files — and the filing waits in
+// the queue, which is the posture the docs promise (proposals only).
 //
-// ⚠️ The role here is deliberately an ordinary `user`. A token whose roles carry
-// edit.catalog.work.review AUTOMERGES on this tenant, and that path runs through
-// the engine's own permission resolution (policyCtx → HasPerm over actor.Roles),
-// which wave 186b does NOT cap — the cap lands on the trust tier only. Capping
-// the engine's review keys per client is a separate ruling, not something to
-// smuggle in behind a test fixture.
+// The role is deliberately a MODERATING one. kungal's overlay is
+// automerge=review, so a token whose roles carry edit.catalog.work.review used
+// to land its write instantly here: wave 186b capped the trust tier, but the
+// permission key reached the engine untouched, and automerge=review never asks
+// about trust. Wave 187a closes it at the engine — PolicyContext.ModerationCapped
+// denies review standing and denies automerge under every rule — so the same
+// token now queues like anybody else's, and cannot then judge what it queued.
 func TestUserEdit_ThirdPartyClientStillProposesOnAnOpenTenant(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := seedUserEditWork(t, db)
 	app := userEditApp(t, db, userEditClients())
 
+	// The ordinary member's filing: it queues, as it always did.
 	status, raw := userEditReq(t, app, "POST", UserPrefix+"/edit/proposals",
 		userToken(t, 861, ScopeCatalogEdit, "thirdparty-kungal"),
 		userProposalBody(work, "第三者アプリの通常提案", "open lane"))
@@ -107,6 +110,50 @@ func TestUserEdit_ThirdPartyClientStillProposesOnAnOpenTenant(t *testing.T) {
 	assert.Equal(t, "kungal", env.Data.Proposal.Site)
 	assert.EqualValues(t, 861, env.Data.Proposal.ProposerUID)
 	assert.False(t, env.Data.Merged, "an untrusted third-party filing queues; it never automerges")
+
+	// The REVIEWER's filing through the same application: it queues too. On the
+	// product's own client this identical token direct-edits (asserted below),
+	// which is exactly the standing the cap declines to lend out.
+	status, raw = userEditReq(t, app, "POST", UserPrefix+"/edit/proposals",
+		userTokenRoles(t, 862, ScopeCatalogEdit, "thirdparty-kungal", "user", "admin"),
+		userProposalBody(work, "第三者アプリの審査者提案", "review key"))
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+	env = decodeUserCreate(t, raw)
+	assert.False(t, env.Data.Merged,
+		"a review key does not automerge from a third-party application, open tenant or not")
+	assert.Equal(t, "open", env.Data.Proposal.Status)
+	queued := env.Data.Proposal.ID
+
+	// And it cannot reach a verdict on what waits there — its own filing
+	// included. The refusal is the engine's, per field, so it reads as a
+	// permission failure rather than as a door that does not exist.
+	for _, path := range []string{"/merge", "/decline"} {
+		status, raw = userEditReq(t, app, "POST",
+			fmt.Sprintf("%s/edit/proposals/%d%s", UserPrefix, queued, path),
+			userTokenRoles(t, 862, ScopeCatalogEdit, "thirdparty-kungal", "user", "admin"), `{"note":"x"}`)
+		assert.Equalf(t, fiber.StatusForbidden, status,
+			"%s through a third-party application must be refused: %s", path, raw)
+	}
+	status, raw = userEditReq(t, app, "POST",
+		fmt.Sprintf("%s/edit/proposals/%d/amendments", UserPrefix, queued),
+		userTokenRoles(t, 862, ScopeCatalogEdit, "thirdparty-kungal", "user", "admin"),
+		`{"set":{"catalog.work.display_name":"改竄"}}`)
+	assert.Equal(t, fiber.StatusForbidden, status, string(raw))
+
+	// Withdrawing one's OWN proposal is not a verdict, and stays available.
+	status, raw = userEditReq(t, app, "POST",
+		fmt.Sprintf("%s/edit/proposals/%d/withdraw", UserPrefix, queued),
+		userTokenRoles(t, 862, ScopeCatalogEdit, "thirdparty-kungal", "user", "admin"), "")
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+
+	// The same person, same roles, on kungal's OWN client: the standing is
+	// intact where it was granted, and the write lands instantly.
+	status, raw = userEditReq(t, app, "POST", UserPrefix+"/edit/proposals",
+		userTokenRoles(t, 862, ScopeCatalogEdit, "kungal-client", "user", "admin"),
+		userProposalBody(work, "自社クライアントの審査者編集", "first-party review key"))
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+	env = decodeUserCreate(t, raw)
+	assert.True(t, env.Data.Merged, "the first-party reviewer still direct-edits")
 }
 
 // TestUserClaims_ThirdPartyClientIsNotAModerationSurface: the second half of the

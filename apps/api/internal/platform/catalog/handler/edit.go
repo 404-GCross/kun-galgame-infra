@@ -96,12 +96,22 @@ func familyOf(entityType string) string {
 // policyCtx builds the engine policy context from an asserted actor: roles
 // resolve through the FAMILY's perm vocabulary (fail-closed when the family
 // registered no resolver), trust tier passes through.
-func (s *EditServer) policyCtx(actor dto.EditActor, site, family string) editing.PolicyContext {
+//
+// It takes the REQUEST context, not just the actor, because one input into the
+// engine's rules is not a property of the person at all: the client their token
+// was issued through (wave 187a). Deriving it here rather than on dto.EditActor
+// is deliberate — there is exactly one place in this package where an engine
+// PolicyContext is born, so no present or future op can build one that forgot
+// to ask. A caller that authenticated without a client (the S2S read plane,
+// spec export) is not capped: the cap keys on a client that IS third-party,
+// never on the absence of one.
+func (s *EditServer) policyCtx(ctx context.Context, actor dto.EditActor, site, family string) editing.PolicyContext {
 	roles := actor.Roles
 	resolver := s.perms[family]
 	return editing.PolicyContext{
 		UserID: actor.UserID, Site: site, TrustTier: actor.TrustTier,
-		IsEntityOwner: actor.IsEntityOwner,
+		IsEntityOwner:    actor.IsEntityOwner,
+		ModerationCapped: isThirdPartyClient(clientFromCtx(ctx)),
 		HasPerm: func(key string) bool {
 			if resolver == nil {
 				return false

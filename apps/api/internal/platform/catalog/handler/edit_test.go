@@ -115,7 +115,7 @@ func mergeViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers, i
 	prop, _, _, err := engine.GetProposal(context.Background(), id)
 	require.NoError(t, err)
 	s := &EditServer{engine: engine, perms: perms}
-	return engine.MergeProposal(context.Background(), id, s.policyCtx(actor, prop.Site, prop.EntityFamily), "")
+	return engine.MergeProposal(context.Background(), id, s.policyCtx(context.Background(), actor, prop.Site, prop.EntityFamily), "")
 }
 
 func proposeViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers, site string,
@@ -132,7 +132,7 @@ func proposeViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers,
 	s := &EditServer{engine: engine, perms: perms}
 	return engine.CreateProposal(context.Background(), editing.CreateProposalInput{
 		EntityType: entityType, EntityID: entityID, Patch: wire, Note: note,
-		Actor: s.policyCtx(actor, site, familyOf(entityType)),
+		Actor: s.policyCtx(context.Background(), actor, site, familyOf(entityType)),
 	})
 }
 
@@ -142,7 +142,7 @@ func schemaViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers, 
 	t.Helper()
 	s := &EditServer{engine: engine, perms: perms}
 	fields, err := engine.SchemaProjection(context.Background(), entityType, entityID,
-		s.policyCtx(actor, site, familyOf(entityType)))
+		s.policyCtx(context.Background(), actor, site, familyOf(entityType)))
 	require.NoError(t, err)
 	return fields
 }

@@ -102,7 +102,16 @@ func (p Policy) AllowsPropose(pc PolicyContext) bool {
 
 // AllowsReview evaluates the review rule for a caller: the review perm, OR —
 // when the policy enables OwnerReview — the asserted entity ownership.
+//
+// A ModerationCapped caller passes NEITHER. This is one of the engine's two
+// cap chokepoints (the other is allowsAutomergeWithOwner): amend, merge,
+// decline, revert and the schema projection's can_review all resolve review
+// standing here and nowhere else, so capping the rule caps every verdict the
+// engine can reach.
 func (p Policy) AllowsReview(pc PolicyContext) bool {
+	if pc.ModerationCapped {
+		return false
+	}
 	if p.OwnerReview && pc.IsEntityOwner {
 		return true
 	}
@@ -124,6 +133,14 @@ func (p Policy) AllowsAutomerge(pc PolicyContext) bool {
 // the entity's owner site as the spec's OwnerSite hook reported it (nil =
 // unclaimed / unknown → owner rule fails closed).
 func (p Policy) allowsAutomergeWithOwner(pc PolicyContext, owner *string) bool {
+	// The second cap chokepoint, and the reason the cap is not merely a wrapper
+	// around HasPerm: "always" and "trusted" and "owner" reach a merge without
+	// consulting a single permission key, so a tenant whose overlay opens a
+	// field to everyone would land a capped caller's write instantly. Capped
+	// means the write waits for a reviewer, on every tenant, under every rule.
+	if pc.ModerationCapped {
+		return false
+	}
 	switch p.Automerge {
 	case AutomergeAlways:
 		return true

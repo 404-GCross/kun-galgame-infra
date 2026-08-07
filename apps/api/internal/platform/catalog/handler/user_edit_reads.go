@@ -139,7 +139,7 @@ func (s *UserEditServer) list(ctx context.Context, in *userEditListInput) (*edit
 // verdict ops already honour.
 func (s *UserEditServer) mayReview(ctx context.Context, actor dto.EditActor, site, entityType string, entityID int64) (bool, error) {
 	fields, err := s.engine.SchemaProjection(ctx, entityType, entityID,
-		s.policyCtx(actor, site, familyOf(entityType)))
+		s.policyCtx(ctx, actor, site, familyOf(entityType)))
 	if err != nil {
 		return false, editErr(err)
 	}

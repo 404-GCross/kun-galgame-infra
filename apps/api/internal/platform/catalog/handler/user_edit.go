@@ -55,7 +55,7 @@ func RegisterUserEditOps(api huma.API, engine *editing.Engine, perms PermResolve
 	huma.Register(api, huma.Operation{
 		OperationID: "createEditProposalUser", Method: http.MethodPost,
 		Path:    UserPrefix + "/edit/proposals",
-		Summary: "File an edit proposal AS THE BEARER TOKEN'S OWN USER (automerges into a direct edit when the caller's token roles already carry the review capability). The proposer and the filing tenant are derived from the token; the body carries neither",
+		Summary: "File an edit proposal AS THE BEARER TOKEN'S OWN USER (automerges into a direct edit when the caller's token roles already carry the review capability, and NEVER when the token was issued through a third-party application). The proposer and the filing tenant are derived from the token; the body carries neither",
 		Tags:    tags,
 	}, s.create)
 	huma.Register(api, huma.Operation{
@@ -185,7 +185,7 @@ func (s *UserEditServer) create(ctx context.Context, in *userEditCreateInput) (*
 	prop, rev, err := s.engine.CreateProposal(ctx, editing.CreateProposalInput{
 		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID,
 		Patch: in.Body.Patch, Note: in.Body.Note,
-		Actor: s.policyCtx(actor, site, familyOf(in.Body.EntityType)),
+		Actor: s.policyCtx(ctx, actor, site, familyOf(in.Body.EntityType)),
 	})
 	if err != nil {
 		return nil, editErr(err)
@@ -211,7 +211,7 @@ func (s *UserEditServer) withdraw(ctx context.Context, in *userEditWithdrawInput
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.WithdrawProposal(ctx, in.ID, s.policyCtx(actor, prop.Site, prop.EntityFamily)); err != nil {
+	if err := s.engine.WithdrawProposal(ctx, in.ID, s.policyCtx(ctx, actor, prop.Site, prop.EntityFamily)); err != nil {
 		return nil, editErr(err)
 	}
 	return s.closedView(ctx, in.ID)
@@ -255,7 +255,7 @@ func (s *UserEditServer) schema(ctx context.Context, in *userEditSchemaInput) (*
 		return nil, he
 	}
 	fields, err := s.engine.SchemaProjection(ctx, in.EntityType, in.EntityID,
-		s.policyCtx(actor, site, familyOf(in.EntityType)))
+		s.policyCtx(ctx, actor, site, familyOf(in.EntityType)))
 	if err != nil {
 		return nil, editErr(err)
 	}
@@ -311,7 +311,7 @@ func (s *UserEditServer) amend(ctx context.Context, in *userEditAmendInput) (*ed
 	}
 	amendment, aerr := s.engine.AmendProposal(ctx, in.ID, editing.AmendInput{
 		Set: in.Body.Set, Unset: in.Body.Unset, Note: in.Body.Note,
-		Actor: s.policyCtx(actor, prop.Site, prop.EntityFamily),
+		Actor: s.policyCtx(ctx, actor, prop.Site, prop.EntityFamily),
 	})
 	if aerr != nil {
 		return nil, editErr(aerr)
@@ -330,7 +330,7 @@ func (s *UserEditServer) merge(ctx context.Context, in *userEditDecisionInput) (
 	if err != nil {
 		return nil, err
 	}
-	rev, merr := s.engine.MergeProposal(ctx, in.ID, s.policyCtx(actor, prop.Site, prop.EntityFamily), in.Body.Note)
+	rev, merr := s.engine.MergeProposal(ctx, in.ID, s.policyCtx(ctx, actor, prop.Site, prop.EntityFamily), in.Body.Note)
 	if merr != nil {
 		return nil, editErr(merr)
 	}
@@ -342,7 +342,7 @@ func (s *UserEditServer) decline(ctx context.Context, in *userEditDecisionInput)
 	if err != nil {
 		return nil, err
 	}
-	if derr := s.engine.DeclineProposal(ctx, in.ID, s.policyCtx(actor, prop.Site, prop.EntityFamily), in.Body.Note); derr != nil {
+	if derr := s.engine.DeclineProposal(ctx, in.ID, s.policyCtx(ctx, actor, prop.Site, prop.EntityFamily), in.Body.Note); derr != nil {
 		return nil, editErr(derr)
 	}
 	return s.closedView(ctx, in.ID)
@@ -365,7 +365,7 @@ func (s *UserEditServer) revert(ctx context.Context, in *userEditRevertInput) (*
 	}
 	prop, rev, err := s.engine.Revert(ctx, editing.RevertInput{
 		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID, ToSeq: in.Body.ToSeq,
-		Note: in.Body.Note, Actor: s.policyCtx(actor, site, familyOf(in.Body.EntityType)),
+		Note: in.Body.Note, Actor: s.policyCtx(ctx, actor, site, familyOf(in.Body.EntityType)),
 	})
 	if err != nil {
 		return nil, editErr(err)
