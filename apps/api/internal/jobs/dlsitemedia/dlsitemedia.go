@@ -27,11 +27,19 @@
 //     covers onto the native table with the wiki rows already mirrored in, so a
 //     claimed work's cover slot is occupied, not empty.
 //
-// Both claimed lanes are narrowly targeted at works showing NOTHING for that
-// facet today — a fallback, never a supplement: no ja intro from any source
-// (loadClaimedIntroCandidates), no screenshot at all
-// (loadClaimedScreenshotCandidates). dlsite is a catalog-native source, so its
-// rows live in the catalog tables for claimed and bodyless alike.
+// The two claimed lanes target differently, and deliberately so:
+//   - INTRO stays whole-facet fill-missing — no ja intro from ANY source
+//     (loadClaimedIntroCandidates). Two same-language intros on one read face is
+//     noise, so a second one is never worth writing.
+//   - SCREENSHOT is PER-SOURCE fill-missing since wave 188 (the user's
+//     2026-08-07 ruling, overturning refs/proj/125's fallback-only doctrine): no
+//     DLSITE screenshot row (loadClaimedScreenshotCandidates). DLsite sample CG
+//     is official promotional art, semantically distinct from a VNDB game
+//     screenshot, and the read face renders per-source blocks — so it supplements
+//     rather than dilutes. Identical bytes still collapse on (work_id, image_hash).
+//
+// dlsite is a catalog-native source, so its rows live in the catalog tables for
+// claimed and bodyless alike.
 //
 // Discipline, modeled on internal/jobs/charportraits:
 //   - Bytes ONLY ever come from a LOCAL mirror (--mirror-dir), produced by

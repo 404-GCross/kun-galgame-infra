@@ -1027,8 +1027,10 @@ func TestWorkCover(t *testing.T) {
 // catalog-native lane for every work, claimed and bodyless alike. The wiki bridge
 // and with it the (work, image_hash) dedup are gone — the rescued wiki rows
 // (wikirescue step n, source_id=curated) and the dlsite store samples
-// (refs/proj/125) now share the table, ordered together by (sort_order,
-// image_hash) and told apart by source_id.
+// (refs/proj/125) now share the table, told apart by source_id — and, since
+// wave 188 opened every lane to per-source fill-missing, ordered by
+// (source_id, sort_order, image_hash) so each source comes out as one
+// contiguous block instead of interleaving with the next.
 func TestWorkScreenshot(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"catalog_work_screenshot", "catalog_work"} {
@@ -1074,8 +1076,8 @@ func TestWorkScreenshot(t *testing.T) {
 		Sexual: 2, SourceID: srcDlsite}).Error)
 
 	// --- MIXED work: a claimed work carrying BOTH rescued wiki rows and dlsite
-	// samples. One lane now, so they interleave by (sort_order, image_hash) instead
-	// of the wiki rows leading — source_id is what keeps them apart.
+	// samples. One table now, but two BLOCKS: source_id leads the read order, so
+	// dlsite(4) precedes curated(12) whatever their sort_orders say.
 	mixed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "双源", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(7003)}
 	require.NoError(t, db.Create(&mixed).Error)
@@ -1112,17 +1114,21 @@ func TestWorkScreenshot(t *testing.T) {
 	assert.Equal(t, "", s1["caption"], "empty caption preserved")
 	assert.EqualValues(t, srcCurated, s1["source_id"], "the rescued wiki upload stays on the curated lane")
 
-	// BODYLESS: native rows, sorted; captioned + plain.
+	// BODYLESS: native rows in per-source blocks. user(1) precedes vndb(2) — the
+	// two rows' sort_orders (0 then 1) belong to different lanes and never decide
+	// the cross-source order.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(bodyless.ID))
 	require.Equal(t, 200, code)
 	shots = body["data"].(map[string]any)["screenshots"].([]any)
 	require.Len(t, shots, 2)
 	b0 := shots[0].(map[string]any)
-	assert.Equal(t, "hash_bodyless_shot", b0["image_hash"])
-	assert.Equal(t, "本体截图", b0["caption"])
-	assert.EqualValues(t, 2, b0["sexual"])
-	assert.EqualValues(t, srcVNDB, b0["source_id"])
-	assert.EqualValues(t, srcUser, shots[1].(map[string]any)["source_id"])
+	assert.Equal(t, "hash_bodyless_extra", b0["image_hash"])
+	assert.EqualValues(t, srcUser, b0["source_id"], "the lower source_id leads")
+	b1 := shots[1].(map[string]any)
+	assert.Equal(t, "hash_bodyless_shot", b1["image_hash"])
+	assert.Equal(t, "本体截图", b1["caption"])
+	assert.EqualValues(t, 2, b1["sexual"])
+	assert.EqualValues(t, srcVNDB, b1["source_id"])
 
 	// CLAIMED, DLSITE-ONLY: the store sample surfaces with its own attribution.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(dlsiteOnly.ID))
@@ -1134,18 +1140,19 @@ func TestWorkScreenshot(t *testing.T) {
 	assert.EqualValues(t, srcDlsite, n0["source_id"], "native row keeps its dlsite attribution")
 	assert.EqualValues(t, 2, n0["sexual"])
 
-	// CLAIMED, TWO SOURCES: one ordered lane, both rows attributed, none dropped.
+	// CLAIMED, TWO SOURCES: two contiguous blocks, both rows attributed, none
+	// dropped. dlsite(4) leads curated(12) on source_id, not on sort_order.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(mixed.ID))
 	require.Equal(t, 200, code)
 	shots = body["data"].(map[string]any)["screenshots"].([]any)
 	require.Len(t, shots, 2, "no lane is filtered by source")
 	m0 := shots[0].(map[string]any)
-	assert.Equal(t, "hash_rescued_wiki", m0["image_hash"])
-	assert.Equal(t, "wiki caption", m0["caption"])
-	assert.EqualValues(t, srcCurated, m0["source_id"])
+	assert.Equal(t, "hash_native_dlsite", m0["image_hash"])
+	assert.EqualValues(t, srcDlsite, m0["source_id"])
 	m1 := shots[1].(map[string]any)
-	assert.Equal(t, "hash_native_dlsite", m1["image_hash"])
-	assert.EqualValues(t, srcDlsite, m1["source_id"])
+	assert.Equal(t, "hash_rescued_wiki", m1["image_hash"])
+	assert.Equal(t, "wiki caption", m1["caption"])
+	assert.EqualValues(t, srcCurated, m1["source_id"])
 
 	// CLAIMED, NO NATIVE ROWS: [] not null.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimedEmpty.ID))

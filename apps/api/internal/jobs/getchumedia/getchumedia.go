@@ -1,11 +1,18 @@
 // Package getchumedia fills catalog work SCREENSHOT galleries from the Getchu
 // crawler's mirrored sample images (refs/proj/167 §9).
 //
-// WHY. 3,482 works carrying an exact Getchu release anchor show no screenshot
-// at all — no wiki gallery, no VNDB shots, no DLsite samples. 2,102 of them
-// have Getchu sample CG staged, 16,340 images in total. Getchu is a FALLBACK
-// here and never a supplement: a work that already has a gallery keeps it (see
-// loadCandidates).
+// WHY. Works carrying an exact Getchu release anchor have Getchu sample CG
+// staged (16,340 images) that nothing else on the platform carries: Getchu's
+// official sample CG is its own lane, distinct from VNDB game screenshots and
+// from DLsite's samples.
+//
+// ADMISSION IS PER-SOURCE FILL-MISSING (wave 188, the user's 2026-08-07 ruling,
+// which OVERTURNED the old "Getchu is a FALLBACK for works with zero
+// screenshots, never a supplement" doctrine of refs/proj/125). A work is a
+// candidate iff it has no GETCHU-sourced screenshot row; rows from vndb, dlsite,
+// curated or the rescued wiki lane no longer exclude it. The read face groups
+// the gallery per source, so the lanes sit side by side instead of interleaving.
+// See loadCandidates.
 //
 // WHAT IT IS NOT. The other three staged image kinds are out of scope, each for
 // its own reason:
@@ -28,9 +35,9 @@
 //   - Bytes come ONLY from the local mirror (--mirror-dir), produced by
 //     kun-getchu-api's `mirror` phase. This job never dials getchu.com.
 //   - Both DSNs are explicit; a bare run cannot touch a live DB.
-//   - Idempotent: a work with any screenshot is not a candidate at all, and the
-//     (work_id, image_hash) unique index is the backstop. A second --apply
-//     writes zero.
+//   - Idempotent: a work with a getchu screenshot is not a candidate at all, and
+//     the (work_id, image_hash) unique index — which spans every source — is the
+//     backstop. A second --apply writes zero.
 //   - Fresh hashes are reference-pinged immediately — an image sits at TTL from
 //     upload time, so waiting for the nightly refping risks losing the bytes.
 //   - Only works that actually gained a row are touched, so a second --apply
@@ -72,7 +79,7 @@ type Opts struct {
 
 // Stats reports one run.
 type Stats struct {
-	Works    int // anchored works with no screenshot today
+	Works    int // anchored works with no getchu-sourced screenshot today
 	NoStaged int // ...of which none has a mirrored sample image
 	Planned  int // images decided
 	Uploaded int

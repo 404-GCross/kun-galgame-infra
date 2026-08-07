@@ -26,19 +26,24 @@ type candidateRow struct {
 }
 
 // loadCandidates resolves the galgame works that carry an EXACT Getchu release
-// anchor and show NO screenshot at all today.
+// anchor and have NO Getchu-sourced screenshot row yet.
 //
-// "Shows nothing" is the whole admission rule, and it is deliberate: Getchu is
-// a FALLBACK source for this facet, never a supplement. A work that already has
-// a gallery — from the wiki, from VNDB, from DLsite — keeps it, because mixing
-// a second store's promotional CG into a curated gallery is a downgrade even
-// when the images are fine. That is the same rule dlsitemedia's claimed lane
-// follows (refs/proj/125), and it is what makes the population small: 3,482
-// anchored works have no screenshot, against 9,311 anchored works in total.
+// PER-SOURCE FILL-MISSING (wave 188, the user's 2026-08-07 ruling). The old rule
+// was whole-work emptiness: Getchu was a FALLBACK for works showing nothing at
+// all, never a supplement (refs/proj/125). That ruling is OVERTURNED. The lanes
+// are semantically different images — a vndb row is a GAME SCREENSHOT, a
+// getchu/dlsite row is OFFICIAL SAMPLE CG — and the read face groups the gallery
+// per source, so a second lane is an addition to the page, not a dilution of a
+// curated one. Admission is therefore scoped to THIS source: a work with vndb,
+// dlsite or curated rows but no getchu rows is a candidate.
 //
 // No population filter beyond that. Unlike an intro, a screenshot gallery costs
 // the reader nothing when the work is a draft, and the claimed/bodyless split
-// does not change whether the gallery is empty.
+// does not change whether this source's lane is empty.
+//
+// Cross-source identical bytes are NOT admitted twice: the (work_id, image_hash)
+// unique key rejects them at write time and the first writer keeps its source
+// attribution (see preloadHashes, which deliberately reads ALL sources' hashes).
 func loadCandidates(ctx context.Context, db *gorm.DB, source, medium int16) ([]candidate, error) {
 	var rows []candidateRow
 	err := db.WithContext(ctx).Raw(`
@@ -48,9 +53,10 @@ func loadCandidates(ctx context.Context, db *gorm.DB, source, medium int16) ([]c
 		JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = rel.id
 			AND r.source_id = ? AND r.link_kind = ?
 		WHERE w.medium_id = ? AND w.deleted_at IS NULL
-			AND NOT EXISTS (SELECT 1 FROM catalog_work_screenshot s WHERE s.work_id = w.id)
+			AND NOT EXISTS (SELECT 1 FROM catalog_work_screenshot s
+				WHERE s.work_id = w.id AND s.source_id = ?)
 		ORDER BY w.id, r.external_id`,
-		model.EntityTypeRelease, source, model.LinkKindExact, medium).Scan(&rows).Error
+		model.EntityTypeRelease, source, model.LinkKindExact, medium, source).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("load candidates: %w", err)
 	}
@@ -118,6 +124,11 @@ func loadSamples(ctx context.Context, gdb *gorm.DB) (map[string][]stagedImage, e
 // preloadHashes loads the image hashes already on the candidate works, so a
 // re-run that finds the same bytes under a different sort order still skips.
 // The (work_id, image_hash) unique index is the backstop.
+//
+// ALL sources, not just getchu, and that stays true under wave 188's per-source
+// admission: the unique key spans the whole work, so bytes another lane already
+// uploaded must not be re-uploaded here — the first writer keeps the row and its
+// source attribution.
 func preloadHashes(ctx context.Context, db *gorm.DB, workIDs []int64) (map[int64]map[string]bool, error) {
 	out := map[int64]map[string]bool{}
 	if len(workIDs) == 0 {

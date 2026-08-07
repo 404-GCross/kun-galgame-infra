@@ -147,8 +147,10 @@ type WorkDetail struct {
 	Covers []WorkCoverRow
 	// Screenshots is the work's screenshot set: its catalog_work_screenshot rows,
 	// for every work alike (wave 164 collapsed the claimed work's bridge ∪ native
-	// union onto the native lane). Source stays on each row, so the dlsite and
-	// rescued-wiki lanes remain attributable.
+	// union onto the native lane). Source stays on each row, so the dlsite,
+	// getchu and rescued-wiki lanes remain attributable — and since wave 188 the
+	// rows arrive in per-source contiguous blocks, ordered (source_id,
+	// sort_order, image_hash), for consumers that group the gallery by source.
 	Screenshots []WorkScreenshotRow
 	// Ratings is the merged rating set (step 58a media-aggregation ratings
 	// facet): for a CLAIMED work, bridged from galgame_bangumi_meta ∪
@@ -660,14 +662,16 @@ func (s *ReadService) nativeWorkCovers(ctx context.Context, workIDs []int64, out
 // bridge gone the (work_id, image_hash) dedup goes with it: there is only one
 // lane left to be a duplicate of.
 //
-// No source filter, deliberately: the rescued wiki rows and the dlsite samples
-// share the table and both belong on the read face; source_id is what keeps them
-// attributable.
+// No source filter, deliberately: the rescued wiki rows, the dlsite samples and
+// (since wave 188) the getchu samples share the table and all belong on the read
+// face; source_id is what keeps them attributable — and what the consumer groups
+// by, because the lanes are semantically different images (a vndb row is a game
+// screenshot, a dlsite/getchu row is official sample CG).
 //
 // Batched (§9.1): one catalog_work_screenshot query for the whole set — never
-// per-work. Each work's screenshots are ordered by (sort_order, image_hash).
-// Returns a map keyed by work id; a work with no screenshot is absent (the caller
-// renders []).
+// per-work. Each work's screenshots come back in PER-SOURCE CONTIGUOUS BLOCKS,
+// ordered by (source_id, sort_order, image_hash). Returns a map keyed by work id;
+// a work with no screenshot is absent (the caller renders []).
 func (s *ReadService) loadWorkScreenshots(ctx context.Context, subjects []claimSubject) (map[int64][]WorkScreenshotRow, error) {
 	out := make(map[int64][]WorkScreenshotRow, len(subjects))
 	if len(subjects) == 0 {
@@ -684,7 +688,14 @@ func (s *ReadService) loadWorkScreenshots(ctx context.Context, subjects []claimS
 }
 
 // nativeWorkScreenshots reads the works' catalog_work_screenshot rows in ONE
-// query, ordered so each work's screenshots are (sort_order, image_hash)-sorted.
+// query, ordered (source_id, sort_order, image_hash) within each work.
+//
+// source_id LEADS the key, since wave 188 opened the table to several sources per
+// work. sort_order is only meaningful WITHIN a source — each backfill numbers its
+// own gallery from 0 — so ordering across sources by it would interleave two
+// unrelated sequences and fabricate an ordering nobody authored. Sorting by
+// source first yields per-source contiguous blocks, which is exactly the shape
+// the per-source gallery UI groups on.
 func (s *ReadService) nativeWorkScreenshots(ctx context.Context, workIDs []int64, out map[int64][]WorkScreenshotRow) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {
@@ -698,7 +709,7 @@ func (s *ReadService) nativeWorkScreenshots(ctx context.Context, workIDs []int64
 	}
 	if err := db.Raw(`SELECT work_id, image_hash, sort_order, caption, sexual, violence, source_id
 		FROM catalog_work_screenshot WHERE work_id IN ?
-		ORDER BY work_id, sort_order, image_hash`, workIDs).Scan(&rows).Error; err != nil {
+		ORDER BY work_id, source_id, sort_order, image_hash`, workIDs).Scan(&rows).Error; err != nil {
 		return err
 	}
 	for _, r := range rows {

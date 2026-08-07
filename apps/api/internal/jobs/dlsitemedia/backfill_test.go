@@ -145,8 +145,11 @@ func TestIntroWritePath(t *testing.T) {
 // They used to be galgame body ids the screenshot lane joined against; wave 149
 // dropped that body, so today they are opaque claim keys and nothing resolves
 // them.
-var claimedLaneClaimIDs = []int64{9101, 9102, 9103, 9104}
+var claimedLaneClaimIDs = []int64{9101, 9102, 9103, 9104, 9105}
 
+// vndbSourceID is the seeded catalog_source id for vndb — a lane this job never
+// writes, used here to stage "another source's rows" (wave 188).
+const vndbSourceID = int16(2)
 
 // stubImageService stands in for image_service's /image/upload: it answers with
 // the standard envelope, hashing the uploaded bytes so identical files dedup to
@@ -175,8 +178,8 @@ func stubImageService(t *testing.T) *imageclient.Client {
 	return imageclient.New(imageclient.Config{BaseURL: srv.URL, ClientID: "test", ClientSecret: "test"})
 }
 
-// TestClaimedScreenshotLane pins the refs/proj/125 write side: the candidate
-// query's three-condition targeting of claimed works, the PER-KIND guard split
+// TestClaimedScreenshotLane pins the refs/proj/125 write side as wave 188 left
+// it: the candidate query's PER-SOURCE targeting of claimed works, the PER-KIND guard split
 // (screenshot admits a claimed work, intro/cover still refuse the very same
 // candidate), the real write with the dlsite age→sexual mapping, touch
 // inheritance, and idempotency (second apply writes nothing and touches nothing).
@@ -208,6 +211,11 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	wBodyless := anchored("bodyless", "RJ100001", nil, nil)
 	wClaimedBare := anchored("claimed-no-screenshot", "RJ100002", &claimed, &claimedLaneClaimIDs[0])
 	wClaimedNative := anchored("claimed-with-native-screenshot", "RJ100004", &claimed, &claimedLaneClaimIDs[2])
+	// Wave 188: a claim whose only gallery comes from ANOTHER source. Under the
+	// old whole-work-emptiness rule this was excluded; per-source fill-missing
+	// admits it, because a vndb game screenshot and a DLsite official sample CG
+	// are different things and the read face shows them as separate blocks.
+	wClaimedOther := anchored("claimed-with-vndb-screenshot", "RJ100006", &claimed, &claimedLaneClaimIDs[4])
 
 	// A claim that is NOT on the public face. The wave-166 intro lane targets
 	// PUBLISHED works — the draft sea is roughly 5x the published one and every
@@ -218,14 +226,13 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	require.NoError(t, db.Model(&model.CatalogWork{}).Where("id = ?", wDraft).
 		Update("claim_state", model.ClaimStateDraft).Error)
 
-	// wClaimedNative already has a native row → nothing to do. The third case
-	// this fixture used to carry — a claim whose WIKI body already showed
-	// screenshots, which kept DLsite store samples a fallback rather than a
-	// supplement — went with the table in wave 149. Its last 99 rows were swept
-	// into catalog_work_screenshot before the DROP, so the native check below
-	// now answers what the bridge and the native row used to answer together.
+	// wClaimedNative already has a DLSITE row → this lane is done with it. Only
+	// this source's own rows close the lane (wave 188): wClaimedOther's vndb row
+	// does not, which is the whole reversal.
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
 		WorkID: wClaimedNative, ImageHash: "already_here", SortOrder: 0, SourceID: reg.dlsiteSource}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: wClaimedOther, ImageHash: "vndb_shot", SortOrder: 0, SourceID: vndbSourceID}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
 		WorkID: wDraft, ImageHash: "draft_shot", SortOrder: 0, SourceID: reg.dlsiteSource}).Error)
 
@@ -239,10 +246,11 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	}
 	assert.Contains(t, ids, wBodyless, "bodyless lane unchanged")
 	assert.Contains(t, ids, wClaimedBare, "claimed with no screenshot at all → admitted")
-	assert.NotContains(t, ids, wClaimedNative, "claimed that already has a native row → excluded")
+	assert.Contains(t, ids, wClaimedOther, "claimed whose only rows come from another source → admitted (wave 188)")
+	assert.NotContains(t, ids, wClaimedNative, "claimed that already has a DLSITE row → excluded")
 	bodyless, claimedCount := laneSplit(shotCands)
 	assert.Equal(t, 1, bodyless)
-	assert.Equal(t, 1, claimedCount)
+	assert.Equal(t, 2, claimedCount)
 
 	// COVER-only still resolves the bodyless lane alone — cover keeps its
 	// claimed refusal (wave 164 already filled those slots from the wiki).
@@ -266,15 +274,16 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	assert.NotContains(t, introIDs, wDraft, "a DRAFT claim is not on the public face → excluded")
 	introBodyless, introClaimed := laneSplit(introCands)
 	assert.Equal(t, 1, introBodyless)
-	assert.Equal(t, 2, introClaimed, "the two live claims; the draft is out")
+	assert.Equal(t, 3, introClaimed, "the three live claims; the draft is out")
 
 	// --- asymmetric windowing: --offset consumes the STABLE bodyless lane only, so
 	// it can isolate the self-consuming claimed lane without ever skipping it.
 	for _, off := range []int{1, 99} {
 		windowed, err := loadCandidates(ctx, db, reg, Kinds{Screenshot: true}, 0, off)
 		require.NoError(t, err)
-		require.Len(t, windowed, 1, "offset %d skips the bodyless lane, never the claimed one", off)
-		assert.Equal(t, wClaimedBare, windowed[0].WorkID)
+		require.Len(t, windowed, 2, "offset %d skips the bodyless lane, never the claimed one", off)
+		windowedIDs := []int64{windowed[0].WorkID, windowed[1].WorkID}
+		assert.ElementsMatch(t, []int64{wClaimedBare, wClaimedOther}, windowedIDs)
 	}
 	capped, err := loadCandidates(ctx, db, reg, Kinds{Screenshot: true}, 1, 0)
 	require.NoError(t, err)
@@ -369,4 +378,61 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	r = newRunner()
 	assert.False(t, r.writeScreenshots(ctx, dir, cand, dlsiteMeta{Age: "1"}, true))
 	assert.Equal(t, 1, r.c.shotNoSamples)
+}
+
+// TestCrossSourceSameBytesAreNotWrittenTwice is the other half of wave 188's
+// per-source admission: opening the lane to works that already carry another
+// source's rows must NOT put the same image on a work twice. The candidate
+// query admits it and the per-source preload does not skip it, so the guard is
+// the (work_id, image_hash) unique key — the first writer keeps the row and its
+// source attribution, and this run counts a dedup instead of a write.
+func TestCrossSourceSameBytesAreNotWrittenTwice(t *testing.T) {
+	if testDB == nil {
+		t.Skip("no test database")
+	}
+	db := testDB
+	ctx := context.Background()
+	for _, tbl := range []string{"catalog_external_ref", "catalog_release", "catalog_work_screenshot", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" CASCADE").Error)
+	}
+	reg, err := resolveRegistry(ctx, db)
+	require.NoError(t, err)
+
+	w := model.CatalogWork{MediumID: reg.galgameMedium, OLang: "ja", DisplayName: "shared bytes"}
+	require.NoError(t, db.Create(&w).Error)
+
+	// The stub image service is content-addressed, so the hash a upload answers
+	// with is the sha256 of the file — exactly what a different source would
+	// have landed had it mirrored the same picture.
+	dir := t.TempDir()
+	workno := "RJ200001"
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, workno), 0o755))
+	shared, fresh := []byte("shared-picture"), []byte("dlsite-only-picture")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, workno, "a.jpg"), shared, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, workno, "b.jpg"), fresh, 0o644))
+	sharedHash := sha256.Sum256(shared)
+
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: w.ID, ImageHash: hex.EncodeToString(sharedHash[:]), SortOrder: 0,
+		SourceID: vndbSourceID}).Error)
+
+	exist, err := preloadExisting(ctx, db, []int64{w.ID}, reg.dlsiteSource, langJa)
+	require.NoError(t, err)
+	assert.Empty(t, exist.shot[w.ID], "the preload is per-source: the vndb row is invisible to it")
+
+	r := &runner{db: db, sourceID: reg.dlsiteSource, exist: exist, cli: stubImageService(t)}
+	cand := candidate{WorkID: w.ID, Workno: workno}
+	assert.False(t, r.writeScreenshots(ctx, dir, cand, dlsiteMeta{Age: "3",
+		SampleFiles: []string{"a.jpg", "b.jpg"}}, true))
+	assert.Equal(t, 1, r.c.shotDedup, "the byte another source already holds is not written again")
+	assert.Equal(t, 1, r.c.shotUploaded, "the genuinely new byte still lands")
+
+	var rows []model.CatalogWorkScreenshot
+	require.NoError(t, db.Where("work_id = ?", w.ID).Order("image_hash").Find(&rows).Error)
+	require.Len(t, rows, 2, "one row per distinct image, never two rows for one picture")
+	for _, row := range rows {
+		if row.ImageHash == hex.EncodeToString(sharedHash[:]) {
+			assert.EqualValues(t, vndbSourceID, row.SourceID, "the first writer keeps its source attribution")
+		}
+	}
 }

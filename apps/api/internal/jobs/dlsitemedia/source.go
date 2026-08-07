@@ -62,7 +62,8 @@ type candidate struct {
 //   - the BODYLESS lane is STABLE across runs (its query has no "already done"
 //     predicate), so --offset is meaningful there and keeps its pre-125 meaning.
 //   - the CLAIMED lane CONSUMES ITSELF: every work an --apply chunk fills gains a
-//     catalog_work_screenshot row and drops out of the next run's lane. Offsetting
+//     dlsite-sourced catalog_work_screenshot row and so fails its own per-source
+//     NOT EXISTS, dropping out of the next run's lane. Offsetting
 //     INTO a shrinking list skips works — chunk k starts where chunk k-1's writes
 //     already moved the head, leaving alternating gaps unwritten. So --offset
 //     never enters the claimed lane; it is always taken from its own head, which
@@ -182,23 +183,27 @@ func loadClaimedIntroCandidates(ctx context.Context, db *gorm.DB, reg registry) 
 }
 
 // loadClaimedScreenshotCandidates resolves the CLAIMED half of the screenshot
-// lane (refs/proj/125): a claimed galgame work whose read face shows NO
-// screenshot at all today, reachable via the same EXACT DLsite workno release
-// anchor. Three conditions, all load-bearing:
+// lane (refs/proj/125): a claimed galgame work with NO DLSITE-sourced screenshot
+// row yet, reachable via the same EXACT DLsite workno release anchor. Two
+// conditions, both load-bearing:
 //
 //   - claimed (site non-empty) — admitted by the (facet, source) XOR: dlsite is
 //     a catalog-native source, so its rows live in catalog_work_screenshot for
 //     claimed and bodyless alike. Expressed as the PROPERTY, never the literal
 //     site value (see claimedSite).
-//   - no native screenshot — both the targeting rule and idempotency now, since
-//     wave 149 dropped the wiki family.
+//   - no dlsite screenshot — both the targeting rule and idempotency.
 //
-// The wiki-bridge condition this lane used to carry — "no galgame_screenshot on
-// the work's galgame body", which kept DLsite store samples a FALLBACK rather
-// than a supplement to real wiki screenshots — went with the table. It is not
-// lost: wave 149's final sweep copied the last 99 bridged screenshots into
-// catalog_work_screenshot before the DROP, so the native NOT EXISTS now answers
-// exactly what the pair used to answer between them.
+// PER-SOURCE, since wave 188 (the user's 2026-08-07 ruling). This lane used to
+// require the work to show NO screenshot AT ALL — first as "no galgame_screenshot
+// on the work's galgame body" (the wiki bridge, which wave 149 folded into the
+// native NOT EXISTS when the rescue copied the last 99 bridged rows over before
+// the DROP), then as whole-work emptiness. Both encoded the same doctrine: store
+// sample CG is a FALLBACK for works with nothing, never a supplement. That is
+// OVERTURNED. A vndb row is a game screenshot, a dlsite row is official sample
+// CG; they are different things and the read face shows them as separate
+// per-source blocks, so a work with vndb/getchu/curated rows and no dlsite rows
+// is a candidate. Identical bytes across sources still collapse at write time on
+// the (work_id, image_hash) unique key.
 func loadClaimedScreenshotCandidates(ctx context.Context, db *gorm.DB, reg registry) ([]candidate, error) {
 	var out []candidate
 	err := db.WithContext(ctx).
@@ -208,9 +213,10 @@ func loadClaimedScreenshotCandidates(ctx context.Context, db *gorm.DB, reg regis
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = rel.id
 				AND r.source_id = ? AND r.link_kind = ?
 			WHERE w.medium_id = ? AND `+claimedSite+` AND w.deleted_at IS NULL
-				AND NOT EXISTS (SELECT 1 FROM catalog_work_screenshot cs WHERE cs.work_id = w.id)
+				AND NOT EXISTS (SELECT 1 FROM catalog_work_screenshot cs
+					WHERE cs.work_id = w.id AND cs.source_id = ?)
 			ORDER BY w.id, r.external_id`,
-			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium).
+			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium, reg.dlsiteSource).
 		Scan(&out).Error
 	return out, err
 }

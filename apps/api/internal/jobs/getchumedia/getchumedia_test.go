@@ -71,6 +71,7 @@ func TestMain(m *testing.M) {
 
 const (
 	getchuSource  = int16(17)
+	vndbSource    = int16(2)
 	galgameMedium = int16(1)
 	getchuRule    = "rule:vndb-extlink-getchu"
 )
@@ -118,8 +119,13 @@ func mkStaged(t *testing.T, getchuID, kind string, ordinal int, url string, mirr
 
 func mkShot(t *testing.T, workID int64, hash string) {
 	t.Helper()
+	mkShotFrom(t, workID, hash, getchuSource)
+}
+
+func mkShotFrom(t *testing.T, workID int64, hash string, source int16) {
+	t.Helper()
 	require.NoError(t, testDB.Create(&model.CatalogWorkScreenshot{
-		WorkID: workID, ImageHash: hash, SourceID: getchuSource}).Error)
+		WorkID: workID, ImageHash: hash, SourceID: source}).Error)
 }
 
 func candidates(t *testing.T) []candidate {
@@ -131,20 +137,53 @@ func candidates(t *testing.T) []candidate {
 
 // --- tests ----------------------------------------------------------------
 
-// Getchu is a FALLBACK for this facet: a work that already shows a gallery
-// keeps it, whatever the source. Getting this backwards would splice store
-// promo CG into curated galleries across the whole anchored population.
-func TestOnlyWorksWithNoScreenshotAreAdmitted(t *testing.T) {
+// Admission is PER-SOURCE fill-missing (wave 188, the 2026-08-07 reversal of
+// the old fallback-only doctrine): only this source's own rows close the lane.
+// A work with a getchu row is done; a work with no screenshot at all is open.
+func TestOnlyWorksWithNoGetchuScreenshotAreAdmitted(t *testing.T) {
 	clean(t)
 	empty := mkWork(t, "no gallery", 2)
 	mkAnchor(t, empty, "1001", model.LinkKindExact)
-	full := mkWork(t, "has a gallery", 2)
+	full := mkWork(t, "has a getchu gallery", 2)
 	mkAnchor(t, full, "1002", model.LinkKindExact)
 	mkShot(t, full, "deadbeef")
 
 	got := candidates(t)
 	require.Len(t, got, 1)
 	assert.Equal(t, empty, got[0].WorkID)
+}
+
+// The wave-188 reversal itself: a work whose gallery comes from ANOTHER source
+// is still a candidate here. A vndb row is a game screenshot, a getchu row is
+// official sample CG — different things, shown as separate per-source blocks,
+// so the second lane supplements rather than dilutes.
+func TestAnotherSourcesScreenshotDoesNotCloseTheGetchuLane(t *testing.T) {
+	clean(t)
+	w := mkWork(t, "has vndb shots only", 2)
+	mkAnchor(t, w, "1101", model.LinkKindExact)
+	mkShotFrom(t, w, "vndbshot", vndbSource)
+
+	got := candidates(t)
+	require.Len(t, got, 1)
+	assert.Equal(t, w, got[0].WorkID)
+
+	// ...and once getchu has written its own row the work drops out, so a
+	// second --apply is still a no-op.
+	mkShotFrom(t, w, "getchushot", getchuSource)
+	assert.Empty(t, candidates(t))
+}
+
+// preloadHashes spans EVERY source, so bytes another lane already uploaded are
+// never re-uploaded: the (work_id, image_hash) unique key covers the whole work
+// and the first writer keeps its source attribution.
+func TestPreloadHashesSeesOtherSourcesBytes(t *testing.T) {
+	clean(t)
+	w := mkWork(t, "cross-source bytes", 2)
+	mkShotFrom(t, w, "sharedhash", vndbSource)
+
+	got, err := preloadHashes(context.Background(), testDB, []int64{w})
+	require.NoError(t, err)
+	assert.True(t, got[w]["sharedhash"], "a vndb-sourced hash must still suppress the getchu upload")
 }
 
 // Only EXACT anchors. A probable ref is a guess, and this lane writes bytes.

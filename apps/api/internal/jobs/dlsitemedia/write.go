@@ -144,8 +144,15 @@ func (r *runner) writeCover(ctx context.Context, dir string, c candidate, m dlsi
 // (facet, source) XOR (refs/proj/125), so a dlsite-sourced native row is legal on
 // a claimed work — the wiki sources still never materialize here, and this writer
 // only ever writes source_id=dlsite. WHICH claimed works are admitted is decided
-// once, in loadClaimedScreenshotCandidates (no bridged screenshot, no native
-// screenshot); this writer trusts that candidate set rather than re-deriving it.
+// once, in loadClaimedScreenshotCandidates (no dlsite screenshot row — per-source
+// fill-missing since wave 188); this writer trusts that candidate set rather than
+// re-deriving it.
+//
+// The BODYLESS lane needs no admission change for wave 188 and gets none: it has
+// no "already done" predicate at all, so it always admitted works carrying other
+// sources' rows. Its per-source skip lives here — r.exist.shot is preloaded
+// source_id=dlsite only (preloadExisting), and ON CONFLICT (work_id, image_hash)
+// DO NOTHING is the cross-source backstop.
 func (r *runner) writeScreenshots(ctx context.Context, dir string, c candidate, m dlsiteMeta, apply bool) (quota bool) {
 	if len(m.SampleFiles) == 0 { // staging row absent, or the work has no samples
 		r.c.shotNoSamples++
