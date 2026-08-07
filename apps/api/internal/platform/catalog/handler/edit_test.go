@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"api/internal/platform/authz"
@@ -25,33 +24,40 @@ import (
 
 // TestSetupEdit_RegistersOperations: spec smoke — the whole edit face
 // registers with a nil engine (the gen-openapi convention; handlers never
-// run during spec export). The second list is the wave-181 retirement stated as
+// run during spec export). The second list is the 181/185 retirement stated as
 // a test: those paths belong to the user plane now, and re-registering one here
-// would put an asserted-actor door back on a moderation op.
+// would put an asserted-actor door back on a write.
 func TestSetupEdit_RegistersOperations(t *testing.T) {
 	api := Setup(fiber.New(), nil, nil, nil, nil, nil)
 	SetupEdit(api, nil, nil)
 	paths := api.OpenAPI().Paths
 	for _, p := range []string{
 		"/api/v1/catalog/edit/proposals",
-		"/api/v1/catalog/edit/proposals/{id}/withdraw",
 		"/api/v1/catalog/edit/revisions",
 		"/api/v1/catalog/edit/diff",
-		"/api/v1/catalog/edit/schema/{entity_type}",
 	} {
 		assert.NotNilf(t, paths[p], "operation %s must be registered", p)
 	}
 	for _, p := range []string{
 		"/api/v1/catalog/edit/proposals/{id}",
+		"/api/v1/catalog/edit/proposals/{id}/withdraw",
 		"/api/v1/catalog/edit/proposals/{id}/amendments",
 		"/api/v1/catalog/edit/proposals/{id}/merge",
 		"/api/v1/catalog/edit/proposals/{id}/decline",
 		"/api/v1/catalog/edit/revert",
 		"/api/v1/catalog/edit/snapshot",
+		"/api/v1/catalog/edit/schema/{entity_type}",
 		"/api/v1/catalog/works/{workID}/covers/{coverID}/vote",
 	} {
 		assert.Nilf(t, paths[p], "operation %s must NOT be registered on the S2S face", p)
 	}
+	// The proposal path survives for the LIST and only for the list: wave 185
+	// took the create verb off it, so the same path must answer GET and nothing
+	// else. Asserted on the verb rather than on the path, because a path-level
+	// check cannot see a write hiding under a surviving read.
+	require.NotNil(t, paths["/api/v1/catalog/edit/proposals"].Get)
+	assert.Nil(t, paths["/api/v1/catalog/edit/proposals"].Post,
+		"filing a proposal belongs to the user plane")
 }
 
 // TestS2SFace_RetiredPathsAreGone is the runtime half of the same claim: a
@@ -65,6 +71,10 @@ func TestS2SFace_RetiredPathsAreGone(t *testing.T) {
 		{"POST", "/api/v1/catalog/edit/revert"},
 		{"PUT", "/api/v1/catalog/works/1/covers/1/vote"},
 		{"POST", "/api/v1/catalog/edit/images"},
+		// Wave 185's three, on the same footing.
+		{"POST", "/api/v1/catalog/edit/proposals"},
+		{"POST", "/api/v1/catalog/edit/proposals/1/withdraw"},
+		{"GET", "/api/v1/catalog/edit/schema/catalog.work"},
 	} {
 		resp, err := app.Test(httptest.NewRequest(tc.method, tc.path, nil))
 		require.NoError(t, err)
@@ -94,11 +104,12 @@ func editAppWithPerms(client *siteModel.OAuthClient, engine *editing.Engine, per
 	return app
 }
 
-// mergeViaEngine merges a proposal through the engine with an asserted actor.
-// The S2S merge op retired in wave 181 and merging over HTTP is pinned on the
-// user plane (user_edit_test.go); the cases below are about what the ENGINE
-// decides, so they reach it where it lives — still through policyCtx, because
-// the family-routed permission resolution is part of what they claim.
+// mergeViaEngine / proposeViaEngine / schemaViaEngine reach the engine with an
+// asserted actor. The S2S merge op retired in wave 181 and create / withdraw /
+// schema followed in wave 185, so every one of those verbs over HTTP is pinned
+// on the user plane (user_edit_test.go); the cases below are about what the
+// ENGINE decides, so they reach it where it lives — still through policyCtx,
+// because the family-routed permission resolution is part of what they claim.
 func mergeViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers, id int64, actor dto.EditActor) (*editing.Revision, error) {
 	t.Helper()
 	prop, _, _, err := engine.GetProposal(context.Background(), id)
@@ -107,42 +118,37 @@ func mergeViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers, i
 	return engine.MergeProposal(context.Background(), id, s.policyCtx(actor, prop.Site, prop.EntityFamily), "")
 }
 
-func editPost(t *testing.T, app *fiber.App, path, body string) (int, []byte) {
+func proposeViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers, site string,
+	actor dto.EditActor, entityType string, entityID int64, patch map[string]any, note string,
+) (*editing.Proposal, *editing.Revision, error) {
 	t.Helper()
-	req := httptest.NewRequest("POST", path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req)
-	require.NoError(t, err)
-	raw, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	return resp.StatusCode, raw
+	s := &EditServer{engine: engine, perms: perms}
+	return engine.CreateProposal(context.Background(), editing.CreateProposalInput{
+		EntityType: entityType, EntityID: entityID, Patch: patch, Note: note,
+		Actor: s.policyCtx(actor, site, familyOf(entityType)),
+	})
 }
 
-// TestEditSiteBinding_Forbidden: write paths 403 for unbound/mismatched
-// clients BEFORE the engine is touched (nil engine is never reached).
-func TestEditSiteBinding_Forbidden(t *testing.T) {
-	body := `{"entity_type":"catalog.work","entity_id":1,"site":"letmoe",` +
-		`"patch":{"catalog.work.display_name":"x"},"actor":{"user_id":1}}`
-	for _, tc := range []struct {
-		name   string
-		client *siteModel.OAuthClient
-	}{
-		{"unbound", &siteModel.OAuthClient{ID: "c1", CatalogSite: ""}},
-		{"wrong-site", &siteModel.OAuthClient{ID: "c2", CatalogSite: "kungal"}},
-	} {
-		app := editApp(tc.client, nil)
-		status, _ := editPost(t, app, "/api/v1/catalog/edit/proposals", body)
-		assert.Equalf(t, fiber.StatusForbidden, status, "%s must 403", tc.name)
-	}
+func schemaViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers, site string,
+	actor dto.EditActor, entityType string, entityID int64,
+) []editing.FieldProjection {
+	t.Helper()
+	s := &EditServer{engine: engine, perms: perms}
+	fields, err := engine.SchemaProjection(context.Background(), entityType, entityID,
+		s.policyCtx(actor, site, familyOf(entityType)))
+	require.NoError(t, err)
+	return fields
 }
 
-// TestEditFaceEndToEnd drives the pilot over HTTP: propose (403 for a plain
-// user, open for admin) → merge (ren) → revision list + schema projection.
-// The default-policy legs run on the NON-overlaid "nextmoe" tenant — kungal
-// and the letmoe sites both carry real overlays now (kungal: open propose +
-// automerge=review; letmoe: trusted + owner), exercised by their own legs. DB-backed — skips when the catalog test
+// TestEditPolicyDefaultTenant drives the pilot on the NON-overlaid "nextmoe"
+// tenant: propose (refused for a plain user, open for admin) → merge (ren) →
+// the revision list over HTTP → the schema projection. The write legs reach the
+// engine directly, the revision list is a surviving S2S read and is still
+// driven over the wire. kungal and the letmoe sites both carry real overlays
+// now (kungal: open propose + automerge=review; letmoe: trusted + owner),
+// exercised by their own legs. DB-backed — skips when the catalog test
 // database is unreachable.
-func TestEditFaceEndToEnd(t *testing.T) {
+func TestEditPolicyDefaultTenant(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -153,41 +159,34 @@ func TestEditFaceEndToEnd(t *testing.T) {
 	reg := editing.NewRegistry()
 	require.NoError(t, editspec.RegisterWork(reg, db))
 	engine := editing.NewEngine(db, reg)
+	perms := PermResolvers{"catalog": perm.Resolver}
 	app := editApp(&siteModel.OAuthClient{ID: "nextmoe-client", CatalogSite: "nextmoe"}, engine)
 
-	// A plain user fails the propose rule → 403.
-	status, _ := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"nextmoe",
-		  "patch":{"catalog.work.display_name":"だめ"},"actor":{"user_id":9,"roles":["user"]}}`, work.ID))
-	assert.Equal(t, fiber.StatusForbidden, status)
+	// A plain user fails the propose rule.
+	_, _, err := proposeViaEngine(t, engine, perms, "nextmoe",
+		dto.EditActor{UserID: 9, Roles: []string{"user"}}, "catalog.work", work.ID,
+		map[string]any{"catalog.work.display_name": "だめ"}, "")
+	var permErr *editing.PermissionError
+	assert.ErrorAs(t, err, &permErr, "a plain user may not propose on the default policy")
 
-	// An unknown field key → 422.
-	status, _ = editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"nextmoe",
-		  "patch":{"catalog.work.ghost":"x"},"actor":{"user_id":9,"roles":["admin"]}}`, work.ID))
-	assert.Equal(t, fiber.StatusUnprocessableEntity, status)
+	// An unknown field key is refused whatever the role.
+	_, _, err = proposeViaEngine(t, engine, perms, "nextmoe",
+		dto.EditActor{UserID: 9, Roles: []string{"admin"}}, "catalog.work", work.ID,
+		map[string]any{"catalog.work.ghost": "x"}, "")
+	var unknownField *editing.UnknownFieldError
+	assert.ErrorAs(t, err, &unknownField)
 
-	// Admin proposes → 200, proposal open, not merged (automerge=never).
-	status, raw := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"nextmoe","note":"改名",
-		  "patch":{"catalog.work.display_name":"新しい名前"},"actor":{"user_id":100,"roles":["admin"]}}`, work.ID))
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	var created struct {
-		Data struct {
-			Proposal struct {
-				ID     int64  `json:"id"`
-				Status string `json:"status"`
-			} `json:"proposal"`
-			Merged bool `json:"merged"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &created))
-	assert.Equal(t, "open", created.Data.Proposal.Status)
-	assert.False(t, created.Data.Merged)
+	// Admin proposes → an open proposal, not merged (automerge=never).
+	prop, merged, err := proposeViaEngine(t, engine, perms, "nextmoe",
+		dto.EditActor{UserID: 100, Roles: []string{"admin"}}, "catalog.work", work.ID,
+		map[string]any{"catalog.work.display_name": "新しい名前"}, "改名")
+	require.NoError(t, err)
+	assert.Equal(t, "open", editing.StatusName[prop.Status])
+	assert.Nil(t, merged)
 
 	// ren merges → the produced revision.
-	rev, err := mergeViaEngine(t, engine, PermResolvers{"catalog": perm.Resolver},
-		created.Data.Proposal.ID, dto.EditActor{UserID: 200, Roles: []string{"ren"}})
+	rev, err := mergeViaEngine(t, engine, perms, prop.ID,
+		dto.EditActor{UserID: 200, Roles: []string{"ren"}})
 	require.NoError(t, err)
 	view := revisionView(rev)
 	assert.Equal(t, 1, view.Seq)
@@ -205,44 +204,28 @@ func TestEditFaceEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
-	// Schema projection: an admin can propose+review, would not automerge; a
-	// plain user gets an all-false projection.
-	req = httptest.NewRequest("GET",
-		"/api/v1/catalog/edit/schema/catalog.work?site=nextmoe&user_id=100&roles=admin", nil)
-	resp, err = app.Test(req)
-	require.NoError(t, err)
-	require.Equal(t, fiber.StatusOK, resp.StatusCode)
-	raw, err = io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	var schema struct {
-		Data struct {
-			Fields []struct {
-				Key            string `json:"key"`
-				CanPropose     bool   `json:"can_propose"`
-				CanReview      bool   `json:"can_review"`
-				WouldAutomerge bool   `json:"would_automerge"`
-			} `json:"fields"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &schema))
+	// Schema projection: an admin can propose+review, would not automerge.
+	fields := schemaViaEngine(t, engine, perms, "nextmoe",
+		dto.EditActor{UserID: 100, Roles: []string{"admin"}}, "catalog.work", 0)
 	// The projection carries catalog.work's whole registered field table, which
 	// wave 154 completed (03 定案 §2). Asserted as "every field is proposable
 	// and reviewable for this actor, and none automerges" rather than as a
 	// count, so adding a field to the matrix does not require editing a number
 	// here — the policy claim is what this case is about.
-	require.NotEmpty(t, schema.Data.Fields)
-	for _, f := range schema.Data.Fields {
+	require.NotEmpty(t, fields)
+	for _, f := range fields {
 		assert.True(t, f.CanPropose, f.Key)
 		assert.True(t, f.CanReview, f.Key)
 		assert.False(t, f.WouldAutomerge, f.Key)
 	}
 }
 
-// TestEditFaceLetmoeTenant drives the E1 letmoe overlay over HTTP: a trusted
-// letmoe user direct-edits a letmoe-claimed work (owner automerge, single
-// revision, roles asserted empty), a below-tier user 403s, and the schema
-// projection is entity-aware through the entity_id query param.
-func TestEditFaceLetmoeTenant(t *testing.T) {
+// TestEditPolicyLetmoeTenant drives the E1 letmoe overlay: a trusted letmoe
+// user direct-edits a letmoe-claimed work (owner automerge, single revision,
+// roles empty), a below-tier user is refused, and the schema projection is
+// entity-aware. The proposal LIST leg stays on the wire — it is a surviving
+// S2S read.
+func TestEditPolicyLetmoeTenant(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -258,63 +241,46 @@ func TestEditFaceLetmoeTenant(t *testing.T) {
 
 	reg := editing.NewRegistry()
 	require.NoError(t, editspec.RegisterWork(reg, db))
-	app := editApp(&siteModel.OAuthClient{ID: "letmoe-client", CatalogSite: "letmoe"}, editing.NewEngine(db, reg))
+	engine := editing.NewEngine(db, reg)
+	perms := PermResolvers{"catalog": perm.Resolver}
+	app := editApp(&siteModel.OAuthClient{ID: "letmoe-client", CatalogSite: "letmoe"}, engine)
 
-	// Below trusted tier → 403 (propose=trusted on letmoe sites).
-	status, _ := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"letmoe",
-		  "patch":{"catalog.work.display_name":"x"},"actor":{"user_id":9,"trust_tier":0}}`, owned.ID))
-	assert.Equal(t, fiber.StatusForbidden, status)
+	// Below trusted tier → refused (propose=trusted on letmoe sites).
+	_, _, err := proposeViaEngine(t, engine, perms, "letmoe",
+		dto.EditActor{UserID: 9, TrustTier: 0}, "catalog.work", owned.ID,
+		map[string]any{"catalog.work.display_name": "x"}, "")
+	var permErr *editing.PermissionError
+	assert.ErrorAs(t, err, &permErr)
 
 	// Trusted letmoe user edits the OWNED work's titles → merged directly.
-	status, raw := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"letmoe","note":"整理条目",
-		  "patch":{"catalog.work.titles":[{"lang":"ja","title":"自家作品・改","kind":0}]},
-		  "actor":{"user_id":100,"trust_tier":2}}`, owned.ID))
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	var created struct {
-		Data struct {
-			Merged   bool `json:"merged"`
-			Revision *struct {
-				Seq    int    `json:"seq"`
-				Action string `json:"action"`
-			} `json:"revision"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &created))
-	assert.True(t, created.Data.Merged)
-	require.NotNil(t, created.Data.Revision)
-	assert.Equal(t, 1, created.Data.Revision.Seq)
-	assert.Equal(t, "direct", created.Data.Revision.Action)
+	_, direct, err := proposeViaEngine(t, engine, perms, "letmoe",
+		dto.EditActor{UserID: 100, TrustTier: 2}, "catalog.work", owned.ID,
+		map[string]any{"catalog.work.titles": []any{
+			map[string]any{"lang": "ja", "title": "自家作品・改", "kind": 0},
+		}}, "整理条目")
+	require.NoError(t, err)
+	require.NotNil(t, direct, "an owner's trusted edit automerges")
+	assert.Equal(t, 1, direct.Seq)
+	assert.Equal(t, "direct", editing.ActionName[direct.Action])
 	var after model.CatalogWork
 	require.NoError(t, db.First(&after, owned.ID).Error)
 	assert.Equal(t, "自家作品・改", after.DisplayName) // derived from titles
 
 	// The same trusted user on the PUBLIC work → open proposal.
-	status, raw = editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"letmoe",
-		  "patch":{"catalog.work.display_name":"公共作品・提案"},"actor":{"user_id":100,"trust_tier":2}}`, public.ID))
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	var open struct {
-		Data struct {
-			Merged   bool `json:"merged"`
-			Proposal struct {
-				ID     int64  `json:"id"`
-				Status string `json:"status"`
-			} `json:"proposal"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &open))
-	assert.False(t, open.Data.Merged)
-	assert.Equal(t, "open", open.Data.Proposal.Status)
+	openProp, merged, err := proposeViaEngine(t, engine, perms, "letmoe",
+		dto.EditActor{UserID: 100, TrustTier: 2}, "catalog.work", public.ID,
+		map[string]any{"catalog.work.display_name": "公共作品・提案"}, "")
+	require.NoError(t, err)
+	assert.Nil(t, merged)
+	assert.Equal(t, "open", editing.StatusName[openProp.Status])
 
-	// "My proposals" filter (proposer_uid).
+	// "My proposals" filter (proposer_uid) — a surviving S2S read, over HTTP.
 	req := httptest.NewRequest("GET",
 		"/api/v1/catalog/edit/proposals?site=letmoe&proposer_uid=100&status=open", nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
 	require.Equal(t, fiber.StatusOK, resp.StatusCode)
-	raw, err = io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	var list struct {
 		Data struct {
@@ -327,7 +293,7 @@ func TestEditFaceLetmoeTenant(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(raw, &list))
 	require.Len(t, list.Data.Items, 1)
-	assert.Equal(t, open.Data.Proposal.ID, list.Data.Items[0].ID)
+	assert.Equal(t, openProp.ID, list.Data.Items[0].ID)
 	// wave 162: the total is counted behind the SAME filter, so a product can
 	// read "edits by this user" as a number instead of a page length.
 	assert.EqualValues(t, 1, list.Data.Total)
@@ -335,25 +301,11 @@ func TestEditFaceLetmoeTenant(t *testing.T) {
 	// Entity-aware schema projection: owned → would_automerge, public → not.
 	wouldAutomerge := func(entityID int64) bool {
 		t.Helper()
-		req := httptest.NewRequest("GET", fmt.Sprintf(
-			"/api/v1/catalog/edit/schema/catalog.work?site=letmoe&user_id=100&trust_tier=2&entity_id=%d", entityID), nil)
-		resp, err := app.Test(req)
-		require.NoError(t, err)
-		require.Equal(t, fiber.StatusOK, resp.StatusCode)
-		raw, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		var schema struct {
-			Data struct {
-				Fields []struct {
-					Key            string `json:"key"`
-					WouldAutomerge bool   `json:"would_automerge"`
-				} `json:"fields"`
-			} `json:"data"`
-		}
-		require.NoError(t, json.Unmarshal(raw, &schema))
-		require.NotEmpty(t, schema.Data.Fields)
+		fields := schemaViaEngine(t, engine, perms, "letmoe",
+			dto.EditActor{UserID: 100, TrustTier: 2}, "catalog.work", entityID)
+		require.NotEmpty(t, fields)
 		all := true
-		for _, f := range schema.Data.Fields {
+		for _, f := range fields {
 			all = all && f.WouldAutomerge
 		}
 		return all
@@ -362,12 +314,14 @@ func TestEditFaceLetmoeTenant(t *testing.T) {
 	assert.False(t, wouldAutomerge(public.ID))
 }
 
-// TestEditFaceKungalOwner drives the kungal overlay's owner posture over HTTP
-// — the wire this face regressed on when the N5 re-anchoring dropped the
-// overlay: the product-asserted entry creator (is_entity_owner, a plain user)
-// direct-edits their claimed game; the same user without the assertion files
-// an open proposal.
-func TestEditFaceKungalOwner(t *testing.T) {
+// TestEditPolicyKungalOwner drives the kungal overlay's owner posture — the
+// behaviour that regressed when the N5 re-anchoring dropped the overlay: the
+// asserted entry creator (is_entity_owner, a plain user) direct-edits their
+// claimed game; the same user without the assertion files an open proposal.
+// The assertion itself is an S2S notion the user plane derives from the catalog
+// instead (user_edit_test.go's ownership case); what is pinned here is the
+// OVERLAY's reading of it, so the legs address the engine.
+func TestEditPolicyKungalOwner(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -377,41 +331,26 @@ func TestEditFaceKungalOwner(t *testing.T) {
 
 	reg := editing.NewRegistry()
 	require.NoError(t, editspec.RegisterWork(reg, db))
-	app := editApp(&siteModel.OAuthClient{ID: "kungal-client", CatalogSite: "kungal"}, editing.NewEngine(db, reg))
+	engine := editing.NewEngine(db, reg)
+	perms := PermResolvers{"catalog": perm.Resolver}
 
 	// Without the ownership assertion: a plain user's edit files an open
 	// proposal (propose=open on kungal, but no review capability → no automerge).
-	status, raw := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"kungal",
-		  "patch":{"catalog.work.display_name":"路人提案"},"actor":{"user_id":300,"roles":["user"]}}`, work.ID))
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	var open struct {
-		Data struct {
-			Merged bool `json:"merged"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &open))
-	assert.False(t, open.Data.Merged)
+	_, merged, err := proposeViaEngine(t, engine, perms, "kungal",
+		dto.EditActor{UserID: 300, Roles: []string{"user"}}, "catalog.work", work.ID,
+		map[string]any{"catalog.work.display_name": "路人提案"}, "")
+	require.NoError(t, err)
+	assert.Nil(t, merged)
 
 	// With is_entity_owner asserted: the creator's own edit merges directly
 	// (automerge=review via OwnerReview) — the reported "认领的游戏可以直接编辑".
-	status, raw = editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"kungal",
-		  "patch":{"catalog.work.display_name":"創建者直編"},
-		  "actor":{"user_id":300,"roles":["user"],"is_entity_owner":true}}`, work.ID))
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	var direct struct {
-		Data struct {
-			Merged   bool `json:"merged"`
-			Revision *struct {
-				Action string `json:"action"`
-			} `json:"revision"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &direct))
-	assert.True(t, direct.Data.Merged)
-	require.NotNil(t, direct.Data.Revision)
-	assert.Equal(t, "direct", direct.Data.Revision.Action)
+	_, direct, err := proposeViaEngine(t, engine, perms, "kungal",
+		dto.EditActor{UserID: 300, Roles: []string{"user"}, IsEntityOwner: true},
+		"catalog.work", work.ID,
+		map[string]any{"catalog.work.display_name": "創建者直編"}, "")
+	require.NoError(t, err)
+	require.NotNil(t, direct)
+	assert.Equal(t, "direct", editing.ActionName[direct.Action])
 	var after model.CatalogWork
 	require.NoError(t, db.First(&after, work.ID).Error)
 	assert.Equal(t, "創建者直編", after.DisplayName)
@@ -442,11 +381,11 @@ func fakeFamilySpec(family string) editing.EntityTypeSpec {
 	}
 }
 
-// TestEditFamilyResolver pins E3a ruling 1: the face routes an asserted
-// actor's roles through the vocabulary of the entity's OWN family — no
-// hardcoded family name, and a family absent from the resolver map fails
-// closed even for a role that exists in another family's bundles. The
-// proposal-directed leg (merge) proves the stored entity_family routes too.
+// TestEditFamilyResolver pins E3a ruling 1: policyCtx routes an actor's roles
+// through the vocabulary of the entity's OWN family — no hardcoded family name,
+// and a family absent from the resolver map fails closed even for a role that
+// exists in another family's bundles. The proposal-directed leg (merge) proves
+// the stored entity_family routes too.
 func TestEditFamilyResolver(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision"} {
@@ -463,46 +402,37 @@ func TestEditFamilyResolver(t *testing.T) {
 		"widget": authz.NewResolver(authz.Bundles{"editor": {"widget.edit", "widget.review"}}),
 		"gizmo":  authz.NewResolver(authz.Bundles{"boss": {"gizmo.edit"}}),
 	}
-	app := editAppWithPerms(&siteModel.OAuthClient{ID: "c", CatalogSite: "site-a"}, engine, perms)
-
-	propose := func(family string, roles string) (int, []byte) {
+	propose := func(family string, roles ...string) (*editing.Proposal, error) {
 		t.Helper()
-		return editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-			`{"entity_type":"%s.thing","entity_id":1,"site":"site-a",
-			  "patch":{"%s.thing.name":"new"},"actor":{"user_id":5,"roles":[%s]}}`,
-			family, family, roles))
+		prop, _, err := proposeViaEngine(t, engine, perms, "site-a",
+			dto.EditActor{UserID: 5, Roles: roles}, family+".thing", 1,
+			map[string]any{family + ".thing.name": "new"}, "")
+		return prop, err
 	}
+
+	var permErr *editing.PermissionError
 
 	// The widget vocabulary grants "editor"; the gizmo vocabulary does not —
 	// the SAME role set must pass one family and fail the other.
-	status, raw := propose("widget", `"editor"`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	status, _ = propose("gizmo", `"editor"`)
-	assert.Equal(t, fiber.StatusForbidden, status, "gizmo must not honor widget's role")
-	status, _ = propose("gizmo", `"boss"`)
-	assert.Equal(t, fiber.StatusOK, status)
-	status, _ = propose("widget", `"boss"`)
-	assert.Equal(t, fiber.StatusForbidden, status, "widget must not honor gizmo's role")
+	widgetProp, err := propose("widget", "editor")
+	require.NoError(t, err)
+	_, err = propose("gizmo", "editor")
+	assert.ErrorAs(t, err, &permErr, "gizmo must not honor widget's role")
+	_, err = propose("gizmo", "boss")
+	assert.NoError(t, err)
+	_, err = propose("widget", "boss")
+	assert.ErrorAs(t, err, &permErr, "widget must not honor gizmo's role")
 
 	// Unmapped family: fail closed no matter the roles.
-	status, _ = propose("orphan", `"editor","boss"`)
-	assert.Equal(t, fiber.StatusForbidden, status, "a family with no resolver fails closed")
+	_, err = propose("orphan", "editor", "boss")
+	assert.ErrorAs(t, err, &permErr, "a family with no resolver fails closed")
 
 	// Proposal-directed ops route through the STORED entity_family: the
-	// widget proposal (id 1) merges under widget.review.
-	var created struct {
-		Data struct {
-			Proposal struct {
-				ID int64 `json:"id"`
-			} `json:"proposal"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &created))
-	_, err := mergeViaEngine(t, engine, perms, created.Data.Proposal.ID,
+	// widget proposal merges under widget.review.
+	_, err = mergeViaEngine(t, engine, perms, widgetProp.ID,
 		dto.EditActor{UserID: 6, Roles: []string{"boss"}})
-	var permErr *editing.PermissionError
 	assert.ErrorAs(t, err, &permErr, "gizmo's role must not review a widget proposal")
-	_, err = mergeViaEngine(t, engine, perms, created.Data.Proposal.ID,
+	_, err = mergeViaEngine(t, engine, perms, widgetProp.ID,
 		dto.EditActor{UserID: 6, Roles: []string{"editor"}})
 	assert.NoError(t, err)
 }
@@ -525,19 +455,11 @@ func TestEditRevisionLegacyView(t *testing.T) {
 	// Two merged revisions on entity 1: seq 1 will be dressed up as a
 	// migrated row, seq 2 stays new-era.
 	for i := 0; i < 2; i++ {
-		status, raw := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-			`{"entity_type":"widget.thing","entity_id":1,"site":"site-a",
-			  "patch":{"widget.thing.name":"v%d"},"actor":{"user_id":5,"roles":["editor"]}}`, i))
-		require.Equal(t, fiber.StatusOK, status, string(raw))
-		var created struct {
-			Data struct {
-				Proposal struct {
-					ID int64 `json:"id"`
-				} `json:"proposal"`
-			} `json:"data"`
-		}
-		require.NoError(t, json.Unmarshal(raw, &created))
-		_, err := mergeViaEngine(t, engine, perms, created.Data.Proposal.ID,
+		prop, _, err := proposeViaEngine(t, engine, perms, "site-a",
+			dto.EditActor{UserID: 5, Roles: []string{"editor"}}, "widget.thing", 1,
+			map[string]any{"widget.thing.name": fmt.Sprintf("v%d", i)}, "")
+		require.NoError(t, err)
+		_, err = mergeViaEngine(t, engine, perms, prop.ID,
 			dto.EditActor{UserID: 6, Roles: []string{"editor"}})
 		require.NoError(t, err)
 	}

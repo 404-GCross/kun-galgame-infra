@@ -8,7 +8,6 @@ import (
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/editspec"
-	catperm "api/internal/platform/catalog/perm"
 	"api/internal/platform/catalog/service"
 	"api/internal/platform/editing"
 	"api/pkg/errors"
@@ -17,27 +16,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// The claim-lifecycle S2S face (wave 155 W2/W3): the eight semantic actions and
-// the two cursor feeds downstream products build their inboxes from.
+// The claim-lifecycle S2S face (wave 155 W2/W3), reduced by wave 185 to what a
+// MACHINE reads: the two cursor feeds downstream products build their inboxes
+// from, plus the per-user claim list a product renders somebody else's profile
+// from (registered in user_claims.go).
 //
-// It registers on the SAME Huma API as the rest of the S2S surface, so the
-// path-scoped Basic client auth on /api/v1/catalog already gates it, and the
-// actor is ASSERTED in the body exactly as the editing face asserts it — one
-// convention for "a product backend is acting on behalf of one of its users",
-// not two.
+// The two WRITES that used to live here — the eight semantic actions and the
+// submission mint — are gone. Both asserted the acting user as a number in the
+// request body, and both have a twin on the user-token plane
+// (user_claims_face.go) where the uid is the token's `id` claim and the tenant
+// the token client's catalog_site: identity that cannot be typed by the caller.
+// A cross-repo sweep and 48h of production logs found no caller left on either,
+// so the asserted-actor door is simply shut rather than deprecated in place.
 //
-// Authority split follows 03 定案 §3: the four OWNER actions require the
-// client's catalog_site binding to match the claim's site, the four REVIEW
-// actions require the asserted actor to hold catalog.claim.review (wave 157 —
-// a NEW key granted moderator and up, not the ren-only catalog.review, because
-// judging submissions is moderation and the surface it replaces was staffed by
-// moderators). No new global ROLE is minted for either.
-//
-// The two feeds are ascending-by-id with an exclusive `since`, the shape both
-// wiki feeds they replace use, because that is what the downstream crons
-// (forum's Redis cursor, moyu's SQL cursor) already know how to consume. The
-// field NAMES are catalog-native: this is a new id space and reusing the wiki
-// DTO's spelling would invite a consumer to assume the old semantics.
+// What remains needs no actor at all. The feeds are ascending-by-id with an
+// exclusive `since`, the shape both wiki feeds they replaced use, because that
+// is what the downstream crons (forum's Redis cursor, moyu's SQL cursor)
+// already know how to consume. The field NAMES are catalog-native: this is a
+// new id space and reusing the wiki DTO's spelling would invite a consumer to
+// assume the old semantics.
 
 // LifecycleServer holds the lifecycle face's dependencies.
 type LifecycleServer struct {
@@ -53,18 +50,6 @@ func SetupLifecycle(api huma.API, claims *service.ClaimLifecycleService, engine 
 	tags := []string{"catalog-lifecycle"}
 
 	huma.Register(api, huma.Operation{
-		OperationID: "actOnCatalogClaim", Method: http.MethodPost,
-		Path:    "/api/v1/catalog/works/{id}/claim-actions/{action}",
-		Summary: "Move a claim through its lifecycle: claim / submit / publish / withdraw (owner) or approve / decline / ban / unban (review). 409 on an illegal transition, echoing the current state",
-		Tags:    tags,
-	}, s.act)
-	huma.Register(api, huma.Operation{
-		OperationID: "submitCatalogWork", Method: http.MethodPost,
-		Path:    "/api/v1/catalog/works/submit",
-		Summary: "Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). product_work_id is OPTIONAL: omit it and the registry issues the identity, the claim adopting the minted work id (returned as product_work_id — create your local row at it). IDEMPOTENCY: with product_work_id, a repeat is a 409 echoing the existing work (matched_by=claim); without it, a repeat is recognized only by the identity anchors the payload's links assert (matched_by=anchor, scoped to your own site) — a submission that omits BOTH the id and any VNDB/Bangumi link has no key to match on and WILL mint a second work if retried",
-		Tags:    tags,
-	}, s.submitWork)
-	huma.Register(api, huma.Operation{
 		OperationID: "listCatalogClaimEvents", Method: http.MethodGet,
 		Path:    "/api/v1/catalog/claim-events/feed",
 		Summary: "Cursor feed of claim-state transitions (ascending id; the source for downstream inboxes and point awards)",
@@ -79,86 +64,19 @@ func SetupLifecycle(api huma.API, claims *service.ClaimLifecycleService, engine 
 	s.registerUserClaims(api)
 }
 
-// ---- actions ----
+// ---- shared wire shapes and error mappers ----
 
-type claimActionInput struct {
-	ID     int64  `path:"id" minimum:"1"`
-	Action string `path:"action" doc:"claim | submit | publish | withdraw | approve | decline | ban | unban"`
-	Body   dto.ClaimActionRequest
-}
-
+// claimActionOutput and submitWorkOutput are the claim writes' envelopes. The
+// ops that used to return them here retired in wave 185; they are declared on
+// this file still because the user plane (user_claims_face.go) answers with the
+// same two shapes, and one declaration is what keeps the two faces from
+// drifting into two spellings of one result.
 type claimActionOutput struct {
 	Body Envelope[service.ClaimActionResult]
 }
 
-func (s *LifecycleServer) act(ctx context.Context, in *claimActionInput) (*claimActionOutput, error) {
-	action := service.ClaimAction(in.Action)
-	if _, known := service.TransitionRule(action); !known {
-		return nil, apiErrMsg(http.StatusBadRequest, errors.ErrInvalidParam, "unknown claim action "+in.Action)
-	}
-	client := clientFromCtx(ctx)
-	if service.ReviewActions[action] {
-		// Review authority is the asserted user's, resolved through the catalog
-		// family's own vocabulary — the same fail-closed shape the editing face
-		// uses for its review rules.
-		if !catperm.Resolver.Can(in.Body.Actor.Roles, catperm.ClaimReview) {
-			return nil, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
-				"reviewing a claim requires the "+string(catperm.ClaimReview)+" permission")
-		}
-	} else if he := enforceSiteBinding(client, in.Body.Site); he != nil {
-		return nil, he
-	}
-	site := in.Body.Site
-	if service.ReviewActions[action] {
-		// A curator acts across tenants; the event still records the claim's own
-		// site, which the service reads off the work.
-		site = ""
-	}
-	res, err := s.claims.Act(ctx, service.ClaimActionParams{
-		WorkID: in.ID, Action: action, Site: site,
-		ProductWorkID: optionalID(in.Body.ProductWorkID),
-		ActorUID:      in.Body.Actor.UserID, Reason: in.Body.Reason,
-	})
-	if err != nil {
-		return nil, claimErr(err)
-	}
-	return &claimActionOutput{Body: okEnvelope(*res)}, nil
-}
-
-// ---- submission mint ----
-
-type submitWorkInput struct {
-	Body dto.WorkSubmitRequest
-}
-
 type submitWorkOutput struct {
 	Body Envelope[dto.WorkSubmitResponse]
-}
-
-// submitWork is the OWNER half of the lifecycle face: no review permission is
-// involved, only the client's site binding, because filing a submission is what
-// a product's own users do. The asserted actor becomes the birth event's actor,
-// which is what makes "my submissions" answerable later (wave 157's per-user
-// face reads exactly these rows).
-func (s *LifecycleServer) submitWork(ctx context.Context, in *submitWorkInput) (*submitWorkOutput, error) {
-	if he := enforceSiteBinding(clientFromCtx(ctx), in.Body.Site); he != nil {
-		return nil, he
-	}
-	params := service.SubmitWorkParams{
-		Site: in.Body.Site, ProductWorkID: in.Body.ProductWorkID,
-		ActorUID: in.Body.Actor.UserID, Fields: in.Body.Fields,
-	}
-	if d := in.Body.Released; d != nil {
-		params.Released = service.ReleaseDate{Y: d.Y, M: d.M, D: d.D}
-	}
-	res, err := s.claims.SubmitWork(ctx, params)
-	if err != nil {
-		return nil, submitErr(err)
-	}
-	return &submitWorkOutput{Body: okEnvelope(dto.WorkSubmitResponse{
-		WorkID: res.WorkID, ProductWorkID: res.ProductWorkID, ClaimState: res.ClaimState,
-		EventID: res.EventID, ReleaseID: res.ReleaseID,
-	})}, nil
 }
 
 // submitErr maps the mint's refusals. The 409 carries the existing work ("you
@@ -187,15 +105,6 @@ func submitErr(err error) error {
 	}
 	slog.Error("catalog work submit", "err", err)
 	return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
-}
-
-// optionalID turns the wire's 0-means-absent into a pointer (Huma cannot
-// express an optional scalar as one).
-func optionalID(v int64) *int64 {
-	if v <= 0 {
-		return nil
-	}
-	return &v
 }
 
 // claimErr maps lifecycle errors onto the house envelope. The transition error

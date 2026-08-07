@@ -244,9 +244,20 @@ func TestUserClaims_OwnerActionsNeedOwnership(t *testing.T) {
 	assert.Equal(t, model.ClaimStateKeyDraft, *res.Data.From)
 	assert.Equal(t, model.ClaimStateKeyPending, res.Data.To)
 
-	// Re-submitting from pending is an illegal move: the 409 echoes the state.
+	// Re-submitting from pending is an illegal move: the 409 echoes the state
+	// that blocked it and the states it would have been legal from, so a caller
+	// that raced another actor can re-render without a second read.
 	status, raw = userEditReq(t, app, "POST", userClaimActionPath(work, "submit"), owner, `{}`)
-	assert.Equal(t, fiber.StatusConflict, status, string(raw))
+	require.Equal(t, fiber.StatusConflict, status, string(raw))
+	var conflict struct {
+		Data struct {
+			CurrentState string   `json:"current_state"`
+			AllowedFrom  []string `json:"allowed_from"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &conflict), string(raw))
+	assert.Equal(t, model.ClaimStateKeyPending, conflict.Data.CurrentState)
+	assert.NotEmpty(t, conflict.Data.AllowedFrom)
 
 	// The subject refusals are the service's: an unknown action is a 400 and an
 	// unknown work a 404.

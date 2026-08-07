@@ -292,33 +292,6 @@ components:
         - items
         - total
       type: object
-    ClaimActionRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/ClaimActionRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actor:
-          $ref: "#/components/schemas/EditActor"
-          description: The end user the product backend is acting for
-        product_work_id:
-          description: The product-side work id to anchor (claim only)
-          format: int64
-          minimum: 0
-          type: integer
-        reason:
-          description: Moderator note; REQUIRED for decline, recorded on the event
-          type: string
-        site:
-          description: Acting tenant; must equal the client's catalog_site binding for owner actions
-          type: string
-      required:
-        - actor
-      type: object
     ClaimActionResult:
       additionalProperties: false
       properties:
@@ -567,33 +540,6 @@ components:
         - next_before
         - total
       type: object
-    EditActor:
-      additionalProperties: false
-      properties:
-        is_entity_owner:
-          description: Product-asserted entity ownership (owner-review overlays)
-          type: boolean
-        roles:
-          description: The user's roles as the product's JWT asserts them
-          items:
-            type: string
-          type:
-            - array
-            - "null"
-        trust_tier:
-          description: Trust tier TL0-TL4 (doc 18)
-          format: int32
-          maximum: 4
-          minimum: 0
-          type: integer
-        user_id:
-          description: Product-side user id (the shared identity space)
-          format: int64
-          minimum: 1
-          type: integer
-      required:
-        - user_id
-      type: object
     EditAmendmentView:
       additionalProperties: false
       properties:
@@ -662,44 +608,6 @@ components:
         - key
         - from
         - to
-      type: object
-    EditProposalCreateRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/EditProposalCreateRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actor:
-          $ref: "#/components/schemas/EditActor"
-        entity_id:
-          format: int64
-          minimum: 1
-          type: integer
-        entity_type:
-          description: Registered entity type, e.g. catalog.work
-          minLength: 1
-          type: string
-        note:
-          maxLength: 2000
-          type: string
-        patch:
-          additionalProperties: {}
-          description: Field-key → new-value document (registered keys only)
-          type: object
-        site:
-          description: Filing tenant; must equal the client's catalog_site binding
-          minLength: 1
-          type: string
-      required:
-        - entity_type
-        - entity_id
-        - site
-        - patch
-        - actor
       type: object
     EditProposalCreateResponse:
       additionalProperties: false
@@ -1028,21 +936,6 @@ components:
         - entity_type
         - entity_id
         - values
-      type: object
-    EditWithdrawRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/EditWithdrawRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actor:
-          $ref: "#/components/schemas/EditActor"
-      required:
-        - actor
       type: object
     EntityCounts:
       additionalProperties: false
@@ -3030,40 +2923,6 @@ components:
       required:
         - "y"
       type: object
-    WorkSubmitRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/WorkSubmitRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actor:
-          $ref: "#/components/schemas/EditActor"
-          description: The end user the product backend is submitting for
-        fields:
-          additionalProperties: {}
-          description: "Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets"
-          type: object
-        product_work_id:
-          description: "The product-side work id to anchor this submission at. OMIT IT to have the registry issue the identity: the claim then adopts the minted work id, which the response returns. Idempotency depends on this choice — see the endpoint summary"
-          format: int64
-          minimum: 0
-          type: integer
-        released:
-          $ref: "#/components/schemas/WorkSubmitDate"
-          description: Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA
-        site:
-          description: Submitting tenant; must equal the client's catalog_site binding
-          minLength: 1
-          type: string
-      required:
-        - site
-        - actor
-        - fields
-      type: object
     WorkSubmitResponse:
       additionalProperties: false
       properties:
@@ -3487,62 +3346,6 @@ paths:
       summary: List edit proposals (review queue)
       tags:
         - catalog-edit
-    post:
-      operationId: createEditProposal
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EditProposalCreateRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeEditProposalCreateResponse"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: File an edit proposal (automerges into a direct edit when policy allows)
-      tags:
-        - catalog-edit
-  /api/v1/catalog/edit/proposals/{id}/withdraw:
-    post:
-      operationId: withdrawEditProposal
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EditWithdrawRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeEditProposalView"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: Withdraw one's own open proposal
-      tags:
-        - catalog-edit
   /api/v1/catalog/edit/revisions:
     get:
       operationId: listEditRevisions
@@ -3584,80 +3387,6 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: An entity's revision log, newest-first
-      tags:
-        - catalog-edit
-  /api/v1/catalog/edit/schema/{entity_type}:
-    get:
-      operationId: getEditSchema
-      parameters:
-        - description: Registered entity type, e.g. catalog.work
-          in: path
-          name: entity_type
-          required: true
-          schema:
-            description: Registered entity type, e.g. catalog.work
-            type: string
-        - description: "Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false)"
-          explode: false
-          in: query
-          name: entity_id
-          schema:
-            description: "Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false)"
-            format: int64
-            type: integer
-        - description: Tenant whose policy overlay applies
-          explode: false
-          in: query
-          name: site
-          schema:
-            description: Tenant whose policy overlay applies
-            type: string
-        - description: Asserted end-user id (0 = anonymous projection)
-          explode: false
-          in: query
-          name: user_id
-          schema:
-            description: Asserted end-user id (0 = anonymous projection)
-            format: int64
-            type: integer
-        - description: Comma-separated asserted roles
-          explode: false
-          in: query
-          name: roles
-          schema:
-            description: Comma-separated asserted roles
-            type: string
-        - description: Asserted trust tier
-          explode: false
-          in: query
-          name: trust_tier
-          schema:
-            description: Asserted trust tier
-            format: int32
-            maximum: 4
-            minimum: 0
-            type: integer
-        - description: Product-asserted ownership of entity_id (owner-review overlays project can_review)
-          explode: false
-          in: query
-          name: is_entity_owner
-          schema:
-            description: Product-asserted ownership of entity_id (owner-review overlays project can_review)
-            type: boolean
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeEditSchemaResponse"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: Field schema + the caller's evaluated field-level capabilities
       tags:
         - catalog-edit
   /api/v1/catalog/labels/{id}/works:
@@ -4077,31 +3806,6 @@ paths:
       summary: Search works by title (NFKC-folded substring) for the product-side create picker
       tags:
         - catalog-s2s
-  /api/v1/catalog/works/submit:
-    post:
-      operationId: submitCatalogWork
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/WorkSubmitRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeWorkSubmitResponse"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: "Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). product_work_id is OPTIONAL: omit it and the registry issues the identity, the claim adopting the minted work id (returned as product_work_id — create your local row at it). IDEMPOTENCY: with product_work_id, a repeat is a 409 echoing the existing work (matched_by=claim); without it, a repeat is recognized only by the identity anchors the payload's links assert (matched_by=anchor, scoped to your own site) — a submission that omits BOTH the id and any VNDB/Bangumi link has no key to match on and WILL mint a second work if retried"
-      tags:
-        - catalog-lifecycle
   /api/v1/catalog/works/{id}:
     get:
       operationId: getCatalogWorkByID
@@ -4130,46 +3834,6 @@ paths:
       summary: Read a work by catalog id (same bundle as by-anchor)
       tags:
         - catalog-s2s
-  /api/v1/catalog/works/{id}/claim-actions/{action}:
-    post:
-      operationId: actOnCatalogClaim
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: int64
-            minimum: 1
-            type: integer
-        - description: claim | submit | publish | withdraw | approve | decline | ban | unban
-          in: path
-          name: action
-          required: true
-          schema:
-            description: claim | submit | publish | withdraw | approve | decline | ban | unban
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ClaimActionRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeClaimActionResult"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: "Move a claim through its lifecycle: claim / submit / publish / withdraw (owner) or approve / decline / ban / unban (review). 409 on an illegal transition, echoing the current state"
-      tags:
-        - catalog-lifecycle
   /api/v1/catalog/works/{id}/credits:
     get:
       operationId: getCatalogWorkCredits

@@ -16,8 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The lifecycle face over HTTP (wave 155 W2/W3): the status codes are the
-// contract downstream products branch on, so they are what these cases pin.
+// The lifecycle face over HTTP (wave 155 W2/W3), reduced by wave 185 to its
+// reads: the feed shapes are the contract downstream crons consume, so they are
+// what these cases pin. The writes this file used to drive moved to the
+// user-token plane and are tested there (user_claims_face_test.go).
 
 func TestSetupLifecycle_RegistersOperations(t *testing.T) {
 	app := fiber.New()
@@ -25,12 +27,19 @@ func TestSetupLifecycle_RegistersOperations(t *testing.T) {
 	SetupLifecycle(api, nil, nil, nil)
 	paths := api.OpenAPI().Paths
 	for _, p := range []string{
-		"/api/v1/catalog/works/{id}/claim-actions/{action}",
 		"/api/v1/catalog/claim-events/feed",
 		"/api/v1/catalog/edit-revisions/feed",
 		"/api/v1/catalog/users/{uid}/claims",
 	} {
 		assert.NotNilf(t, paths[p], "operation %s must be registered", p)
+	}
+	// Wave 185's retirement stated as a test: both claim WRITES asserted their
+	// actor in the body, and re-registering either would put that door back.
+	for _, p := range []string{
+		"/api/v1/catalog/works/{id}/claim-actions/{action}",
+		"/api/v1/catalog/works/submit",
+	} {
+		assert.Nilf(t, paths[p], "operation %s must NOT be registered on the S2S face", p)
 	}
 }
 
@@ -71,28 +80,21 @@ func editGet(t *testing.T, app *fiber.App, url string) (int, []byte) {
 	return resp.StatusCode, raw
 }
 
-// TestLifecycleFaceAuthority: an unknown action never reaches the service, a
-// site may not move another site's claim, and reviewing needs the review
-// permission — all decided before any transaction opens (nil service proves it).
-func TestLifecycleFaceAuthority(t *testing.T) {
-	app := lifecycleApp(&siteModel.OAuthClient{ID: "c1", CatalogSite: "kungal"}, nil)
-
-	status, _ := editPost(t, app, "/api/v1/catalog/works/1/claim-actions/frobnicate",
-		`{"site":"kungal","actor":{"user_id":1}}`)
-	assert.Equal(t, fiber.StatusBadRequest, status, "an unknown action is a 400")
-
-	status, _ = editPost(t, app, "/api/v1/catalog/works/1/claim-actions/publish",
-		`{"site":"moyu","actor":{"user_id":1}}`)
-	assert.Equal(t, fiber.StatusForbidden, status, "a client may only act for its own site")
-
-	status, _ = editPost(t, app, "/api/v1/catalog/works/1/claim-actions/approve",
-		`{"actor":{"user_id":1,"roles":["user"]}}`)
-	assert.Equal(t, fiber.StatusForbidden, status, "reviewing requires catalog.claim.review")
+// actOnClaim moves a claim through the service both live faces share. The S2S
+// action op that used to drive these fixtures over HTTP retired in wave 185, and
+// its user-plane twin needs a signed token per call — the fixtures here are
+// about the state the READS then serve, so they are set up at the service.
+func actOnClaim(t *testing.T, claims *service.ClaimLifecycleService, p service.ClaimActionParams) *service.ClaimActionResult {
+	t.Helper()
+	res, err := claims.Act(t.Context(), p)
+	require.NoError(t, err)
+	return res
 }
 
-// TestLifecycleFaceEndToEnd drives a submission over HTTP and pins the 409 the
-// whole action vocabulary hangs on.
-func TestLifecycleFaceEndToEnd(t *testing.T) {
+// TestClaimEventFeedOverHTTP: the transitions are made where they now live —
+// the lifecycle service, which the user-token face drives — and the FEED, the
+// S2S read wave 185 left standing, is asserted over the wire.
+func TestClaimEventFeedOverHTTP(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"catalog_claim_event", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -102,49 +104,25 @@ func TestLifecycleFaceEndToEnd(t *testing.T) {
 
 	claims := service.NewClaimLifecycleService(db)
 	app := lifecycleApp(&siteModel.OAuthClient{ID: "kungal-client", CatalogSite: "kungal"}, claims)
-	path := func(action string) string {
-		return fmt.Sprintf("/api/v1/catalog/works/%d/claim-actions/%s", work.ID, action)
-	}
 
-	status, raw := editPost(t, app, path("claim"),
-		`{"site":"kungal","product_work_id":777,"actor":{"user_id":5}}`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	var claimed struct {
-		Data service.ClaimActionResult `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &claimed))
-	assert.Nil(t, claimed.Data.From, "the birth event carries no prior state")
-	assert.Equal(t, model.ClaimStateKeyDraft, claimed.Data.To)
+	productWorkID := int64(777)
+	claimed := actOnClaim(t, claims, service.ClaimActionParams{
+		WorkID: work.ID, Action: service.ClaimActionClaim, Site: "kungal",
+		ProductWorkID: &productWorkID, ActorUID: 5,
+	})
+	assert.Nil(t, claimed.From, "the birth event carries no prior state")
+	assert.Equal(t, model.ClaimStateKeyDraft, claimed.To)
 
-	// publish is legal from draft; submit afterwards is NOT (live is not a
-	// submit source) — the 409 must name the state that blocked it.
-	status, raw = editPost(t, app, path("publish"), `{"site":"kungal","actor":{"user_id":5}}`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-
-	status, raw = editPost(t, app, path("submit"), `{"site":"kungal","actor":{"user_id":5}}`)
-	require.Equal(t, fiber.StatusConflict, status, string(raw))
-	var conflict struct {
-		Data struct {
-			CurrentState string   `json:"current_state"`
-			AllowedFrom  []string `json:"allowed_from"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &conflict))
-	assert.Equal(t, model.ClaimStateKeyLive, conflict.Data.CurrentState)
-	assert.NotEmpty(t, conflict.Data.AllowedFrom)
-
-	// A reviewer (asserted moderator — wave 157 re-keyed these four actions to
-	// catalog.claim.review, which moderators hold) may act across tenants. A
-	// decline with no reason is refused as malformed BEFORE the transaction
-	// opens — the input check runs ahead of the state machine, so the caller is
-	// told the actual problem rather than "wrong state".
-	status, raw = editPost(t, app, path("decline"), `{"actor":{"user_id":9,"roles":["moderator"]}}`)
-	assert.Equal(t, fiber.StatusUnprocessableEntity, status, string(raw))
-	status, raw = editPost(t, app, path("ban"), `{"actor":{"user_id":9,"roles":["moderator"]},"reason":"policy"}`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
+	actOnClaim(t, claims, service.ClaimActionParams{
+		WorkID: work.ID, Action: service.ClaimActionPublish, Site: "kungal", ActorUID: 5,
+	})
+	// A curator acts across tenants — the empty site the staff face passes.
+	actOnClaim(t, claims, service.ClaimActionParams{
+		WorkID: work.ID, Action: service.ClaimActionBan, ActorUID: 9, Reason: "policy",
+	})
 
 	// The feed serves what just happened, oldest first.
-	status, raw = editGet(t, app, "/api/v1/catalog/claim-events/feed?since=0&limit=10")
+	status, raw := editGet(t, app, "/api/v1/catalog/claim-events/feed?since=0&limit=10")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var feed struct {
 		Data struct {

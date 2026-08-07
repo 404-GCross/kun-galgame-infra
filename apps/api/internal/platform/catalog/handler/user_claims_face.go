@@ -21,15 +21,17 @@ import (
 // service, same state machine, same event ledger as the S2S face in
 // lifecycle.go. What moves is only where the two identity values come from:
 //
-//	S2S  — the product backend names the tenant in `site` and asserts the user
-//	       in `actor`, and is believed because it authenticated itself.
+//	S2S  — the product backend named the tenant in `site` and asserted the user
+//	       in `actor`, and was believed because it authenticated itself
+//	       (retired, wave 185).
 //	user — the tenant is the token client's catalog_site and the user is the
 //	       token's `id` claim. The body has no field for either.
 //
-// The S2S ops stay registered (a backend that genuinely authenticates its own
-// user still needs them, and forum reads OTHER users' claims for profile pages
-// through listCatalogClaimsByUser, which has no user-face equivalent by
-// design: `mine` is the token's own list and nobody else's).
+// Wave 185 retired the S2S pair outright, leaving these the only way to submit
+// a work or move a claim. The one S2S claims op that survives is the READ
+// listCatalogClaimsByUser, which forum renders OTHER users' profile pages from
+// and which has no user-face equivalent by design: `mine` is the token's own
+// list and nobody else's.
 //
 // AUTHORITY splits three ways here, one line each:
 //

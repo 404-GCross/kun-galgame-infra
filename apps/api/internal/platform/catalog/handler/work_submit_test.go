@@ -7,7 +7,6 @@ import (
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/service"
-	siteModel "api/internal/platform/site/model"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
@@ -15,22 +14,16 @@ import (
 )
 
 // The submission mint over HTTP (wave 162). Status codes are the contract a
-// wizard branches on: 403 wrong tenant, 422 malformed payload, 409 already
-// submitted (with the existing work attached so the wizard resumes instead of
-// retrying), 200 with the minted identity.
-
-func TestSubmitFaceRegistersAndGuardsTheTenant(t *testing.T) {
-	app := lifecycleApp(&siteModel.OAuthClient{ID: "c1", CatalogSite: "kungal"}, nil)
-	// Decided before any transaction opens — the nil service proves it.
-	status, raw := editPost(t, app, "/api/v1/catalog/works/submit",
-		`{"site":"moyu","product_work_id":1,"actor":{"user_id":1},"fields":{"catalog.work.display_name":"x"}}`)
-	assert.Equal(t, fiber.StatusForbidden, status, string(raw))
-
-	unbound := lifecycleApp(&siteModel.OAuthClient{ID: "c2"}, nil)
-	status, raw = editPost(t, unbound, "/api/v1/catalog/works/submit",
-		`{"site":"kungal","product_work_id":1,"actor":{"user_id":1},"fields":{"catalog.work.display_name":"x"}}`)
-	assert.Equal(t, fiber.StatusForbidden, status, string(raw))
-}
+// wizard branches on: 422 malformed payload, 409 already submitted (with the
+// existing work attached so the wizard resumes instead of retrying), 200 with
+// the minted identity.
+//
+// The mint used to answer on the S2S face too, with the tenant and the
+// submitter asserted in the body; wave 185 retired that door and left the
+// user-token twin, which derives both from the token. So this drives the twin —
+// the wire contract above is the same one, and the tenant refusals the S2S
+// cases pinned are now the token gate's own subject
+// (user_claims_face_test.go's gate matrix).
 
 func TestSubmitFaceEndToEnd(t *testing.T) {
 	db := openCatalogTestDB(t)
@@ -41,15 +34,16 @@ func TestSubmitFaceEndToEnd(t *testing.T) {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	claims := service.NewClaimLifecycleService(db)
-	app := lifecycleApp(&siteModel.OAuthClient{ID: "kungal-client", CatalogSite: "kungal"}, claims)
+	app := userClaimApp(db)
+	token := userToken(t, 5, ScopeCatalogEdit, "kungal-client")
 
-	body := `{"site":"kungal","product_work_id":80001,"actor":{"user_id":5},
+	body := `{"product_work_id":80001,
 	          "fields":{"catalog.work.display_name":"投稿ゲーム","catalog.work.olang":"ja",
 	                    "catalog.work.content_rating":2,
 	                    "catalog.work.titles":[{"lang":"ja","title":"投稿ゲーム","kind":0}],
 	                    "catalog.work.links":["https://vndb.org/v19658"]},
 	          "released":{"y":2020,"m":3,"d":14}}`
-	status, raw := editPost(t, app, "/api/v1/catalog/works/submit", body)
+	status, raw := userEditReq(t, app, "POST", UserPrefix+"/works/submit", token, body)
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var minted struct {
 		Data dto.WorkSubmitResponse `json:"data"`
@@ -62,7 +56,7 @@ func TestSubmitFaceEndToEnd(t *testing.T) {
 	assert.EqualValues(t, 80001, minted.Data.ProductWorkID, "a supplied id is echoed verbatim")
 
 	// A repeat submission is a 409 that hands back the existing work.
-	status, raw = editPost(t, app, "/api/v1/catalog/works/submit", body)
+	status, raw = userEditReq(t, app, "POST", UserPrefix+"/works/submit", token, body)
 	require.Equal(t, fiber.StatusConflict, status, string(raw))
 	var conflict struct {
 		Data dto.WorkSubmitConflictInfo `json:"data"`
@@ -75,10 +69,9 @@ func TestSubmitFaceEndToEnd(t *testing.T) {
 	// product_work_id OMITTED: the registry issues the identity and hands it
 	// back, and the wire must not require the field at all (charter
 	// §6.P4-verdict 1). A retry is then recognized by the VNDB link.
-	issuedBody := `{"site":"kungal","actor":{"user_id":5},
-	                "fields":{"catalog.work.display_name":"番号なし",
+	issuedBody := `{"fields":{"catalog.work.display_name":"番号なし",
 	                          "catalog.work.links":["https://vndb.org/v11111"]}}`
-	status, raw = editPost(t, app, "/api/v1/catalog/works/submit", issuedBody)
+	status, raw = userEditReq(t, app, "POST", UserPrefix+"/works/submit", token, issuedBody)
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var issued struct {
 		Data dto.WorkSubmitResponse `json:"data"`
@@ -88,7 +81,7 @@ func TestSubmitFaceEndToEnd(t *testing.T) {
 	assert.Equal(t, issued.Data.WorkID, issued.Data.ProductWorkID,
 		"an omitted product id is issued as the minted work id")
 
-	status, raw = editPost(t, app, "/api/v1/catalog/works/submit", issuedBody)
+	status, raw = userEditReq(t, app, "POST", UserPrefix+"/works/submit", token, issuedBody)
 	require.Equal(t, fiber.StatusConflict, status, string(raw))
 	require.NoError(t, json.Unmarshal(raw, &conflict))
 	assert.Equal(t, issued.Data.WorkID, conflict.Data.WorkID)
@@ -96,8 +89,8 @@ func TestSubmitFaceEndToEnd(t *testing.T) {
 	assert.Equal(t, "vndb:v11111", conflict.Data.Anchor)
 
 	// A payload key outside the submission subset is a 422, not a silent drop.
-	status, raw = editPost(t, app, "/api/v1/catalog/works/submit",
-		`{"site":"kungal","product_work_id":80002,"actor":{"user_id":5},
+	status, raw = userEditReq(t, app, "POST", UserPrefix+"/works/submit", token,
+		`{"product_work_id":80002,
 		  "fields":{"catalog.work.display_name":"x","catalog.work.covers":[]}}`)
 	assert.Equal(t, fiber.StatusUnprocessableEntity, status, string(raw))
 

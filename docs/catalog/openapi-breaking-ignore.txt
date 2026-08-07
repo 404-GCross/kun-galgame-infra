@@ -20,3 +20,24 @@ in API POST /api/v1/catalog/edit/revert api path removed without deprecation
 in API GET /api/v1/catalog/edit/snapshot api path removed without deprecation
 in API PUT /api/v1/catalog/works/{workID}/covers/{coverID}/vote api path removed without deprecation
 in API DELETE /api/v1/catalog/works/{workID}/covers/{coverID}/vote api path removed without deprecation
+
+# Wave 185 (2026-08-07) closes the S2S WRITE plane. Wave 181 left create /
+# withdraw / schema on the editing face and the two claim writes on the
+# lifecycle face for backends that authenticate their own user; every removal
+# below has a live twin on the user-token plane (createEditProposalUser,
+# withdrawEditProposalUser, getEditSchemaUser, submitCatalogWorkUser,
+# actOnCatalogClaimUser), where the actor is the bearer token rather than a uid
+# a caller states about someone else. A cross-repo sweep at the sibling repos'
+# origin refs and 48h of production access logs found zero callers of any of the
+# five. The third-person READ plane deliberately survives — listEditProposals
+# (proposer_uid names the person being looked at) and listCatalogClaimsByUser
+# (forum's profile pages) are not affected. Rationale: docs/catalog/01 §4.2.
+
+# The first entry says "api removed", not "api path removed": the PATH survives
+# for the surviving GET (listEditProposals) and only the POST verb went, which
+# oasdiff reports as a different rule.
+in API POST /api/v1/catalog/edit/proposals api removed without deprecation
+in API POST /api/v1/catalog/edit/proposals/{id}/withdraw api path removed without deprecation
+in API GET /api/v1/catalog/edit/schema/{entity_type} api path removed without deprecation
+in API POST /api/v1/catalog/works/submit api path removed without deprecation
+in API POST /api/v1/catalog/works/{id}/claim-actions/{action} api path removed without deprecation

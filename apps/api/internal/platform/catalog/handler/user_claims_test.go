@@ -48,20 +48,20 @@ func TestUserClaimsFace(t *testing.T) {
 		w := &model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: name, Status: model.WorkStatusLive}
 		require.NoError(t, db.Create(w).Error)
 		ids = append(ids, w.ID)
-		status, raw := editPost(t, app, fmt.Sprintf("/api/v1/catalog/works/%d/claim-actions/claim", w.ID),
-			fmt.Sprintf(`{"site":"kungal","product_work_id":%d,"actor":{"user_id":5}}`, 6100+i))
-		require.Equal(t, fiber.StatusOK, status, string(raw))
+		productWorkID := int64(6100 + i)
+		actOnClaim(t, claims, service.ClaimActionParams{
+			WorkID: w.ID, Action: service.ClaimActionClaim, Site: "kungal",
+			ProductWorkID: &productWorkID, ActorUID: 5,
+		})
 	}
-	path := func(id int64, action string) string {
-		return fmt.Sprintf("/api/v1/catalog/works/%d/claim-actions/%s", id, action)
-	}
-	status, raw := editPost(t, app, path(ids[0], "submit"), `{"site":"kungal","actor":{"user_id":5}}`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	status, raw = editPost(t, app, path(ids[0], "decline"),
-		`{"actor":{"user_id":77,"roles":["moderator"]},"reason":"重複"}`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
+	actOnClaim(t, claims, service.ClaimActionParams{
+		WorkID: ids[0], Action: service.ClaimActionSubmit, Site: "kungal", ActorUID: 5,
+	})
+	actOnClaim(t, claims, service.ClaimActionParams{
+		WorkID: ids[0], Action: service.ClaimActionDecline, ActorUID: 77, Reason: "重複",
+	})
 
-	status, raw = editGet(t, app, "/api/v1/catalog/users/5/claims")
+	status, raw := editGet(t, app, "/api/v1/catalog/users/5/claims")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var page userClaimsBody
 	require.NoError(t, json.Unmarshal(raw, &page))
@@ -133,13 +133,17 @@ func TestClaimEventFeedActorFilter(t *testing.T) {
 
 	w := &model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "フィード対象", Status: model.WorkStatusLive}
 	require.NoError(t, db.Create(w).Error)
-	base := fmt.Sprintf("/api/v1/catalog/works/%d/claim-actions/", w.ID)
-	status, raw := editPost(t, app, base+"claim", `{"site":"kungal","product_work_id":6200,"actor":{"user_id":5}}`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	status, raw = editPost(t, app, base+"submit", `{"site":"kungal","actor":{"user_id":5}}`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	status, raw = editPost(t, app, base+"approve", `{"actor":{"user_id":77,"roles":["moderator"]}}`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
+	productWorkID := int64(6200)
+	actOnClaim(t, claims, service.ClaimActionParams{
+		WorkID: w.ID, Action: service.ClaimActionClaim, Site: "kungal",
+		ProductWorkID: &productWorkID, ActorUID: 5,
+	})
+	actOnClaim(t, claims, service.ClaimActionParams{
+		WorkID: w.ID, Action: service.ClaimActionSubmit, Site: "kungal", ActorUID: 5,
+	})
+	actOnClaim(t, claims, service.ClaimActionParams{
+		WorkID: w.ID, Action: service.ClaimActionApprove, ActorUID: 77,
+	})
 
 	var feed struct {
 		Data struct {
@@ -148,7 +152,7 @@ func TestClaimEventFeedActorFilter(t *testing.T) {
 			} `json:"items"`
 		} `json:"data"`
 	}
-	status, raw = editGet(t, app, "/api/v1/catalog/claim-events/feed?actor_uid=5")
+	status, raw := editGet(t, app, "/api/v1/catalog/claim-events/feed?actor_uid=5")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	require.NoError(t, json.Unmarshal(raw, &feed))
 	require.Len(t, feed.Data.Items, 2)

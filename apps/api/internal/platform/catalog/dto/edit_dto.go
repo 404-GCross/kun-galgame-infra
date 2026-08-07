@@ -2,15 +2,18 @@ package dto
 
 import "time"
 
-// Editing-engine S2S face DTOs (E0). BFF posture (doc 21 §2.7/§3): the
-// product backend authenticates its user locally and ASSERTS the actor
-// identity here over the Basic-authed S2S channel — exactly the community
-// S2S convention. All body fields are written out explicitly (Huma
-// anonymous-embed trap).
+// Editing-engine face DTOs (E0). All body fields are written out explicitly
+// (Huma anonymous-embed trap).
+//
+// The S2S face's asserted-actor REQUEST shapes are gone (wave 185): every write
+// it carried retired in favour of the user-token twins below, whose bodies name
+// no identity at all. EditActor survives as the engine-facing policy actor —
+// the user plane fills it in from the verified token, and the remaining S2S
+// reads never build one.
 
-// EditActor is the asserted end-user identity a policy context is built
-// from: roles feed the permission resolver, trust_tier the trusted rules,
-// is_entity_owner the OwnerReview overlay capability (E3b).
+// EditActor is the end-user identity a policy context is built from: roles feed
+// the permission resolver, trust_tier the trusted rules, is_entity_owner the
+// OwnerReview overlay capability (E3b).
 type EditActor struct {
 	UserID    int64    `json:"user_id" minimum:"1" doc:"Product-side user id (the shared identity space)"`
 	Roles     []string `json:"roles,omitempty" doc:"The user's roles as the product's JWT asserts them"`
@@ -21,25 +24,13 @@ type EditActor struct {
 	IsEntityOwner bool `json:"is_entity_owner,omitempty" doc:"Product-asserted entity ownership (owner-review overlays)"`
 }
 
-// EditProposalCreateRequest files a proposal (or a direct edit — the engine
-// automerges when every field's policy allows it).
-type EditProposalCreateRequest struct {
-	EntityType string         `json:"entity_type" minLength:"1" doc:"Registered entity type, e.g. catalog.work"`
-	EntityID   int64          `json:"entity_id" minimum:"1"`
-	Site       string         `json:"site" minLength:"1" doc:"Filing tenant; must equal the client's catalog_site binding"`
-	Patch      map[string]any `json:"patch" doc:"Field-key → new-value document (registered keys only)"`
-	Note       string         `json:"note,omitempty" maxLength:"2000"`
-	Actor      EditActor      `json:"actor"`
-}
-
-// UserEditProposalCreateRequest is EditProposalCreateRequest as the USER-TOKEN
-// face accepts it (wave 177): the same proposal, minus `actor` and minus `site`.
-// Both are derived server-side from the verified token — the proposer from its
-// `id` claim and its role union, the tenant from the token client's
-// catalog_site binding — so there is deliberately no wire field for either.
-// Written out explicitly rather than embedded (Huma anonymous-embed trap), and
-// kept a separate type rather than a variant of the S2S one precisely so no
-// future field can be added to both by accident.
+// UserEditProposalCreateRequest files a proposal (or a direct edit — the engine
+// automerges when every field's policy allows it) on the USER-TOKEN face. It
+// names neither the proposer nor the tenant: both are derived server-side from
+// the verified token — the proposer from its `id` claim and its role union, the
+// tenant from the token client's catalog_site binding — so there is deliberately
+// no wire field for either. Its S2S predecessor, which carried both as `actor`
+// and `site`, retired with its operation in wave 185.
 type UserEditProposalCreateRequest struct {
 	EntityType string         `json:"entity_type" minLength:"1" doc:"Registered entity type, e.g. catalog.work"`
 	EntityID   int64          `json:"entity_id" minimum:"1"`
@@ -51,11 +42,6 @@ type EditProposalCreateResponse struct {
 	Proposal EditProposalView  `json:"proposal"`
 	Merged   bool              `json:"merged" doc:"true when the direct-edit sugar landed the patch immediately"`
 	Revision *EditRevisionView `json:"revision,omitempty" doc:"The produced revision when merged"`
-}
-
-// EditWithdrawRequest withdraws the actor's own open proposal.
-type EditWithdrawRequest struct {
-	Actor EditActor `json:"actor"`
 }
 
 // The user-token face's request shapes (wave 178). Each carries no identity

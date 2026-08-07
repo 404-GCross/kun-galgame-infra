@@ -10,18 +10,10 @@ import "time"
 // catalog-native: a new id space wearing the old wire's spelling is how a
 // consumer ends up assuming the old semantics still hold.
 
-// ClaimActionRequest is the body of one lifecycle action.
-type ClaimActionRequest struct {
-	// Site is the acting tenant, enforced against the client's catalog_site
-	// binding for the four owner actions. Review actions ignore it (a curator
-	// acts across tenants) — the event still records the claim's own site.
-	Site  string    `json:"site,omitempty" doc:"Acting tenant; must equal the client's catalog_site binding for owner actions"`
-	Actor EditActor `json:"actor" doc:"The end user the product backend is acting for"`
-	// ProductWorkID is required by `claim` and ignored by every other action:
-	// it is the product-side id the registry row starts pointing at.
-	ProductWorkID int64  `json:"product_work_id,omitempty" minimum:"0" doc:"The product-side work id to anchor (claim only)"`
-	Reason        string `json:"reason,omitempty" doc:"Moderator note; REQUIRED for decline, recorded on the event"`
-}
+// The S2S face's two asserted-actor request shapes — one lifecycle action, one
+// submission mint — retired with their operations in wave 185. Both named the
+// acting user and the acting tenant on the wire; their surviving twins below
+// name neither, because the user-token face derives both from the token.
 
 // StaffClaimActionRequest is the body of a curator's action. The actor is the
 // operator's JWT, not an asserted user, so only the note is on the wire.
@@ -48,32 +40,18 @@ type UserClaimActionRequest struct {
 }
 
 // UserWorkSubmitRequest mints a work in the pending claim state as the token's
-// own user. Same content contract as WorkSubmitRequest — the field keys are the
-// editing face's registered catalog.work keys — with the submitter and the
-// submitting tenant derived from the token instead of named on the wire.
+// own user (wave 162's content contract: the field keys are the editing face's
+// registered catalog.work keys), with the submitter and the submitting tenant
+// derived from the token instead of named on the wire.
+//
+// The content half is keyed exactly like an edit patch, so a wizard renders one
+// form from one schema and posts it here to create or to the editing face to
+// amend. Two keys the matrix does not have and this face therefore does not
+// accept: a work-level release date (send `released` instead: it becomes one
+// curated release row) and a status (lifecycle is claim_state, moved only by
+// the semantic actions).
 type UserWorkSubmitRequest struct {
 	ProductWorkID *int64          `json:"product_work_id,omitempty" minimum:"1" doc:"The product-side work id to anchor this submission at. OMIT IT to have the registry issue the identity: the claim then adopts the minted work id, which the response returns. Idempotency depends on this choice — see the endpoint summary"`
-	Fields        map[string]any  `json:"fields" doc:"Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets"`
-	Released      *WorkSubmitDate `json:"released,omitempty" doc:"Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA"`
-}
-
-// WorkSubmitRequest mints a work in the pending claim state (wave 162).
-//
-// The content half is keyed exactly like an edit patch — the SAME field keys
-// the editing face registers for catalog.work — so a wizard renders one form
-// from one schema and posts it here to create or there to amend. Two keys the
-// matrix does not have and this face therefore does not accept: a work-level
-// release date (send `released` instead: it becomes one curated release row)
-// and a status (lifecycle is claim_state, moved only by the semantic actions).
-type WorkSubmitRequest struct {
-	Site  string    `json:"site" minLength:"1" doc:"Submitting tenant; must equal the client's catalog_site binding"`
-	Actor EditActor `json:"actor" doc:"The end user the product backend is submitting for"`
-	// ProductWorkID is OPTIONAL (charter §6.P4-verdict 1). Supplied = the
-	// product allocated the id first and the registry records it; omitted = the
-	// registry issues the identity and the claim adopts the minted work's own
-	// id, which the response hands back for the product to create its local row
-	// at.
-	ProductWorkID int64           `json:"product_work_id,omitempty" minimum:"0" doc:"The product-side work id to anchor this submission at. OMIT IT to have the registry issue the identity: the claim then adopts the minted work id, which the response returns. Idempotency depends on this choice — see the endpoint summary"`
 	Fields        map[string]any  `json:"fields" doc:"Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets"`
 	Released      *WorkSubmitDate `json:"released,omitempty" doc:"Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA"`
 }

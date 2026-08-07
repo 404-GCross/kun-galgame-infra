@@ -20,7 +20,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 ## 2. S2S 端点(Basic client 认证,前缀 `/api/v1/catalog`)
 
-写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。产品建游面(2.8):works/search。实体读面(2.9-2.11):names/{id}/works · characters/{id}/works · characters/{id}。
+写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)——**人类写端点已在 wave 181/185 全部退役,见 2.12 / 2.13 / 2.15**。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。产品建游面(2.8):works/search。实体读面(2.9-2.11):names/{id}/works · characters/{id}/works · characters/{id}。
 
 ### 2.1 `POST /catalog/resolve` — 批量 id 规范化(只读)
 
@@ -156,6 +156,22 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 - **`product_work_id` = 产品侧作品 id**,由 `catalog_work` 的认领列(`site` + `product_work_id`)按 `entity_id` 投影而来,**仅 `entity_type=catalog.work` 且认领租户与该条修订的 `site` 相同时非空**;其余一律 `null`(未认领作品、他站修订、非作品实体)。消费方由此可直接按自己的 id 落账,无需逐条回查。
 - feed **不带 `snapshot`**:它回答「谁在何时改了哪些字段」,整份快照请按需读 §4.2 / S2S 的 `revisions` / `diff`。
 
+### 2.15 S2S 写面 — **已全部退役(wave 185)**
+
+wave 181 之后,S2S 面上还剩五条会**写**的人类端点,每条都靠请求体里的 `actor` 断言操作者:
+
+| 已删除的 op | 曾经的方法 · 路径 | 现在用 |
+|-------------|-------------------|--------|
+| `createEditProposal` | `POST /api/v1/catalog/edit/proposals` | `createEditProposalUser`(§4.2) |
+| `withdrawEditProposal` | `POST /api/v1/catalog/edit/proposals/{id}/withdraw` | `withdrawEditProposalUser`(§4.2) |
+| `getEditSchema` | `GET /api/v1/catalog/edit/schema/{entity_type}` | `getEditSchemaUser`(§4.2) |
+| `submitCatalogWork` | `POST /api/v1/catalog/works/submit` | `submitCatalogWorkUser`(§4.3) |
+| `actOnCatalogClaim` | `POST /api/v1/catalog/works/{id}/claim-actions/{action}` | `actOnCatalogClaimUser`(§4.3) |
+
+它们当初留下只因两个产品仍在实调(letmoe 三条、moyu 两条);两边迁 Bearer 之后,跨仓普查(各兄弟仓 origin 分支)与 **48 小时生产访问日志**均确认零调用方,故一并删除——**404/405,不是 410**,与 §2.12 / §2.13 同一套办法。`/api/v1/catalog/edit/proposals` 这条路径**仍在**,但只答 `GET`(`listEditProposals`),POST 已无。
+
+删的是门,不是语义:两面**共用同一 editing engine / registry / 站点 overlay**,认领两条**共用同一 service、同一状态机、同一 `catalog_claim_event` 账本**,故一条认领或一次编辑的历史,无论过去从后端还是现在从浏览器写入,都读作同一串事件。至此 **S2S 面(`/api/v1/catalog`)上再没有任何人类写端点**;仍在的写只有 §2.3 的 `claim`(机器侧的注册/认领,不涉及「代表某个人」),其余全是读:两条游标 feed(§2.14、`claim-events/feed`)、`listCatalogClaimsByUser`、`listEditProposals`、`listEditRevisions` / `diffEditRevisions`,以及 §2.1-2.11 的各读面。
+
 ## 3. Admin 四桶(Bearer JWT + **ren 超管角色**,前缀 `/api/v1/admin/catalog`)
 
 人审治理面,把「机器不敢自动终判」的三类东西交给人:
@@ -206,11 +222,12 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 
 > ⚠️ **S2S 的编辑裁决端点已在 wave 181 删除**:`getEditProposal` / `amendEditProposal` / `mergeEditProposal` / `declineEditProposal` / `revertEditEntity` / `getEditSnapshot` 六条不复存在(404/405,不是 410)。理由同 §2.13——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户**裁决**编辑;跨仓普查确认它们零外部调用方。请改用本节的 op。两面**共用同一 editing engine、同一 registry、同一套站点 overlay**,只有 actor 的来路不同,故策略结论跨面一致。
 >
-> S2S 面上**仍在**的编辑端点只剩六条,各有各的理由:
+> ⚠️ **过渡期留下的三条也已在 wave 185 删除**:`createEditProposal` / `withdrawEditProposal` / `getEditSchema` 不复存在(404/405,不是 410)。它们当初留着只为 **kun-letmoe-community 仍在实调**;letmoe 迁 Bearer 之后,跨仓普查(各兄弟仓 origin 分支)与 **48 小时生产访问日志**都确认零调用方,故按 wave 181 的同一套办法删除。孪生分别是 `createEditProposalUser` / `withdrawEditProposalUser` / `getEditSchemaUser`。**wave 183 起 `trust_tier` 在 infra 侧已有事实来源**——用户面在门口用权限键 `catalog.edit.trusted` 推导信任层级(见下方与 docs/auth/04 §2.3),letmoe 的 `ProposeTrusted` 通道在 Bearer 面同样成立,故删除不留能力缺口。
 >
-> - `createEditProposal` / `withdrawEditProposal` / `getEditSchema` —— **kun-letmoe-community 仍在实调**,故过渡期继续保留。**wave 183 起,「`trust_tier` 在 infra 侧没有事实来源」这条理由已不成立**:用户面在门口用权限键 `catalog.edit.trusted` 推导信任层级(见下方 §4.2 与 docs/auth/04 §2.3),letmoe 的 `ProposeTrusted` 通道在 Bearer 面同样成立。**留到 letmoe 迁 Bearer 为止**,不是永久位置。
-> - `listEditProposals` —— 第三人称统计(forum 个人主页、patch 创作者统计):那里的 `proposer_uid` 是**被看的那个人**,不是断言的「我」,故不属于本波清理的范畴。
-> - `listEditRevisions` / `diffEditRevisions` —— **版本史读**,任何人都可读的公共投影,没有「令牌本人」这一维。这条是教义,不是过渡。
+> S2S 编辑面**至此只剩读**,三条,各有各的理由,都不是过渡:
+>
+> - `listEditProposals` —— 第三人称统计(forum 个人主页、patch 创作者统计):那里的 `proposer_uid` 是**被看的那个人**,不是断言的「我」,故不属于清理的范畴。
+> - `listEditRevisions` / `diffEditRevisions` —— **版本史读**,任何人都可读的公共投影,没有「令牌本人」这一维。
 
 | op | 方法 · 路径 | 是什么 |
 |----|-------------|--------|
@@ -223,10 +240,10 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 | `declineEditProposalUser` | `POST /user/catalog/edit/proposals/{id}/decline` | 以本人名义拒绝开放提案(`{note?}`,理由落 `decision_note`) |
 | `revertEditEntityUser` | `POST /user/catalog/edit/revert` | 以本人名义回滚实体到历史版本(`{entity_type, entity_id, to_seq, note?}`;**无 `site`**——租户取自令牌 client) |
 
-- **create 请求体 = S2S `EditProposalCreateRequest` 减去 `actor` 与 `site`**,即 `{entity_type, entity_id, patch, note?}`。这不是「精简版」,而是**把可以撒谎的地方全部删掉**:提案人 = 令牌 `id` claim,租户 = 令牌 client 的 `catalog_site`。响应与 S2S 逐字相同(`{proposal, merged, revision?}`)。
+- **create 请求体 = 已删除的 S2S `EditProposalCreateRequest` 减去 `actor` 与 `site`**,即 `{entity_type, entity_id, patch, note?}`。这不是「精简版」,而是**把可以撒谎的地方全部删掉**:提案人 = 令牌 `id` claim,租户 = 令牌 client 的 `catalog_site`。响应与 S2S 逐字相同(`{proposal, merged, revision?}`)。
 - **roles 取自令牌**:`middleware.JWTAuth` 的 `user_roles`(全局 `roles` claim ∪ `site_roles`)直接喂进该实体 family 的权限词表。因此**管理员令牌在本面同样触发自动合并**(kungal overlay:propose=open / automerge=review),与它在 S2S 面断言 `roles:["admin"]` 的结论一致;站点局部 moderator 只在**该站 client 签发的令牌**上成立(site_roles 的既有语义)。
-- **withdraw 无请求体**:S2S 的撤回请求体只有一个 `actor`,减去之后什么也不剩。检查两道——先比对提案的租户与令牌 client 的 `catalog_site`(跨租户 → **403**),再由引擎校验「提案人 == 本人」(否则 **403** `ErrNotProposer`);已关闭的提案 → **409**,不存在 → **404**。
-- **schema 投影不接受任何 actor 查询参数**:S2S 版的 `user_id` / `roles` / `trust_tier` / `is_entity_owner` / `site` 在本面**全部不存在**——调用方无法询问「换成别人会怎样」。保留的 `entity_id` 描述的是**投影对象**(实体感知的 overlay 对它求值),不是调用者。
+- **withdraw 无请求体**:已删除的 S2S 撤回请求体只有一个 `actor`,减去之后什么也不剩。检查两道——先比对提案的租户与令牌 client 的 `catalog_site`(跨租户 → **403**),再由引擎校验「提案人 == 本人」(否则 **403** `ErrNotProposer`);已关闭的提案 → **409**,不存在 → **404**。
+- **schema 投影不接受任何 actor 查询参数**:已删除的 S2S 版所带的 `user_id` / `roles` / `trust_tier` / `is_entity_owner` / `site` 在本面**从来不存在**——调用方无法询问「换成别人会怎样」。保留的 `entity_id` 描述的是**投影对象**(实体感知的 overlay 对它求值),不是调用者。
 - **审核四件套(amend / merge / decline / revert)请求体 = S2S 版减去 `actor`(revert 再减 `site`)**,响应与 S2S 逐字相同(amend → `EditAmendmentView`,merge → `EditRevisionView`,decline → 关闭后的 `EditProposalView`,revert → `{proposal, revision}`)。审核者 = 令牌本人,`amender_uid` / `decided_by_uid` / 回滚 revision 的 `actor_uid` 都写它。
 - **租户闸(四件套 + 详情读共用)**:先比对提案的 `site` 与令牌 client 的 `catalog_site`,不符 → **403**(先于任何引擎规则,跨租户调用方只知道「不是你的」);revert 无提案可比,租户即令牌 client 绑定值,直接作为 overlay 键与写入租户。
 - **归属(ownership)是 catalog 自己持有的事实了(wave 178)**:`catalog_work.owner_user_id`(可空 bigint,**write-once**)——提交铸造(§2 submit)与**认领诞生**(claim 动作,`from_state IS NULL` 的那一次)各写一次,之后**永不覆盖**;NULL = 未知/历史行(手工回填脚本 `apps/api/cmd/migrate-catalog/backfill/owner-user-id.sql`,由 forum `galgame.creator_user_id` 与诞生事件两路补齐)。引擎经 spec 的 `OwnerUserID` 钩子**推导** `IsEntityOwner`(仅当钩子存在、调用者 uid 非 0、且存储 uid == 调用者 uid),因此 **kungal 的 owner-review 通道在用户面天然成立**,无需任何后端断言,forum 侧的镜像权限闸可以删除。
@@ -236,9 +253,7 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 
 ### 4.3 认领生命周期(投稿 + 八动作 + 我的认领,wave 179)
 
-> ⚠️ **一等站点已不推荐用 S2S 的认领写端点**(`submitCatalogWork`、`actOnCatalogClaim`):同 §4.2 的理由——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户投稿、撤回,乃至**裁决**别人的投稿。有用户令牌的场景请改用本节的 op。两面**共用同一 service、同一状态机、同一 `catalog_claim_event` 账本**,只有身份的来路不同,故一条认领的历史无论从后端还是从浏览器写入都读作同一串事件。
->
-> **wave 181 没有删除这两条**,理由只有一个:**kun-galgame-patch(moyu)仍在实调**。它们与 §4.2 留下的 letmoe 三条同类——过渡位置,不是终局位置;moyu 迁 Bearer 之后即按本波的办法删除。
+> ⚠️ **S2S 的两条认领写端点已在 wave 185 删除**:`submitCatalogWork`(`POST /api/v1/catalog/works/submit`)与 `actOnCatalogClaim`(`POST /api/v1/catalog/works/{id}/claim-actions/{action}`)不复存在(404/405,不是 410)。理由同 §4.2——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户投稿、撤回,乃至**裁决**别人的投稿。它们当初留着只为 **kun-galgame-patch(moyu)仍在实调**;moyu 迁 Bearer 之后,跨仓普查与 48 小时生产访问日志确认零调用方,故按 wave 181 的同一套办法删除。孪生即本节的 `submitCatalogWorkUser` / `actOnCatalogClaimUser`——两面**曾共用同一 service、同一状态机、同一 `catalog_claim_event` 账本**,只有身份的来路不同,故删除的是门,不是任何语义。
 
 | op | 方法 · 路径 | 是什么 |
 |----|-------------|--------|
@@ -246,18 +261,18 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 | `actOnCatalogClaimUser` | `POST /user/catalog/works/{id}/claim-actions/{action}` | 以令牌本人的名义推动认领:`claim`/`submit`/`publish`/`withdraw`(须**本人是条目所有者**——**或该条目尚无主时的第一认领人**,此时动作即认领)或 `approve`/`decline`/`ban`/`unban`(须令牌 roles 持 `catalog.claim.review`) |
 | `listCatalogClaimsMine` | `GET /user/catalog/claims/mine?claim_state=&before=&limit=` | **本人**在**本令牌站点**上动过的认领(即 S2S `listCatalogClaimsByUser` 的自照版),响应同为 `CursorPage<UserClaimItem>` |
 
-- **请求体 = S2S 版减去 `site` 与 `actor`**:submit 为 `{product_work_id?, fields, released?}`,action 为 `{product_work_id?, reason?}`。投稿人/操作者 = 令牌 `id` claim,租户 = 令牌 client 的 `catalog_site`。响应与 S2S 逐字相同(`WorkSubmitResponse` / `ClaimActionResult`),幂等规则(`product_work_id` 给了 = claim 键精确;没给 = 只认 payload 里的身份锚;两者皆无 = 重试会二次铸造)也逐字相同。
+- **请求体 = 已删除的 S2S 版减去 `site` 与 `actor`**:submit 为 `{product_work_id?, fields, released?}`,action 为 `{product_work_id?, reason?}`。投稿人/操作者 = 令牌 `id` claim,租户 = 令牌 client 的 `catalog_site`。响应形状与 S2S 版逐字相同(`WorkSubmitResponse` / `ClaimActionResult`),幂等规则(`product_work_id` 给了 = claim 键精确;没给 = 只认 payload 里的身份锚;两者皆无 = 重试会二次铸造)也逐字相同。
 - **权威一分为三**:
   - **审核四动作**——令牌 roles 经 catalog family 的权限词表解析 `catalog.claim.review`,与 S2S 面解析断言 actor 的**同一个 resolver**(由 DB 权限 overlay 热替换,故权限台授权即刻生效);不足 → **403**。
   - **所有者三动作(`submit`/`publish`/`withdraw`)——「无主即认领,有主即他人」**:
     - `owner_user_id` 是**别人** → **403**。这是本波**新长出的牙**:S2S 面只校验租户(uid 是后端断言的、只能采信),在 uid 无法断言的面上,把它和所有者对一次是免费的。
     - `owner_user_id` 为 **NULL** → **放行,并在同一条 UPDATE 里把调用者盖成所有者**(write-once,与 `claim` 动作、投稿铸造同一套规则)。这不是宽容,**这就是产品的主手势**:注册表的大宗是机器导入的镜像存量,躺在 `draft` 且无主(prod 2026-08:kungal 有 **53,486** 条这样的 draft;pending/declined **零**条无主),forum 向导的「认领这部游戏」正是一个人对其中一条调 `publish`。若把无主判成拒绝,等于用一个看起来像安全检查的规则 403 掉整个功能。**第一个动它的人成为主人**,此后上一条把其他人挡在外面。
     - 检查与盖章同在 `SELECT ... FOR UPDATE` 事务内:两个认领者被串行化,输的那个撞上的是**迁移规则的 409**(它要的起始状态已经没了),而不是半盖的所有权。
-    - **S2S 面不参与认领**:`RequireOwner` 未置时(S2S / staff)移动无主认领**不盖任何所有者**——那边的 uid 是断言值,机器同步不该把任何人写成谁的主人。
+    - **staff 面不参与认领**:`RequireOwner` 未置时(staff 审核队列)移动无主认领**不盖任何所有者**——curator 按定义是在裁决别人的认领,移动一条不该把它变成他的。
   - **`claim`(none→draft)**——任何已登录用户皆可,因为这个动作**就是**上一条所检查的归属的诞生;它照旧要求 `product_work_id`,并沿用 write-once 盖章(已有所有者的行永不改归属)。
 - **租户对审核动作也传**(与 S2S 面不同:那里为让 curator 跨租户裁决而把 site 置空)。本面的 moderator 是经**某一个产品的 client** 到达的,该 client 绑定的站点是它唯一可裁决的租户;跨租户 → **403**(既有租户闸直接给出)。平台级队列是 staff 面(`/api/v1/admin/catalog`)的活,那面背后是 staff JWT 而非 per-product 令牌。
 - **`mine` 无 uid 参数**:uid 与 site 全部取自令牌,故它天然只答「我的」。`claim_state` 用与全站一致的闭合词表解析器(非法值 → **400**,message 为同一句),`before` = 上一页末行的 `last_event_id`,`total` 即该用户的统计值(「我发布的」= `claim_state=live&limit=1`)。
-- **S2S 认领面全部保留**,不是过渡期的残留:`listCatalogClaimsByUser`(**读别人的**认领,forum 的个人资料页靠它)在用户面**故意没有对应 op**——`mine` 是本人的列表、不是任何人的;`listCatalogClaimEvents` / `listCatalogEditRevisions` 两条游标 feed(产品侧对账 cron 的面)、`revisions` / `diff` 两条版本史读、各类第三人称统计投影与 staff 审核队列**仍只在 S2S / admin 面**——它们要么是机器消费者的面、没有「令牌本人」可言,要么是公共读、本就不问是谁。wave 180 后,**人类写与人类只读均已在用户面齐备**,S2S 上不再有任何需要断言 uid 的人类动作。
+- **S2S 认领面剩下的全是读**(wave 185 删掉两条写之后),不是过渡期的残留:`listCatalogClaimsByUser`(**读别人的**认领,forum 的个人资料页靠它)在用户面**故意没有对应 op**——`mine` 是本人的列表、不是任何人的;`listCatalogClaimEvents` / `listCatalogEditRevisions` 两条游标 feed(产品侧对账 cron 的面)、`revisions` / `diff` 两条版本史读、各类第三人称统计投影与 staff 审核队列**仍只在 S2S / admin 面**——它们要么是机器消费者的面、没有「令牌本人」可言,要么是公共读、本就不问是谁。wave 180 后**人类写与人类只读均已在用户面齐备**,wave 181 与 185 依次删掉了 S2S 上残留的孪生:S2S 面上**不再有任何写**,更没有任何需要断言 uid 的人类动作。
 - 错误映射沿用 S2S 面:非法迁移 → **409**(带 `ClaimTransitionInfo`),重复投稿 → **409**(带 `WorkSubmitConflictInfo`),作品不存在 → **404**,未知 action → **400**,`decline` 缺 reason / `claim` 缺 `product_work_id` / 投稿缺 `display_name` → **422**,越权(条目属于他人、跨租户、无审核权)→ **403**。
 
 ### 4.4 用户令牌只读面(wave 180)
@@ -296,7 +311,7 @@ wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留�
   - **letmoe(第二消费站,同人为主)**:`UPDATE oauth_clients SET catalog_site='letmoe' WHERE <letmoe client 定位>;`(dev = 本地主库执行即可复现;**prod = 用户 ops**,随 letmoe 上线 runbook 同批,核验 `SELECT id,catalog_site FROM oauth_clients WHERE catalog_site='letmoe'` 命中 letmoe 机密 client)。
 - **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ **ren 角色(超管专属)**,与 site 绑定列无关。
 - **user face(`/api/v1/user/catalog/*`,wave 176)**:Bearer **用户**访问令牌(同一 accept-both verifier)+ `catalog:edit` scope + **client 绑定**。这里 `oauth_clients.catalog_site` 的用法与 S2S 写面**不同**:S2S 校验「绑定值 == 请求体 site」,user face **根本不收 site**——绑定值**就是**写入的租户。因此新增消费站的动作仍是同一条(给其 client 设 `catalog_site`),但一等登录令牌(无 `client_id`)在本面**永远**拿不到租户,只能走 OAuth 授权码流取得 client 绑定令牌。详见 §4。
-- **编辑引擎提案桥面（过渡参考，09-open-api-phase2 06b）**：catalog 进程另托一个 galgame-family 的**平台提案面** `/internal/edit/*`（create / mine / get-own / withdraw + schema/snapshot 只读投影），走 devapi 双凭证链——scope **`galgame:propose`**、计量 face **`galgame_internal_propose`**；actor 取自已验用户 JWT（plain：trust 0 / roles ∅ / 非 owner），租户由 key 的 `oauth_clients.catalog_site` 反查（请求**不收** site/actor 断言）。它是**纯 Fiber、不进本目录 spec**（`openapi.yaml` 仅含 S2S face）；编辑引擎的 S2S 面（`/api/v1/catalog/edit/*`）在 wave 181 收缩为 create/withdraw/schema/list(第三人称统计读)/revisions/diff 六条,裁决全在用户面。**桥面不立独立契约文档**，第三方实际开放另议。
+- **编辑引擎提案桥面（过渡参考，09-open-api-phase2 06b）**：catalog 进程另托一个 galgame-family 的**平台提案面** `/internal/edit/*`（create / mine / get-own / withdraw + schema/snapshot 只读投影），走 devapi 双凭证链——scope **`galgame:propose`**、计量 face **`galgame_internal_propose`**；actor 取自已验用户 JWT（plain：trust 0 / roles ∅ / 非 owner），租户由 key 的 `oauth_clients.catalog_site` 反查（请求**不收** site/actor 断言）。它是**纯 Fiber、不进本目录 spec**（`openapi.yaml` 仅含 S2S face）；编辑引擎的 S2S 面（`/api/v1/catalog/edit/*`）在 wave 181 收缩为六条、又在 wave 185 收缩为 list(第三人称统计读)/revisions/diff **三条只读**,写与裁决全在用户面。**桥面不立独立契约文档**，第三方实际开放另议。
 - `GET /openapi.json`(S2S spec)、`GET /healthz` 无鉴权。
 
 ## 6. 生成 spec

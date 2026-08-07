@@ -24,17 +24,18 @@ import (
 // the same site overlays as the S2S ops in edit.go. Nothing about the editing
 // model moves here. What moves is where the actor comes from:
 //
-//	S2S  — the product backend asserts {user_id, roles, trust_tier,
-//	       is_entity_owner} in the body and names the tenant in `site`.
+//	S2S  — the product backend asserted {user_id, roles, trust_tier,
+//	       is_entity_owner} in the body and named the tenant in `site`
+//	       (retired, wave 185).
 //	user — the uid is the token's `id` claim, the roles are the token's
 //	       role union, and the tenant is the token client's catalog_site.
 //	       The request body has no field for any of them.
 //
-// That is why the create body below is EditProposalCreateRequest minus `actor`
-// and minus `site`: not a trimmed convenience shape, but the removal of every
-// place a caller could name someone else. The S2S pair stays registered for
-// backends that genuinely authenticate a user themselves; first-party products
-// should move here (docs/catalog/01 §4.2).
+// That is why the create body below carries neither `actor` nor `site`: not a
+// trimmed convenience shape, but the removal of every place a caller could name
+// someone else. Wave 185 finished the move — the S2S create / withdraw / schema
+// ops these three replaced are gone, so this is the only editing write plane
+// left (docs/catalog/01 §4.2).
 
 // UserEditServer holds the user plane's editing dependencies. It reuses
 // EditServer wholesale — policyCtx (family-routed perm resolution) and the

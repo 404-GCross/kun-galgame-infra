@@ -33,22 +33,22 @@ func decodeStrings(raw datatypes.JSON) []string {
 }
 
 // The editing-engine S2S face. Registered under /api/v1/catalog so the existing
-// path-scoped S2SAuth (Basic client credentials) gates it; WRITE paths
-// additionally enforce the client's catalog_site binding against the proposal's
-// site — the same tenancy line as the claim path. The public /v1 face exposes
-// NONE of this.
+// path-scoped S2SAuth (Basic client credentials) gates it. The public /v1 face
+// exposes NONE of this.
 //
-// The actor (end user) is ASSERTED by the product backend in the request
-// body (the community S2S convention): roles evaluate through the entity
-// FAMILY's own perm vocabulary (E3a ruling 1 — the resolver map below),
-// trust_tier feeds the trusted policy rules. That assertion is why the face
-// shrank to six ops in wave 181: everything a HUMAN performs now lives on the
-// user-token plane (user_edit.go), where the actor is the token rather than a
-// number in a body. What is left is what a BACKEND legitimately still needs —
-// create / withdraw / schema, which letmoe rides until it migrates; the
-// proposal LIST, whose proposer_uid names the person being looked at rather
-// than the caller claiming to be them; and the revision log + diff, which are
-// public version history and belong to no actor.
+// Wave 181 shrank the face to six ops by moving everything a HUMAN performs to
+// the user-token plane (user_edit.go), leaving create / withdraw / schema here
+// for backends that authenticate their own user. Wave 185 retires those three
+// too: letmoe migrated, and neither the cross-repo sweep nor 48h of production
+// logs found another caller — so the last place a body could ASSERT "I am user
+// N" is closed rather than deprecated in place.
+//
+// What is left is the READ plane, and it needs no actor: the proposal LIST,
+// whose proposer_uid names the person being looked at rather than the caller
+// claiming to be them, and the revision log + diff, which are public version
+// history and belong to nobody. The face therefore no longer has a write path,
+// which is why no operation here consults the client's catalog_site binding
+// any more.
 
 // PermResolvers routes an entity family to the permission vocabulary its
 // asserted roles evaluate through (E3a ruling 1). The face hardcodes no
@@ -71,17 +71,9 @@ func SetupEdit(api huma.API, engine *editing.Engine, perms PermResolvers) {
 	tags := []string{"catalog-edit"}
 
 	huma.Register(api, huma.Operation{
-		OperationID: "createEditProposal", Method: http.MethodPost, Path: "/api/v1/catalog/edit/proposals",
-		Summary: "File an edit proposal (automerges into a direct edit when policy allows)", Tags: tags,
-	}, s.create)
-	huma.Register(api, huma.Operation{
 		OperationID: "listEditProposals", Method: http.MethodGet, Path: "/api/v1/catalog/edit/proposals",
 		Summary: "List edit proposals (review queue)", Tags: tags,
 	}, s.list)
-	huma.Register(api, huma.Operation{
-		OperationID: "withdrawEditProposal", Method: http.MethodPost, Path: "/api/v1/catalog/edit/proposals/{id}/withdraw",
-		Summary: "Withdraw one's own open proposal", Tags: tags,
-	}, s.withdraw)
 	huma.Register(api, huma.Operation{
 		OperationID: "listEditRevisions", Method: http.MethodGet, Path: "/api/v1/catalog/edit/revisions",
 		Summary: "An entity's revision log, newest-first", Tags: tags,
@@ -90,10 +82,6 @@ func SetupEdit(api huma.API, engine *editing.Engine, perms PermResolvers) {
 		OperationID: "diffEditRevisions", Method: http.MethodGet, Path: "/api/v1/catalog/edit/diff",
 		Summary: "Field-level diff between any two revisions", Tags: tags,
 	}, s.diff)
-	huma.Register(api, huma.Operation{
-		OperationID: "getEditSchema", Method: http.MethodGet, Path: "/api/v1/catalog/edit/schema/{entity_type}",
-		Summary: "Field schema + the caller's evaluated field-level capabilities", Tags: tags,
-	}, s.schema)
 }
 
 // familyOf derives the entity family from a registered entity type — its
@@ -220,34 +208,6 @@ func amendmentViews(items []editing.ProposalAmendment) []dto.EditAmendmentView {
 
 // ---- operations ------------------------------------------------------------
 
-type editCreateInput struct {
-	Body dto.EditProposalCreateRequest
-}
-
-type editCreateOutput struct {
-	Body Envelope[dto.EditProposalCreateResponse]
-}
-
-func (s *EditServer) create(ctx context.Context, in *editCreateInput) (*editCreateOutput, error) {
-	if he := enforceSiteBinding(clientFromCtx(ctx), in.Body.Site); he != nil {
-		return nil, he
-	}
-	prop, rev, err := s.engine.CreateProposal(ctx, editing.CreateProposalInput{
-		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID,
-		Patch: in.Body.Patch, Note: in.Body.Note,
-		Actor: s.policyCtx(in.Body.Actor, in.Body.Site, familyOf(in.Body.EntityType)),
-	})
-	if err != nil {
-		return nil, editErr(err)
-	}
-	resp := dto.EditProposalCreateResponse{Proposal: proposalView(prop), Merged: rev != nil}
-	if rev != nil {
-		rv := revisionView(rev)
-		resp.Revision = &rv
-	}
-	return &editCreateOutput{Body: okEnvelope(resp)}, nil
-}
-
 type editListInput struct {
 	EntityType  string `query:"entity_type" doc:"Filter to one entity type"`
 	EntityID    int64  `query:"entity_id" doc:"Filter to one entity (requires entity_type)"`
@@ -293,12 +253,16 @@ type editGetInput struct {
 	ID int64 `path:"id"`
 }
 
-// editGetInput and the four output shapes below back ops that this face no
-// longer registers — they are the user plane's (user_edit.go), declared here so
-// both faces answer with byte-identical envelopes. Moving them would only make
-// two copies free to drift.
+// editGetInput and the output shapes below back ops that this face no longer
+// registers — they are the user plane's (user_edit.go), declared here so both
+// faces answer with byte-identical envelopes. Moving them would only make two
+// copies free to drift.
 type editGetOutput struct {
 	Body Envelope[dto.EditProposalView]
+}
+
+type editCreateOutput struct {
+	Body Envelope[dto.EditProposalCreateResponse]
 }
 
 type editAmendOutput struct {
@@ -311,35 +275,6 @@ type editMergeOutput struct {
 
 type editCloseOutput struct {
 	Body Envelope[dto.EditProposalView]
-}
-
-type editWithdrawInput struct {
-	ID   int64 `path:"id"`
-	Body dto.EditWithdrawRequest
-}
-
-func (s *EditServer) withdraw(ctx context.Context, in *editWithdrawInput) (*editCloseOutput, error) {
-	prop, err := s.proposalForWrite(ctx, in.ID)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.WithdrawProposal(ctx, in.ID, s.policyCtx(in.Body.Actor, prop.Site, prop.EntityFamily)); err != nil {
-		return nil, editErr(err)
-	}
-	return s.closedView(ctx, in.ID)
-}
-
-// proposalForWrite loads a proposal and enforces the S2S client's site
-// binding against the proposal's tenant (write paths only).
-func (s *EditServer) proposalForWrite(ctx context.Context, id int64) (*editing.Proposal, error) {
-	prop, _, _, err := s.engine.GetProposal(ctx, id)
-	if err != nil {
-		return nil, editErr(err)
-	}
-	if he := enforceSiteBinding(clientFromCtx(ctx), prop.Site); he != nil {
-		return nil, he
-	}
-	return prop, nil
 }
 
 func (s *EditServer) closedView(ctx context.Context, id int64) (*editCloseOutput, error) {
@@ -408,39 +343,6 @@ type editSnapshotOutput struct {
 	Body Envelope[dto.EditSnapshotResponse]
 }
 
-type editSchemaInput struct {
-	EntityType    string `path:"entity_type" doc:"Registered entity type, e.g. catalog.work"`
-	EntityID      int64  `query:"entity_id" doc:"Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false)"`
-	Site          string `query:"site" doc:"Tenant whose policy overlay applies"`
-	UserID        int64  `query:"user_id" doc:"Asserted end-user id (0 = anonymous projection)"`
-	Roles         string `query:"roles" doc:"Comma-separated asserted roles"`
-	TrustTier     int16  `query:"trust_tier" minimum:"0" maximum:"4" doc:"Asserted trust tier"`
-	IsEntityOwner bool   `query:"is_entity_owner" doc:"Product-asserted ownership of entity_id (owner-review overlays project can_review)"`
-}
-
 type editSchemaOutput struct {
 	Body Envelope[dto.EditSchemaResponse]
-}
-
-func (s *EditServer) schema(ctx context.Context, in *editSchemaInput) (*editSchemaOutput, error) {
-	actor := dto.EditActor{UserID: in.UserID, TrustTier: in.TrustTier, IsEntityOwner: in.IsEntityOwner}
-	if in.Roles != "" {
-		actor.Roles = strings.Split(in.Roles, ",")
-	}
-	fields, err := s.engine.SchemaProjection(ctx, in.EntityType, in.EntityID, s.policyCtx(actor, in.Site, familyOf(in.EntityType)))
-	if err != nil {
-		return nil, editErr(err)
-	}
-	resp := dto.EditSchemaResponse{
-		EntityType: in.EntityType,
-		Fields:     make([]dto.EditSchemaFieldView, 0, len(fields)),
-	}
-	for _, f := range fields {
-		resp.Fields = append(resp.Fields, dto.EditSchemaFieldView{
-			Key: f.Key, Kind: string(f.Kind), DiffHint: f.DiffHint, Deprecated: f.Deprecated,
-			Locked: f.Locked, CanPropose: f.CanPropose, CanReview: f.CanReview,
-			WouldAutomerge: f.WouldAutomerge,
-		})
-	}
-	return &editSchemaOutput{Body: okEnvelope(resp)}, nil
 }

@@ -99,25 +99,7 @@ export interface paths {
         /** List edit proposals (review queue) */
         get: operations["listEditProposals"];
         put?: never;
-        /** File an edit proposal (automerges into a direct edit when policy allows) */
-        post: operations["createEditProposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/catalog/edit/proposals/{id}/withdraw": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Withdraw one's own open proposal */
-        post: operations["withdrawEditProposal"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -133,23 +115,6 @@ export interface paths {
         };
         /** An entity's revision log, newest-first */
         get: operations["listEditRevisions"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/catalog/edit/schema/{entity_type}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Field schema + the caller's evaluated field-level capabilities */
-        get: operations["getEditSchema"];
         put?: never;
         post?: never;
         delete?: never;
@@ -328,23 +293,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/catalog/works/submit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). product_work_id is OPTIONAL: omit it and the registry issues the identity, the claim adopting the minted work id (returned as product_work_id — create your local row at it). IDEMPOTENCY: with product_work_id, a repeat is a 409 echoing the existing work (matched_by=claim); without it, a repeat is recognized only by the identity anchors the payload's links assert (matched_by=anchor, scoped to your own site) — a submission that omits BOTH the id and any VNDB/Bangumi link has no key to match on and WILL mint a second work if retried */
-        post: operations["submitCatalogWork"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/catalog/works/{id}": {
         parameters: {
             query?: never;
@@ -356,23 +304,6 @@ export interface paths {
         get: operations["getCatalogWorkByID"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/catalog/works/{id}/claim-actions/{action}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Move a claim through its lifecycle: claim / submit / publish / withdraw (owner) or approve / decline / ban / unban (review). 409 on an illegal transition, echoing the current state */
-        post: operations["actOnCatalogClaim"];
         delete?: never;
         options?: never;
         head?: never;
@@ -777,25 +708,6 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
-        ClaimActionRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/ClaimActionRequest.json
-             */
-            readonly $schema?: string;
-            /** @description The end user the product backend is acting for */
-            actor: components["schemas"]["EditActor"];
-            /**
-             * Format: int64
-             * @description The product-side work id to anchor (claim only)
-             */
-            product_work_id?: number;
-            /** @description Moderator note; REQUIRED for decline, recorded on the event */
-            reason?: string;
-            /** @description Acting tenant; must equal the client's catalog_site binding for owner actions */
-            site?: string;
-        };
         ClaimActionResult: {
             /** Format: int64 */
             event_id: number;
@@ -914,22 +826,6 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
-        EditActor: {
-            /** @description Product-asserted entity ownership (owner-review overlays) */
-            is_entity_owner?: boolean;
-            /** @description The user's roles as the product's JWT asserts them */
-            roles?: string[] | null;
-            /**
-             * Format: int32
-             * @description Trust tier TL0-TL4 (doc 18)
-             */
-            trust_tier?: number;
-            /**
-             * Format: int64
-             * @description Product-side user id (the shared identity space)
-             */
-            user_id: number;
-        };
         EditAmendmentView: {
             /** Format: int64 */
             amender_uid: number;
@@ -958,26 +854,6 @@ export interface components {
             key: string;
             kind?: string;
             to: unknown;
-        };
-        EditProposalCreateRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/EditProposalCreateRequest.json
-             */
-            readonly $schema?: string;
-            actor: components["schemas"]["EditActor"];
-            /** Format: int64 */
-            entity_id: number;
-            /** @description Registered entity type, e.g. catalog.work */
-            entity_type: string;
-            note?: string;
-            /** @description Field-key → new-value document (registered keys only) */
-            patch: {
-                [key: string]: unknown;
-            };
-            /** @description Filing tenant; must equal the client's catalog_site binding */
-            site: string;
         };
         EditProposalCreateResponse: {
             /** @description true when the direct-edit sugar landed the patch immediately */
@@ -1120,15 +996,6 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
-        };
-        EditWithdrawRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/EditWithdrawRequest.json
-             */
-            readonly $schema?: string;
-            actor: components["schemas"]["EditActor"];
         };
         EntityCounts: {
             /** Format: int64 */
@@ -2206,29 +2073,6 @@ export interface components {
             /** Format: int32 */
             y: number;
         };
-        WorkSubmitRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/WorkSubmitRequest.json
-             */
-            readonly $schema?: string;
-            /** @description The end user the product backend is submitting for */
-            actor: components["schemas"]["EditActor"];
-            /** @description Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets */
-            fields: {
-                [key: string]: unknown;
-            };
-            /**
-             * Format: int64
-             * @description The product-side work id to anchor this submission at. OMIT IT to have the registry issue the identity: the claim then adopts the minted work id, which the response returns. Idempotency depends on this choice — see the endpoint summary
-             */
-            product_work_id?: number;
-            /** @description Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA */
-            released?: components["schemas"]["WorkSubmitDate"];
-            /** @description Submitting tenant; must equal the client's catalog_site binding */
-            site: string;
-        };
         WorkSubmitResponse: {
             /** @description Always pending — a submission is born awaiting review */
             claim_state: string;
@@ -2538,74 +2382,6 @@ export interface operations {
             };
         };
     };
-    createEditProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EditProposalCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeEditProposalCreateResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    withdrawEditProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EditWithdrawRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeEditProposalView"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
     listEditRevisions: {
         parameters: {
             query?: {
@@ -2628,51 +2404,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeEditRevisionListResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    getEditSchema: {
-        parameters: {
-            query?: {
-                /** @description Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false) */
-                entity_id?: number;
-                /** @description Tenant whose policy overlay applies */
-                site?: string;
-                /** @description Asserted end-user id (0 = anonymous projection) */
-                user_id?: number;
-                /** @description Comma-separated asserted roles */
-                roles?: string;
-                /** @description Asserted trust tier */
-                trust_tier?: number;
-                /** @description Product-asserted ownership of entity_id (owner-review overlays project can_review) */
-                is_entity_owner?: boolean;
-            };
-            header?: never;
-            path: {
-                /** @description Registered entity type, e.g. catalog.work */
-                entity_type: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeEditSchemaResponse"];
                 };
             };
             /** @description Error */
@@ -3044,39 +2775,6 @@ export interface operations {
             };
         };
     };
-    submitCatalogWork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkSubmitRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeWorkSubmitResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
     getCatalogWorkByID: {
         parameters: {
             query?: never;
@@ -3096,43 +2794,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeWorkByAnchorResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    actOnCatalogClaim: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-                /** @description claim | submit | publish | withdraw | approve | decline | ban | unban */
-                action: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClaimActionRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeClaimActionResult"];
                 };
             };
             /** @description Error */

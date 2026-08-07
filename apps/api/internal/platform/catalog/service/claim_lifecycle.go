@@ -186,8 +186,8 @@ var ErrClaimTargetRequired = errors.New("site and product_work_id are required t
 type ClaimActionParams struct {
 	WorkID int64
 	Action ClaimAction
-	// Site is the caller's tenant. On the S2S face it is the client's bound
-	// site and is enforced against the work's owner; the staff face leaves it
+	// Site is the caller's tenant, enforced against the work's owning site. The
+	// user face passes the token client's catalog_site; the staff face leaves it
 	// empty (a curator acts across tenants).
 	Site string
 	// ProductWorkID is the anchor `claim` writes. Ignored by every other action.
@@ -197,10 +197,9 @@ type ClaimActionParams struct {
 	// RequireOwner asks the service to settle ownership against ActorUID for the
 	// three owner actions (wave 179): another person's claim is refused, a FREE
 	// claim is adopted (see ownedActions). It is set by the USER-token face
-	// alone, where the uid is the token's rather than an assertion. The S2S and
-	// staff faces leave it false — a product backend asserting a uid it
-	// authenticated is trusted with its own tenant's claims exactly as before,
-	// and in particular does not stamp an owner by moving a claim.
+	// alone, where the uid is the token's rather than an assertion. The staff
+	// face leaves it false: a curator decides on other people's claims by
+	// definition, and moving one does not make it theirs.
 	RequireOwner bool
 }
 
