@@ -276,6 +276,32 @@ go run ./cmd/migrate-catalog   # galgame models + catalog models — one entry p
 The snapshot is a **data** fixture and at most a drift *detector* — the
 migrations are the single source of truth for structure.
 
+## Lightweight dev-seed (step 02-lite — for collaborators without server access)
+
+The full snapshot pipeline needs SSH to the prod host. Collaborators who only
+need *something realistic to develop against* use the **dev-seed**: a few
+hundred entities per database (full FK closure, all seven core DBs), sampled
+from the desensitised snapshot and published as a rolling GitHub Release
+(`dev-seed` tag on this repo, a few MB total). All it needs is an
+authenticated `gh` with read access to the repo, plus `psql`/`pg_restore`:
+
+```sh
+./scripts/restore-dev-seed.sh --yes            # download + verify + drop/create/restore all 7 DBs
+DEVSEED_SUFFIX=_seed ./scripts/restore-dev-seed.sh --yes   # keep existing DBs, restore beside them
+```
+
+Every seeded account logs in with password `kungal-dev` (same dev-credential
+contract as the snapshot). Desensitisation is inherited — the seed is sampled
+*from* the scrubbed snapshot databases, never from raw prod. Content-side
+image/file hashes may dangle by design: bytes live in prod object storage and
+are not part of any seed.
+
+Producing it (maintainer side, this box): `scripts/dev-seed/build-seed.sh`
+samples the local snapshot DBs (`prune/<db>.sql` per DB, keep-sets + FK-enforced
+deletes) and `publish-seed.sh` replaces the release assets in place. A weekly
+systemd user timer (`scripts/dev-seed/systemd/`) keeps the release fresh —
+freshness tracks whatever the last `refresh-dev-db` pulled.
+
 ## Wiring a product repo (per-repo quickstart index)
 
 Once the stack is up (and optionally refreshed), each product repo needs only its
