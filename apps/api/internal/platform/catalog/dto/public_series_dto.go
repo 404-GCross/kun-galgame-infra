@@ -20,8 +20,12 @@ type PublicSeriesDetail struct {
 	// Works are the series' member works (include=works), the LIVE galgame
 	// fetchable set with r18 briefs dropped unless nsfw — the labels/{id} and
 	// tags/{id} convention verbatim.
-	Works      []PublicWorkBrief `json:"works,omitempty"`
-	NextOffset *int              `json:"next_offset,omitempty"`
+	Works []PublicWorkBrief `json:"works,omitempty"`
+	// Members runs PARALLEL to Works (wave 184): same page, same order, same
+	// r18 drop, so members[i] describes works[i]. Present only when works are
+	// (include=works), for the same reason Works is.
+	Members    []PublicSeriesMember `json:"members,omitempty"`
+	NextOffset *int                 `json:"next_offset,omitempty"`
 	// HasNSFW mirrors the browse lane's field (see PublicSeriesListItem): at
 	// least one member work's DISPLAY material is nsfw, regardless of the
 	// caller's nsfw setting. Present unconditionally, not include-gated — it is
@@ -30,6 +34,26 @@ type PublicSeriesDetail struct {
 	// to learn it would be asking for the very list the flag exists to warn
 	// about.
 	HasNSFW bool `json:"has_nsfw"`
+}
+
+// PublicSeriesMember is one membership's ordering facet (wave 184) — the two
+// things a series page needs that a work brief cannot carry, because they are
+// facts about the MEMBERSHIP rather than about the work.
+type PublicSeriesMember struct {
+	// WorkID repeats works[i].id so a consumer that reorders or filters one
+	// array can still join the two without relying on the index alignment.
+	WorkID int64 `json:"work_id"`
+	// Position is the 1-based reading order (earliest release first, undated
+	// members last). 0 means NOT ORDERED YET — the sentinel every membership
+	// carried before wave 184 and the value a lane leaves behind when it has no
+	// ordering pass; those rows sort last, never first.
+	Position int16 `json:"position"`
+	// Kind is the member's role in the series line:
+	// unknown | main | fandisc | side_story | collection. "unknown" is honest,
+	// not missing: the dlsite and curated lanes group works without saying how
+	// they relate, so a member no relation edge touches is left unclassified
+	// rather than guessed into main.
+	Kind string `json:"kind" enum:"unknown,main,fandisc,side_story,collection"`
 }
 
 // PublicSeriesListData is one page of the series browse lane

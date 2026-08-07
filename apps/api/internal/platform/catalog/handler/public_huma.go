@@ -445,9 +445,12 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "getCatalogSeriesPublic", Method: http.MethodGet, Path: "/v1/catalog/series/{id}",
-		Summary: "Series record: identity + source anchor + intros; include=works attaches its member works",
+		Summary: "Series record: identity + source anchor + intros; include=works attaches its member works in reading order",
 		Description: "The address of the grouping entity works?series_id= filters on. Members are the LIVE galgame " +
-			"fetchable set, paged by limit/offset exactly like labels/{id} and tags/{id}. " +
+			"fetchable set, paged by limit/offset exactly like labels/{id} and tags/{id}, ordered by release date " +
+			"(members with no dated release last). members[] runs parallel to works[] — same page, same order — and " +
+			"carries each membership's position (1-based; 0 = not ordered yet) and kind " +
+			"(unknown/main/fandisc/side_story/collection). " +
 			"Series carry no merge or soft-delete machinery, so an unknown id is a plain 404 — never a redirect.",
 		Tags: tags,
 	}, func(context.Context, *publicSeriesInput) (*publicSeriesOutput, error) { return &publicSeriesOutput{}, nil })

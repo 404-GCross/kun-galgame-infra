@@ -6842,8 +6842,8 @@ export const docsModel: DocsModel = {
               "id": "getCatalogSeriesPublic",
               "method": "get",
               "path": "/v1/catalog/series/{id}",
-              "summary": "Series record: identity + source anchor + intros; include=works attaches its member works",
-              "description": "The address of the grouping entity works?series_id= filters on. Members are the LIVE galgame fetchable set, paged by limit/offset exactly like labels/{id} and tags/{id}. Series carry no merge or soft-delete machinery, so an unknown id is a plain 404 — never a redirect.",
+              "summary": "Series record: identity + source anchor + intros; include=works attaches its member works in reading order",
+              "description": "The address of the grouping entity works?series_id= filters on. Members are the LIVE galgame fetchable set, paged by limit/offset exactly like labels/{id} and tags/{id}, ordered by release date (members with no dated release last). members[] runs parallel to works[] — same page, same order — and carries each membership's position (1-based; 0 = not ordered yet) and kind (unknown/main/fandisc/side_story/collection). Series carry no merge or soft-delete machinery, so an unknown id is a plain 404 — never a redirect.",
               "scope": "catalog:read",
               "params": [
                 {
@@ -6940,6 +6940,40 @@ export const docsModel: DocsModel = {
                                   "name": "source",
                                   "required": true,
                                   "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "members",
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "enum": [
+                                    "unknown",
+                                    "main",
+                                    "fandisc",
+                                    "side_story",
+                                    "collection"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "position",
+                                  "required": true,
+                                  "format": "int32",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "work_id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
                                 }
                               ]
                             }

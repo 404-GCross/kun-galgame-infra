@@ -63,13 +63,19 @@ func (s *PublicService) SeriesDetail(ctx context.Context, id int64, withWorks, n
 	rec.HasNSFW = nsfwWorks[id] > 0
 	if withWorks {
 		var wrows []struct {
-			WorkID int64 `gorm:"column:work_id"`
+			WorkID   int64 `gorm:"column:work_id"`
+			Position int16 `gorm:"column:position"`
+			Kind     int16 `gorm:"column:kind"`
 		}
+		// Reading order first (wave 184): position is 1-based, and 0 is the "not
+		// ordered yet" sentinel — those rows sort LAST rather than first, so a
+		// half-backfilled series shows what it does know before what it does not.
+		// work_id still breaks every tie, so the page boundary stays stable.
 		if err := s.db.WithContext(ctx).Raw(`
-			SELECT m.work_id FROM catalog_series_member m
+			SELECT m.work_id, m.position, m.kind FROM catalog_series_member m
 			JOIN catalog_work w ON w.id = m.work_id AND w.deleted_at IS NULL AND w.status = ? AND w.medium_id = ?
 			WHERE m.series_id = ?
-			ORDER BY m.work_id
+			ORDER BY (m.position = 0), m.position, m.work_id
 			LIMIT ? OFFSET ?`,
 			model.WorkStatusLive, galgameMediumID, id, limit, offset).Scan(&wrows).Error; err != nil {
 			return dto.PublicSeriesDetail{}, false, err
@@ -83,14 +89,44 @@ func (s *PublicService) SeriesDetail(ctx context.Context, id int64, withWorks, n
 			return dto.PublicSeriesDetail{}, false, err
 		}
 		rec.Works = make([]dto.PublicWorkBrief, 0, len(ids))
-		for _, wid := range ids {
-			if b := briefs[wid]; b != nil {
-				rec.Works = append(rec.Works, *b)
+		// members[] runs PARALLEL to works[]: same rows, same order, same r18
+		// drop — element i of one describes element i of the other. It is a
+		// separate array rather than two more fields on PublicWorkBrief because
+		// the brief is shared by every works-list face in this projection, and
+		// position/kind are facts about a MEMBERSHIP, not about the work.
+		rec.Members = make([]dto.PublicSeriesMember, 0, len(ids))
+		for _, r := range wrows {
+			b := briefs[r.WorkID]
+			if b == nil {
+				continue
 			}
+			rec.Works = append(rec.Works, *b)
+			rec.Members = append(rec.Members, dto.PublicSeriesMember{
+				WorkID: r.WorkID, Position: r.Position, Kind: seriesMemberKindKey(r.Kind),
+			})
 		}
 		rec.NextOffset = nextOffset(len(wrows), limit, offset)
 	}
 	return rec, true, nil
+}
+
+// seriesMemberKindKey renders catalog_series_member.kind as the public face's
+// string key — the same "never publish a numeric enum id" rule content_rating
+// and source follow. An id this projection does not know renders as unknown
+// rather than leaking the raw number.
+func seriesMemberKindKey(kind int16) string {
+	switch kind {
+	case model.SeriesMemberKindMain:
+		return "main"
+	case model.SeriesMemberKindFandisc:
+		return "fandisc"
+	case model.SeriesMemberKindSideStory:
+		return "side_story"
+	case model.SeriesMemberKindCollection:
+		return "collection"
+	default:
+		return "unknown"
+	}
 }
 
 // seriesIntros loads a series' descriptions, ordered (lang, source_id). source
