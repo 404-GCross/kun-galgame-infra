@@ -147,6 +147,19 @@ func RegisterUserEditOps(api huma.API, engine *editing.Engine, perms PermResolve
 // derivations can only turn a capability ON, never off, so a product backend
 // that knows something the catalog does not (a family registering no hook, a
 // product-side notion of ownership or trust) is still believed.
+//
+// CAPPED FOR THIRD-PARTY CLIENTS (wave 186b). A token issued through a
+// third-party developer application (oauth_clients.owner_user_id non-null)
+// NEVER reaches editing.TrustedTier, even when its roles carry
+// catalog.edit.trusted. Trust is a property of the PAIR (person x first-party
+// client), not of the person alone: a user's roles travel with their token into
+// whatever app they authorize, so without the cap any third-party UI holding a
+// catalog:edit grant could file automerging edits the moment a trusted member
+// signed in with it — and the site whose overlay granted that trust never
+// agreed to be edited from there. The person keeps every standing they have on
+// the product's own surface; what the cap removes is the ability to LEND it to
+// an arbitrary application. Like the derivations above, it can only ever turn a
+// capability off, never on.
 func userEditActor(ctx context.Context) (dto.EditActor, string, *houseError) {
 	uid, site, he := userActor(ctx)
 	if he != nil {
@@ -154,7 +167,7 @@ func userEditActor(ctx context.Context) (dto.EditActor, string, *houseError) {
 	}
 	roles := userRolesFromCtx(ctx)
 	actor := dto.EditActor{UserID: uid, Roles: roles}
-	if catperm.Resolver.Can(roles, catperm.EditTrusted) {
+	if catperm.Resolver.Can(roles, catperm.EditTrusted) && !isThirdPartyClient(clientFromCtx(ctx)) {
 		actor.TrustTier = editing.TrustedTier
 	}
 	return actor, site, nil

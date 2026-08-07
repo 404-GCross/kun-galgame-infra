@@ -251,6 +251,8 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
   - **`trust_tier` 自 wave 183 起有了 infra 侧的事实来源**:令牌的角色若持有 catalog 权限键 **`catalog.edit.trusted`**,本面即以 `TrustTier = 2`(引擎的 `TrustedTier`,也是引擎唯一比较的层级值)求值策略;否则仍是 0。代码捆只给 admin/ren(等价于 letmoe 旧 S2S 断言给 staff 的标准),**产品站把这把键授给自己的角色(如 letmoe 的 `creator`)走权限矩阵控制台的叠加层,热替换 resolver,无需改代码或部署**。因此 **letmoe 的 ProposeTrusted 通道不再需要 S2S 后端代为担保**。S2S 面断言的 `trust_tier` 照旧被采信——两者是并集,推导只会把能力置 ON。
 - 错误映射沿用 S2S 面的口味:未注册字段键/空 patch/空 delta → **422**,策略拒绝 → **403**,实体/提案/目标 revision 不存在 → **404**,rebase 冲突/提案已关闭 → **409**;令牌缺失或无效 → **401**,缺 `catalog:edit` scope → **403**(message 含 scope 字样)。
 
+**第三方应用的姿态封顶(wave 186b)**:令牌**签发自哪个应用**是权限的一维。经**第三方开发者应用**(`oauth_clients.owner_user_id` 非空)签发的用户令牌,**永远拿不到 `editing.TrustedTier`**,即使其 roles 持 `catalog.edit.trusted`;它只能**提案**(走各租户的 open/queue 通道),绝不自动合并。同理,它**永远不是审核面**:认领裁决四动作(`approve`/`decline`/`ban`/`unban`)与开放面的审核队列视图(§4.5)对它一律 **403**,先于权限检查。理由是**信任与审核都是「人 × 第一方 client」这一对的属性,而不是人单独的属性**:用户的 roles 会随令牌进入他授权的**任何**应用,不封顶的话,某站用权限台授出的信任只要成员在一个第三方 UI 上登录一次就被借走,而该站从未同意被那里编辑。封顶**只减不增**:人在产品自家面上的一切权限一字未改。⚠️ **本波尚未覆盖**:编辑引擎自身按 `actor.Roles` 解析的审核键(`edit.catalog.work.review` 的 amend/merge/decline 与 automerge 通道)仍不分 client,是否同样封顶待单独裁定。
+
 ### 4.3 认领生命周期(投稿 + 八动作 + 我的认领,wave 179)
 
 > ⚠️ **S2S 的两条认领写端点已在 wave 185 删除**:`submitCatalogWork`(`POST /api/v1/catalog/works/submit`)与 `actOnCatalogClaim`(`POST /api/v1/catalog/works/{id}/claim-actions/{action}`)不复存在(404/405,不是 410)。理由同 §4.2——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户投稿、撤回,乃至**裁决**别人的投稿。它们当初留着只为 **kun-galgame-patch(moyu)仍在实调**;moyu 迁 Bearer 之后,跨仓普查与 48 小时生产访问日志确认零调用方,故按 wave 181 的同一套办法删除。孪生即本节的 `submitCatalogWorkUser` / `actOnCatalogClaimUser`——两面**曾共用同一 service、同一状态机、同一 `catalog_claim_event` 账本**,只有身份的来路不同,故删除的是门,不是任何语义。

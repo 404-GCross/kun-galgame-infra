@@ -73,9 +73,21 @@ func seedUserEditOwnedWork(t *testing.T, db *gorm.DB, ownerUID int64) int64 {
 }
 
 func userEditClients() fakeClientLookup {
+	// thirdPartyOwner is what makes the third row a THIRD-PARTY developer
+	// application (wave 186b): a non-null oauth_clients.owner_user_id. It is
+	// bound to letmoe — the trusted-lane tenant — on purpose, so the cap is
+	// tested where it actually bites rather than on a tenant that grants
+	// nothing.
+	thirdPartyOwner := uint(4040)
 	return fakeClientLookup{
 		"kungal-client": {ID: "kungal-client", CatalogSite: "kungal"},
 		"letmoe-client": {ID: "letmoe-client", CatalogSite: "letmoe"},
+		"thirdparty-letmoe": {
+			ID: "thirdparty-letmoe", CatalogSite: "letmoe", OwnerUserID: &thirdPartyOwner,
+		},
+		"thirdparty-kungal": {
+			ID: "thirdparty-kungal", CatalogSite: "kungal", OwnerUserID: &thirdPartyOwner,
+		},
 	}
 }
 

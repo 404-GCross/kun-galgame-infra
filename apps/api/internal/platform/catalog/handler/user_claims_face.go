@@ -134,9 +134,21 @@ func (s *UserClaimServer) act(ctx context.Context, in *userClaimActionInput) (*c
 		return nil, he
 	}
 	review := service.ReviewActions[action]
-	if review && !catperm.Resolver.Can(userRolesFromCtx(ctx), catperm.ClaimReview) {
-		return nil, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
-			"reviewing a claim requires the "+string(catperm.ClaimReview)+" permission")
+	if review {
+		// The same cap the open face's queue view applies (wave 186b): judging
+		// other people's submissions is a property of the PAIR (person x
+		// first-party client), so a token issued through a THIRD-PARTY developer
+		// application is never a moderation surface, whatever roles the person
+		// behind it holds. Refused BEFORE the permission is even consulted, so
+		// the message never doubles as a probe for who is staff.
+		if isThirdPartyClient(clientFromCtx(ctx)) {
+			return nil, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+				"a third-party application is not a moderation surface; claim review needs a first-party site client")
+		}
+		if !catperm.Resolver.Can(userRolesFromCtx(ctx), catperm.ClaimReview) {
+			return nil, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+				"reviewing a claim requires the "+string(catperm.ClaimReview)+" permission")
+		}
 	}
 	res, err := s.claims.Act(ctx, service.ClaimActionParams{
 		WorkID: in.ID, Action: action,
