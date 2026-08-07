@@ -17,4 +17,10 @@ const (
 	StatusBudgetDenied  int16 = 2 // over the route×site daily cap → fail-open allow (v0 record-don't-block)
 	StatusRateLimited   int16 = 3 // reserved: v0 has no rate limiter (budget fuse is the only soft gate)
 	StatusDegraded      int16 = 4 // upstream env empty → degraded, no call dialled → fail-open allow
+	// StatusTruncated is a reply the token ceiling cut off mid-JSON. It used to
+	// meter as StatusUpstreamError, which is why a 16-day, 50%-loss config fault
+	// read as ordinary upstream flakiness: 186 truncations and 70 genuine
+	// failures wore the same label. Truncation is OUR fault and is fixed by
+	// raising moderateMaxTokens; upstream_error is theirs. Never merge them again.
+	StatusTruncated int16 = 5 // reply hit max_tokens mid-JSON → fail-open allow
 )

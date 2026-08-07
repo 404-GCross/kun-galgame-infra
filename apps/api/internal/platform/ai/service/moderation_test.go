@@ -201,3 +201,76 @@ func TestBudgetRouteDefaultOverride(t *testing.T) {
 		t.Fatalf("route-default cap must apply to letmoe: degraded=%v calls=%d", res.Degraded, up.calls)
 	}
 }
+
+// TestModerateTruncatedReplyIsNotUpstreamError — a reply the token ceiling cut
+// off mid-JSON must meter as status=truncated, not upstream_error.
+//
+// The distinction is the whole lesson of the 2026-07-22..08-07 fault: with both
+// filed under upstream_error, a max_tokens value too small for a reasoning model
+// destroyed half of all escalated verdicts for 16 days while looking exactly like
+// someone else's flaky server. Truncation is ours to fix; upstream_error is not.
+func TestModerateTruncatedReplyIsNotUpstreamError(t *testing.T) {
+	cleanTables(t)
+	up := &fakeUpstream{
+		configured: true,
+		model:      "glm-5.2",
+		result: upstream.ChatResult{
+			// Cut off exactly the way a ceiling cuts it: valid JSON up to the point
+			// the budget ran out, so it parses as "unexpected end of JSON input".
+			Content:          `{"flagged": true, "categories": ["abu`,
+			Channel:          "glm-5.2",
+			FinishReason:     "length",
+			PromptTokens:     42,
+			CompletionTokens: 1024,
+		},
+	}
+	s := newLLMOnly(up)
+
+	res, err := s.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "you idiot"})
+	if err != nil {
+		t.Fatalf("Moderate: %v", err)
+	}
+	// Still fail-open — a truncated verdict is no verdict, and moderate-text never
+	// convicts on one.
+	if res.Flagged || !res.Degraded {
+		t.Fatalf("want fail-open degraded, got flagged=%v degraded=%v", res.Flagged, res.Degraded)
+	}
+
+	rows := usageRows(t, "letmoe", model.RouteModerateText)
+	if len(rows) != 1 {
+		t.Fatalf("want 1 metered row, got %d", len(rows))
+	}
+	if rows[0].Status != model.StatusTruncated {
+		t.Fatalf("status = %d, want truncated(%d) — truncation is hiding inside upstream_error again",
+			rows[0].Status, model.StatusTruncated)
+	}
+	if rows[0].CompletionTokens != 1024 {
+		t.Fatalf("completion_tokens = %d, want 1024 — the evidence that names the ceiling must survive",
+			rows[0].CompletionTokens)
+	}
+}
+
+// TestModerateUnparseableWithoutTruncation — an unparseable reply that did NOT
+// hit the ceiling stays upstream_error. Guards the split from collapsing the
+// other way: not every parse failure is our config's fault.
+func TestModerateUnparseableWithoutTruncation(t *testing.T) {
+	cleanTables(t)
+	up := &fakeUpstream{
+		configured: true,
+		model:      "glm-5.2",
+		result: upstream.ChatResult{
+			Content:      `I'm sorry, I can't help with that.`,
+			Channel:      "glm-5.2",
+			FinishReason: "stop",
+		},
+	}
+	s := newLLMOnly(up)
+
+	if _, err := s.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "hi"}); err != nil {
+		t.Fatalf("Moderate: %v", err)
+	}
+	rows := usageRows(t, "letmoe", model.RouteModerateText)
+	if len(rows) != 1 || rows[0].Status != model.StatusUpstreamError {
+		t.Fatalf("want a single upstream_error row, got %d rows status=%v", len(rows), rows)
+	}
+}

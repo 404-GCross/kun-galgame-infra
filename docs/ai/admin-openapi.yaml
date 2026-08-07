@@ -192,6 +192,9 @@ components:
           type: string
         site:
           type: string
+        truncated:
+          format: int64
+          type: integer
         upstream_error:
           format: int64
           type: integer
@@ -207,6 +210,7 @@ components:
         - upstream_error
         - budget_denied
         - degraded
+        - truncated
       type: object
     UpsertBudgetRequest:
       additionalProperties: false
@@ -259,6 +263,9 @@ components:
         prompt_tokens:
           format: int64
           type: integer
+        truncated:
+          format: int64
+          type: integer
         upstream_error:
           format: int64
           type: integer
@@ -271,6 +278,7 @@ components:
         - upstream_error
         - budget_denied
         - degraded
+        - truncated
         - error_rate
       type: object
     UsageSummary:

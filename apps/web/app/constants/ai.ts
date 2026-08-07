@@ -27,15 +27,22 @@ export const AI_WINDOW_OPTIONS = [
 
 export type AiWindow = (typeof AI_WINDOW_OPTIONS)[number]['value']
 
-// The four terminal statuses surfaced per (site,route,channel) group. Keys are
-// the SummaryRow field names; moderate-text is fail-open, so a non-ok status is
-// the audit trail of WHY the call degraded, never a blocked caller.
+// The terminal statuses surfaced per (site,route,channel) group. Keys are the
+// SummaryRow field names; moderate-text is fail-open, so a non-ok status is the
+// audit trail of WHY the call degraded, never a blocked caller.
+//
+// `truncated` is deliberately its own column rather than folded into
+// upstream_error: it is the one failure here that is OUR configuration and not
+// someone else's server, and merging them is what let a max_tokens value too
+// small for a reasoning model destroy half of all escalated verdicts for 16 days
+// while the dashboard showed nothing but ordinary upstream flakiness.
 export const AI_STATUS_META: Record<
-  'ok' | 'upstream_error' | 'budget_denied' | 'degraded',
+  'ok' | 'upstream_error' | 'truncated' | 'budget_denied' | 'degraded',
   { label: string; color: AiChipColor }
 > = {
   ok: { label: '正常', color: 'success' },
   upstream_error: { label: '上游错误', color: 'danger' },
+  truncated: { label: '回复被截断', color: 'danger' },
   budget_denied: { label: '超预算', color: 'warning' },
   degraded: { label: '降级', color: 'default' }
 }
@@ -44,6 +51,7 @@ export const AI_STATUS_META: Record<
 export const AI_STATUS_KEYS = [
   'ok',
   'upstream_error',
+  'truncated',
   'budget_denied',
   'degraded'
 ] as const

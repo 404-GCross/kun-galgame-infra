@@ -41,14 +41,20 @@ const fmtPct = (n?: number) => `${((n ?? 0) * 100).toFixed(1)}%`
     </div>
 
     <!-- overview cards -->
-    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       <div class="border-default-200 bg-content1 rounded-xl border p-4">
         <p class="text-default-500 text-xs">调用数</p>
         <p class="text-foreground mt-1 text-2xl font-bold tabular-nums">
           {{ fmtInt(overview?.calls) }}
         </p>
         <p class="text-default-400 mt-0.5 text-xs">
-          tokens {{ fmtInt((overview?.prompt_tokens ?? 0) + (overview?.completion_tokens ?? 0)) }}
+          tokens
+          {{
+            fmtInt(
+              (overview?.prompt_tokens ?? 0) +
+                (overview?.completion_tokens ?? 0)
+            )
+          }}
         </p>
       </div>
       <div class="border-default-200 bg-content1 rounded-xl border p-4">
@@ -64,6 +70,17 @@ const fmtPct = (n?: number) => `${((n ?? 0) * 100).toFixed(1)}%`
           {{ fmtInt(overview?.degraded) }}
         </p>
         <p class="text-default-400 mt-0.5 text-xs">上游未接入前为常态</p>
+      </div>
+      <!-- Truncation gets a card of its own because, unlike every other failure
+           here, it is our configuration and not someone else's server: a
+           non-zero value means max_tokens is too small for the channel in use,
+           and the verdicts it destroys are the escalated ones. -->
+      <div class="border-default-200 bg-content1 rounded-xl border p-4">
+        <p class="text-default-500 text-xs">回复被截断</p>
+        <p class="text-danger-600 mt-1 text-2xl font-bold tabular-nums">
+          {{ fmtInt(overview?.truncated) }}
+        </p>
+        <p class="text-default-400 mt-0.5 text-xs">非零即 max_tokens 过小</p>
       </div>
       <div class="border-default-200 bg-content1 rounded-xl border p-4">
         <p class="text-default-500 text-xs">成本 (µ)</p>

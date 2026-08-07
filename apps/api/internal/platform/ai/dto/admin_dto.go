@@ -21,6 +21,11 @@ type SummaryRow struct {
 	UpstreamError int64 `gorm:"column:upstream_error" json:"upstream_error"`
 	BudgetDenied  int64 `gorm:"column:budget_denied" json:"budget_denied"`
 	Degraded      int64 `gorm:"column:degraded" json:"degraded"`
+	// Truncated is its own bucket rather than part of UpstreamError because the
+	// two demand opposite responses: truncation is a max_tokens value we chose and
+	// can fix, an upstream error is someone else's server. Folded together they hid
+	// a 50% verdict loss for 16 days behind a plausible-looking error rate.
+	Truncated int64 `gorm:"column:truncated" json:"truncated"`
 }
 
 // UsageOverview totals every row in the window (the dashboard's top cards).
@@ -33,6 +38,7 @@ type UsageOverview struct {
 	UpstreamError    int64 `json:"upstream_error"`
 	BudgetDenied     int64 `json:"budget_denied"`
 	Degraded         int64 `json:"degraded"`
+	Truncated        int64 `json:"truncated"`
 	// ErrorRate is the non-OK fraction of calls in [0,1] (0 when no calls). v0 is
 	// degraded by default (empty upstream env), so a high rate is expected until
 	// the channel layer is wired — the status breakdown tells the composition.

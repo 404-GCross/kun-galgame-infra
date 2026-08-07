@@ -158,6 +158,8 @@ export interface components {
             route: string;
             site: string;
             /** Format: int64 */
+            truncated: number;
+            /** Format: int64 */
             upstream_error: number;
         };
         UpsertBudgetRequest: {
@@ -194,6 +196,8 @@ export interface components {
             ok: number;
             /** Format: int64 */
             prompt_tokens: number;
+            /** Format: int64 */
+            truncated: number;
             /** Format: int64 */
             upstream_error: number;
         };

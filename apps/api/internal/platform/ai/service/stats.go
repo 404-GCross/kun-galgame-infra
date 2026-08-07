@@ -56,8 +56,10 @@ func (s *StatsService) Summary(ctx context.Context, window string) (dto.UsageSum
 			COUNT(*) FILTER (WHERE status = ?) AS ok,
 			COUNT(*) FILTER (WHERE status = ?) AS upstream_error,
 			COUNT(*) FILTER (WHERE status = ?) AS budget_denied,
-			COUNT(*) FILTER (WHERE status = ?) AS degraded`,
-			model.StatusOK, model.StatusUpstreamError, model.StatusBudgetDenied, model.StatusDegraded).
+			COUNT(*) FILTER (WHERE status = ?) AS degraded,
+			COUNT(*) FILTER (WHERE status = ?) AS truncated`,
+			model.StatusOK, model.StatusUpstreamError, model.StatusBudgetDenied,
+			model.StatusDegraded, model.StatusTruncated).
 		Where("created_at >= now() - CAST(? AS interval)", interval).
 		Group("site, route, channel").
 		Order("calls DESC, site, route, channel").
@@ -70,8 +72,11 @@ func (s *StatsService) Summary(ctx context.Context, window string) (dto.UsageSum
 }
 
 // overviewOf totals the per-group rows into the dashboard's headline card. The
-// error rate is the non-OK fraction (upstream_error + budget_denied + degraded)
-// over total calls.
+// error rate is the non-OK fraction (upstream_error + budget_denied + degraded +
+// truncated) over total calls — derived as calls-ok rather than by summing the
+// buckets, so a status with no bucket of its own still lands in the rate. That
+// is how truncation stayed inside the error rate while being invisible in the
+// breakdown; the derivation was right, the breakdown was incomplete.
 func overviewOf(rows []dto.SummaryRow) dto.UsageOverview {
 	var o dto.UsageOverview
 	for _, r := range rows {
@@ -83,6 +88,7 @@ func overviewOf(rows []dto.SummaryRow) dto.UsageOverview {
 		o.UpstreamError += r.UpstreamError
 		o.BudgetDenied += r.BudgetDenied
 		o.Degraded += r.Degraded
+		o.Truncated += r.Truncated
 	}
 	if o.Calls > 0 {
 		o.ErrorRate = float64(o.Calls-o.OK) / float64(o.Calls)

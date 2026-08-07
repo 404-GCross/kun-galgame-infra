@@ -61,8 +61,15 @@ func (c *Client) Model() string { return c.model }
 // ChatResult carries the raw reply content, the channel/model that served it
 // (from the response, falling back to the requested model), and token usage.
 type ChatResult struct {
-	Content          string
-	Channel          string
+	Content string
+	Channel string
+	// FinishReason is the upstream's own account of why generation stopped
+	// ("stop", "length", …; "" when the server omits it). It is the ONLY way to
+	// tell a reply the model chose to end from one the token ceiling cut off —
+	// both arrive as a 200 carrying content that merely fails to parse. Callers
+	// that treat unparseable as "upstream is broken" will chase the wrong fault
+	// without it.
+	FinishReason     string
 	PromptTokens     int
 	CompletionTokens int
 }
@@ -83,7 +90,8 @@ type chatMessage struct {
 type chatResponse struct {
 	Model   string `json:"model"`
 	Choices []struct {
-		Message chatMessage `json:"message"`
+		Message      chatMessage `json:"message"`
+		FinishReason string      `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
@@ -150,6 +158,7 @@ func (c *Client) ChatJSON(ctx context.Context, system, user string, maxTokens in
 	return ChatResult{
 		Content:          strings.TrimSpace(cr.Choices[0].Message.Content),
 		Channel:          channel,
+		FinishReason:     cr.Choices[0].FinishReason,
 		PromptTokens:     cr.Usage.PromptTokens,
 		CompletionTokens: cr.Usage.CompletionTokens,
 	}, nil
