@@ -110,6 +110,7 @@ type NonDelegable map[Permission]bool      // 叠加层永不可授予的键(§7
 | `edit.catalog.work.review` | admin, ren | 引擎面裁决 `catalog.work` 提案(amend/merge/decline/revert) |
 | `edit.catalog.taxonomy` | admin, ren | 引擎面对 `catalog.{label,tag,engine,series}` 提提案(四族**一把键**=同一权威:注册表共享词表) |
 | `edit.catalog.taxonomy.review` | admin, ren | 引擎面裁决词表提案;**建/删/合并词表条目不在此键**,属注册表策展,仍在 `catalog.review` 之后 |
+| `catalog.edit.trusted` | admin, ren | 以受信任层级(`TrustTier=2`)走编辑引擎写入:站点 `ProposeTrusted` 通道直接接受其提交(letmoe work overlay)。**与审核轴刻意正交,故不含 moderator**;产品站把它授给自己的角色(如 letmoe `creator`)走 §7 叠加层 |
 | `trust.queue_access` | moderator, admin, ren | T&S 统一审核收件箱队列 |
 | `trust.term_manage` | admin, ren | Tier0 词表增改/退役(站域封禁权,比 queue_access 敏感;**不含 moderator**) |
 | `ai.usage_view` | admin, ren | AI 网关用量/成本/预算看板(**不含 moderator**——运营面) |

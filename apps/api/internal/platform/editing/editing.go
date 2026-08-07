@@ -95,9 +95,10 @@ const TrustedTier int16 = 2
 
 // PolicyContext is the caller identity the policy rules evaluate against
 // (charter ruling 6). The engine never resolves roles or trust itself — the
-// assembly point injects a HasPerm closure (real RBAC resolver in
-// production, a fake in tests) and the product backend asserts the trust
-// tier it already knows.
+// assembly point injects a HasPerm closure (real RBAC resolver in production, a
+// fake in tests) and supplies the trust tier: an S2S caller's product backend
+// asserts the tier it already knows, while the user-token face resolves it from
+// a permission key at the door (catalog.edit.trusted, wave 183).
 type PolicyContext struct {
 	UserID    int64
 	Site      string

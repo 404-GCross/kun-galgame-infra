@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"api/internal/platform/catalog/dto"
+	catperm "api/internal/platform/catalog/perm"
 	"api/internal/platform/editing"
 	"api/pkg/errors"
 
@@ -123,28 +124,39 @@ func RegisterUserEditOps(api huma.API, engine *editing.Engine, perms PermResolve
 // userEditActor derives the policy actor from the verified token, and is the
 // only way these ops learn who is writing.
 //
-// TrustTier is always 0 and IsEntityOwner is always false HERE — but ownership
-// is no longer lost by that. Wave 178 made it a fact the CATALOG holds
-// (catalog_work.owner_user_id, stamped write-once at submission / claim birth)
-// and the engine DERIVES it from the spec's OwnerUserID hook, comparing the
-// stored uid to the policy context's own uid. So the flag this function leaves
-// false is set — by the engine, from data, one layer below any wire — exactly
-// when the caller really is the entry's creator, and kungal's owner-review lane
-// works here without a backend to assert anything. This is the revisit the
-// wave-177 comment asked for.
+// IsEntityOwner is always false HERE — but ownership is not lost by that. Wave
+// 178 made it a fact the CATALOG holds (catalog_work.owner_user_id, stamped
+// write-once at submission / claim birth) and the engine DERIVES it from the
+// spec's OwnerUserID hook, comparing the stored uid to the policy context's own
+// uid. So the flag this function leaves false is set — by the engine, from data,
+// one layer below any wire — exactly when the caller really is the entry's
+// creator, and kungal's owner-review lane works here without a backend to assert
+// anything. This is the revisit the wave-177 comment asked for.
 //
-// The S2S face keeps its asserted `is_entity_owner`: derivation can only turn
-// the flag ON, never off, so a product backend that knows an ownership the
-// catalog does not (a family registering no hook, a product-side notion of
-// ownership) is still believed. TrustTier stays 0 because it genuinely has no
-// infra-side source — trust tiers live in the product's own ledger, and
-// letmoe's ProposeTrusted lane therefore remains an S2S lane.
+// TrustTier is NO LONGER always 0 (wave 183). It now has an infra-side source
+// of its own: the catalog permission vocabulary. A token whose roles carry
+// catalog.edit.trusted — through the code bundles (staff) or, for a product's
+// own roles, through the per-role permission-console overlay that hot-swaps the
+// resolver — writes at editing.TrustedTier, which is the only tier value any
+// engine rule compares against. letmoe's ProposeTrusted lane therefore no longer
+// requires an S2S backend to vouch for its members: it works from a browser
+// token, granted per role, changeable without a deploy.
+//
+// The S2S face keeps its asserted `is_entity_owner` and `trust_tier`: both
+// derivations can only turn a capability ON, never off, so a product backend
+// that knows something the catalog does not (a family registering no hook, a
+// product-side notion of ownership or trust) is still believed.
 func userEditActor(ctx context.Context) (dto.EditActor, string, *houseError) {
 	uid, site, he := userActor(ctx)
 	if he != nil {
 		return dto.EditActor{}, "", he
 	}
-	return dto.EditActor{UserID: uid, Roles: userRolesFromCtx(ctx)}, site, nil
+	roles := userRolesFromCtx(ctx)
+	actor := dto.EditActor{UserID: uid, Roles: roles}
+	if catperm.Resolver.Can(roles, catperm.EditTrusted) {
+		actor.TrustTier = editing.TrustedTier
+	}
+	return actor, site, nil
 }
 
 type userEditCreateInput struct {

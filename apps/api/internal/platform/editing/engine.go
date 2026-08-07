@@ -81,9 +81,9 @@ func (e *Engine) ownerSite(ctx context.Context, spec *EntityTypeSpec, entityID i
 // exactly once, before the first AllowsPropose/AllowsReview.
 //
 // It can only turn the flag ON. An S2S caller that already asserted ownership
-// keeps it (the product backends holding facts the catalog does not — letmoe's
-// trust lane, a family whose spec registers no hook — must not be downgraded by
-// a hook that returns nil), and derivation covers everyone else. entityID 0 (the
+// keeps it (a product backend holding a fact the catalog does not — a family
+// whose spec registers no hook, a product-side notion of ownership — must not be
+// downgraded by a hook that returns nil), and derivation covers everyone else. entityID 0 (the
 // type-level schema projection) and an anonymous context derive nothing.
 func (e *Engine) deriveOwnership(ctx context.Context, spec *EntityTypeSpec, entityID int64, pc *PolicyContext) error {
 	if pc.IsEntityOwner || pc.UserID == 0 || entityID == 0 || spec.OwnerUserID == nil {

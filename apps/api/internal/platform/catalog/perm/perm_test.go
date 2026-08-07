@@ -23,6 +23,12 @@ var goldenGrants = map[authz.Permission][]string{
 	// never through a global role.
 	perm.EditTaxonomy:       {"admin", "ren"},
 	perm.EditTaxonomyReview: {"admin", "ren"},
+	// Writing at the trusted tier: staff only in CODE, because that is the
+	// standing letmoe's retired S2S assertion gave them. It is deliberately
+	// absent from moderator (trust is not moderation) — product sites grant it
+	// to their own roles through the console overlay, which this table, being
+	// the code bundles, does not and must not describe.
+	perm.EditTrusted: {"admin", "ren"},
 }
 
 var allRoles = []string{"user", "creator", "moderator", "admin", "ren"}

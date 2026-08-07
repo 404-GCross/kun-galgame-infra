@@ -43,15 +43,38 @@ const (
 	EditTaxonomyReview authz.Permission = "edit.catalog.taxonomy.review"
 )
 
+// EditTrusted: holding this key means the token's user WRITES AT THE TRUSTED
+// TIER — the editing engine's ProposeTrusted lanes and the site overlays built
+// on them (letmoe's work overlay: trusted propose + owner automerge) accept
+// their filings directly, per each site's own policy. It is the infra-side
+// source of a fact that used to have none: the user face derives the actor
+// entirely from the token, so before this key a browser-borne caller was
+// pinned at tier 0 and letmoe's trusted lane could only live on the S2S face.
+// The engine's ONLY tier comparison is `TrustTier >= TrustedTier`, so one
+// boolean capability is the whole vocabulary needed here — deliberately NOT a
+// numeric role→tier map, which would invent distinctions no rule reads.
+//
+// Trust is deliberately ORTHOGONAL to moderation, hence NOT in moderatorPerms:
+// judging other people's submissions and being believed about one's own are
+// different authorities, and a site may well want one without the other.
+// Product sites grant this key to THEIR OWN roles (e.g. letmoe's `creator`)
+// through the permission-console DB overlay (docs/auth/04 §7), which hot-swaps
+// the Resolver — no code change, no deploy. The code bundles carry it only on
+// the management axis (admin + ren) so that staff keep the standing letmoe's
+// old S2S call asserted for them (that backend asserted tier 3; the engine
+// cannot tell 3 from 2, so admin+ren is exact parity, not an approximation).
+const EditTrusted authz.Permission = "catalog.edit.trusted"
+
 // moderatorPerms is content moderation on the registry: today exactly the
 // claim review queue — the successor of the wiki submission queue moderators
 // have always staffed.
 var moderatorPerms = []authz.Permission{ClaimReview}
 
 // adminPerms adds the editing keys on top: site curation is an admin duty,
-// unlike merge/unmerge which stays ren-only.
+// unlike merge/unmerge which stays ren-only. EditTrusted rides along so staff
+// keep on the user face the standing they had through letmoe's S2S assertion.
 var adminPerms = append(append([]authz.Permission{}, moderatorPerms...),
-	EditWork, EditWorkReview, EditTaxonomy, EditTaxonomyReview)
+	EditWork, EditWorkReview, EditTaxonomy, EditTaxonomyReview, EditTrusted)
 
 // renPerms adds the identity-registry surface itself.
 var renPerms = append(append([]authz.Permission{}, adminPerms...), Review)

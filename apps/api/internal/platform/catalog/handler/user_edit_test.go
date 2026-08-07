@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,11 +10,13 @@ import (
 	"testing"
 
 	"api/internal/middleware"
+	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/perm"
 	"api/internal/platform/catalog/service"
 	"api/internal/platform/editing"
+	siteModel "api/internal/platform/site/model"
 	"api/pkg/oidctoken"
 
 	"github.com/gofiber/fiber/v3"
@@ -580,4 +583,71 @@ func TestUserEdit_ModerationIsFencedAndUnspoofable(t *testing.T) {
 		fmt.Sprintf("%s/edit/proposals/%d", UserPrefix, 9_000_178),
 		userToken(t, 902, ScopeCatalogEdit, "kungal-client"), "")
 	assert.Equal(t, fiber.StatusNotFound, status)
+}
+
+// TestUserEditActor_TrustTierComesFromThePermissionKey pins the wave-183 door
+// itself, without a database: the actor's trust tier is not a constant any more
+// but a reading of the token's roles through the catalog permission vocabulary.
+// A role bundle carrying catalog.edit.trusted writes at editing.TrustedTier —
+// the only tier value any engine rule compares against — and every other role
+// keeps the old tier 0.
+func TestUserEditActor_TrustTierComesFromThePermissionKey(t *testing.T) {
+	client := &siteModel.OAuthClient{ID: "letmoe-client", CatalogSite: "letmoe"}
+	actorFor := func(roles ...string) dto.EditActor {
+		ctx := context.WithValue(context.Background(), ctxKeyUserID, int64(4242))
+		ctx = context.WithValue(ctx, ctxKeyUserRoles, roles)
+		ctx = context.WithValue(ctx, ctxKeyClient, client)
+		actor, site, he := userEditActor(ctx)
+		require.Nil(t, he)
+		require.Equal(t, "letmoe", site)
+		require.EqualValues(t, 4242, actor.UserID)
+		return actor
+	}
+
+	for _, role := range []string{"admin", "ren"} {
+		assert.Equal(t, editing.TrustedTier, actorFor("user", role).TrustTier,
+			"%s holds catalog.edit.trusted through the code bundles", role)
+	}
+	// Trust is orthogonal to moderation, and creator is a product-side role the
+	// CODE bundles say nothing about (a site grants it the key through the
+	// permission-console overlay, which this test does not install).
+	for _, role := range []string{"user", "creator", "moderator", "no_such_role"} {
+		assert.EqualValues(t, 0, actorFor(role).TrustTier,
+			"%s does not hold catalog.edit.trusted in the code bundles", role)
+	}
+	assert.EqualValues(t, 0, actorFor().TrustTier, "no roles at all grants nothing")
+}
+
+// TestUserEdit_TrustedLaneWorksOnTheUserFace is the same door end to end, on the
+// overlay that needed it: letmoe's work policy is propose=trusted, so before
+// wave 183 EVERY user-token filing on a letmoe tenant was a 403 and letmoe's
+// trusted lane could only live on the S2S face. A token whose roles carry
+// catalog.edit.trusted now files there; one without it is still refused.
+func TestUserEdit_TrustedLaneWorksOnTheUserFace(t *testing.T) {
+	db := openCatalogTestDB(t)
+	work := seedUserEditWork(t, db)
+	app := userEditApp(t, db, userEditClients())
+
+	status, raw := userEditReq(t, app, "POST", UserPrefix+"/edit/proposals",
+		userToken(t, 610, ScopeCatalogEdit, "letmoe-client"),
+		userProposalBody(work, "信頼されない提案", ""))
+	assert.Equal(t, fiber.StatusForbidden, status,
+		"tier 0 cannot propose on a trusted-lane tenant: %s", raw)
+
+	status, raw = userEditReq(t, app, "POST", UserPrefix+"/edit/proposals",
+		userTokenRoles(t, 611, ScopeCatalogEdit, "letmoe-client", "user", "admin"),
+		userProposalBody(work, "信頼された提案", "trusted"))
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+
+	env := decodeUserCreate(t, raw)
+	assert.Equal(t, "letmoe", env.Data.Proposal.Site)
+	assert.EqualValues(t, 611, env.Data.Proposal.ProposerUID)
+	// letmoe automerges on OWNER, not on tier: this work is unclaimed, so the
+	// trusted filing legitimately waits in the queue. What the tier bought is
+	// the right to file at all.
+	assert.False(t, env.Data.Merged)
+
+	var rows int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM edit_proposal WHERE site = 'letmoe'`).Scan(&rows).Error)
+	assert.EqualValues(t, 1, rows, "only the trusted token's filing landed")
 }
