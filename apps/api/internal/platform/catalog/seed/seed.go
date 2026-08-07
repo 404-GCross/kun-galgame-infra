@@ -241,6 +241,26 @@ func sources() []model.CatalogSource {
 		// asserts identity as strongly as the vndb ref it rides on
 		// (refs/proj/167 §1). Crawler: ../kun-getchu-api.
 		{ID: 17, Key: "getchu", TrustTier: 1, Note: "Getchu.com retailer pages (character rosters, story text, sample CG; anchored via VNDB extlinks)"},
+		// derived is the MACHINE INFERENCE lane (wave 184): rows nothing
+		// upstream published and no human wrote, computed from facts the
+		// catalog already holds. Its first (and so far only) product is the
+		// series builder, which clusters connected components over the
+		// series-ish work relation edges and materializes each as a
+		// catalog_series with external_id "comp:<min member work id>".
+		//
+		// Its own source id, not curated's and not the asserting upstream's,
+		// for two reasons. Provenance: a derived grouping is exactly as strong
+		// as the inference that produced it, and filing it under vndb would
+		// claim VNDB published a series it never did. Ownership: the human edit
+		// face's curatedOnly guard already refuses to touch a non-curated
+		// series, so a separate id makes "the builder is the only writer here"
+		// true by construction rather than by convention — a human who wants a
+		// different grouping curates one on lane 12, where the human always wins.
+		//
+		// trust_tier 1, level with the curated upstreams: the inference is
+		// deterministic and rides on edges those upstreams asserted, but it is
+		// still an inference, so it does not sit at first-party tier 0.
+		{ID: 18, Key: "derived", TrustTier: 1, Note: "first-party machine inference over catalog facts (wave 184 series builder)"},
 	}
 }
 

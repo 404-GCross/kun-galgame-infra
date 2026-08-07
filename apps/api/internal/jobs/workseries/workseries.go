@@ -22,6 +22,8 @@ import (
 	"sort"
 	"strings"
 
+	"api/internal/jobs/seriesorder"
+	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 
 	"gorm.io/driver/postgres"
@@ -54,6 +56,9 @@ type Stats struct {
 	SeriesDeleted int // dropped below the gate / vanished from the mirror
 	MembersAdded  int
 	MembersStale  int // deleted
+	// OrderChanged counts membership rows whose position/kind really moved this
+	// pass (wave 184). A steady-state re-run reports 0.
+	OrderChanged int
 
 	Errors int
 }
@@ -194,6 +199,16 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		// via the existing rows only (new series contribute all members as
 		// adds).
 		planMembers(ctx, db, want, existingByExt, st)
+		// Order forecast covers the series that already exist; a series this
+		// pass would create has no rows to compare against yet, and its members
+		// land ordered by the apply path's own reconcile.
+		dryIDs := make(map[string]int64, len(existingByExt))
+		for sid, e := range existingByExt {
+			dryIDs[sid] = e.id
+		}
+		if _, err := reconcileOrder(ctx, db, want, dryIDs, st, false); err != nil {
+			return nil, err
+		}
 		logDone(st, opts.Apply)
 		return st, nil
 	}
@@ -299,11 +314,70 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 			touched = append(touched, w)
 		}
 	}
+
+	// ── ordering facets (wave 184) ───────────────────────────────────────────
+	// position/kind are a pure function of the members' release dates and the
+	// relation edges among them, so they are recomputed every pass rather than
+	// only when membership moved: a release date corrected upstream changes the
+	// order of a series whose membership never budged. Only rows that really
+	// move are UPDATEd, so a steady-state re-run stays a zero-write.
+	orderTouched, err := reconcileOrder(ctx, db, want, idByExt, st, true)
+	if err != nil {
+		return nil, err
+	}
+	touched = append(touched, orderTouched...)
+
 	if err := repository.TouchWorks(ctx, db, touched); err != nil {
 		return nil, fmt.Errorf("touch works: %w", err)
 	}
 	logDone(st, opts.Apply)
 	return st, nil
+}
+
+// reconcileOrder recomputes catalog_series_member.position/.kind for the series
+// this pass wants, via the ordering helper the three series lanes share. The
+// dlsite lane passes SeriesMemberKindUnknown as the fallback: dlsite groups
+// works without saying how they relate, so a member no relation edge touches
+// stays honestly unclassified.
+func reconcileOrder(ctx context.Context, db *gorm.DB, want map[string]*seriesInfo,
+	idByExt map[string]int64, st *Stats, apply bool) ([]int64, error) {
+	var allWorks []int64
+	for _, si := range want {
+		for w := range si.members {
+			allWorks = append(allWorks, w)
+		}
+	}
+	facts, err := seriesorder.LoadFacts(ctx, db, allWorks)
+	if err != nil {
+		return nil, fmt.Errorf("load ordering facts: %w", err)
+	}
+	var touched []int64
+	for sid, si := range want {
+		seriesID, ok := idByExt[sid]
+		if !ok {
+			continue
+		}
+		members := make([]int64, 0, len(si.members))
+		for w := range si.members {
+			members = append(members, w)
+		}
+		have, err := seriesorder.LoadCurrent(ctx, db, seriesID)
+		if err != nil {
+			st.Errors++
+			slog.Warn("order current", "ext", sid, "err", err)
+			continue
+		}
+		changed, err := seriesorder.Apply(ctx, db, seriesID,
+			facts.Assign(members, model.SeriesMemberKindUnknown), have, apply)
+		if err != nil {
+			st.Errors++
+			slog.Warn("order apply", "ext", sid, "err", err)
+			continue
+		}
+		st.OrderChanged += len(changed)
+		touched = append(touched, changed...)
+	}
+	return touched, nil
 }
 
 // planMembers computes the dry-run member add/stale counts against the current
@@ -347,7 +421,8 @@ func logDone(st *Stats, apply bool) {
 	slog.Info("workseries done", "apply", apply,
 		"anchored_works", st.AnchoredWorks, "series_eligible", st.SeriesEligible, "members_wanted", st.MembersWanted,
 		"series_created", st.SeriesCreated, "series_renamed", st.SeriesRenamed, "series_deleted", st.SeriesDeleted,
-		"members_added", st.MembersAdded, "members_stale", st.MembersStale, "errors", st.Errors)
+		"members_added", st.MembersAdded, "members_stale", st.MembersStale,
+		"order_changed", st.OrderChanged, "errors", st.Errors)
 }
 
 func chunkStr(in []string, size int) [][]string {

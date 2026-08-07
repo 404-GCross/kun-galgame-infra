@@ -141,6 +141,21 @@ const (
 	WorkCharacterKindAppears   int16 = 3 // Bangumi 客串 (guest/cameo)
 )
 
+// SeriesMemberKind — the role a work plays inside its series line
+// (catalog_series_member.kind, wave 184). Unlike WorkCharacterKind, 0 here is a
+// SENTINEL, not a datum: it means no ordering pass has classified this row yet,
+// or the lane's classifier found no relation-edge evidence and refuses to
+// guess. The derived lane (source `derived`) never leaves a member at 0 — its
+// members exist BECAUSE an edge grouped them — while the dlsite / curated lanes
+// keep 0 for members the edge graph says nothing about.
+const (
+	SeriesMemberKindUnknown    int16 = 0
+	SeriesMemberKindMain       int16 = 1 // a main entry of the line
+	SeriesMemberKindFandisc    int16 = 2 // fandisc_of another member
+	SeriesMemberKindSideStory  int16 = 3 // side_story_of another member
+	SeriesMemberKindCollection int16 = 4 // a bundle collecting other members
+)
+
 // Revision actions (doc 10 §9). merged_source/merged_target: a merge writes a
 // revision on BOTH sides so neither history dangles (invariant 7).
 const (

@@ -140,10 +140,20 @@ func TestImportWorkSeries(t *testing.T) {
 	require.NoError(t, testDB.Table("catalog_series_member").Where("series_id = ?", se.ID).Count(&n).Error)
 	assert.EqualValues(t, 2, n)
 
-	// Second apply: zero writes.
+	// The reaper also maintains the wave-184 ordering facets: a freshly created
+	// series lands ordered, never at the 0 sentinel.
+	var positions []int16
+	require.NoError(t, testDB.Table("catalog_series_member").Where("series_id = ?", se.ID).
+		Order("position").Pluck("position", &positions).Error)
+	assert.Equal(t, []int16{1, 2}, positions)
+	assert.Equal(t, 2, st.OrderChanged)
+
+	// Second apply: zero writes — including the ordering pass, which recomputes
+	// every series every run and must therefore prove it changes nothing.
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Zero(t, st.SeriesCreated+st.SeriesRenamed+st.SeriesDeleted+st.MembersAdded+st.MembersStale)
+	assert.Zero(t, st.OrderChanged)
 
 	// Refresh: rename + membership move (wB leaves, wC joins) + verify stale.
 	require.NoError(t, testDB.Exec(`UPDATE workseries_dl.works SET product_json =
