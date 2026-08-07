@@ -72,6 +72,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogSeries{},         // work series entity (step 94, dlsite lane first)
 		&model.CatalogSeriesMember{},   // series membership (step 94)
 		&model.CatalogSeriesIntro{},    // multilingual series intros (refs/plans/10 W0 ruling 3)
+		&model.CatalogSeriesNameOverride{}, // reviewed names for machine-owned lanes (wave 185)
 		&model.CatalogPlatform{},       // platform vocabulary registry (step 96)
 		&model.CatalogWorkPlatform{},   // work-level platform facet (step 96, bgm lane)
 		&model.CatalogRelease{},

@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 func clean(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
-		"catalog_series_member", "catalog_series",
+		"catalog_series_member", "catalog_series", "catalog_series_name_override",
 		"catalog_work_relation", "catalog_release", "catalog_work",
 	} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)

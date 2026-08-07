@@ -66,12 +66,14 @@ func main() {
 		"works", st.Works, "edges", st.Edges, "components", st.Components,
 		"skipped_overlap", st.SkippedOverlap, "skipped_giant", st.SkippedGiant,
 		"skipped_no_name", st.SkippedNoName,
+		"bridges", st.Bridges, "bridge_edges_cut", st.BridgeEdgesCut,
 		"giants_split", st.GiantsSplit, "eligible", st.Eligible, "members_wanted", st.MembersWanted,
 		"series_created", st.SeriesCreated, "series_renamed", st.SeriesRenamed,
 		"series_deleted", st.SeriesDeleted, "members_added", st.MembersAdded,
 		"members_stale", st.MembersStale, "order_changed", st.OrderChanged,
 		"touched_works", st.TouchedWorks,
-		"named_by_prefix", st.NamedByPrefix, "named_by_fallback", st.NamedByFallback)
+		"named_by_prefix", st.NamedByPrefix, "named_by_fallback", st.NamedByFallback,
+		"named_by_override", st.NamedByOverride, "overrides_stale", st.OverridesStale)
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}

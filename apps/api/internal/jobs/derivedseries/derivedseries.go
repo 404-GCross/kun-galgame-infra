@@ -79,9 +79,14 @@ type Stats struct {
 	// no honest name to publish it under, and inventing one ("comp:1234") would
 	// put a machine identifier on a reader's screen.
 	SkippedNoName int
-	GiantsSplit   int // oversized components the strong-edge pass rescued
-	Eligible      int // components this run wants materialized
-	MembersWanted int
+	// Bridges are crossover satellites whose weak edges chained separate lines
+	// together (wave 185); their outgoing weak edges are cut before clustering
+	// and each bridge is worklisted rather than published.
+	Bridges        int
+	BridgeEdgesCut int
+	GiantsSplit    int // oversized components the strong-edge pass rescued
+	Eligible       int // components this run wants materialized
+	MembersWanted  int
 
 	SeriesCreated int
 	SeriesRenamed int
@@ -93,6 +98,11 @@ type Stats struct {
 
 	NamedByPrefix   int
 	NamedByFallback int
+	// NamedByOverride is candidates whose reviewed name (wave 185) survived the
+	// member-hash check; OverridesStale is override rows the run stopped
+	// trusting (membership moved, or the series is gone) — deleted on apply.
+	NamedByOverride int
+	OverridesStale  int
 }
 
 // receipt is one built component.
@@ -198,6 +208,25 @@ func RunWithDB(ctx context.Context, db *gorm.DB, opts Opts) (*Stats, error) {
 		return wlEnc.Encode(e)
 	}
 
+	// Titles are loaded for EVERY edge-touched work, not just the kept members:
+	// the bridge guard below compares the titles of a crossover's targets, and
+	// naming later reads from the same map.
+	titles, err := workTitles(ctx, db, works)
+	if err != nil {
+		return nil, err
+	}
+
+	// ── cut the crossover bridges (wave 185) ─────────────────────────────────
+	bridges := crossoverBridges(works, edgesByWork, titles)
+	st.Bridges = len(bridges)
+	for _, b := range bridges {
+		if err := emit(worklistEntry{Reason: "crossover", ExternalID: fmt.Sprintf("work:%d", b),
+			WorkIDs: []int64{b}, Size: 1}); err != nil {
+			return nil, fmt.Errorf("worklist: %w", err)
+		}
+	}
+	edgesByWork, st.BridgeEdgesCut = pruneBridgeEdges(edgesByWork, bridges)
+
 	// ── cluster, refuse, split ───────────────────────────────────────────────
 	comps := components(works, edgesByWork, nil)
 	st.Components = len(comps)
@@ -246,10 +275,6 @@ func RunWithDB(ctx context.Context, db *gorm.DB, opts Opts) (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load ordering facts: %w", err)
 	}
-	titles, err := workTitles(ctx, db, allMembers)
-	if err != nil {
-		return nil, err
-	}
 	want := make(map[string]*candidate, len(kept))
 	for _, c := range kept {
 		names := make([]string, 0, len(c))
@@ -281,6 +306,12 @@ func RunWithDB(ctx context.Context, db *gorm.DB, opts Opts) (*Stats, error) {
 		st.MembersWanted += len(c)
 	}
 	st.Eligible = len(want)
+
+	// Reviewed names beat mechanical ones — but only while the membership they
+	// were reviewed against still holds (wave 185).
+	if err := applyOverrides(ctx, db, derivedSrc, want, opts, st); err != nil {
+		return nil, err
+	}
 
 	touched, err := reconcile(ctx, db, derivedSrc, want, facts, titles, opts, st)
 	if err != nil {
