@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"api/internal/platform/authz"
+	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/perm"
@@ -24,25 +25,51 @@ import (
 
 // TestSetupEdit_RegistersOperations: spec smoke — the whole edit face
 // registers with a nil engine (the gen-openapi convention; handlers never
-// run during spec export).
+// run during spec export). The second list is the wave-181 retirement stated as
+// a test: those paths belong to the user plane now, and re-registering one here
+// would put an asserted-actor door back on a moderation op.
 func TestSetupEdit_RegistersOperations(t *testing.T) {
 	api := Setup(fiber.New(), nil, nil, nil, nil, nil)
 	SetupEdit(api, nil, nil)
 	paths := api.OpenAPI().Paths
 	for _, p := range []string{
 		"/api/v1/catalog/edit/proposals",
+		"/api/v1/catalog/edit/proposals/{id}/withdraw",
+		"/api/v1/catalog/edit/revisions",
+		"/api/v1/catalog/edit/diff",
+		"/api/v1/catalog/edit/schema/{entity_type}",
+	} {
+		assert.NotNilf(t, paths[p], "operation %s must be registered", p)
+	}
+	for _, p := range []string{
 		"/api/v1/catalog/edit/proposals/{id}",
 		"/api/v1/catalog/edit/proposals/{id}/amendments",
 		"/api/v1/catalog/edit/proposals/{id}/merge",
 		"/api/v1/catalog/edit/proposals/{id}/decline",
-		"/api/v1/catalog/edit/proposals/{id}/withdraw",
-		"/api/v1/catalog/edit/revisions",
-		"/api/v1/catalog/edit/diff",
 		"/api/v1/catalog/edit/revert",
-		"/api/v1/catalog/edit/schema/{entity_type}",
 		"/api/v1/catalog/edit/snapshot",
+		"/api/v1/catalog/works/{workID}/covers/{coverID}/vote",
 	} {
-		assert.NotNilf(t, paths[p], "operation %s must be registered", p)
+		assert.Nilf(t, paths[p], "operation %s must NOT be registered on the S2S face", p)
+	}
+}
+
+// TestS2SFace_RetiredPathsAreGone is the runtime half of the same claim: a
+// retired path is not merely absent from the spec, it answers nothing.
+func TestS2SFace_RetiredPathsAreGone(t *testing.T) {
+	app := editApp(&siteModel.OAuthClient{ID: "c", CatalogSite: "site-a"}, nil)
+	for _, tc := range []struct{ method, path string }{
+		{"GET", "/api/v1/catalog/edit/snapshot?entity_type=widget.thing&entity_id=1"},
+		{"GET", "/api/v1/catalog/edit/proposals/1"},
+		{"POST", "/api/v1/catalog/edit/proposals/1/merge"},
+		{"POST", "/api/v1/catalog/edit/revert"},
+		{"PUT", "/api/v1/catalog/works/1/covers/1/vote"},
+		{"POST", "/api/v1/catalog/edit/images"},
+	} {
+		resp, err := app.Test(httptest.NewRequest(tc.method, tc.path, nil))
+		require.NoError(t, err)
+		assert.Containsf(t, []int{fiber.StatusNotFound, fiber.StatusMethodNotAllowed},
+			resp.StatusCode, "%s %s", tc.method, tc.path)
 	}
 }
 
@@ -65,6 +92,19 @@ func editAppWithPerms(client *siteModel.OAuthClient, engine *editing.Engine, per
 	api := Setup(app, nil, nil, nil, nil, nil)
 	SetupEdit(api, engine, perms)
 	return app
+}
+
+// mergeViaEngine merges a proposal through the engine with an asserted actor.
+// The S2S merge op retired in wave 181 and merging over HTTP is pinned on the
+// user plane (user_edit_test.go); the cases below are about what the ENGINE
+// decides, so they reach it where it lives — still through policyCtx, because
+// the family-routed permission resolution is part of what they claim.
+func mergeViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers, id int64, actor dto.EditActor) (*editing.Revision, error) {
+	t.Helper()
+	prop, _, _, err := engine.GetProposal(context.Background(), id)
+	require.NoError(t, err)
+	s := &EditServer{engine: engine, perms: perms}
+	return engine.MergeProposal(context.Background(), id, s.policyCtx(actor, prop.Site, prop.EntityFamily), "")
 }
 
 func editPost(t *testing.T, app *fiber.App, path, body string) (int, []byte) {
@@ -145,22 +185,14 @@ func TestEditFaceEndToEnd(t *testing.T) {
 	assert.Equal(t, "open", created.Data.Proposal.Status)
 	assert.False(t, created.Data.Merged)
 
-	// ren merges → 200 with the produced revision.
-	status, raw = editPost(t, app,
-		fmt.Sprintf("/api/v1/catalog/edit/proposals/%d/merge", created.Data.Proposal.ID),
-		`{"note":"ok","actor":{"user_id":200,"roles":["ren"]}}`)
-	require.Equal(t, fiber.StatusOK, status, string(raw))
-	var mergedResp struct {
-		Data struct {
-			Seq           int      `json:"seq"`
-			Action        string   `json:"action"`
-			ChangedFields []string `json:"changed_fields"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &mergedResp))
-	assert.Equal(t, 1, mergedResp.Data.Seq)
-	assert.Equal(t, "merged", mergedResp.Data.Action)
-	assert.Equal(t, []string{"catalog.work.display_name"}, mergedResp.Data.ChangedFields)
+	// ren merges → the produced revision.
+	rev, err := mergeViaEngine(t, engine, PermResolvers{"catalog": perm.Resolver},
+		created.Data.Proposal.ID, dto.EditActor{UserID: 200, Roles: []string{"ren"}})
+	require.NoError(t, err)
+	view := revisionView(rev)
+	assert.Equal(t, 1, view.Seq)
+	assert.Equal(t, "merged", view.Action)
+	assert.Equal(t, []string{"catalog.work.display_name"}, view.ChangedFields)
 
 	var after model.CatalogWork
 	require.NoError(t, db.First(&after, work.ID).Error)
@@ -427,10 +459,11 @@ func TestEditFamilyResolver(t *testing.T) {
 	require.NoError(t, reg.Register(fakeFamilySpec("orphan"))) // NOT in the resolver map
 	engine := editing.NewEngine(db, reg)
 
-	app := editAppWithPerms(&siteModel.OAuthClient{ID: "c", CatalogSite: "site-a"}, engine, PermResolvers{
+	perms := PermResolvers{
 		"widget": authz.NewResolver(authz.Bundles{"editor": {"widget.edit", "widget.review"}}),
 		"gizmo":  authz.NewResolver(authz.Bundles{"boss": {"gizmo.edit"}}),
-	})
+	}
+	app := editAppWithPerms(&siteModel.OAuthClient{ID: "c", CatalogSite: "site-a"}, engine, perms)
 
 	propose := func(family string, roles string) (int, []byte) {
 		t.Helper()
@@ -465,47 +498,13 @@ func TestEditFamilyResolver(t *testing.T) {
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &created))
-	status, _ = editPost(t, app,
-		fmt.Sprintf("/api/v1/catalog/edit/proposals/%d/merge", created.Data.Proposal.ID),
-		`{"actor":{"user_id":6,"roles":["boss"]}}`)
-	assert.Equal(t, fiber.StatusForbidden, status, "gizmo's role must not review a widget proposal")
-	status, raw = editPost(t, app,
-		fmt.Sprintf("/api/v1/catalog/edit/proposals/%d/merge", created.Data.Proposal.ID),
-		`{"actor":{"user_id":6,"roles":["editor"]}}`)
-	assert.Equal(t, fiber.StatusOK, status, string(raw))
-}
-
-// TestEditSnapshot pins the bootstrap read: the entity's CURRENT registered
-// field values through the spec's LoadSnapshot (not a stored revision).
-func TestEditSnapshot(t *testing.T) {
-	db := openCatalogTestDB(t)
-	reg := editing.NewRegistry()
-	require.NoError(t, reg.Register(fakeFamilySpec("widget")))
-	app := editAppWithPerms(nil, editing.NewEngine(db, reg), nil)
-
-	req := httptest.NewRequest("GET", "/api/v1/catalog/edit/snapshot?entity_type=widget.thing&entity_id=1", nil)
-	resp, err := app.Test(req)
-	require.NoError(t, err)
-	require.Equal(t, fiber.StatusOK, resp.StatusCode)
-	raw, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	var out struct {
-		Data struct {
-			EntityType string         `json:"entity_type"`
-			EntityID   int64          `json:"entity_id"`
-			Values     map[string]any `json:"values"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &out))
-	assert.Equal(t, "widget.thing", out.Data.EntityType)
-	assert.Equal(t, int64(1), out.Data.EntityID)
-	assert.Equal(t, map[string]any{"widget.thing.name": "current"}, out.Data.Values)
-
-	// Unknown entity type → 404.
-	req = httptest.NewRequest("GET", "/api/v1/catalog/edit/snapshot?entity_type=ghost.thing&entity_id=1", nil)
-	resp, err = app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
+	_, err := mergeViaEngine(t, engine, perms, created.Data.Proposal.ID,
+		dto.EditActor{UserID: 6, Roles: []string{"boss"}})
+	var permErr *editing.PermissionError
+	assert.ErrorAs(t, err, &permErr, "gizmo's role must not review a widget proposal")
+	_, err = mergeViaEngine(t, engine, perms, created.Data.Proposal.ID,
+		dto.EditActor{UserID: 6, Roles: []string{"editor"}})
+	assert.NoError(t, err)
 }
 
 // TestEditRevisionLegacyView: migrated rows' provenance (legacy_action +
@@ -520,9 +519,8 @@ func TestEditRevisionLegacyView(t *testing.T) {
 	reg := editing.NewRegistry()
 	require.NoError(t, reg.Register(fakeFamilySpec("widget")))
 	engine := editing.NewEngine(db, reg)
-	app := editAppWithPerms(&siteModel.OAuthClient{ID: "c", CatalogSite: "site-a"}, engine, PermResolvers{
-		"widget": authz.NewResolver(authz.Bundles{"editor": {"widget.edit", "widget.review"}}),
-	})
+	perms := PermResolvers{"widget": authz.NewResolver(authz.Bundles{"editor": {"widget.edit", "widget.review"}})}
+	app := editAppWithPerms(&siteModel.OAuthClient{ID: "c", CatalogSite: "site-a"}, engine, perms)
 
 	// Two merged revisions on entity 1: seq 1 will be dressed up as a
 	// migrated row, seq 2 stays new-era.
@@ -539,10 +537,9 @@ func TestEditRevisionLegacyView(t *testing.T) {
 			} `json:"data"`
 		}
 		require.NoError(t, json.Unmarshal(raw, &created))
-		status, raw = editPost(t, app,
-			fmt.Sprintf("/api/v1/catalog/edit/proposals/%d/merge", created.Data.Proposal.ID),
-			`{"actor":{"user_id":6,"roles":["editor"]}}`)
-		require.Equal(t, fiber.StatusOK, status, string(raw))
+		_, err := mergeViaEngine(t, engine, perms, created.Data.Proposal.ID,
+			dto.EditActor{UserID: 6, Roles: []string{"editor"}})
+		require.NoError(t, err)
 	}
 	require.NoError(t, db.Exec(`UPDATE edit_revision
 		SET legacy_action = 'claimed', legacy_meta = '{"note":"旧备注","is_minor":true}'

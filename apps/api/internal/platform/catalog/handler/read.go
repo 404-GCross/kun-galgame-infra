@@ -70,7 +70,6 @@ func (s *S2SServer) registerRead(api huma.API) {
 type byAnchorInput struct {
 	Source     string `query:"source" minLength:"1" doc:"Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry"`
 	ExternalID string `query:"external_id" minLength:"1" doc:"The id within that source (e.g. a DLsite RJ number, a VNDB v-id)"`
-	UID        int64  `query:"uid" doc:"Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"`
 }
 
 type byAnchorOutput struct {
@@ -82,7 +81,7 @@ func (s *S2SServer) workByAnchor(ctx context.Context, in *byAnchorInput) (*byAnc
 	if err != nil {
 		return nil, workDetailErr(err)
 	}
-	votes, err := s.coverVotes(ctx, detail, in.UID)
+	votes, err := s.coverVotes(ctx, detail)
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +91,7 @@ func (s *S2SServer) workByAnchor(ctx context.Context, in *byAnchorInput) (*byAnc
 // ---- work by id (internal browser drill-down; same bundle) ----
 
 type workByIDInput struct {
-	ID  int64 `path:"id" doc:"Catalog work id"`
-	UID int64 `query:"uid" doc:"Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"`
+	ID int64 `path:"id" doc:"Catalog work id"`
 }
 
 func (s *S2SServer) workByID(ctx context.Context, in *workByIDInput) (*byAnchorOutput, error) {
@@ -101,7 +99,7 @@ func (s *S2SServer) workByID(ctx context.Context, in *workByIDInput) (*byAnchorO
 	if err != nil {
 		return nil, workDetailErr(err)
 	}
-	votes, err := s.coverVotes(ctx, detail, in.UID)
+	votes, err := s.coverVotes(ctx, detail)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +110,12 @@ func (s *S2SServer) workByID(ctx context.Context, in *workByIDInput) (*byAnchorO
 // the read side of an ADVISORY facet, so it is additive to a bundle that was
 // already assembled: the counts decorate the cover rows and change neither their
 // order nor their membership.
-func (s *S2SServer) coverVotes(ctx context.Context, detail *service.WorkDetail, viewerUID int64) (map[int64]service.CoverVoteTally, error) {
+//
+// The viewer is always nobody here. A per-viewer `voted` flag needs a human to
+// point at, and this face has no verified one — the ?uid= that used to name one
+// was an assertion, retired in wave 181. The flag lives on the user plane's own
+// tally read (user_read.go), where the viewer is the token.
+func (s *S2SServer) coverVotes(ctx context.Context, detail *service.WorkDetail) (map[int64]service.CoverVoteTally, error) {
 	if len(detail.Covers) == 0 {
 		return nil, nil
 	}
@@ -120,7 +123,7 @@ func (s *S2SServer) coverVotes(ctx context.Context, detail *service.WorkDetail, 
 	for _, cv := range detail.Covers {
 		coverIDs = append(coverIDs, cv.ID)
 	}
-	votes, err := s.read.CoverVotes(ctx, coverIDs, viewerUID)
+	votes, err := s.read.CoverVotes(ctx, coverIDs, 0)
 	if err != nil {
 		slog.Error("catalog cover votes", "err", err)
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
@@ -239,7 +242,7 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 		resp.Covers = append(resp.Covers, dto.WorkCover{
 			ID: cv.ID, ImageHash: cv.ImageHash, Kind: cv.Kind, PortraitPinned: cv.PortraitPinned,
 			SortOrder: cv.SortOrder, Sexual: cv.Sexual, Violence: cv.Violence, SourceID: cv.SourceID,
-			VoteCount: tally.Count, Voted: tally.Voted,
+			VoteCount: tally.Count,
 		})
 	}
 	for _, sh := range detail.Screenshots {

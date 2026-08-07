@@ -60,15 +60,14 @@ func main() {
 		catHandler.SetupEdit(api, nil, nil)
 		// Same for the claim-lifecycle face (wave 155): actions + the two feeds.
 		catHandler.SetupLifecycle(api, nil, nil, nil)
-		// Same for the best-cover vote face (wave 175): the two advisory ops.
-		catHandler.SetupCoverVotes(api, nil)
 		// The user-token write plane (wave 176) registers on its OWN humafiber
 		// API at runtime (a disjoint prefix with its own auth chain), but it is
 		// the same contract document: a consumer picking between "assert the
 		// actor" and "let the token be the actor" reads both here.
 		catHandler.RegisterUserOps(api, nil)
-		// The user plane's editing ops (wave 177) — the same three verbs the
-		// S2S edit face offers, with the actor derived from the token.
+		// The user plane's editing ops (wave 177-178) — every verb a human
+		// performs, with the actor derived from the token. The S2S edit face
+		// keeps only what a backend legitimately still needs.
 		catHandler.RegisterUserEditOps(api, nil, nil)
 		// The user plane's claims ops (wave 179): submit, the eight lifecycle
 		// actions, and "my claims" — the S2S claims face with the submitter,

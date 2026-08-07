@@ -32,18 +32,23 @@ func decodeStrings(raw datatypes.JSON) []string {
 	return s
 }
 
-// The editing-engine S2S face (E0, charter ruling 6): proposal CRUD + amend
-// + merge/decline/withdraw, the revision log with any-two-versions diff and
-// revert, and the edit-schema projection. Registered under /api/v1/catalog
-// so the existing path-scoped S2SAuth (Basic client credentials) gates it;
-// WRITE paths additionally enforce the client's catalog_site binding against
-// the proposal's site — the same tenancy line as the claim path. The public
-// /v1 face exposes NONE of this (E4 decides that separately).
+// The editing-engine S2S face. Registered under /api/v1/catalog so the existing
+// path-scoped S2SAuth (Basic client credentials) gates it; WRITE paths
+// additionally enforce the client's catalog_site binding against the proposal's
+// site — the same tenancy line as the claim path. The public /v1 face exposes
+// NONE of this.
 //
 // The actor (end user) is ASSERTED by the product backend in the request
 // body (the community S2S convention): roles evaluate through the entity
 // FAMILY's own perm vocabulary (E3a ruling 1 — the resolver map below),
-// trust_tier feeds the trusted policy rules.
+// trust_tier feeds the trusted policy rules. That assertion is why the face
+// shrank to six ops in wave 181: everything a HUMAN performs now lives on the
+// user-token plane (user_edit.go), where the actor is the token rather than a
+// number in a body. What is left is what a BACKEND legitimately still needs —
+// create / withdraw / schema, which letmoe rides until it migrates; the
+// proposal LIST, whose proposer_uid names the person being looked at rather
+// than the caller claiming to be them; and the revision log + diff, which are
+// public version history and belong to no actor.
 
 // PermResolvers routes an entity family to the permission vocabulary its
 // asserted roles evaluate through (E3a ruling 1). The face hardcodes no
@@ -74,22 +79,6 @@ func SetupEdit(api huma.API, engine *editing.Engine, perms PermResolvers) {
 		Summary: "List edit proposals (review queue)", Tags: tags,
 	}, s.list)
 	huma.Register(api, huma.Operation{
-		OperationID: "getEditProposal", Method: http.MethodGet, Path: "/api/v1/catalog/edit/proposals/{id}",
-		Summary: "Read one proposal with amendments and the effective patch", Tags: tags,
-	}, s.get)
-	huma.Register(api, huma.Operation{
-		OperationID: "amendEditProposal", Method: http.MethodPost, Path: "/api/v1/catalog/edit/proposals/{id}/amendments",
-		Summary: "Amend an open proposal (set/unset fields; requires the review rule)", Tags: tags,
-	}, s.amend)
-	huma.Register(api, huma.Operation{
-		OperationID: "mergeEditProposal", Method: http.MethodPost, Path: "/api/v1/catalog/edit/proposals/{id}/merge",
-		Summary: "Merge an open proposal (per-field rebase; 409 lists conflicts)", Tags: tags,
-	}, s.merge)
-	huma.Register(api, huma.Operation{
-		OperationID: "declineEditProposal", Method: http.MethodPost, Path: "/api/v1/catalog/edit/proposals/{id}/decline",
-		Summary: "Decline an open proposal with a reason", Tags: tags,
-	}, s.decline)
-	huma.Register(api, huma.Operation{
 		OperationID: "withdrawEditProposal", Method: http.MethodPost, Path: "/api/v1/catalog/edit/proposals/{id}/withdraw",
 		Summary: "Withdraw one's own open proposal", Tags: tags,
 	}, s.withdraw)
@@ -102,17 +91,9 @@ func SetupEdit(api huma.API, engine *editing.Engine, perms PermResolvers) {
 		Summary: "Field-level diff between any two revisions", Tags: tags,
 	}, s.diff)
 	huma.Register(api, huma.Operation{
-		OperationID: "revertEditEntity", Method: http.MethodPost, Path: "/api/v1/catalog/edit/revert",
-		Summary: "Restore an entity to a historical revision (a new revision; history kept)", Tags: tags,
-	}, s.revert)
-	huma.Register(api, huma.Operation{
 		OperationID: "getEditSchema", Method: http.MethodGet, Path: "/api/v1/catalog/edit/schema/{entity_type}",
 		Summary: "Field schema + the caller's evaluated field-level capabilities", Tags: tags,
 	}, s.schema)
-	huma.Register(api, huma.Operation{
-		OperationID: "getEditSnapshot", Method: http.MethodGet, Path: "/api/v1/catalog/edit/snapshot",
-		Summary: "The entity's current registered-field values (the BFF editor's bootstrap read)", Tags: tags,
-	}, s.snapshot)
 }
 
 // familyOf derives the entity family from a registered entity type — its
@@ -312,80 +293,24 @@ type editGetInput struct {
 	ID int64 `path:"id"`
 }
 
+// editGetInput and the four output shapes below back ops that this face no
+// longer registers — they are the user plane's (user_edit.go), declared here so
+// both faces answer with byte-identical envelopes. Moving them would only make
+// two copies free to drift.
 type editGetOutput struct {
 	Body Envelope[dto.EditProposalView]
-}
-
-func (s *EditServer) get(ctx context.Context, in *editGetInput) (*editGetOutput, error) {
-	prop, amendments, eff, err := s.engine.GetProposal(ctx, in.ID)
-	if err != nil {
-		return nil, editErr(err)
-	}
-	view := proposalView(prop)
-	view.EffectivePatch = eff
-	view.Amendments = amendmentViews(amendments)
-	return &editGetOutput{Body: okEnvelope(view)}, nil
-}
-
-type editAmendInput struct {
-	ID   int64 `path:"id"`
-	Body dto.EditAmendRequest
 }
 
 type editAmendOutput struct {
 	Body Envelope[dto.EditAmendmentView]
 }
 
-func (s *EditServer) amend(ctx context.Context, in *editAmendInput) (*editAmendOutput, error) {
-	prop, err := s.proposalForWrite(ctx, in.ID)
-	if err != nil {
-		return nil, err
-	}
-	amendment, err := s.engine.AmendProposal(ctx, in.ID, editing.AmendInput{
-		Set: in.Body.Set, Unset: in.Body.Unset, Note: in.Body.Note,
-		Actor: s.policyCtx(in.Body.Actor, prop.Site, prop.EntityFamily),
-	})
-	if err != nil {
-		return nil, editErr(err)
-	}
-	views := amendmentViews([]editing.ProposalAmendment{*amendment})
-	return &editAmendOutput{Body: okEnvelope(views[0])}, nil
-}
-
-type editDecisionInput struct {
-	ID   int64 `path:"id"`
-	Body dto.EditDecisionRequest
-}
-
 type editMergeOutput struct {
 	Body Envelope[dto.EditRevisionView]
 }
 
-func (s *EditServer) merge(ctx context.Context, in *editDecisionInput) (*editMergeOutput, error) {
-	prop, err := s.proposalForWrite(ctx, in.ID)
-	if err != nil {
-		return nil, err
-	}
-	rev, err := s.engine.MergeProposal(ctx, in.ID, s.policyCtx(in.Body.Actor, prop.Site, prop.EntityFamily), in.Body.Note)
-	if err != nil {
-		return nil, editErr(err)
-	}
-	return &editMergeOutput{Body: okEnvelope(revisionView(rev))}, nil
-}
-
 type editCloseOutput struct {
 	Body Envelope[dto.EditProposalView]
-}
-
-func (s *EditServer) decline(ctx context.Context, in *editDecisionInput) (*editCloseOutput, error) {
-	prop, err := s.proposalForWrite(ctx, in.ID)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.DeclineProposal(ctx, in.ID, s.policyCtx(in.Body.Actor, prop.Site, prop.EntityFamily), in.Body.Note); err != nil {
-		return nil, editErr(err)
-	}
-	return s.closedView(ctx, in.ID)
 }
 
 type editWithdrawInput struct {
@@ -475,47 +400,12 @@ func (s *EditServer) diff(ctx context.Context, in *editDiffInput) (*editDiffOutp
 	return &editDiffOutput{Body: okEnvelope(resp)}, nil
 }
 
-type editRevertInput struct {
-	Body dto.EditRevertRequest
-}
-
 type editRevertOutput struct {
 	Body Envelope[dto.EditRevertResponse]
 }
 
-func (s *EditServer) revert(ctx context.Context, in *editRevertInput) (*editRevertOutput, error) {
-	if he := enforceSiteBinding(clientFromCtx(ctx), in.Body.Site); he != nil {
-		return nil, he
-	}
-	prop, rev, err := s.engine.Revert(ctx, editing.RevertInput{
-		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID, ToSeq: in.Body.ToSeq,
-		Note: in.Body.Note, Actor: s.policyCtx(in.Body.Actor, in.Body.Site, familyOf(in.Body.EntityType)),
-	})
-	if err != nil {
-		return nil, editErr(err)
-	}
-	return &editRevertOutput{Body: okEnvelope(dto.EditRevertResponse{
-		Proposal: proposalView(prop), Revision: revisionView(rev),
-	})}, nil
-}
-
-type editSnapshotInput struct {
-	EntityType string `query:"entity_type" minLength:"1" doc:"Registered entity type, e.g. galgame.game"`
-	EntityID   int64  `query:"entity_id" minimum:"1"`
-}
-
 type editSnapshotOutput struct {
 	Body Envelope[dto.EditSnapshotResponse]
-}
-
-func (s *EditServer) snapshot(ctx context.Context, in *editSnapshotInput) (*editSnapshotOutput, error) {
-	values, err := s.engine.CurrentSnapshot(ctx, in.EntityType, in.EntityID)
-	if err != nil {
-		return nil, editErr(err)
-	}
-	return &editSnapshotOutput{Body: okEnvelope(dto.EditSnapshotResponse{
-		EntityType: in.EntityType, EntityID: in.EntityID, Values: values,
-	})}, nil
 }
 
 type editSchemaInput struct {

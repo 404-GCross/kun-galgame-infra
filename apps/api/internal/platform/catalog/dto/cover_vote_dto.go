@@ -2,23 +2,9 @@ package dto
 
 // Wire types of the best-cover vote face (wave 175).
 //
-// The body is the SAME shape every other asserted-actor write on this service
-// takes — `{"site": …, "actor": {"user_id": …}}` — because a vote is one more
-// thing a product backend does on behalf of one of its users, not a new kind of
-// caller. Reusing EditActor also means the uid a vote is attributed to is
-// validated exactly like the uid an edit or a claim action is: the wire rejects
-// a missing or non-positive user_id, and the service refuses one again (a vote
-// is somebody's taste — it is never system-attributed).
-
-// CoverVoteRequest casts or withdraws one best-cover vote.
-type CoverVoteRequest struct {
-	// Site is the acting tenant, enforced against the client's catalog_site
-	// binding — a vote is a write, and a client writes only as itself. It is
-	// provenance on the stored row, never part of the ballot's identity: the
-	// same person voting from two sites still holds one vote per work.
-	Site  string    `json:"site" minLength:"1" doc:"Acting tenant; must equal the client's catalog_site binding"`
-	Actor EditActor `json:"actor" doc:"The end user the product backend is voting for"`
-}
+// A ballot has no request body at all: the voter is the bearer token's user and
+// the tenant is that token client's catalog_site, so there is nothing left for a
+// caller to state. The retired S2S pair took both from the wire.
 
 // CoverVoteResponse is the tally after the write, so a caller re-renders without
 // a second read.
@@ -44,9 +30,9 @@ type UserWorkCover struct {
 	// VoteCount is advisory, exactly as on the work detail: it orders nothing
 	// server-side and never touches the editorial pins.
 	VoteCount int `json:"vote_count" doc:"advisory best-cover votes on this cover"`
-	// Voted is ALWAYS stated here, unlike WorkCover.voted which is omitted when
-	// no viewer was named. On this face a viewer is never absent — the token IS
-	// the viewer — so "nobody asked" is not a state this shape can be in.
+	// Voted is stated here and nowhere else: WorkCover (the S2S work detail)
+	// carries only the count, because it has no verified viewer to answer for.
+	// On this face a viewer is never absent — the token IS the viewer.
 	Voted bool `json:"voted" doc:"true if the token user's ballot is on this cover"`
 }
 

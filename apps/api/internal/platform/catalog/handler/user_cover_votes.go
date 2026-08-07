@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	stderrors "errors"
 	"log/slog"
 	"net/http"
 
@@ -15,15 +16,17 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// The first ops of the user-token write plane: the best-cover vote, cast by the
-// voter's own browser instead of relayed by a product backend.
+// The best-cover vote: cast by the voter's own browser, against the token that
+// names them. This is the ONLY face that casts one — the S2S pair that took
+// (site, actor) from a request body was retired in wave 181, so a ballot can no
+// longer be attributed to a user by a caller merely asserting their uid.
 //
-// Same service, same table, same advisory semantics as the S2S pair in
-// cover_votes.go — deliberately UNCHANGED. Only the provenance of the two
-// identity values differs, which is the entire point of the face: the S2S ops
-// take (site, actor) from the request body, these take them from the token.
-// A first-party product should move to these; the S2S pair stays for backends
-// that genuinely act for a user they authenticated themselves.
+// What the votes are NOT: an ordering. The service writes only
+// catalog_cover_vote — never sort_order, never portrait_pinned — so an editorial
+// pin outranks any number of votes, and the read faces hand the counts to
+// consumers as decoration they may use or ignore. NSFW is likewise not this
+// face's business: the per-image sexual/violence columns already trim the read
+// side, and a cover nobody may see collects votes nobody will render.
 
 // UserServer holds the dependencies of the user-plane operations.
 type UserServer struct{ votes *service.CoverVoteService }
@@ -84,11 +87,30 @@ func RegisterUserOps(api huma.API, votes *service.CoverVoteService) {
 }
 
 // userCoverVoteInput carries ONLY the path. There is deliberately no body type:
-// the two values an S2S caller asserts (site, actor) are exactly the two this
-// face refuses to accept from the wire.
+// the two values the retired S2S pair asserted (site, actor) are exactly the two
+// this face refuses to accept from the wire.
 type userCoverVoteInput struct {
 	WorkID  int64 `path:"workID" minimum:"1" doc:"Catalog work id"`
 	CoverID int64 `path:"coverID" minimum:"1" doc:"catalog_work_cover row id, as returned by the work detail's covers[].id"`
+}
+
+type coverVoteOutput struct {
+	Body Envelope[dto.CoverVoteResponse]
+}
+
+// coverVoteErr maps the vote refusals onto the house envelope. A missing actor
+// is the caller's malformed request (400); an unavailable work or a cover that
+// is not this work's are both "that thing is not there to vote on" (404).
+func coverVoteErr(err error) error {
+	switch {
+	case stderrors.Is(err, service.ErrVoteActorRequired):
+		return apiErrMsg(http.StatusBadRequest, errors.ErrInvalidParam, err.Error())
+	case stderrors.Is(err, service.ErrVoteWorkUnavailable),
+		stderrors.Is(err, service.ErrVoteCoverNotOnWork):
+		return apiErrMsg(http.StatusNotFound, errors.ErrNotFound, err.Error())
+	}
+	slog.Error("catalog cover vote", "err", err)
+	return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 }
 
 func (s *UserServer) voteCover(ctx context.Context, in *userCoverVoteInput) (*coverVoteOutput, error) {

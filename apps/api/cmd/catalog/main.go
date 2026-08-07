@@ -202,26 +202,17 @@ func main() {
 	catHandler.SetupLifecycle(s2sAPI, claimSvc, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,
 	})
-	// The best-cover vote face (wave 175): two advisory ops on the same S2S API
-	// and the same asserted-actor convention. It writes catalog_cover_vote and
-	// nothing else — the editorial cover columns are not its to move.
+	// The best-cover vote (wave 175, moved to the user plane in 176 and S2S-only
+	// no longer as of 181). It writes catalog_cover_vote and nothing else — the
+	// editorial cover columns are not its to move.
 	coverVoteSvc := service.NewCoverVoteService(catalogDB.DB())
-	catHandler.SetupCoverVotes(s2sAPI, coverVoteSvc)
-	// The same vote service on the user plane (wave 176), where the ballot's
-	// owner and site come from the verified token instead of the body. One
-	// service, two faces: the rule that a user holds one ballot per work holds
-	// across both, because it is the table's unique key, not a face's opinion.
-	// …and, from wave 177, the SAME editing engine and per-family resolvers the
-	// S2S face above was set up with. The user plane files proposals through
-	// one engine, one registry and one set of site overlays; only the actor's
-	// provenance differs (token-derived instead of body-asserted), so a second
-	// engine here would be a second policy universe waiting to disagree.
-	// …and, from wave 179, the SAME claim-lifecycle service: one state machine
-	// and one event ledger behind both faces, so a claim's history reads the
-	// same whether the transition arrived from a backend or from a browser.
-	// …and, from wave 180, the SAME read service the S2S read face runs on: the
-	// cover-tally read is the S2S work detail's tally with the viewer taken from
-	// the token instead of asserted in ?uid=.
+	// The user plane gets the SAME dependencies the S2S face above was set up
+	// with — the editing engine and its per-family resolvers, the claim
+	// lifecycle service, the read service — never copies of them. One engine,
+	// one registry, one set of site overlays and one event ledger behind both
+	// faces; only the actor's provenance differs (token-derived instead of
+	// body-asserted), so a second instance here would be a second policy
+	// universe waiting to disagree.
 	catHandler.SetupUser(application.Fiber, coverVoteSvc, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,
 	}, claimSvc, readSvc)
@@ -390,10 +381,8 @@ func setupPublicCatalog(
 	} else {
 		slog.Warn("catalog edit face: catalog image client not configured — editor image upload disabled (503)")
 	}
-	catHandler.SetupEditImages(application.Fiber, editUpload)
-	// The same leg on the user plane (wave 180), where the uploader is the
-	// verified token's user rather than an actor_uid form field. It sits under
-	// UserPrefix, so the JWTAuth + UserGate chain installed above gates it.
+	// The uploader is the verified token's user. The leg sits under UserPrefix,
+	// so the JWTAuth + UserGate chain installed above gates it.
 	catHandler.SetupUserEditImages(application.Fiber, editUpload)
 	// The works product search (A2-1d) runs its filters/facets/sort inside the
 	// same catalog_works index the entity autocomplete uses, then re-hydrates

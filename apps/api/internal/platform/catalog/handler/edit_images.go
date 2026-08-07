@@ -15,12 +15,11 @@ import (
 
 // edit_images.go — the byte-upload leg of the edit face (the N2/N3 delivery
 // editspec/work_media.go promises: "a client obtains a hash from the image
-// service first"). POST /api/v1/catalog/edit/images.
+// service first").
 //
 // A plain Fiber route rather than a Huma operation: the body is a multipart
-// file, which nothing else on this surface carries, and the route still lives
-// under /api/v1/catalog so the caller-applied S2S Basic gate covers it exactly
-// like the row-set edit ops.
+// file, which nothing else on this surface carries. It is therefore
+// spec-invisible, and docs/catalog/01 §4.4 is where it is written down.
 //
 // Bytes land under the CATALOG image-service identity (site_key "catalog") —
 // the same scope the daily catalog refping sweep keeps alive — so a hash the
@@ -44,43 +43,19 @@ var editImagePresets = map[string]string{
 // identity. Nil means the image client is not configured (upload disabled).
 type EditImageUpload func(ctx context.Context, r io.Reader, filename, preset, uploaderSub string) (*imageclient.UploadResult, error)
 
-// SetupEditImages registers the upload route. Callable with a nil upload for
-// spec export — the route is spec-invisible either way (no Huma op).
-func SetupEditImages(app *fiber.App, upload EditImageUpload) {
-	// The asserted end-user identity, same posture as the edit ops' actor:
-	// stamped into the image audit trail (first_uploader_sub) so a byte blob
-	// stays attributable to the person who sent it. Asserted, because on this
-	// face the S2S client speaks FOR a user it authenticated itself.
-	app.Post("/api/v1/catalog/edit/images", editImageHandler(upload, func(c fiber.Ctx) int64 {
-		uid, err := strconv.ParseInt(c.FormValue("actor_uid"), 10, 64)
-		if err != nil {
-			return 0
-		}
-		return uid
-	}))
-}
-
-// SetupUserEditImages registers the SAME upload leg on the user-token plane
-// (wave 180). Everything about it is the S2S route's — the preset allow-list,
-// the limits the image service enforces upstream, the catalog identity the
-// bytes land under and the response envelope — except where the uploader comes
-// from: there is no actor_uid form field here, because the actor is the
-// verified token's `id`, which UserGate has already established.
-//
-// A plain Fiber route rather than a Huma operation, for the S2S twin's reason:
-// the body is multipart. It is therefore spec-invisible on both faces, and
-// docs/catalog/01 §4.4 is where it is written down.
+// SetupUserEditImages registers the upload leg on the user-token plane. It is
+// the only face that uploads: the S2S twin took its uploader from an actor_uid
+// form field, which wave 181 retired along with every other asserted human
+// identity. Callable with a nil upload — the leg then answers 503.
 func SetupUserEditImages(app *fiber.App, upload EditImageUpload) {
-	app.Post(UserPrefix+"/edit/images", editImageHandler(upload, func(c fiber.Ctx) int64 {
-		uid, _ := c.Locals("user_id").(uint)
-		return int64(uid)
-	}))
+	app.Post(UserPrefix+"/edit/images", editImageHandler(upload))
 }
 
-// editImageHandler is the upload leg both faces run. actorUID is the ONLY thing
-// that differs between them — asserted in a form field on the S2S face, taken
-// from the verified token on the user one — so it is the only thing injected.
-func editImageHandler(upload EditImageUpload, actorUID func(fiber.Ctx) int64) fiber.Handler {
+// editImageHandler forwards one multipart file. The uploader stamped into the
+// image audit trail (first_uploader_sub) is the verified token's `id`, which
+// UserGate has already established — so a byte blob stays attributable to the
+// person who actually sent it.
+func editImageHandler(upload EditImageUpload) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if upload == nil {
 			return c.Status(http.StatusServiceUnavailable).JSON(Envelope[any]{
@@ -100,8 +75,8 @@ func editImageHandler(upload EditImageUpload, actorUID func(fiber.Ctx) int64) fi
 			})
 		}
 		sub := ""
-		if uid := actorUID(c); uid > 0 {
-			sub = "kungal:" + strconv.FormatInt(uid, 10)
+		if uid, _ := c.Locals("user_id").(uint); uid > 0 {
+			sub = "kungal:" + strconv.FormatUint(uint64(uid), 10)
 		}
 		f, err := fh.Open()
 		if err != nil {

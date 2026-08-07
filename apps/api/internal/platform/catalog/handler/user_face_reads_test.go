@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -387,4 +388,59 @@ func TestUserEditImageUpload_BehindTheSameGate(t *testing.T) {
 	resp, _ := postUserEditImage(t, app, userToken(t, 652, ScopeCatalogEdit, "kungal-client"), body, ct)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.False(t, called)
+}
+
+// multipartBody builds the upload leg's request body. actorUID writes the form
+// field the retired S2S leg read; it is kept here precisely so the tests can
+// send one and prove it is ignored.
+func multipartBody(t *testing.T, preset, actorUID string, withFile bool) (*bytes.Buffer, string) {
+	t.Helper()
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	if preset != "" {
+		require.NoError(t, mw.WriteField("preset", preset))
+	}
+	if actorUID != "" {
+		require.NoError(t, mw.WriteField("actor_uid", actorUID))
+	}
+	if withFile {
+		fw, err := mw.CreateFormFile("file", "cover.png")
+		require.NoError(t, err)
+		_, err = fw.Write([]byte("png-bytes"))
+		require.NoError(t, err)
+	}
+	require.NoError(t, mw.Close())
+	return body, mw.FormDataContentType()
+}
+
+// TestUserEditImageUpload_HandlerRefusals covers the leg's own refusals, which
+// have nothing to do with who is asking: a request with no file, a service with
+// no image client configured, and an upstream quota that is the caller's
+// problem (400) rather than the gateway's (502).
+func TestUserEditImageUpload_HandlerRefusals(t *testing.T) {
+	tok := userToken(t, 653, ScopeCatalogEdit, "kungal-client")
+
+	app := userEditImagesApp(func(context.Context, io.Reader, string, string, string) (*imageclient.UploadResult, error) {
+		t.Fatal("must not be called")
+		return nil, nil
+	})
+	body, ct := multipartBody(t, "galgame_screenshot", "", false)
+	resp, env := postUserEditImage(t, app, tok, body, ct)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.NotEqualValues(t, 0, env.Code)
+
+	// A nil upload is "the catalog image client is not configured": the leg is
+	// disabled rather than falling back to some other identity.
+	body, ct = multipartBody(t, "galgame_banner", "", true)
+	resp, env = postUserEditImage(t, userEditImagesApp(nil), tok, body, ct)
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.NotEqualValues(t, 0, env.Code)
+
+	quota := userEditImagesApp(func(context.Context, io.Reader, string, string, string) (*imageclient.UploadResult, error) {
+		return nil, fmt.Errorf("wrap: %w", imageclient.ErrQuotaExceeded)
+	})
+	body, ct = multipartBody(t, "galgame_banner", "", true)
+	resp, env = postUserEditImage(t, quota, tok, body, ct)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.NotEqualValues(t, 0, env.Code)
 }

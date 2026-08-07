@@ -481,27 +481,6 @@ components:
         - work_id
         - created
       type: object
-    CoverVoteRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/CoverVoteRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actor:
-          $ref: "#/components/schemas/EditActor"
-          description: The end user the product backend is voting for
-        site:
-          description: Acting tenant; must equal the client's catalog_site binding
-          minLength: 1
-          type: string
-      required:
-        - site
-        - actor
-      type: object
     CoverVoteResponse:
       additionalProperties: false
       properties:
@@ -615,35 +594,6 @@ components:
       required:
         - user_id
       type: object
-    EditAmendRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/EditAmendRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actor:
-          $ref: "#/components/schemas/EditActor"
-        note:
-          maxLength: 2000
-          type: string
-        set:
-          additionalProperties: {}
-          description: Field-key → corrected value (change or add)
-          type: object
-        unset:
-          description: Field keys to reject from the patch
-          items:
-            type: string
-          type:
-            - array
-            - "null"
-      required:
-        - actor
-      type: object
     EditAmendmentView:
       additionalProperties: false
       properties:
@@ -676,25 +626,6 @@ components:
         - amender_uid
         - note
         - created_at
-      type: object
-    EditDecisionRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/EditDecisionRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actor:
-          $ref: "#/components/schemas/EditActor"
-        note:
-          description: Merge note / decline reason (kept on the proposal)
-          maxLength: 2000
-          type: string
-      required:
-        - actor
       type: object
     EditDiffResponse:
       additionalProperties: false
@@ -867,43 +798,6 @@ components:
         - status
         - created_at
         - updated_at
-      type: object
-    EditRevertRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/EditRevertRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actor:
-          $ref: "#/components/schemas/EditActor"
-        entity_id:
-          format: int64
-          minimum: 1
-          type: integer
-        entity_type:
-          minLength: 1
-          type: string
-        note:
-          maxLength: 2000
-          type: string
-        site:
-          minLength: 1
-          type: string
-        to_seq:
-          description: Target revision seq to restore
-          format: int64
-          minimum: 1
-          type: integer
-      required:
-        - entity_type
-        - entity_id
-        - to_seq
-        - site
-        - actor
       type: object
     EditRevertResponse:
       additionalProperties: false
@@ -2784,9 +2678,6 @@ components:
           description: advisory best-cover votes on this cover; never reorders anything server-side
           format: int64
           type: integer
-        voted:
-          description: true if the ?uid= viewer's vote is on this cover; omitted when no uid was given
-          type: boolean
       required:
         - id
         - image_hash
@@ -3620,128 +3511,6 @@ paths:
       summary: File an edit proposal (automerges into a direct edit when policy allows)
       tags:
         - catalog-edit
-  /api/v1/catalog/edit/proposals/{id}:
-    get:
-      operationId: getEditProposal
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeEditProposalView"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: Read one proposal with amendments and the effective patch
-      tags:
-        - catalog-edit
-  /api/v1/catalog/edit/proposals/{id}/amendments:
-    post:
-      operationId: amendEditProposal
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EditAmendRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeEditAmendmentView"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: Amend an open proposal (set/unset fields; requires the review rule)
-      tags:
-        - catalog-edit
-  /api/v1/catalog/edit/proposals/{id}/decline:
-    post:
-      operationId: declineEditProposal
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EditDecisionRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeEditProposalView"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: Decline an open proposal with a reason
-      tags:
-        - catalog-edit
-  /api/v1/catalog/edit/proposals/{id}/merge:
-    post:
-      operationId: mergeEditProposal
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EditDecisionRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeEditRevisionView"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: Merge an open proposal (per-field rebase; 409 lists conflicts)
-      tags:
-        - catalog-edit
   /api/v1/catalog/edit/proposals/{id}/withdraw:
     post:
       operationId: withdrawEditProposal
@@ -3772,31 +3541,6 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Withdraw one's own open proposal
-      tags:
-        - catalog-edit
-  /api/v1/catalog/edit/revert:
-    post:
-      operationId: revertEditEntity
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EditRevertRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeEditRevertResponse"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: Restore an entity to a historical revision (a new revision; history kept)
       tags:
         - catalog-edit
   /api/v1/catalog/edit/revisions:
@@ -3914,41 +3658,6 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Field schema + the caller's evaluated field-level capabilities
-      tags:
-        - catalog-edit
-  /api/v1/catalog/edit/snapshot:
-    get:
-      operationId: getEditSnapshot
-      parameters:
-        - description: Registered entity type, e.g. galgame.game
-          explode: false
-          in: query
-          name: entity_type
-          schema:
-            description: Registered entity type, e.g. galgame.game
-            minLength: 1
-            type: string
-        - explode: false
-          in: query
-          name: entity_id
-          schema:
-            format: int64
-            minimum: 1
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeEditSnapshotResponse"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: The entity's current registered-field values (the BFF editor's bootstrap read)
       tags:
         - catalog-edit
   /api/v1/catalog/labels/{id}/works:
@@ -4267,14 +3976,6 @@ paths:
             description: The id within that source (e.g. a DLsite RJ number, a VNDB v-id)
             minLength: 1
             type: string
-        - description: "Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"
-          explode: false
-          in: query
-          name: uid
-          schema:
-            description: "Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"
-            format: int64
-            type: integer
       responses:
         "200":
           content:
@@ -4413,14 +4114,6 @@ paths:
             description: Catalog work id
             format: int64
             type: integer
-        - description: "Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"
-          explode: false
-          in: query
-          name: uid
-          schema:
-            description: "Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking)"
-            format: int64
-            type: integer
       responses:
         "200":
           content:
@@ -4503,93 +4196,6 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: List a work's credits grouped by role
-      tags:
-        - catalog-s2s
-  /api/v1/catalog/works/{workID}/covers/{coverID}/vote:
-    delete:
-      operationId: unvoteCatalogWorkCover
-      parameters:
-        - description: Catalog work id
-          in: path
-          name: workID
-          required: true
-          schema:
-            description: Catalog work id
-            format: int64
-            minimum: 1
-            type: integer
-        - description: catalog_work_cover row id, as returned by the work detail's covers[].id
-          in: path
-          name: coverID
-          required: true
-          schema:
-            description: catalog_work_cover row id, as returned by the work detail's covers[].id
-            format: int64
-            minimum: 1
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CoverVoteRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeCoverVoteResponse"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: Withdraw the asserted user's best-cover vote on this work. Idempotent (no vote to withdraw is still a 200); the cover id is part of the symmetric path and is not required to match the voted one — a user holds at most one ballot per work
-      tags:
-        - catalog-s2s
-    put:
-      operationId: voteCatalogWorkCover
-      parameters:
-        - description: Catalog work id
-          in: path
-          name: workID
-          required: true
-          schema:
-            description: Catalog work id
-            format: int64
-            minimum: 1
-            type: integer
-        - description: catalog_work_cover row id, as returned by the work detail's covers[].id
-          in: path
-          name: coverID
-          required: true
-          schema:
-            description: catalog_work_cover row id, as returned by the work detail's covers[].id
-            format: int64
-            minimum: 1
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CoverVoteRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvelopeCoverVoteResponse"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseError"
-          description: Error
-      summary: "Record the asserted user's vote for this work's best cover. ONE ballot per user per WORK: voting a different cover MOVES the vote rather than adding one. Returns the voted cover's new total. Advisory only — votes never reorder covers and never touch the editorial pins"
       tags:
         - catalog-s2s
   /api/v1/user/catalog/claims/mine:

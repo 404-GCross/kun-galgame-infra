@@ -107,74 +107,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/catalog/edit/proposals/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read one proposal with amendments and the effective patch */
-        get: operations["getEditProposal"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/catalog/edit/proposals/{id}/amendments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Amend an open proposal (set/unset fields; requires the review rule) */
-        post: operations["amendEditProposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/catalog/edit/proposals/{id}/decline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Decline an open proposal with a reason */
-        post: operations["declineEditProposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/catalog/edit/proposals/{id}/merge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Merge an open proposal (per-field rebase; 409 lists conflicts) */
-        post: operations["mergeEditProposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/catalog/edit/proposals/{id}/withdraw": {
         parameters: {
             query?: never;
@@ -186,23 +118,6 @@ export interface paths {
         put?: never;
         /** Withdraw one's own open proposal */
         post: operations["withdrawEditProposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/catalog/edit/revert": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Restore an entity to a historical revision (a new revision; history kept) */
-        post: operations["revertEditEntity"];
         delete?: never;
         options?: never;
         head?: never;
@@ -235,23 +150,6 @@ export interface paths {
         };
         /** Field schema + the caller's evaluated field-level capabilities */
         get: operations["getEditSchema"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/catalog/edit/snapshot": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** The entity's current registered-field values (the BFF editor's bootstrap read) */
-        get: operations["getEditSnapshot"];
         put?: never;
         post?: never;
         delete?: never;
@@ -493,24 +391,6 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/catalog/works/{workID}/covers/{coverID}/vote": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Record the asserted user's vote for this work's best cover. ONE ballot per user per WORK: voting a different cover MOVES the vote rather than adding one. Returns the voted cover's new total. Advisory only — votes never reorder covers and never touch the editorial pins */
-        put: operations["voteCatalogWorkCover"];
-        post?: never;
-        /** Withdraw the asserted user's best-cover vote on this work. Idempotent (no vote to withdraw is still a 200); the cover id is part of the symmetric path and is not required to match the voted one — a user holds at most one ballot per work */
-        delete: operations["unvoteCatalogWorkCover"];
         options?: never;
         head?: never;
         patch?: never;
@@ -997,18 +877,6 @@ export interface components {
             /** Format: int64 */
             work_id: number;
         };
-        CoverVoteRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/CoverVoteRequest.json
-             */
-            readonly $schema?: string;
-            /** @description The end user the product backend is voting for */
-            actor: components["schemas"]["EditActor"];
-            /** @description Acting tenant; must equal the client's catalog_site binding */
-            site: string;
-        };
         CoverVoteResponse: {
             /** Format: int64 */
             cover_id: number;
@@ -1062,22 +930,6 @@ export interface components {
              */
             user_id: number;
         };
-        EditAmendRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/EditAmendRequest.json
-             */
-            readonly $schema?: string;
-            actor: components["schemas"]["EditActor"];
-            note?: string;
-            /** @description Field-key → corrected value (change or add) */
-            set?: {
-                [key: string]: unknown;
-            };
-            /** @description Field keys to reject from the patch */
-            unset?: string[] | null;
-        };
         EditAmendmentView: {
             /** Format: int64 */
             amender_uid: number;
@@ -1092,17 +944,6 @@ export interface components {
                 [key: string]: unknown;
             };
             unset?: string[] | null;
-        };
-        EditDecisionRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/EditDecisionRequest.json
-             */
-            readonly $schema?: string;
-            actor: components["schemas"]["EditActor"];
-            /** @description Merge note / decline reason (kept on the proposal) */
-            note?: string;
         };
         EditDiffResponse: {
             fields: components["schemas"]["EditFieldDiffView"][] | null;
@@ -1182,25 +1023,6 @@ export interface components {
             status: string;
             /** Format: date-time */
             updated_at: string;
-        };
-        EditRevertRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/EditRevertRequest.json
-             */
-            readonly $schema?: string;
-            actor: components["schemas"]["EditActor"];
-            /** Format: int64 */
-            entity_id: number;
-            entity_type: string;
-            note?: string;
-            site: string;
-            /**
-             * Format: int64
-             * @description Target revision seq to restore
-             */
-            to_seq: number;
         };
         EditRevertResponse: {
             proposal: components["schemas"]["EditProposalView"];
@@ -2164,8 +1986,6 @@ export interface components {
              * @description advisory best-cover votes on this cover; never reorders anything server-side
              */
             vote_count: number;
-            /** @description true if the ?uid= viewer's vote is on this cover; omitted when no uid was given */
-            voted?: boolean;
         };
         WorkCreditsResponse: {
             groups: components["schemas"]["CreditGroup"][] | null;
@@ -2751,142 +2571,6 @@ export interface operations {
             };
         };
     };
-    getEditProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeEditProposalView"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    amendEditProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EditAmendRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeEditAmendmentView"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    declineEditProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EditDecisionRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeEditProposalView"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    mergeEditProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EditDecisionRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeEditRevisionView"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
     withdrawEditProposal: {
         parameters: {
             query?: never;
@@ -2909,39 +2593,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeEditProposalView"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    revertEditEntity: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EditRevertRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeEditRevertResponse"];
                 };
             };
             /** @description Error */
@@ -3022,39 +2673,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeEditSchemaResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    getEditSnapshot: {
-        parameters: {
-            query?: {
-                /** @description Registered entity type, e.g. galgame.game */
-                entity_type?: string;
-                entity_id?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeEditSnapshotResponse"];
                 };
             };
             /** @description Error */
@@ -3326,8 +2944,6 @@ export interface operations {
                 source?: string;
                 /** @description The id within that source (e.g. a DLsite RJ number, a VNDB v-id) */
                 external_id?: string;
-                /** @description Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking) */
-                uid?: number;
             };
             header?: never;
             path?: never;
@@ -3463,10 +3079,7 @@ export interface operations {
     };
     getCatalogWorkByID: {
         parameters: {
-            query?: {
-                /** @description Optional viewer uid: covers then carry the voted flag for this user's best-cover vote (0 = nobody asking) */
-                uid?: number;
-            };
+            query?: never;
             header?: never;
             path: {
                 /** @description Catalog work id */
@@ -3552,82 +3165,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeWorkCreditsResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    voteCatalogWorkCover: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Catalog work id */
-                workID: number;
-                /** @description catalog_work_cover row id, as returned by the work detail's covers[].id */
-                coverID: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CoverVoteRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeCoverVoteResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HouseError"];
-                };
-            };
-        };
-    };
-    unvoteCatalogWorkCover: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Catalog work id */
-                workID: number;
-                /** @description catalog_work_cover row id, as returned by the work detail's covers[].id */
-                coverID: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CoverVoteRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EnvelopeCoverVoteResponse"];
                 };
             };
             /** @description Error */

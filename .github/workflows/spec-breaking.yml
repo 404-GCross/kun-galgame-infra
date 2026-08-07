@@ -16,6 +16,10 @@ name: spec-breaking
 # complementing test.yml (code -> spec is in sync) and openapi-types.yml
 # (spec -> TS is in sync). A spec that is new in this change (absent in the base)
 # is skipped, not failed.
+#
+# A deliberate retirement is not a silent one: a spec may carry a sibling
+# <spec>-breaking-ignore.txt naming the changes it means to make, which turns
+# the gate from "never break" into "never break by accident".
 
 on:
   push:
@@ -29,6 +33,7 @@ on:
       - "docs/community/openapi.yaml"
       - "docs/trust/openapi.yaml"
       - "docs/trust/admin-openapi.yaml"
+      - "docs/**/*-breaking-ignore.txt"
       - ".github/workflows/spec-breaking.yml"
   pull_request:
     paths: *specs
@@ -95,6 +100,17 @@ jobs:
               continue
             fi
             echo "── $spec ──"
-            oasdiff breaking "$base" "$spec" --fail-on ERR --format githubactions || rc=1
+            # A spec may DECLARE breaking changes in a sibling
+            # <spec>-breaking-ignore.txt: one entry per intended removal, each
+            # containing oasdiff's own error text. Nothing else is exempt — an
+            # undeclared breaking change still fails, and the declaration lives
+            # in the diff for a reviewer to argue with.
+            ignore="${spec%.yaml}-breaking-ignore.txt"
+            if [ -f "$ignore" ]; then
+              echo "::notice::$spec has declared breaking changes in $ignore — they are ignored by this gate"
+              oasdiff breaking "$base" "$spec" --fail-on ERR --err-ignore "$ignore" --format githubactions || rc=1
+            else
+              oasdiff breaking "$base" "$spec" --fail-on ERR --format githubactions || rc=1
+            fi
           done
           exit $rc

@@ -53,44 +53,17 @@ type EditProposalCreateResponse struct {
 	Revision *EditRevisionView `json:"revision,omitempty" doc:"The produced revision when merged"`
 }
 
-// EditAmendRequest appends a maintainer patch delta to an open proposal.
-type EditAmendRequest struct {
-	Set   map[string]any `json:"set,omitempty" doc:"Field-key → corrected value (change or add)"`
-	Unset []string       `json:"unset,omitempty" doc:"Field keys to reject from the patch"`
-	Note  string         `json:"note,omitempty" maxLength:"2000"`
-	Actor EditActor      `json:"actor"`
-}
-
-// EditDecisionRequest merges or declines an open proposal.
-type EditDecisionRequest struct {
-	Note  string    `json:"note,omitempty" maxLength:"2000" doc:"Merge note / decline reason (kept on the proposal)"`
-	Actor EditActor `json:"actor"`
-}
-
 // EditWithdrawRequest withdraws the actor's own open proposal.
 type EditWithdrawRequest struct {
 	Actor EditActor `json:"actor"`
 }
 
-// EditRevertRequest restores an entity's registered fields to a historical
-// revision through the same merge path (a NEW revision; history untouched).
-type EditRevertRequest struct {
-	EntityType string    `json:"entity_type" minLength:"1"`
-	EntityID   int64     `json:"entity_id" minimum:"1"`
-	ToSeq      int       `json:"to_seq" minimum:"1" doc:"Target revision seq to restore"`
-	Site       string    `json:"site" minLength:"1"`
-	Note       string    `json:"note,omitempty" maxLength:"2000"`
-	Actor      EditActor `json:"actor"`
-}
-
-// The user-token face's request shapes (wave 178). Each is its S2S sibling
-// minus every identity field — `actor` everywhere, plus `site` on revert — for
-// the same reason UserEditProposalCreateRequest is: on that face the uid comes
-// from the token's `id` claim and the tenant from the token client's
-// catalog_site, so a wire field for either would only be a place to lie. All
-// fields are written out explicitly (Huma anonymous-embed trap) and each is a
-// separate type rather than a variant of the S2S one, so no future field can be
-// added to both by accident.
+// The user-token face's request shapes (wave 178). Each carries no identity
+// field at all — no `actor`, and no `site` on revert — for the same reason
+// UserEditProposalCreateRequest carries none: on that face the uid comes from
+// the token's `id` claim and the tenant from the token client's catalog_site, so
+// a wire field for either would only be a place to lie. All fields are written
+// out explicitly (Huma anonymous-embed trap).
 
 // UserEditAmendRequest appends a patch delta to an open proposal as the token's
 // own user (requires the review rule on every touched field).

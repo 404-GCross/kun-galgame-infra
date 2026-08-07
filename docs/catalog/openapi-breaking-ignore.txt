@@ -1,0 +1,22 @@
+# Declared breaking changes for docs/catalog/openapi.yaml.
+#
+# oasdiff --err-ignore matches by SUBSTRING: an entry suppresses a breaking
+# change when the entry line CONTAINS oasdiff's own error text verbatim
+# ("in API <METHOD> <path> <description>"), so prose may surround an entry but
+# never interrupt it. Lines that match nothing — this header included — are
+# inert. Removing an entry re-arms the gate for that change.
+#
+# Wave 181 (2026-08-06) retired every human-asserted operation from the catalog
+# S2S face. Each removal below has a live twin on the user-token plane
+# (/api/v1/user/catalog), where the actor is the bearer token instead of a uid
+# a caller states about someone else. A cross-repo sweep found no external
+# caller of any of them. Rationale and the per-op successors: docs/catalog/01.
+
+in API GET /api/v1/catalog/edit/proposals/{id} api path removed without deprecation
+in API POST /api/v1/catalog/edit/proposals/{id}/amendments api path removed without deprecation
+in API POST /api/v1/catalog/edit/proposals/{id}/merge api path removed without deprecation
+in API POST /api/v1/catalog/edit/proposals/{id}/decline api path removed without deprecation
+in API POST /api/v1/catalog/edit/revert api path removed without deprecation
+in API GET /api/v1/catalog/edit/snapshot api path removed without deprecation
+in API PUT /api/v1/catalog/works/{workID}/covers/{coverID}/vote api path removed without deprecation
+in API DELETE /api/v1/catalog/works/{workID}/covers/{coverID}/vote api path removed without deprecation
