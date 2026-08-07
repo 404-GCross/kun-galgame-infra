@@ -101,6 +101,14 @@ type publicLabelOutput struct {
 	Body Envelope[dto.PublicLabel]
 }
 
+type publicLabelGraphInput struct {
+	ID   int64 `path:"id" doc:"Catalog label id — the seed the graph is grown from"`
+	NSFW bool  `query:"nsfw" doc:"true/1 = count r18 works in every node's work_count (default false = excluded, matching an sfw labels/{id} call)"`
+}
+type publicLabelGraphOutput struct {
+	Body Envelope[dto.PublicLabelGraph]
+}
+
 type publicEntitySearchInput struct {
 	Type   string `query:"type" enum:"names,characters,labels,works,tags" doc:"Which index to search; works (wave 105) searches every LIVE galgame registry work by any title, tags (A2-1d) the canonical cross-source tag vocabulary"`
 	Q      string `query:"q" doc:"Search text; empty returns the most-credited entities"`
@@ -391,6 +399,28 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 		OperationID: "getCatalogLabelPublic", Method: http.MethodGet, Path: "/v1/catalog/labels/{id}",
 		Summary: "Label (brand / circle / publisher …) identity; include=works attaches attributed works", Tags: tags,
 	}, func(context.Context, *publicLabelInput) (*publicLabelOutput, error) { return &publicLabelOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogLabelRelationGraphPublic", Method: http.MethodGet, Path: "/v1/catalog/labels/{id}/relation-graph",
+		Summary: "Corporate-structure graph around a label: the connected family (parents, subsidiaries, imprints, spin-offs, succession) in one call",
+		Description: "labels/{id}.relations[] is ONE HOP; this is the whole component, which is what a picture needs — standing on " +
+			"a brand you can see its parent's other brands without walking the one-hop face once per neighbour. " +
+			"A breadth-first walk from the seed over the label-relation graph, bounded at depth 4 and 60 nodes; the bound is " +
+			"applied breadth-first, so a truncated answer keeps the neighbourhood NEAREST the seed. Soft-deleted (merged-away) " +
+			"labels never appear. There is no pagination — a graph served in slices is not a graph. " +
+			"nodes[0] is always the seed, and a label with no relations is a one-node, zero-edge graph, not a 404; an unknown id " +
+			"is a 404 and a merged id is the same 301 labels/{id} serves. " +
+			"EDGE SEMANTICS: {from, to, relation} reads \"`to` is the `relation` of `from`\" — the same reading " +
+			"relations[].relation has, where `from` is the label being viewed. So {from: Key, to: VisualArt's, relation: parent} " +
+			"means \"VisualArt's is the parent of Key\". " +
+			"The underlying graph is stored MIRRORED, but each fact is emitted ONCE: only the canonical side of each inverse " +
+			"pair (parent, imprint, spawned, succeeded_by) is rendered, and the four inverses (subsidiary, imprint_of, origin, " +
+			"formerly) are implied by reading the edge backwards — for \"the subsidiaries of X\", take the edges whose `to` is X " +
+			"and whose relation is parent. " +
+			"Every node's work_count is the SAME nsfw-aware number labels/{id} and the labels browse lane report for this caller.",
+		Tags: tags,
+	}, func(context.Context, *publicLabelGraphInput) (*publicLabelGraphOutput, error) {
+		return &publicLabelGraphOutput{}, nil
+	})
 	huma.Register(api, huma.Operation{
 		OperationID: "searchCatalogEntitiesPublic", Method: http.MethodGet, Path: "/v1/catalog/search",
 		Summary: "Entity autocomplete over names / characters / labels / works / tags, projected to public briefs",

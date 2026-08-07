@@ -3216,6 +3216,193 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/catalog/labels/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
+              "id": "getCatalogLabelRelationGraphPublic",
+              "method": "get",
+              "path": "/v1/catalog/labels/{id}/relation-graph",
+              "summary": "Corporate-structure graph around a label: the connected family (parents, subsidiaries, imprints, spin-offs, succession) in one call",
+              "description": "labels/{id}.relations[] is ONE HOP; this is the whole component, which is what a picture needs — standing on a brand you can see its parent's other brands without walking the one-hop face once per neighbour. A breadth-first walk from the seed over the label-relation graph, bounded at depth 4 and 60 nodes; the bound is applied breadth-first, so a truncated answer keeps the neighbourhood NEAREST the seed. Soft-deleted (merged-away) labels never appear. There is no pagination — a graph served in slices is not a graph. nodes[0] is always the seed, and a label with no relations is a one-node, zero-edge graph, not a 404; an unknown id is a 404 and a merged id is the same 301 labels/{id} serves. EDGE SEMANTICS: {from, to, relation} reads \"`to` is the `relation` of `from`\" — the same reading relations[].relation has, where `from` is the label being viewed. So {from: Key, to: VisualArt's, relation: parent} means \"VisualArt's is the parent of Key\". The underlying graph is stored MIRRORED, but each fact is emitted ONCE: only the canonical side of each inverse pair (parent, imprint, spawned, succeeded_by) is rendered, and the four inverses (subsidiary, imprint_of, origin, formerly) are implied by reading the edge backwards — for \"the subsidiaries of X\", take the edges whose `to` is X and whose relation is parent. Every node's work_count is the SAME nsfw-aware number labels/{id} and the labels browse lane report for this caller.",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Catalog label id — the seed the graph is grown from"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = count r18 works in every node's work_count (default false = excluded, matching an sfw labels/{id} call)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "edges",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "from",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "relation",
+                                  "required": true,
+                                  "doc": "reads \"to is the relation of from\"; the mirrored inverses (subsidiary|imprint_of|origin|formerly) are implied by reading the edge backwards and are never emitted",
+                                  "enum": [
+                                    "parent",
+                                    "imprint",
+                                    "spawned",
+                                    "succeeded_by"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "to",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "nodes",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "logo_hash",
+                                  "required": true,
+                                  "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "work_count",
+                                  "required": true,
+                                  "doc": "nsfw-aware work count, identical to labels/{id}.work_count for the same nsfw setting",
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/labels/1/relation-graph\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "lookupCatalogPublic",
               "method": "get",
               "path": "/v1/catalog/lookup",

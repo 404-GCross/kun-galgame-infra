@@ -466,6 +466,9 @@ func setupPublicCatalog(
 	v1.Get("/names/:id", publicH.Name)
 	v1.Get("/characters/:id", publicH.Character)
 	v1.Get("/labels/:id", publicH.Label)
+	// Label relation GRAPH (wave 188) — the whole corporate family around a
+	// label, beside the one-hop relations[] the detail record keeps carrying.
+	v1.Get("/labels/:id/relation-graph", publicH.LabelRelationGraph)
 	v1.Get("/tags/:id", publicH.Tag)
 	v1.Get("/engines/:id", publicH.EngineDetail)
 	// Series detail (149c) — the address of the grouping entity works?series_id=

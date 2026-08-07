@@ -32,6 +32,7 @@ func publicApp(db *gorm.DB) *fiber.App {
 	app.Get("/v1/catalog/works", h.WorksList)
 	app.Get("/v1/catalog/changes", h.Changes)
 	app.Get("/v1/catalog/labels/:id", h.Label)
+	app.Get("/v1/catalog/labels/:id/relation-graph", h.LabelRelationGraph)
 	app.Get("/v1/catalog/names/:id", h.Name)
 	app.Get("/v1/catalog/characters/:id", h.Character)
 	app.Get("/v1/catalog/lookup", h.Lookup)

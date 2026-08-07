@@ -189,6 +189,27 @@ components:
         - code
         - message
       type: object
+    EnvelopePublicLabelGraph:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePublicLabelGraph.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PublicLabelGraph"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopePublicLabelsListData:
       additionalProperties: false
       properties:
@@ -1222,6 +1243,68 @@ components:
         - intros
         - links
         - relations
+      type: object
+    PublicLabelGraph:
+      additionalProperties: false
+      properties:
+        edges:
+          items:
+            $ref: "#/components/schemas/PublicLabelGraphEdge"
+          type:
+            - array
+            - "null"
+        nodes:
+          items:
+            $ref: "#/components/schemas/PublicLabelGraphNode"
+          type:
+            - array
+            - "null"
+      required:
+        - nodes
+        - edges
+      type: object
+    PublicLabelGraphEdge:
+      additionalProperties: false
+      properties:
+        from:
+          format: int64
+          type: integer
+        relation:
+          description: reads "to is the relation of from"; the mirrored inverses (subsidiary|imprint_of|origin|formerly) are implied by reading the edge backwards and are never emitted
+          enum:
+            - parent
+            - imprint
+            - spawned
+            - succeeded_by
+          type: string
+        to:
+          format: int64
+          type: integer
+      required:
+        - from
+        - to
+        - relation
+      type: object
+    PublicLabelGraphNode:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        logo_hash:
+          description: brand logo content hash in the image service; "" = this label has no logo
+          type: string
+        name:
+          type: string
+        work_count:
+          description: nsfw-aware work count, identical to labels/{id}.work_count for the same nsfw setting
+          format: int64
+          type: integer
+      required:
+        - id
+        - name
+        - logo_hash
+        - work_count
       type: object
     PublicLabelIntro:
       additionalProperties: false
@@ -3017,6 +3100,42 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Label (brand / circle / publisher …) identity; include=works attaches attributed works
+      tags:
+        - catalog-public
+  /v1/catalog/labels/{id}/relation-graph:
+    get:
+      description: "labels/{id}.relations[] is ONE HOP; this is the whole component, which is what a picture needs — standing on a brand you can see its parent's other brands without walking the one-hop face once per neighbour. A breadth-first walk from the seed over the label-relation graph, bounded at depth 4 and 60 nodes; the bound is applied breadth-first, so a truncated answer keeps the neighbourhood NEAREST the seed. Soft-deleted (merged-away) labels never appear. There is no pagination — a graph served in slices is not a graph. nodes[0] is always the seed, and a label with no relations is a one-node, zero-edge graph, not a 404; an unknown id is a 404 and a merged id is the same 301 labels/{id} serves. EDGE SEMANTICS: {from, to, relation} reads \"`to` is the `relation` of `from`\" — the same reading relations[].relation has, where `from` is the label being viewed. So {from: Key, to: VisualArt's, relation: parent} means \"VisualArt's is the parent of Key\". The underlying graph is stored MIRRORED, but each fact is emitted ONCE: only the canonical side of each inverse pair (parent, imprint, spawned, succeeded_by) is rendered, and the four inverses (subsidiary, imprint_of, origin, formerly) are implied by reading the edge backwards — for \"the subsidiaries of X\", take the edges whose `to` is X and whose relation is parent. Every node's work_count is the SAME nsfw-aware number labels/{id} and the labels browse lane report for this caller."
+      operationId: getCatalogLabelRelationGraphPublic
+      parameters:
+        - description: Catalog label id — the seed the graph is grown from
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Catalog label id — the seed the graph is grown from
+            format: int64
+            type: integer
+        - description: true/1 = count r18 works in every node's work_count (default false = excluded, matching an sfw labels/{id} call)
+          explode: false
+          in: query
+          name: nsfw
+          schema:
+            description: true/1 = count r18 works in every node's work_count (default false = excluded, matching an sfw labels/{id} call)
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePublicLabelGraph"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Corporate-structure graph around a label: the connected family (parents, subsidiaries, imprints, spin-offs, succession) in one call"
       tags:
         - catalog-public
   /v1/catalog/lookup:
