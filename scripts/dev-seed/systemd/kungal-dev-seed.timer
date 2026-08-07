@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly kungal dev-seed rebuild + publish
+
+[Timer]
+# Monday morning; if the box was off, run on next boot (Persistent).
+OnCalendar=Mon 09:30
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target
