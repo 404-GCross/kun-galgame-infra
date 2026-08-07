@@ -540,7 +540,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List edit proposals on the token client's catalog site. mine=true is the token user's OWN filing history (no permission needed); mine absent is the REVIEW QUEUE and requires the same review authority the merge/decline ops need for that entity_type (403 otherwise). Neither site nor proposer_uid is a parameter */
+        get: operations["listEditProposalsUser"];
         put?: never;
         /** File an edit proposal AS THE BEARER TOKEN'S OWN USER (automerges into a direct edit when the caller's token roles already carry the review capability). The proposer and the filing tenant are derived from the token; the body carries neither */
         post: operations["createEditProposalUser"];
@@ -669,6 +670,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/user/catalog/edit/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The entity's current registered-field values (the editor's bootstrap read), same shape as the S2S op. Authenticated but NOT tenant-fenced: it projects the same entity state the public reads already render */
+        get: operations["getEditSnapshotUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/user/catalog/works/submit": {
         parameters: {
             query?: never;
@@ -697,6 +715,23 @@ export interface paths {
         put?: never;
         /** Move a claim through its lifecycle AS THE BEARER TOKEN'S OWN USER: claim / submit / publish / withdraw (the token's user must be the entry's owner — or its FIRST CLAIMANT when the entry is unowned, in which case the action adopts it: this is how a person claims one of the machine-imported drafts) or approve / decline / ban / unban (the token's roles must carry catalog.claim.review). 409 on an illegal transition, echoing the current state; 403 on ANOTHER user's claim or another tenant's */
         post: operations["actOnCatalogClaimUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/catalog/works/{id}/covers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** This work's covers with their advisory best-cover tallies, each carrying whether the BEARER TOKEN'S OWN USER voted for it. There is no uid parameter: the viewer is the token. Cross-site open like every catalog read — the tenant fence is a write-side rule */
+        get: operations["listCatalogWorkCoversUser"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1608,6 +1643,18 @@ export interface components {
             data?: components["schemas"]["ResolveResponse"];
             message: string;
         };
+        EnvelopeUserWorkCoversResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeUserWorkCoversResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["UserWorkCoversResponse"];
+            message: string;
+        };
         EnvelopeWorkByAnchorResponse: {
             /**
              * Format: uri
@@ -1949,6 +1996,26 @@ export interface components {
              * @description Target revision seq to restore
              */
             to_seq: number;
+        };
+        UserWorkCover: {
+            /**
+             * Format: int64
+             * @description catalog_work_cover row id (the vote endpoints' cover id)
+             */
+            id: number;
+            image_hash: string;
+            /**
+             * Format: int64
+             * @description advisory best-cover votes on this cover
+             */
+            vote_count: number;
+            /** @description true if the token user's ballot is on this cover */
+            voted: boolean;
+        };
+        UserWorkCoversResponse: {
+            covers: components["schemas"]["UserWorkCover"][] | null;
+            /** Format: int64 */
+            work_id: number;
         };
         UserWorkSubmitRequest: {
             /**
@@ -3606,6 +3673,46 @@ export interface operations {
             };
         };
     };
+    listEditProposalsUser: {
+        parameters: {
+            query?: {
+                /** @description Entity type to list (required: authority is resolved per type) */
+                entity_type?: string;
+                /** @description Narrow to one entity; 0 = the whole type */
+                entity_id?: number;
+                /** @description Filter by status; empty = all */
+                status?: "" | "open" | "merged" | "declined" | "withdrawn";
+                /** @description Page size (max 200, default 50) */
+                limit?: number;
+                /** @description true = only the token user's own proposals (no review permission needed); false/absent = the review queue for this entity type, which requires review authority */
+                mine?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditProposalListResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
     createEditProposalUser: {
         parameters: {
             query?: never;
@@ -3875,6 +3982,39 @@ export interface operations {
             };
         };
     };
+    getEditSnapshotUser: {
+        parameters: {
+            query?: {
+                /** @description Registered entity type, e.g. catalog.work */
+                entity_type?: string;
+                entity_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditSnapshotResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
     submitCatalogWorkUser: {
         parameters: {
             query?: never;
@@ -3932,6 +4072,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeClaimActionResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    listCatalogWorkCoversUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Catalog work id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeUserWorkCoversResponse"];
                 };
             };
             /** @description Error */

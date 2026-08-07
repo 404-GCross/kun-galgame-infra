@@ -40,7 +40,8 @@ func userEditApp(t *testing.T, db *gorm.DB, clients fakeClientLookup) *fiber.App
 	verifier := oidctoken.NewVerifier(userTestSecret, nil) // HS256-only (no JWKS)
 	app.Use(UserPrefix, middleware.JWTAuth(verifier), UserGate(clients))
 	SetupUser(app, service.NewCoverVoteService(db), editing.NewEngine(db, reg),
-		PermResolvers{"catalog": perm.Resolver}, service.NewClaimLifecycleService(db))
+		PermResolvers{"catalog": perm.Resolver}, service.NewClaimLifecycleService(db),
+		service.NewReadService(db))
 	return app
 }
 

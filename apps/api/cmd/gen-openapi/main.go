@@ -74,6 +74,12 @@ func main() {
 		// actions, and "my claims" — the S2S claims face with the submitter,
 		// the tenant and the reviewer taken from the token.
 		catHandler.RegisterUserClaimOps(api, nil)
+		// The user plane's read op (wave 180): the work's cover tallies with the
+		// viewer derived from the token. Its two sibling reads of the wave (the
+		// snapshot and the proposal list) ride RegisterUserEditOps above; the
+		// fourth, the multipart image upload, is spec-invisible on BOTH planes
+		// exactly like its S2S twin — docs/catalog/01 §4.4 carries it instead.
+		catHandler.RegisterUserReadOps(api, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil, nil, nil)
 	case *catalogPublic:

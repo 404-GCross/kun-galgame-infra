@@ -103,6 +103,21 @@ func RegisterUserEditOps(api huma.API, engine *editing.Engine, perms PermResolve
 		Summary: "Restore an entity to a historical revision AS THE BEARER TOKEN'S OWN USER (a new revision; history kept). The tenant whose overlay applies is the token client's, so the body carries no site",
 		Tags:    tags,
 	}, s.revert)
+
+	// The engine's two READS (wave 180), which is what a browser-borne editor
+	// needed the S2S face for after 178. Implemented in user_edit_reads.go.
+	huma.Register(api, huma.Operation{
+		OperationID: "getEditSnapshotUser", Method: http.MethodGet,
+		Path:    UserPrefix + "/edit/snapshot",
+		Summary: "The entity's current registered-field values (the editor's bootstrap read), same shape as the S2S op. Authenticated but NOT tenant-fenced: it projects the same entity state the public reads already render",
+		Tags:    tags,
+	}, s.snapshot)
+	huma.Register(api, huma.Operation{
+		OperationID: "listEditProposalsUser", Method: http.MethodGet,
+		Path:    UserPrefix + "/edit/proposals",
+		Summary: "List edit proposals on the token client's catalog site. mine=true is the token user's OWN filing history (no permission needed); mine absent is the REVIEW QUEUE and requires the same review authority the merge/decline ops need for that entity_type (403 otherwise). Neither site nor proposer_uid is a parameter",
+		Tags:    tags,
+	}, s.list)
 }
 
 // userEditActor derives the policy actor from the verified token, and is the

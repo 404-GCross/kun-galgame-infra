@@ -47,7 +47,41 @@ type EditImageUpload func(ctx context.Context, r io.Reader, filename, preset, up
 // SetupEditImages registers the upload route. Callable with a nil upload for
 // spec export — the route is spec-invisible either way (no Huma op).
 func SetupEditImages(app *fiber.App, upload EditImageUpload) {
-	app.Post("/api/v1/catalog/edit/images", func(c fiber.Ctx) error {
+	// The asserted end-user identity, same posture as the edit ops' actor:
+	// stamped into the image audit trail (first_uploader_sub) so a byte blob
+	// stays attributable to the person who sent it. Asserted, because on this
+	// face the S2S client speaks FOR a user it authenticated itself.
+	app.Post("/api/v1/catalog/edit/images", editImageHandler(upload, func(c fiber.Ctx) int64 {
+		uid, err := strconv.ParseInt(c.FormValue("actor_uid"), 10, 64)
+		if err != nil {
+			return 0
+		}
+		return uid
+	}))
+}
+
+// SetupUserEditImages registers the SAME upload leg on the user-token plane
+// (wave 180). Everything about it is the S2S route's — the preset allow-list,
+// the limits the image service enforces upstream, the catalog identity the
+// bytes land under and the response envelope — except where the uploader comes
+// from: there is no actor_uid form field here, because the actor is the
+// verified token's `id`, which UserGate has already established.
+//
+// A plain Fiber route rather than a Huma operation, for the S2S twin's reason:
+// the body is multipart. It is therefore spec-invisible on both faces, and
+// docs/catalog/01 §4.4 is where it is written down.
+func SetupUserEditImages(app *fiber.App, upload EditImageUpload) {
+	app.Post(UserPrefix+"/edit/images", editImageHandler(upload, func(c fiber.Ctx) int64 {
+		uid, _ := c.Locals("user_id").(uint)
+		return int64(uid)
+	}))
+}
+
+// editImageHandler is the upload leg both faces run. actorUID is the ONLY thing
+// that differs between them — asserted in a form field on the S2S face, taken
+// from the verified token on the user one — so it is the only thing injected.
+func editImageHandler(upload EditImageUpload, actorUID func(fiber.Ctx) int64) fiber.Handler {
+	return func(c fiber.Ctx) error {
 		if upload == nil {
 			return c.Status(http.StatusServiceUnavailable).JSON(Envelope[any]{
 				Code: errors.ErrOperationFailed, Message: "image client not configured",
@@ -65,11 +99,8 @@ func SetupEditImages(app *fiber.App, upload EditImageUpload) {
 				Code: errors.ErrInvalidParam, Message: "multipart file field is required",
 			})
 		}
-		// The asserted end-user identity, same posture as the edit ops' actor:
-		// stamped into the image audit trail (first_uploader_sub) so a byte
-		// blob stays attributable to the person who sent it.
 		sub := ""
-		if uid, err := strconv.ParseInt(c.FormValue("actor_uid"), 10, 64); err == nil && uid > 0 {
+		if uid := actorUID(c); uid > 0 {
 			sub = "kungal:" + strconv.FormatInt(uid, 10)
 		}
 		f, err := fh.Open()
@@ -94,5 +125,5 @@ func SetupEditImages(app *fiber.App, upload EditImageUpload) {
 			})
 		}
 		return c.JSON(okEnvelope(res))
-	})
+	}
 }

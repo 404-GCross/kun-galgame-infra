@@ -219,9 +219,12 @@ func main() {
 	// …and, from wave 179, the SAME claim-lifecycle service: one state machine
 	// and one event ledger behind both faces, so a claim's history reads the
 	// same whether the transition arrived from a backend or from a browser.
+	// …and, from wave 180, the SAME read service the S2S read face runs on: the
+	// cover-tally read is the S2S work detail's tally with the viewer taken from
+	// the token instead of asserted in ?uid=.
 	catHandler.SetupUser(application.Fiber, coverVoteSvc, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,
-	}, claimSvc)
+	}, claimSvc, readSvc)
 
 	// NextMoe open API: serve the frozen public spec unauthenticated at its face
 	// root — the machine-readable contract itself must not need a key. Built ONCE
@@ -388,6 +391,10 @@ func setupPublicCatalog(
 		slog.Warn("catalog edit face: catalog image client not configured — editor image upload disabled (503)")
 	}
 	catHandler.SetupEditImages(application.Fiber, editUpload)
+	// The same leg on the user plane (wave 180), where the uploader is the
+	// verified token's user rather than an actor_uid form field. It sits under
+	// UserPrefix, so the JWTAuth + UserGate chain installed above gates it.
+	catHandler.SetupUserEditImages(application.Fiber, editUpload)
 	// The works product search (A2-1d) runs its filters/facets/sort inside the
 	// same catalog_works index the entity autocomplete uses, then re-hydrates
 	// the page from Postgres.

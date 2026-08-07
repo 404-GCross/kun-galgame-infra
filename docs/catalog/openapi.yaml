@@ -1737,6 +1737,27 @@ components:
         - code
         - message
       type: object
+    EnvelopeUserWorkCoversResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeUserWorkCoversResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/UserWorkCoversResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeWorkByAnchorResponse:
       additionalProperties: false
       properties:
@@ -2410,6 +2431,44 @@ components:
         - entity_type
         - entity_id
         - to_seq
+      type: object
+    UserWorkCover:
+      additionalProperties: false
+      properties:
+        id:
+          description: catalog_work_cover row id (the vote endpoints' cover id)
+          format: int64
+          type: integer
+        image_hash:
+          type: string
+        vote_count:
+          description: advisory best-cover votes on this cover
+          format: int64
+          type: integer
+        voted:
+          description: true if the token user's ballot is on this cover
+          type: boolean
+      required:
+        - id
+        - image_hash
+        - vote_count
+        - voted
+      type: object
+    UserWorkCoversResponse:
+      additionalProperties: false
+      properties:
+        covers:
+          items:
+            $ref: "#/components/schemas/UserWorkCover"
+          type:
+            - array
+            - "null"
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - covers
       type: object
     UserWorkSubmitRequest:
       additionalProperties: false
@@ -4564,6 +4623,69 @@ paths:
       tags:
         - catalog-user
   /api/v1/user/catalog/edit/proposals:
+    get:
+      operationId: listEditProposalsUser
+      parameters:
+        - description: "Entity type to list (required: authority is resolved per type)"
+          explode: false
+          in: query
+          name: entity_type
+          schema:
+            description: "Entity type to list (required: authority is resolved per type)"
+            minLength: 1
+            type: string
+        - description: Narrow to one entity; 0 = the whole type
+          explode: false
+          in: query
+          name: entity_id
+          schema:
+            description: Narrow to one entity; 0 = the whole type
+            format: int64
+            type: integer
+        - description: Filter by status; empty = all
+          explode: false
+          in: query
+          name: status
+          schema:
+            description: Filter by status; empty = all
+            enum:
+              - ""
+              - open
+              - merged
+              - declined
+              - withdrawn
+            type: string
+        - description: Page size (max 200, default 50)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Page size (max 200, default 50)
+            format: int64
+            type: integer
+        - description: true = only the token user's own proposals (no review permission needed); false/absent = the review queue for this entity type, which requires review authority
+          explode: false
+          in: query
+          name: mine
+          schema:
+            description: true = only the token user's own proposals (no review permission needed); false/absent = the review queue for this entity type, which requires review authority
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalListResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List edit proposals on the token client's catalog site. mine=true is the token user's OWN filing history (no permission needed); mine absent is the REVIEW QUEUE and requires the same review authority the merge/decline ops need for that entity_type (403 otherwise). Neither site nor proposer_uid is a parameter
+      tags:
+        - catalog-user
     post:
       operationId: createEditProposalUser
       requestBody:
@@ -4802,6 +4924,41 @@ paths:
       summary: "Field schema + THIS TOKEN's evaluated field-level capabilities. Same projection as the S2S op, with no actor query parameters at all: a caller cannot ask what some other user would be allowed to do"
       tags:
         - catalog-user
+  /api/v1/user/catalog/edit/snapshot:
+    get:
+      operationId: getEditSnapshotUser
+      parameters:
+        - description: Registered entity type, e.g. catalog.work
+          explode: false
+          in: query
+          name: entity_type
+          schema:
+            description: Registered entity type, e.g. catalog.work
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: entity_id
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditSnapshotResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "The entity's current registered-field values (the editor's bootstrap read), same shape as the S2S op. Authenticated but NOT tenant-fenced: it projects the same entity state the public reads already render"
+      tags:
+        - catalog-user
   /api/v1/user/catalog/works/submit:
     post:
       operationId: submitCatalogWorkUser
@@ -4865,6 +5022,35 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Move a claim through its lifecycle AS THE BEARER TOKEN'S OWN USER: claim / submit / publish / withdraw (the token's user must be the entry's owner — or its FIRST CLAIMANT when the entry is unowned, in which case the action adopts it: this is how a person claims one of the machine-imported drafts) or approve / decline / ban / unban (the token's roles must carry catalog.claim.review). 409 on an illegal transition, echoing the current state; 403 on ANOTHER user's claim or another tenant's"
+      tags:
+        - catalog-user
+  /api/v1/user/catalog/works/{id}/covers:
+    get:
+      operationId: listCatalogWorkCoversUser
+      parameters:
+        - description: Catalog work id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Catalog work id
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeUserWorkCoversResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "This work's covers with their advisory best-cover tallies, each carrying whether the BEARER TOKEN'S OWN USER voted for it. There is no uid parameter: the viewer is the token. Cross-site open like every catalog read — the tenant fence is a write-side rule"
       tags:
         - catalog-user
   /api/v1/user/catalog/works/{workID}/covers/{coverID}/vote:

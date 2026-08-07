@@ -30,7 +30,8 @@ func userClaimApp(db *gorm.DB) *fiber.App {
 	app := fiber.New()
 	verifier := oidctoken.NewVerifier(userTestSecret, nil) // HS256-only (no JWKS)
 	app.Use(UserPrefix, middleware.JWTAuth(verifier), UserGate(userEditClients()))
-	SetupUser(app, service.NewCoverVoteService(db), nil, nil, service.NewClaimLifecycleService(db))
+	SetupUser(app, service.NewCoverVoteService(db), nil, nil, service.NewClaimLifecycleService(db),
+		service.NewReadService(db))
 	return app
 }
 
