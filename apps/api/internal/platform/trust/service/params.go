@@ -50,6 +50,18 @@ const (
 	// scanInterval is the scoring worker tick (doc 18 §6 low-volume shadow cadence).
 	scanInterval = 60 * time.Second
 
+	// maxScanAttempts bounds how many times a row may be scored before a drain
+	// becomes permanent. It exists to keep the queue draining now that degraded is
+	// retryable — without it a permanently broken upstream would build a pool the
+	// worker re-chews forever, spending the whole batch on rows that cannot succeed.
+	//
+	// 3 because the failures worth retrying are transient (a timeout, a 5xx, a
+	// truncated reply) and clear within minutes, while scanInterval already spaces
+	// the attempts a minute apart — no separate backoff column needed. A row that
+	// fails three attempts a minute apart is not going to succeed on the fourth;
+	// it needs a human, which is what exhausted attempts signal.
+	maxScanAttempts = 3
+
 	// maxScanSampleRate bounds the clean-verdict calibration sample. Human review
 	// is a FIXED-capacity queue — the one resource in this system that cannot be
 	// scaled by turning a knob — so a sample rate is capped at a level that can

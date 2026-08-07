@@ -128,6 +128,10 @@ func TestColumnDiscipline(t *testing.T) {
 		// Scan intent columns (step 03): status/mode zeros are meaningful.
 		{"trust_scan_result", "status"}, {"trust_scan_result", "mode"},
 		{"trust_scan_result", "site"}, {"trust_scan_result", "content_text"},
+		// degraded_reason is nullable with no default on purpose: NULL means "not
+		// recorded", and a default would hand every pre-existing drained row a
+		// reason nobody ever observed.
+		{"trust_scan_result", "degraded_reason"},
 	}
 	for _, c := range noDefault {
 		if def := columnDefault(t, c.table, c.column); def != "" {
@@ -140,6 +144,10 @@ func TestColumnDiscipline(t *testing.T) {
 		// Scan bookkeeping columns (step 03): channel '' and created_at now().
 		{"trust_scan_result", "channel", "''"},
 		{"trust_scan_result", "created_at", "now()"},
+		// scan_attempts is a counter, not an intent: 0 IS the initial truth, so the
+		// DDL default is what lets the column be added to a populated table without
+		// the NOT NULL failure that took trust_term.purpose down.
+		{"trust_scan_result", "scan_attempts", "0"},
 	}
 	for _, c := range withDefault {
 		if def := columnDefault(t, c.table, c.column); !strings.Contains(def, c.want) {
@@ -282,5 +290,60 @@ func TestPurposeColumnOnPopulatedTable(t *testing.T) {
 	}
 	if colDefault != nil {
 		t.Fatalf("purpose kept a DDL default (%q); the zero-value trap is open", *colDefault)
+	}
+}
+
+// TestScanAttemptsBackfillOnPopulatedTable pins both halves of adding the retry
+// counter to a table that already holds production rows.
+//
+// The first half is that it can be added at all: trust_term.purpose was added
+// NOT NULL with no default and failed 23502 on 46k rows, which — because trust
+// will not start until migrate-trust exits 0 — is an outage, not a bad migration.
+// scan_attempts carries a DDL default for exactly that reason.
+//
+// The second is that the counter starts out honest. Rows that already reached a
+// terminal state were attempted once, so leaving them at 0 would both misreport
+// history and hand the rows drained during the truncation fault a full three
+// retries instead of the two they have left.
+func TestScanAttemptsBackfillOnPopulatedTable(t *testing.T) {
+	db := testDB
+	if err := db.Exec("ALTER TABLE trust_scan_result DROP COLUMN IF EXISTS scan_attempts").Error; err != nil {
+		t.Fatalf("drop column: %v", err)
+	}
+	if err := db.Exec("TRUNCATE trust_scan_result RESTART IDENTITY CASCADE").Error; err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	if err := db.Exec(
+		`INSERT INTO trust_scan_result (site, subject_kind, subject_id, content_text, status, mode)
+		 VALUES ('kungal','post','p-scored','t',1,0),
+		        ('kungal','post','p-degraded','t',2,0),
+		        ('kungal','post','p-pending','t',0,0)`).Error; err != nil {
+		t.Fatalf("seed pre-existing rows: %v", err)
+	}
+
+	if err := Run(db); err != nil {
+		t.Fatalf("migration failed on a populated table: %v", err)
+	}
+
+	for _, tc := range []struct {
+		subject string
+		want    int16
+		why     string
+	}{
+		{"p-scored", 1, "a scored row was attempted once"},
+		{"p-degraded", 1, "a drained row was attempted once and keeps two retries"},
+		{"p-pending", 0, "an unattempted row must stay at zero"},
+	} {
+		// Scalar read, not the model: this test drops and re-adds a column, and a
+		// SELECT * through the prepared-statement cache trips "cached plan must not
+		// change result type" (production never drops the column).
+		var got int16
+		if err := db.Raw("SELECT scan_attempts FROM trust_scan_result WHERE subject_id = ?", tc.subject).
+			Scan(&got).Error; err != nil {
+			t.Fatalf("reload %s: %v", tc.subject, err)
+		}
+		if got != tc.want {
+			t.Errorf("%s scan_attempts = %d, want %d — %s", tc.subject, got, tc.want, tc.why)
+		}
 	}
 }

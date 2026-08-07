@@ -91,14 +91,33 @@ const (
 )
 
 // Scan status (trust_scan_result.status) — the AI shadow-scoring pipeline (step
-// 03). pending is the fresh intake; the scoring worker drives it to a TERMINAL
-// state: scored (the gateway returned a verdict) or degraded (the gateway is
-// unconfigured / degraded / failed). degraded is terminal — the worker only ever
-// claims pending, so the queue always DRAINS and never backs up unbounded.
+// 03). pending is the fresh intake; the scoring worker drives it to scored (the
+// gateway returned a verdict) or degraded (unconfigured / failed / the gateway's
+// own fail-open).
+//
+// Only scored is terminal. degraded was ALSO terminal until 2026-08-07, on the
+// reasoning that a queue which never re-claims can never back up — true, but it
+// bought that guarantee by discarding content permanently. A transient upstream
+// blip became an unjudged item forever, and because the drain was silent nobody
+// learned it had happened. The bound now comes from maxScanAttempts instead: the
+// queue still drains, but only after the work has actually been tried.
 const (
 	ScanStatusPending  int16 = 0
 	ScanStatusScored   int16 = 1
 	ScanStatusDegraded int16 = 2
+)
+
+// Scan degradation reason (trust_scan_result.degraded_reason) — WHICH drain a
+// degraded row took. Split because the three have nothing in common operationally:
+// unconfigured is a deploy fault fixed by env, call-failed is an upstream fault
+// worth retrying, and gateway-degraded is the gateway telling us it already
+// failed open (its ai_usage row carries the real cause). Persisted — never
+// renumber. 0 is not used: NULL is "not recorded", and a zero would be
+// indistinguishable from an unset column on the rows that predate this.
+const (
+	ScanDegradedGatewayUnconfigured int16 = 1
+	ScanDegradedGatewayCallFailed   int16 = 2
+	ScanDegradedGatewayDegraded     int16 = 3
 )
 
 // Scan mode (trust_scan_result.mode) — how far a verdict is allowed to act.

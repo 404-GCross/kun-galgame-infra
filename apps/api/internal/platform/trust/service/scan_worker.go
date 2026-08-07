@@ -195,10 +195,16 @@ func (w *ScanWorker) Run(ctx context.Context) {
 func (w *ScanWorker) ScorePending(ctx context.Context) (int, error) {
 	processed := 0
 	err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Fresh intake first, then degraded rows that have attempts left. The
+		// ordering is load-bearing: a persistently failing upstream produces a
+		// growing pool of retryable rows, and without `status ASC` those old rows
+		// would fill every batch and starve the content being published right now.
+		// Retrying yesterday's failure is never more urgent than judging today's post.
 		var pending []model.TrustScanResult
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("status = ?", model.ScanStatusPending).
-			Order("id ASC").Limit(w.batchSize).Find(&pending).Error; err != nil {
+			Where("status = ? OR (status = ? AND scan_attempts < ?)",
+				model.ScanStatusPending, model.ScanStatusDegraded, maxScanAttempts).
+			Order("status ASC, id ASC").Limit(w.batchSize).Find(&pending).Error; err != nil {
 			return err
 		}
 		for i := range pending {
@@ -224,16 +230,25 @@ func (w *ScanWorker) scoreOne(ctx context.Context, tx *gorm.DB, r *model.TrustSc
 
 	// Env empty → drain without a network call (fail-closed: no unbounded backlog).
 	if !w.gateway.Configured() {
-		return w.markDegraded(tx, r, tier0, pol)
+		return w.markDegraded(tx, r, tier0, pol, model.ScanDegradedGatewayUnconfigured)
 	}
 	verdict, err := w.gateway.Moderate(ctx, r.ContentText, r.AuthorID)
 	if err != nil {
-		slog.Warn("trust scan gateway call failed; draining to degraded", "scan_id", r.ID, "err", err)
-		return w.markDegraded(tx, r, tier0, pol)
+		slog.Warn("trust scan gateway call failed; draining to degraded",
+			"scan_id", r.ID, "attempt", r.ScanAttempts+1, "err", err)
+		return w.markDegraded(tx, r, tier0, pol, model.ScanDegradedGatewayCallFailed)
 	}
 	if verdict.Degraded {
-		// The gateway reported its own fail-open path (upstream down / over budget).
-		return w.markDegraded(tx, r, tier0, pol)
+		// The gateway reported its own fail-open path (upstream down / over budget /
+		// a reply it could not parse). This branch logged NOTHING until 2026-08-07,
+		// which is precisely why it drained 262 rows unnoticed — it is the most
+		// common drain, and it was the only one that was silent. The gateway's own
+		// ai_usage row holds the specific cause; this line is what makes anyone go
+		// look for it.
+		slog.Warn("trust scan gateway returned a degraded verdict; draining to degraded",
+			"scan_id", r.ID, "site", r.Site, "attempt", r.ScanAttempts+1,
+			"channel", verdict.Channel)
+		return w.markDegraded(tx, r, tier0, pol, model.ScanDegradedGatewayDegraded)
 	}
 	return w.markScored(tx, r, verdict, tier0, pol)
 }
@@ -275,6 +290,11 @@ func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v Gateway
 		"gateway_flagged": v.Flagged,
 		"channel":         v.Channel,
 		"scored_at":       w.now(),
+		"scan_attempts":   r.ScanAttempts + 1,
+		// Cleared on purpose: this row may be a retry of an earlier drain, and a
+		// scored row carrying a degradation reason would read as both at once.
+		// The attempt count is what preserves the fact that it took more than one try.
+		"degraded_reason": nil,
 	}
 	if tier0 != nil {
 		updates["tier0_matched"] = tier0
@@ -314,12 +334,21 @@ func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v Gateway
 }
 
 // markDegraded records a drain: status flips to degraded (plus the Tier0 record,
-// which is gathered on every path). The verdict fields stay at their pending
-// values (flagged/score/categories/scored_at NULL, channel ”), so a degraded row
-// reads as "processed, no verdict". Terminal — the worker never re-claims it
-// (env-ready powers on for NEW rows, not a re-scan of drained ones, this step).
-func (w *ScanWorker) markDegraded(tx *gorm.DB, r *model.TrustScanResult, tier0 datatypes.JSON, pol ResolvedPolicy) error {
-	updates := map[string]any{"status": model.ScanStatusDegraded, "mode": pol.ScanMode}
+// which is gathered on every path) along with WHY and the attempt count. The
+// verdict fields stay at their pending values (flagged/score/categories/scored_at
+// NULL, channel ”), so a degraded row reads as "processed, no verdict".
+//
+// No longer terminal: the worker re-claims a degraded row until scan_attempts
+// reaches maxScanAttempts. A row that exhausts its attempts stays degraded for
+// good and is what the operator surface should count — that is a real unjudged
+// item, as opposed to one merely waiting for the next tick.
+func (w *ScanWorker) markDegraded(tx *gorm.DB, r *model.TrustScanResult, tier0 datatypes.JSON, pol ResolvedPolicy, reason int16) error {
+	updates := map[string]any{
+		"status":          model.ScanStatusDegraded,
+		"mode":            pol.ScanMode,
+		"degraded_reason": reason,
+		"scan_attempts":   r.ScanAttempts + 1,
+	}
 	if tier0 != nil {
 		updates["tier0_matched"] = tier0
 	}

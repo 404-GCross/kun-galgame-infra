@@ -53,7 +53,30 @@ func Run(db *gorm.DB) error {
 	if err := classifyImportedTermPurpose(db); err != nil {
 		return err
 	}
-	return backfillGatewayFlagged(db)
+	if err := backfillGatewayFlagged(db); err != nil {
+		return err
+	}
+	return backfillScanAttempts(db)
+}
+
+// backfillScanAttempts makes the new counter honest about the past. Every row
+// that already reached a terminal state was attempted exactly once, so leaving
+// them at the DDL default of 0 would claim the pipeline had never touched them.
+//
+// It also decides what happens to the rows drained during the 2026-07-22..08-07
+// truncation fault: they land on 1, so the worker gives them two more attempts
+// rather than the full three. That is the correct trade — they are genuinely
+// unjudged content that deserves a retry, but they were already tried once and
+// the counter should say so. Pending rows are left at 0: they have not been
+// attempted, and the default is already the truth for them.
+func backfillScanAttempts(db *gorm.DB) error {
+	if err := db.Exec(`
+		UPDATE trust_scan_result
+		   SET scan_attempts = 1
+		 WHERE scan_attempts = 0 AND status <> ?`, model.ScanStatusPending).Error; err != nil {
+		return fmt.Errorf("backfill scan_attempts: %w", err)
+	}
+	return nil
 }
 
 // backfillGatewayFlagged seeds the new gateway_flagged column from flagged for

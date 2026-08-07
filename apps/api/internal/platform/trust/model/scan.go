@@ -84,6 +84,28 @@ type TrustScanResult struct {
 	// still gateway-driven) — it is the calibration-sample landing spot (doc 18
 	// P1). Nullable jsonb, explicit column tag.
 	Tier0Matched datatypes.JSON `gorm:"type:jsonb;column:tier0_matched" json:"tier0_matched,omitempty"`
+	// DegradedReason records WHICH drain a degraded row took (the ScanDegraded*
+	// constants). Three unrelated faults used to collapse into status=degraded
+	// with nothing to tell them apart: an unconfigured gateway (a deploy fault),
+	// a failed call (an upstream fault), and the gateway's own fail-open (an
+	// upstream fault it already diagnosed for us). Between 2026-07-22 and
+	// 2026-08-07 the third kind drained 262 rows while emitting no log line at
+	// all, so a real 50% verdict loss was invisible from this table.
+	//
+	// NULL means "not recorded" — either a scored row, or one drained before this
+	// column existed. Those 262 rows keep NULL: inventing a reason for them would
+	// be a guess written down as evidence.
+	DegradedReason *int16 `gorm:"column:degraded_reason" json:"degraded_reason"`
+	// ScanAttempts counts terminal scoring attempts on this row. A degraded row
+	// used to be terminal forever, so every drained row was a permanent hole in
+	// the record even after the upstream recovered minutes later. The worker now
+	// re-claims degraded rows until this reaches maxScanAttempts, which bounds
+	// the retry without needing a scheduler: the worker's own tick is the backoff.
+	//
+	// 0 is the natural initial value AND the DDL default, so the zero-value
+	// default trap does not apply — unlike an intent column, nothing is lost by
+	// letting the database supply it.
+	ScanAttempts int16 `gorm:"not null;default:0;column:scan_attempts" json:"scan_attempts"`
 }
 
 func (TrustScanResult) TableName() string { return "trust_scan_result" }
