@@ -199,7 +199,7 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 
 ### 4.2 编辑提案与审核(写 + 只读投影,wave 177 三件套 + wave 178 审核面)
 
-> ⚠️ **一等站点已不推荐用 S2S 的编辑写端点(wave 177 起 create/withdraw,wave 178 起 amend/merge/decline/revert)**:同 §2.13 的理由——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户提交、撤回或**裁决**编辑。有用户令牌的场景请改用本节的 op。两面**共用同一 editing engine、同一 registry、同一套站点 overlay**,只有 actor 的来路不同,故策略结论跨面一致。S2S 面**不删除**(只是「首方不推荐」):`list` / `diff` / `snapshot` 仍**只在 S2S 面**(审核队列列表尚未迁移),且「后端自己认证了用户、无法转交用户令牌」的场景(批量迁移、无浏览器的同步任务)仍是断言面的正当用途。
+> ⚠️ **一等站点已不推荐用 S2S 的编辑写端点(wave 177 起 create/withdraw,wave 178 起 amend/merge/decline/revert)**:同 §2.13 的理由——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户提交、撤回或**裁决**编辑。有用户令牌的场景请改用本节的 op。两面**共用同一 editing engine、同一 registry、同一套站点 overlay**,只有 actor 的来路不同,故策略结论跨面一致。S2S 面**不删除**(只是「首方不推荐」):wave 180 把 `snapshot` 与 `list`(提案列表/审核队列)也搬了过来(§4.4),此后仍**只在 S2S 面**的是 `revisions` / `diff` 两条**版本史读**——它们是任何人都可读的公共投影,没有「令牌本人」这一维;而「后端自己认证了用户、无法转交用户令牌」的场景(批量迁移、无浏览器的同步任务)仍是断言面的正当用途。
 
 | op | 方法 · 路径 | 是什么 |
 |----|-------------|--------|
@@ -244,8 +244,33 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
   - **`claim`(none→draft)**——任何已登录用户皆可,因为这个动作**就是**上一条所检查的归属的诞生;它照旧要求 `product_work_id`,并沿用 write-once 盖章(已有所有者的行永不改归属)。
 - **租户对审核动作也传**(与 S2S 面不同:那里为让 curator 跨租户裁决而把 site 置空)。本面的 moderator 是经**某一个产品的 client** 到达的,该 client 绑定的站点是它唯一可裁决的租户;跨租户 → **403**(既有租户闸直接给出)。平台级队列是 staff 面(`/api/v1/admin/catalog`)的活,那面背后是 staff JWT 而非 per-product 令牌。
 - **`mine` 无 uid 参数**:uid 与 site 全部取自令牌,故它天然只答「我的」。`claim_state` 用与全站一致的闭合词表解析器(非法值 → **400**,message 为同一句),`before` = 上一页末行的 `last_event_id`,`total` 即该用户的统计值(「我发布的」= `claim_state=live&limit=1`)。
-- **S2S 认领面全部保留**,不是过渡期的残留:`listCatalogClaimsByUser`(**读别人的**认领,forum 的个人资料页靠它)在用户面**故意没有对应 op**;`listCatalogClaimEvents` / `listCatalogEditRevisions` 两条游标 feed、staff 审核队列与各类投影**仍只在 S2S / admin 面**——它们是机器消费者的面,没有「令牌本人」可言。
+- **S2S 认领面全部保留**,不是过渡期的残留:`listCatalogClaimsByUser`(**读别人的**认领,forum 的个人资料页靠它)在用户面**故意没有对应 op**——`mine` 是本人的列表、不是任何人的;`listCatalogClaimEvents` / `listCatalogEditRevisions` 两条游标 feed(产品侧对账 cron 的面)、`revisions` / `diff` 两条版本史读、各类第三人称统计投影与 staff 审核队列**仍只在 S2S / admin 面**——它们要么是机器消费者的面、没有「令牌本人」可言,要么是公共读、本就不问是谁。wave 180 后,**人类写与人类只读均已在用户面齐备**,S2S 上不再有任何需要断言 uid 的人类动作。
 - 错误映射沿用 S2S 面:非法迁移 → **409**(带 `ClaimTransitionInfo`),重复投稿 → **409**(带 `WorkSubmitConflictInfo`),作品不存在 → **404**,未知 action → **400**,`decline` 缺 reason / `claim` 缺 `product_work_id` / 投稿缺 `display_name` → **422**,越权(条目属于他人、跨租户、无审核权)→ **403**。
+
+### 4.4 用户令牌只读面(wave 180)
+
+wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留在 S2S 面的**四件人类只读/取字节的活**——编辑器启动读、提案列表(自照 + 审核队列)、封面票数、编辑图上传。它们都还带着一个 forum 必须**断言** uid 的参数(`?uid=` / `proposer_uid` / `actor_uid` 表单字段),而那正是本面存在的意义要消灭的东西。搬完之后,**forum 在 catalog 上不再有任何断言人类身份的 S2S 调用**。
+
+| op | 方法 · 路径 | 是什么 |
+|----|-------------|--------|
+| `getEditSnapshotUser` | `GET /user/catalog/edit/snapshot?entity_type=&entity_id=` | 实体当前的注册字段值(编辑器的 bootstrap 读),响应 = S2S `getEditSnapshot` 的 `EditSnapshotResponse` **逐字相同** |
+| `listEditProposalsUser` | `GET /user/catalog/edit/proposals?entity_type=&entity_id=&status=&limit=&mine=` | 提案列表:`mine=true` 是**本人**的提交史,`mine` 缺省是**审核队列**;响应 = S2S `EditProposalListResponse` 逐字相同 |
+| `listCatalogWorkCoversUser` | `GET /user/catalog/works/{id}/covers` | 一部作品的封面票数,每张带**本令牌用户**是否投过(`{work_id, covers:[{id, image_hash, vote_count, voted}]}`) |
+| — | `POST /user/catalog/edit/images`(multipart:`file`、`preset`) | 编辑面图片上传;**不在 spec 里**(与 S2S 孪生一致,见下) |
+
+- **`mine` 与队列是一条路径上的两份权威**,这是本波唯一的新规则:
+  - **`mine=true`** = 本人的提交史,除网关链外**不需要任何权限**——问的是自己的事。`proposer_uid` **不是参数**(布尔正是为了让它指不了别人),`site` 也**不是参数**(恒为令牌 client 的 `catalog_site`),故没有任何写法能翻到别人的或别租户的列表。
+  - **`mine` 缺省** = **审核队列**,读到的是别人的开放工作(含 patch、提案人、决策备注),因此要求与 §4.2 裁决三件套(amend/merge/decline)**对该 `entity_type` 完全相同的审核权威**:令牌 roles 经该 family 的权限词表,由该 family spec 自己的逐字段 review 规则求值(实现上即 `SchemaProjection` 至少投影出一个 `can_review=true` 的字段——**没有另造一个「队列专用」权限键**,否则就是第二套要和第一套保持同步的权威)。不足 → **403**(message 提示可改用 `mine=true`)。
+  - `entity_id` 会一并参与求值,故 **kungal overlay 的 owner-review 通道在队列上同样成立**:条目的所有者可以读**自己那条**的队列(`entity_type` + `entity_id`),但读不了整个类型的队列——归属是关于一个实体的事实。
+  - `entity_type` **必填**(权威是按类型解析的),`entity_id` 可选,`status` 词表与 `limit` 上限(200,默认 50)与 S2S `listEditProposals` 逐字相同,非法 status → **422**。
+- **snapshot 与 covers 不设租户闸**,这是**读面的既有教义**(§4.3 之外的读一律跨站开放),写下来免得被当成漏检:
+  - `snapshot` 投影的就是各公共读早已渲染的当前字段值,里面没有任何租户私有事实;闸住它只会挡住 kungal 的编辑者预览一部 letmoe 认领了的作品,却什么也没藏住。
+  - 封面票数同理:票数与封面一样是公共的,令牌新增的只有「**我**投没投」这一条属于调用者自己的事实。
+  - 两者仍在完整网关链之后(客户端绑定的 `catalog:edit` 令牌);作品不存在 → **404**,实体/未注册类型不存在 → **404**(引擎映射)。
+- **封面票数读 = S2S 作品详情里那份票数投影减去 `?uid=`**:同一个 `ReadService.WorkByID` + `ReadService.CoverVotes`(**一次批量查询**,永不逐封面查),同一套 advisory 语义(票**永不**改封面顺序、永不动编辑位 pin)。item 形状是详情里 `WorkCover` 的投影子集(`id` / `image_hash` / `vote_count` / `voted`),因为要票数的 UI 手里已经有详情了。一处不同:`voted` 在本面**恒**出现,而详情里的 `voted` 在没给 `?uid=` 时是**省略**的——那边「没人问」与「这人没投」是两回事,本面则不存在「没人问」。
+- **图片上传:去掉 `actor_uid` 表单字段**。其余与 §2 的 S2S 孪生(`POST /api/v1/catalog/edit/images`)**逐字相同**——同一份 preset 白名单(`galgame_banner` → `catalog_cover`、`galgame_screenshot` → `catalog_screenshot`)、同一个 catalog 站身份(故日常 refping 照旧保活)、同一套上游限额与错误映射(配额/审核拒绝 → **400**,上游失败 → **502**,未配置图床 client → **503**)。上传者 `first_uploader_sub` 取自**令牌 `id`**;S2S 孪生的 `actor_uid` 字段在本面即使带上也**被忽略**。
+  - **它和它的 S2S 孪生一样不进 OpenAPI**:body 是 multipart,两面都是普通 Fiber 路由而非 Huma op。契约就写在这里。
+- 其余三条 op 与 §4.1-4.3 同在 `docs/catalog/openapi.yaml`,tag `catalog-user`。
 
 ## 5. 鉴权形态
 
