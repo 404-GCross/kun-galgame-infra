@@ -127,11 +127,14 @@ func main() {
 	// Admin face: shared JWT middleware (accept-both verifier) + the catalog
 	// admin gate, which routes on the path — catalog.review (ren) for registry
 	// curation, catalog.claim.review (moderator+) for the claim review queue
-	// (wave 157). The /api/v1/admin/catalog prefix is deliberately disjoint from
+	// (wave 157) — and, before either, the token's client (wave 187b): a
+	// third-party developer application is not a moderation surface, so the gate
+	// takes the same client registry the user plane resolves its tenant from.
+	// The /api/v1/admin/catalog prefix is deliberately disjoint from
 	// /api/v1/catalog so the S2S Basic auth never intercepts admin calls.
 	tokenVerifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
 	application.Fiber.Use("/api/v1/admin/catalog",
-		middleware.JWTAuth(tokenVerifier), catHandler.AdminGate())
+		middleware.JWTAuth(tokenVerifier), catHandler.AdminGate(clientRepo))
 
 	// User face (wave 176): the end user's own access token writes here. Same
 	// verifier as the admin face, then UserGate — the catalog:edit scope plus

@@ -174,7 +174,7 @@ wave 181 之后,S2S 面上还剩五条会**写**的人类端点,每条都靠请�
 
 ## 3. Admin 四桶(Bearer JWT + **ren 超管角色**,前缀 `/api/v1/admin/catalog`)
 
-人审治理面,把「机器不敢自动终判」的三类东西交给人:
+人审治理面,把「机器不敢自动终判」的三类东西交给人。**门是三层**(wave 187b):client 闸(第三方应用 → 403,先于权限)→ 路径分支 → 权限键(`claims/*` 用 `catalog.claim.review`,其余用 `catalog.review`)。
 
 | 桶 | 端点 | 是什么 |
 |----|------|--------|
@@ -251,7 +251,14 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
   - **`trust_tier` 自 wave 183 起有了 infra 侧的事实来源**:令牌的角色若持有 catalog 权限键 **`catalog.edit.trusted`**,本面即以 `TrustTier = 2`(引擎的 `TrustedTier`,也是引擎唯一比较的层级值)求值策略;否则仍是 0。代码捆只给 admin/ren(等价于 letmoe 旧 S2S 断言给 staff 的标准),**产品站把这把键授给自己的角色(如 letmoe 的 `creator`)走权限矩阵控制台的叠加层,热替换 resolver,无需改代码或部署**。因此 **letmoe 的 ProposeTrusted 通道不再需要 S2S 后端代为担保**。S2S 面断言的 `trust_tier` 照旧被采信——两者是并集,推导只会把能力置 ON。
 - 错误映射沿用 S2S 面的口味:未注册字段键/空 patch/空 delta → **422**,策略拒绝 → **403**,实体/提案/目标 revision 不存在 → **404**,rebase 冲突/提案已关闭 → **409**;令牌缺失或无效 → **401**,缺 `catalog:edit` scope → **403**(message 含 scope 字样)。
 
-**第三方应用的姿态封顶(wave 186b)**:令牌**签发自哪个应用**是权限的一维。经**第三方开发者应用**(`oauth_clients.owner_user_id` 非空)签发的用户令牌,**永远拿不到 `editing.TrustedTier`**,即使其 roles 持 `catalog.edit.trusted`;它只能**提案**(走各租户的 open/queue 通道),绝不自动合并。同理,它**永远不是审核面**:认领裁决四动作(`approve`/`decline`/`ban`/`unban`)与开放面的审核队列视图(§4.5)对它一律 **403**,先于权限检查。理由是**信任与审核都是「人 × 第一方 client」这一对的属性,而不是人单独的属性**:用户的 roles 会随令牌进入他授权的**任何**应用,不封顶的话,某站用权限台授出的信任只要成员在一个第三方 UI 上登录一次就被借走,而该站从未同意被那里编辑。封顶**只减不增**:人在产品自家面上的一切权限一字未改。⚠️ **本波尚未覆盖**:编辑引擎自身按 `actor.Roles` 解析的审核键(`edit.catalog.work.review` 的 amend/merge/decline 与 automerge 通道)仍不分 client,是否同样封顶待单独裁定。
+**第三方应用的姿态封顶(wave 186b)**:令牌**签发自哪个应用**是权限的一维。经**第三方开发者应用**(`oauth_clients.owner_user_id` 非空)签发的用户令牌,**永远拿不到 `editing.TrustedTier`**,即使其 roles 持 `catalog.edit.trusted`;它只能**提案**(走各租户的 open/queue 通道),绝不自动合并。同理,它**永远不是审核面**:认领裁决四动作(`approve`/`decline`/`ban`/`unban`)与开放面的审核队列视图(§4.5)对它一律 **403**,先于权限检查。理由是**信任与审核都是「人 × 第一方 client」这一对的属性,而不是人单独的属性**:用户的 roles 会随令牌进入他授权的**任何**应用,不封顶的话,某站用权限台授出的信任只要成员在一个第三方 UI 上登录一次就被借走,而该站从未同意被那里编辑。封顶**只减不增**:人在产品自家面上的一切权限一字未改。
+
+**封顶下沉进引擎与后台面(wave 187)**:186b 留下的两个洞已闭合,三个面现在说同一句话。
+
+- **187a — 编辑引擎有了 client 维度**。`editing.PolicyContext` 新增 `ModerationCapped bool`(装配点断言「这个**面**不是下裁决的地方」,引擎本身仍对 OAuth/client 一无所知);用户面的 `policyCtx` 由 `isThirdPartyClient(clientFromCtx(ctx))` 唯一地填它——本包里 PolicyContext 只在这一处诞生,故任何现有或将来的 op 都不可能忘记问。置位后引擎**两个咽喉点**同时失败:`Policy.AllowsReview`(amend / merge / decline / revert 与 schema 投影的 `can_review` 全部经此解析审核资格)与 `allowsAutomergeWithOwner`(automerge 的**全部**规则)。因此第三方令牌**无论 roles 持不持 `edit.catalog.work.review`、无论租户姿态多开放**(含 `automerge=always`、`automerge=review`、`automerge=owner`、以及 catalog 已推导出的 owner 归属),都**只能提案入队**,且**不能裁决自己排进去的那条**。之所以必须落在引擎而非只包一层 HasPerm:`always`/`trusted`/`owner` 三条 automerge 规则**根本不查权限键**,只包 HasPerm 会让开放租户照旧当场落盘。**保留的**是 tier-0 陌生人本就有的:提案、以及撤回自己的提案(withdraw 不是裁决)。
+- **187b — 后台面有了 client 绑定**。`/api/v1/admin/catalog` 的 `AdminGate` 在两条权限分支(`catalog.review` / `catalog.claim.review`)**之前**先解析令牌的 client(与用户面同一个 `OAuthClientLookup` 注册表):第三方应用 → **403**「a third-party application is not a moderation surface」;令牌所指 client 未注册 → **403**。先于权限判定,故答复不因人是不是 staff 而变,不能当探针用。
+- ⚠️ **明知的缺口(已在测试里钉住)**:平台自家控制台经 `/auth/login` 登录,其令牌**根本不带 `client_id` claim**(见 `utils.TokenClaims.ClientID`),因此 `AdminGate` 对**空** client id 放行。空 claim 只可能出自本 OP 自己的第一方会话流(即正被放行的那个面),缺口窄;但它只在这一点为真时才窄。待第一方会话流也有自己的注册 client(OIDC 标准化,docs/auth/03)后,应删掉该放行分支,改为像用户面 `UserGate` 一样 fail-closed。
+- **线上形状零变化**:三个 spec(`openapi.yaml` / `admin-openapi.yaml` / `public-openapi.yaml`)逐字节不变——封顶只改谁被拒,不改请求/响应形状。
 
 ### 4.3 认领生命周期(投稿 + 八动作 + 我的认领,wave 179)
 
@@ -323,7 +330,7 @@ wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留�
 - **消费站开通(SQL,无管理 UI)**:直接设 `oauth_clients.catalog_site`。
   - galgame wiki(第一消费站):`UPDATE oauth_clients SET catalog_site='galgame_wiki' WHERE image_site_key='galgame_wiki' AND id <> 'galgame-wiki-admin';`
   - **letmoe(第二消费站,同人为主)**:`UPDATE oauth_clients SET catalog_site='letmoe' WHERE <letmoe client 定位>;`(dev = 本地主库执行即可复现;**prod = 用户 ops**,随 letmoe 上线 runbook 同批,核验 `SELECT id,catalog_site FROM oauth_clients WHERE catalog_site='letmoe'` 命中 letmoe 机密 client)。
-- **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ **ren 角色(超管专属)**,与 site 绑定列无关。
+- **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ **ren 角色(超管专属)**,与 site 绑定列无关;wave 187b 起还要过 **client 闸**——令牌若签发自第三方应用(`oauth_clients.owner_user_id` 非空)一律 403,先于权限判定(空 `client_id` 的第一方会话令牌放行,见 §4.2 的缺口条)。
 - **user face(`/api/v1/user/catalog/*`,wave 176)**:Bearer **用户**访问令牌(同一 accept-both verifier)+ `catalog:edit` scope + **client 绑定**。这里 `oauth_clients.catalog_site` 的用法与 S2S 写面**不同**:S2S 校验「绑定值 == 请求体 site」,user face **根本不收 site**——绑定值**就是**写入的租户。因此新增消费站的动作仍是同一条(给其 client 设 `catalog_site`),但一等登录令牌(无 `client_id`)在本面**永远**拿不到租户,只能走 OAuth 授权码流取得 client 绑定令牌。详见 §4。
 - **编辑引擎提案桥面（过渡参考，09-open-api-phase2 06b）**：catalog 进程另托一个 galgame-family 的**平台提案面** `/internal/edit/*`（create / mine / get-own / withdraw + schema/snapshot 只读投影），走 devapi 双凭证链——scope **`galgame:propose`**、计量 face **`galgame_internal_propose`**；actor 取自已验用户 JWT（plain：trust 0 / roles ∅ / 非 owner），租户由 key 的 `oauth_clients.catalog_site` 反查（请求**不收** site/actor 断言）。它是**纯 Fiber、不进本目录 spec**（`openapi.yaml` 仅含 S2S face）；编辑引擎的 S2S 面（`/api/v1/catalog/edit/*`）在 wave 181 收缩为六条、又在 wave 185 收缩为 list(第三人称统计读)/revisions/diff **三条只读**,写与裁决全在用户面。**桥面不立独立契约文档**，第三方实际开放另议。
 - `GET /openapi.json`(S2S spec)、`GET /healthz` 无鉴权。

@@ -354,7 +354,7 @@ export interface paths {
         /** List edit proposals on the token client's catalog site. mine=true is the token user's OWN filing history (no permission needed); mine absent is the REVIEW QUEUE and requires the same review authority the merge/decline ops need for that entity_type (403 otherwise). Neither site nor proposer_uid is a parameter */
         get: operations["listEditProposalsUser"];
         put?: never;
-        /** File an edit proposal AS THE BEARER TOKEN'S OWN USER (automerges into a direct edit when the caller's token roles already carry the review capability). The proposer and the filing tenant are derived from the token; the body carries neither */
+        /** File an edit proposal AS THE BEARER TOKEN'S OWN USER (automerges into a direct edit when the caller's token roles already carry the review capability, and NEVER when the token was issued through a third-party application). The proposer and the filing tenant are derived from the token; the body carries neither */
         post: operations["createEditProposalUser"];
         delete?: never;
         options?: never;

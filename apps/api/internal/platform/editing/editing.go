@@ -109,6 +109,26 @@ type PolicyContext struct {
 	// business — e.g. the kungal BFF compares the galgame row's creator uid —
 	// the engine only feeds it into OwnerReview-enabled policies.
 	IsEntityOwner bool
+	// ModerationCapped is the assembly point's assertion that this caller's
+	// SURFACE is not a place where verdicts may be reached — whatever the
+	// person behind it is otherwise allowed to do.
+	//
+	// It exists because review standing is a property of the PAIR (the person
+	// AND the application their token was issued through), not of the person
+	// alone: roles travel with a token into every app its owner authorizes, so
+	// a permission key alone cannot tell "a moderator at work" from "a
+	// moderator who happened to log into somebody's hobby client". The
+	// assembly point knows which of the two it is looking at; the engine, which
+	// knows nothing of OAuth or clients, only has to be told.
+	//
+	// When set, EVERY review-standing decision fails and NOTHING automerges —
+	// regardless of HasPerm, of TrustTier, of asserted ownership, and of how
+	// permissive the site's overlay is (an automerge=always tenant included).
+	// What remains is exactly what a tier-zero stranger may do: file proposals
+	// that wait in the queue, and withdraw one's own. Like every other input
+	// here the flag can only ever take a capability away, never grant one, so
+	// leaving it false (the zero value) is the pre-cap behaviour verbatim.
+	ModerationCapped bool
 	// HasPerm reports whether the caller holds a permission key (e.g.
 	// "edit.catalog.work"). A nil HasPerm grants nothing (fail-closed).
 	HasPerm func(key string) bool
