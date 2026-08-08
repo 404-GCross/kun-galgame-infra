@@ -228,6 +228,30 @@ func preMigrate(db *gorm.DB) error {
 		}
 	}
 
+	// catalog_{character,name,label}_alias.provenance (wave 195): the same
+	// 0=source / 1=machine axis, carried onto the three alias tables BEFORE any
+	// machine lane exists. That order is the whole point — the 0 backfill is
+	// only provably correct while every row in these tables is still a name a
+	// human source wrote, which is true today and stops being true the moment a
+	// fallback-translation lane runs once. Afterwards the same UPDATE would be a
+	// guess, and nothing in the table could tell the guess from the fact.
+	// Same recipe as the intro tables: meaningful zero → NOT NULL, no default →
+	// add nullable, backfill 0, set NOT NULL. The sibling source_id (nullable)
+	// and mt_model (DEFAULT '') are AutoMigrate's to add.
+	for _, t := range []string{"catalog_character_alias", "catalog_name_alias", "catalog_label_alias"} {
+		if err := db.Exec(`
+			DO $$
+			BEGIN
+				IF to_regclass('` + t + `') IS NOT NULL THEN
+					ALTER TABLE ` + t + ` ADD COLUMN IF NOT EXISTS provenance smallint;
+					UPDATE ` + t + ` SET provenance = 0 WHERE provenance IS NULL;
+					ALTER TABLE ` + t + ` ALTER COLUMN provenance SET NOT NULL;
+				END IF;
+			END $$`).Error; err != nil {
+			return fmt.Errorf("premigrate %s.provenance: %w", t, err)
+		}
+	}
+
 	// The W1-pre nativization columns (refs/proj/140,
 	// refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md): three
 	// axes that used to exist ONLY in the wiki body the read face bridged, and that
@@ -435,6 +459,36 @@ func rawSQL(db *gorm.DB) error {
 			    FOREIGN KEY (cover_id) REFERENCES catalog_work_cover(id) ON DELETE CASCADE
 		`).Error; err != nil {
 			return fmt.Errorf("add cover vote FK: %w", err)
+		}
+	}
+
+	// (8) lang tags that are not language tags (wave 195). Four rows hold a
+	// language NAME where the column's declared vocabulary is BCP-47 — the
+	// author answered "which language" in prose instead of in codes:
+	//
+	//	catalog_label       36162  'japanese'   catalog_label 36184 'ja,ch'
+	//	catalog_label       36164  '日语'        catalog_label_alias 2686 '日语'
+	//
+	// This is not a data-quality opinion, it is the column violating its own
+	// type, which is why it heals here rather than in a cmd/heal one-shot: a
+	// consumer that reads lang as BCP-47 cannot match any of these, so wave 192
+	// had to teach the read face to DROP them from localized{} — the face is
+	// still carrying that workaround for four rows. Each UPDATE matches the
+	// exact malformed string, so it is a no-op on every later run and can never
+	// widen. 'ja' is not an inference: it is what each author asserted, with
+	// 'ja,ch' reduced to the primary of the two it crammed into a single-value
+	// column. The Chinese half of that pair (alias 2687 黄鸭组, lang '') is left
+	// alone — an empty lang is "unrecorded", which is legal, not malformed.
+	for _, fix := range []struct{ table, bad string }{
+		{"catalog_label", "japanese"},
+		{"catalog_label", "日语"},
+		{"catalog_label", "ja,ch"},
+		{"catalog_label_alias", "日语"},
+	} {
+		if err := db.Exec(
+			`UPDATE `+fix.table+` SET lang = 'ja' WHERE lang = ?`, fix.bad,
+		).Error; err != nil {
+			return fmt.Errorf("heal %s.lang %q: %w", fix.table, fix.bad, err)
 		}
 	}
 	return nil

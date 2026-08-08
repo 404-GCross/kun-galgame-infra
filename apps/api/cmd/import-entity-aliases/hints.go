@@ -86,7 +86,7 @@ func runHints(db *gorm.DB, w io.Writer, apply bool) (hintStats, error) {
 				hints = append(hints, h)
 			}
 		}
-		written, already, err := upsertHints(db, b.aliasTbl, b.ownerCol, hints, apply)
+		written, already, err := upsertHints(db, b.aliasTbl, b.ownerCol, hints, sourceBangumi, apply)
 		if err != nil {
 			return st, fmt.Errorf("%s upsert: %w", b.label, err)
 		}
@@ -117,7 +117,7 @@ func runHints(db *gorm.DB, w io.Writer, apply bool) (hintStats, error) {
 			}
 		}
 	}
-	written, already, err := upsertHints(db, "catalog_name_alias", "credit_name_id", egHints, apply)
+	written, already, err := upsertHints(db, "catalog_name_alias", "credit_name_id", egHints, sourceEG, apply)
 	if err != nil {
 		return st, fmt.Errorf("eg names upsert: %w", err)
 	}
@@ -155,8 +155,11 @@ func hintOf(owner int64, aliasNFKC, mainNFKC string, st *hintStats) (aliasHint, 
 }
 
 // upsertHints inserts search-hint rows idempotently on (owner, name, lang=”).
-// Dry-run counts the not-yet-present rows without writing.
-func upsertHints(db *gorm.DB, table, ownerCol string, hints []aliasHint, apply bool) (written, already int, err error) {
+// Dry-run counts the not-yet-present rows without writing. source is the
+// catalog_source that published the alias — recorded per row since wave 195,
+// because leg A draws from two different upstreams and the rows it writes are
+// otherwise indistinguishable once they have landed.
+func upsertHints(db *gorm.DB, table, ownerCol string, hints []aliasHint, source int16, apply bool) (written, already int, err error) {
 	// De-dup within this batch first (an entity can carry the same alias twice).
 	seen := map[string]struct{}{}
 	uniq := hints[:0]
@@ -185,9 +188,9 @@ func upsertHints(db *gorm.DB, table, ownerCol string, hints []aliasHint, apply b
 			continue
 		}
 		res := db.Exec(fmt.Sprintf(
-			`INSERT INTO %s (%s, name, lang, kind, is_primary_for_locale)
-			 VALUES (?, ?, '', ?, false) ON CONFLICT (%s, name, lang) DO NOTHING`,
-			table, ownerCol, ownerCol), h.owner, h.name, model.AliasKindSearchHint)
+			`INSERT INTO %s (%s, name, lang, kind, is_primary_for_locale, source_id, provenance)
+			 VALUES (?, ?, '', ?, false, ?, 0) ON CONFLICT (%s, name, lang) DO NOTHING`,
+			table, ownerCol, ownerCol), h.owner, h.name, model.AliasKindSearchHint, source)
 		if res.Error != nil {
 			err = res.Error
 			return

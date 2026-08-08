@@ -89,8 +89,14 @@ type CatalogCharacterAlias struct {
 	// Kind uses the AliasKind* constants.
 	Kind               int16 `gorm:"not null" json:"kind"`
 	IsPrimaryForLocale bool  `gorm:"not null" json:"is_primary_for_locale"`
+	// SourceID / Provenance / MTModel: see CatalogNameAlias for why source_id is
+	// nullable here and why provenance carries no default tag.
+	SourceID   *int16 `gorm:"type:smallint" json:"source_id"`
+	Provenance int16  `gorm:"not null" json:"provenance"`
+	MTModel    string `gorm:"not null;default:''" json:"mt_model"`
 
 	Character *CatalogCharacter `gorm:"foreignKey:CharacterID" json:"character,omitempty"`
+	Source    *CatalogSource    `gorm:"foreignKey:SourceID" json:"source,omitempty"`
 }
 
 func (CatalogCharacterAlias) TableName() string { return "catalog_character_alias" }

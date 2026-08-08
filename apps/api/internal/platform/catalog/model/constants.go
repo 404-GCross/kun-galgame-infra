@@ -80,6 +80,16 @@ const (
 	AliasKindSearchHint      int16 = 2 // findability only, never displayed
 )
 
+// Alias provenance — WHO produced the spelling, on the same axis the intro
+// tables carry. Orthogonal to AliasKind*, which says what KIND of variant it
+// is: a translation can be either a human source's translation or a machine's,
+// and the whole reason this axis exists is that the table cannot otherwise
+// tell them apart afterwards.
+const (
+	AliasProvenanceSource  int16 = 0 // a name an upstream source or a human wrote
+	AliasProvenanceMachine int16 = 1 // machine translation — never primary, never localized{}
+)
+
 // Label kinds. Constants, not a registry (reviewer ruling in refs/proj/03):
 // the set is small and every new kind ships with code; promote to a registry
 // table if it ever starts growing uncontrolled.

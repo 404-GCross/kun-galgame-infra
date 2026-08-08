@@ -106,9 +106,15 @@ UPDATE catalog_label
 // segments are brand names in whatever script the maker page used, and this
 // tool has no basis to assert a locale for them — a wrong lang would be a
 // worse claim than none. is_primary_for_locale is never set.
+//
+// source_id is left NULL for exactly the same reason: the segment is carved out
+// of a display_name this tool did not import, so which upstream supplied it is
+// not knowable here. provenance is stated explicitly because wave 195 made the
+// column NOT NULL with no default — a heal is a re-filing of a name a source
+// wrote, never a machine translation of one.
 const insertAliasSQL = `
-INSERT INTO catalog_label_alias (label_id, name, lang, kind, is_primary_for_locale)
-VALUES (?, ?, '', ?, false)
+INSERT INTO catalog_label_alias (label_id, name, lang, kind, is_primary_for_locale, provenance)
+VALUES (?, ?, '', ?, false, 0)
 ON CONFLICT (label_id, name, lang) DO NOTHING`
 
 // applyCase runs the drift guard and, unless this is a dry run, the writes for

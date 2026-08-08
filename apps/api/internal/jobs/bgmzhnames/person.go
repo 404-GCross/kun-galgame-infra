@@ -73,6 +73,8 @@ func insertNameAlias(ctx context.Context, db *gorm.DB, creditNameID int64, name 
 		Lang:               LangZhHans,
 		Kind:               model.AliasKindTranslation,
 		IsPrimaryForLocale: primary,
+		SourceID:           bangumiSourceRef(),
+		Provenance:         model.AliasProvenanceSource,
 	})
 	return res.RowsAffected > 0, res.Error
 }

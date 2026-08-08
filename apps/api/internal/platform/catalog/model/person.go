@@ -181,8 +181,29 @@ type CatalogNameAlias struct {
 	// Kind uses the AliasKind* constants; search_hint rows are never displayed.
 	Kind               int16 `gorm:"not null" json:"kind"`
 	IsPrimaryForLocale bool  `gorm:"not null" json:"is_primary_for_locale"`
+	// SourceID is row-level provenance: which upstream told us this spelling.
+	// NULLABLE, unlike the intro tables' NOT NULL source_id, because the corpus
+	// predates the column (wave 195) and only part of it is attributable after
+	// the fact — kind=0 is bgmzhnames/bangumi and character kind=1 is the VNDB
+	// roster importer, each a sole writer, but the search hints mix bangumi
+	// infoboxes, erogamespace parentheticals and a first-party heal. NULL means
+	// "written before the column existed and not provably attributable"; it is
+	// NOT a value a new write may leave unset.
+	SourceID *int16 `gorm:"type:smallint" json:"source_id"`
+	// Provenance is 0=source / 1=machine, the same axis the intro tables grew in
+	// step 75. A meaningful zero value, so NOT NULL with NO default tag (the
+	// default-tag zero-value trap). Its whole job is to keep a machine-translated
+	// name from ever being mistaken for one a human source wrote: a name is
+	// pinned simultaneously by downstream sites, search indexes, URLs and
+	// bookmarks, and a wrong one looks perfectly ordinary while doing it. A
+	// machine row must not set IsPrimaryForLocale and must not reach the read
+	// face's localized{} — only aliases[] (service/public_names.go).
+	Provenance int16 `gorm:"not null" json:"provenance"`
+	// MTModel is the model id that produced a machine row; empty on source rows.
+	MTModel string `gorm:"not null;default:''" json:"mt_model"`
 
 	CreditName *CatalogCreditName `gorm:"foreignKey:CreditNameID" json:"credit_name,omitempty"`
+	Source     *CatalogSource     `gorm:"foreignKey:SourceID" json:"source,omitempty"`
 }
 
 func (CatalogNameAlias) TableName() string { return "catalog_name_alias" }

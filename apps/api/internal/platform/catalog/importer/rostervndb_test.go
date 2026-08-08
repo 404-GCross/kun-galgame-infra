@@ -124,8 +124,10 @@ func TestRosterVNDBAttach(t *testing.T) {
 		VALUES ('神尾観铃','ja','','{}') RETURNING id`).Scan(&existing).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (4, ?, 3, '2', 0, 'rule:bangumi-character-import')`, existing).Error)
-	require.NoError(t, testDB.Exec(`INSERT INTO catalog_character_alias (character_id, name, lang, kind, is_primary_for_locale)
-		VALUES (?, 'Kamio Misuzu', 'ja', ?, false)`, existing, model.AliasKindSpellingVariant).Error)
+	// source_id 3 / provenance 0 match the Bangumi-style origin this fixture is
+	// standing in for; provenance is NOT NULL with no default since wave 195.
+	require.NoError(t, testDB.Exec(`INSERT INTO catalog_character_alias (character_id, name, lang, kind, is_primary_for_locale, source_id, provenance)
+		VALUES (?, 'Kamio Misuzu', 'ja', ?, false, 3, 0)`, existing, model.AliasKindSpellingVariant).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work_character (work_id, character_id, kind, spoiler, matched_by, created_at, updated_at)
 		VALUES (?, ?, ?, 0, 'import:character-roster-bangumi', now(), now())`, shared, existing, model.WorkCharacterKindSecondary).Error)
 

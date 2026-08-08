@@ -77,6 +77,17 @@ import (
 // 55/56 lesson).
 const LangZhHans = "zh-Hans"
 
+// sourceBangumi is the catalog_source id every row of this wave carries. The
+// three lanes are the ONLY writers of kind=AliasKindTranslation rows, which is
+// what let wave 195 attribute the whole pre-existing kind=0 corpus to Bangumi;
+// stamping it explicitly from here on is what keeps that true without the
+// attribution having to be re-derived from writer archaeology again.
+const sourceBangumi int16 = 3
+
+// bangumiSourceRef is the addressable sourceBangumi the alias models' nullable
+// SourceID needs.
+func bangumiSourceRef() *int16 { s := sourceBangumi; return &s }
+
 // maxSamples caps the examples a run collects for logging / test assertions.
 const maxSamples = 10
 

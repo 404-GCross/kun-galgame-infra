@@ -363,14 +363,20 @@ func (im *Importer) insertCharAliases(tx *gorm.DB, plans []vndbAliasPlan, resolv
 	for start := 0; start < len(rows); start += batch {
 		end := min(start+batch, len(rows))
 		var sb strings.Builder
-		sb.WriteString(`INSERT INTO catalog_character_alias (character_id, name, lang, kind, is_primary_for_locale) VALUES `)
-		args := make([]any, 0, (end-start)*3)
+		// Every row here is a spelling VNDB itself publishes — one upstream, and
+		// never a translation this platform produced, so source_id is the file's
+		// own vndbSource and provenance is flat 0. Both arrived in wave 195;
+		// provenance is NOT NULL with no default, so naming it is required here,
+		// not decorative.
+		sb.WriteString(`INSERT INTO catalog_character_alias (character_id, name, lang, kind, is_primary_for_locale, source_id, provenance) VALUES `)
+		args := make([]any, 0, (end-start)*5)
 		for i := start; i < end; i++ {
 			if i > start {
 				sb.WriteString(",")
 			}
-			sb.WriteString("(?,?,?,?,false)")
-			args = append(args, rows[i].charID, rows[i].name, rows[i].lang, model.AliasKindSpellingVariant)
+			sb.WriteString("(?,?,?,?,false,?,0)")
+			args = append(args, rows[i].charID, rows[i].name, rows[i].lang,
+				model.AliasKindSpellingVariant, vndbSource)
 		}
 		sb.WriteString(` ON CONFLICT (character_id, name, lang) DO NOTHING`)
 		res := tx.Exec(sb.String(), args...)

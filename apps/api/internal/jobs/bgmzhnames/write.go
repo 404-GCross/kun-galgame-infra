@@ -90,6 +90,8 @@ func insertCharacterAlias(ctx context.Context, db *gorm.DB, characterID int64, n
 		Lang:               LangZhHans,
 		Kind:               model.AliasKindTranslation,
 		IsPrimaryForLocale: primary,
+		SourceID:           bangumiSourceRef(),
+		Provenance:         model.AliasProvenanceSource,
 	})
 	return res.RowsAffected > 0, res.Error
 }

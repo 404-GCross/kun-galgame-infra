@@ -255,14 +255,22 @@ func enrichAlias(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats,
 	var st EnrichStats
 	var rows []model.CatalogLabelAlias
 	seen := map[string]bool{}
-	plan := func(labelID int64, name string, kind int16) {
+	// source is which upstream published the spelling — the two legs below draw
+	// from different ones, so it is a per-plan argument rather than a constant of
+	// the run. Recorded since wave 195; provenance is flat source (0) because
+	// neither leg translates anything, it forwards what the upstream wrote.
+	plan := func(labelID int64, name string, kind, source int16) {
 		key := fmt.Sprintf("%d\x00%s", labelID, name)
 		if seen[key] {
 			return
 		}
 		seen[key] = true
 		st.AliasCandidates++
-		rows = append(rows, model.CatalogLabelAlias{LabelID: labelID, Name: name, Lang: "", Kind: kind})
+		src := source
+		rows = append(rows, model.CatalogLabelAlias{
+			LabelID: labelID, Name: name, Lang: "", Kind: kind,
+			SourceID: &src, Provenance: model.AliasProvenanceSource,
+		})
 	}
 
 	// VNDB alias lines → spelling variant.
@@ -292,7 +300,7 @@ func enrichAlias(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats,
 			if name == "" || name == names[labelID] {
 				continue
 			}
-			plan(labelID, name, model.AliasKindSpellingVariant)
+			plan(labelID, name, model.AliasKindSpellingVariant, sourceVNDB)
 		}
 	}
 
@@ -324,7 +332,7 @@ func enrichAlias(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats,
 				if name == "" || name == egNames[labelID] {
 					continue
 				}
-				plan(labelID, name, model.AliasKindSearchHint)
+				plan(labelID, name, model.AliasKindSearchHint, sourceEG)
 			}
 		}
 	}
