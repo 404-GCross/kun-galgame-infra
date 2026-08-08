@@ -816,7 +816,7 @@ components:
         localized:
           additionalProperties:
             $ref: "#/components/schemas/PublicLocalizedName"
-          description: preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank
           type: object
         name:
           $ref: "#/components/schemas/PublicNameBuckets"
@@ -1196,7 +1196,7 @@ components:
         localized:
           additionalProperties:
             $ref: "#/components/schemas/PublicLocalizedName"
-          description: preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank
           type: object
         logo_hash:
           description: brand logo content hash in the image service; "" = this label has no logo
@@ -1559,7 +1559,7 @@ components:
         localized:
           additionalProperties:
             $ref: "#/components/schemas/PublicLocalizedName"
-          description: preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank
           type: object
         name:
           $ref: "#/components/schemas/PublicNameBuckets"

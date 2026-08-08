@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
@@ -119,12 +120,12 @@ func flatAliases(rows []displayAlias) []string {
 }
 
 // localizedNames is the per-locale projection: at most one entry per language,
-// keyed by the tag exactly as filed (an OPEN vocabulary — normalising it here
-// would invent data the sources never declared).
+// keyed by the BCP-47 tag in canonical casing.
 //
-// Rows with no declared language are skipped: they cannot answer "the name in
-// language X", and admitting them under an empty-string key would hand every
-// consumer a key it must special-case. Such a row still reaches aliases[].
+// Rows whose lang cannot answer "the name in language X" are skipped — an
+// undeclared language, and equally a value that is not a language tag at all.
+// Both would hand every consumer a key it must special-case; the row still
+// reaches aliases[], where it is only ever a spelling.
 //
 // Where a locale has several candidates the winner is is_primary_for_locale
 // first — the one bit the bangumi lane sets deliberately, at most once per owner
@@ -135,17 +136,97 @@ func localizedNames(rows []displayAlias) map[string]dto.PublicLocalizedName {
 	out := make(map[string]dto.PublicLocalizedName, len(rows))
 	best := make(map[string]displayAlias, len(rows))
 	for _, r := range rows {
-		if r.Lang == "" {
+		locale, ok := canonicalLocale(r.Lang)
+		if !ok {
 			continue
 		}
-		cur, seen := best[r.Lang]
+		cur, seen := best[locale]
 		if seen && !aliasBeats(r, cur) {
 			continue
 		}
-		best[r.Lang] = r
-		out[r.Lang] = dto.PublicLocalizedName{Value: r.Name, Kind: aliasKindKey(r.Kind)}
+		best[locale] = r
+		out[locale] = dto.PublicLocalizedName{Value: r.Name, Kind: aliasKindKey(r.Kind)}
 	}
 	return out
+}
+
+// canonicalLocale renders a stored lang as the key consumers look up by, and
+// reports whether it is a language tag at all.
+//
+// Two facts from the production tables force this. The first: the stored values
+// are NOT canonically cased — `pt-br` sits alongside `zh-Hans`, and a consumer
+// asking for `pt-BR` (the only spelling BCP-47 defines) would miss it. Casing is
+// the one normalisation that invents nothing: `pt-br` and `pt-BR` are the same
+// tag by the standard's own equality rule, so folding them is recording what the
+// source said, not guessing at it.
+//
+// The second: one row's lang is the literal string `日语` — the Chinese word for
+// "Japanese", written where a tag belongs. Publishing it verbatim would put a
+// key in localized{} that no locale negotiation can ever match, which is not an
+// open vocabulary but a leak. A value that is not a tag is treated exactly like
+// an undeclared language: it answers no locale.
+//
+// The grammar checked here is deliberately the shape, not a registry: subtags
+// are alphanumeric, 1-8 characters, and the first is alphabetic. Validating
+// against the IANA registry would reject legitimately obscure tags a source may
+// yet file, and this function's job is to keep non-tags out, not to police which
+// languages exist.
+func canonicalLocale(lang string) (string, bool) {
+	if lang == "" || len(lang) > 35 { // RFC 5646 caps a well-formed tag at 35
+		return "", false
+	}
+	parts := strings.Split(lang, "-")
+	for i, p := range parts {
+		if len(p) == 0 || len(p) > 8 || !isASCIIAlphanumeric(p) {
+			return "", false
+		}
+		switch {
+		case i == 0:
+			// The primary subtag is always alphabetic and always lowercase.
+			if !isASCIIAlpha(p) {
+				return "", false
+			}
+			parts[i] = strings.ToLower(p)
+		case len(p) == 4 && isASCIIAlpha(p):
+			// A four-letter subtag is a script: Title case (`Hans`).
+			parts[i] = strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
+		case len(p) == 2 && isASCIIAlpha(p), len(p) == 3 && isASCIIDigits(p):
+			// Two letters or three digits is a region: upper case (`BR`).
+			parts[i] = strings.ToUpper(p)
+		default:
+			// Variants and extensions are lower case.
+			parts[i] = strings.ToLower(p)
+		}
+	}
+	return strings.Join(parts, "-"), true
+}
+
+func isASCIIAlpha(s string) bool {
+	for _, c := range []byte(s) {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCIIDigits(s string) bool {
+	for _, c := range []byte(s) {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCIIAlphanumeric(s string) bool {
+	for _, c := range []byte(s) {
+		alpha := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		if !alpha && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // aliasBeats reports whether candidate outranks incumbent for its locale. Ties

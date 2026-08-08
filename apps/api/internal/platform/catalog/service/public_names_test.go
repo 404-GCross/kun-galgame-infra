@@ -79,6 +79,31 @@ func TestLocalizedNamesElection(t *testing.T) {
 		},
 		want: map[string]string{},
 	}, {
+		// catalog_label_alias id=2686 files lang as the literal string 日语.
+		// A key no locale negotiation can match is a leak, not vocabulary.
+		name: "a lang that is not a tag answers no locale",
+		rows: []displayAlias{
+			alias("株式会社ジャスト", "日语", model.AliasKindSpellingVariant, false, false),
+		},
+		want: map[string]string{},
+	}, {
+		// Stored as pt-br; BCP-47 defines only pt-BR, and that is what a
+		// consumer will look up by.
+		name: "a miscased tag is keyed canonically",
+		rows: []displayAlias{
+			alias("Fulano", "pt-br", model.AliasKindSpellingVariant, false, false),
+		},
+		want: map[string]string{"pt-BR": "Fulano"},
+	}, {
+		// Same tag, two spellings of it: they must not become two locales, or
+		// a consumer sees a name under a key it never asks for.
+		name: "casing variants of one tag collapse to one locale",
+		rows: []displayAlias{
+			alias("绪方刚", "ZH-hans", model.AliasKindSpellingVariant, false, false),
+			alias("绪方刚志", "zh-Hans", model.AliasKindTranslation, false, false),
+		},
+		want: map[string]string{"zh-Hans": "绪方刚志"},
+	}, {
 		name: "locales are independent",
 		rows: []displayAlias{
 			alias("绪方刚志", "zh-Hans", model.AliasKindTranslation, false, false),
@@ -106,6 +131,38 @@ func TestLocalizedNamesEmptyIsNeverNil(t *testing.T) {
 	got := localizedNames(nil)
 	if got == nil || len(got) != 0 {
 		t.Fatalf("localizedNames(nil) = %#v, want an allocated empty map so the face emits {}", got)
+	}
+}
+
+func TestCanonicalLocale(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string // "" means: not a language tag
+	}{
+		{"ja", "ja"},
+		{"zh-Hans", "zh-Hans"},
+		{"pt-br", "pt-BR"},
+		{"ZH-HANS", "zh-Hans"},
+		{"zh-hant-hk", "zh-Hant-HK"},
+		{"es-419", "es-419"}, // three digits is a region
+		{"", ""},
+		{"日语", ""},
+		{"zh_Hans", ""},   // underscore is not the BCP-47 separator
+		{"zh-", ""},       // an empty subtag
+		{"123", ""},       // the primary subtag must be alphabetic
+		{"toolongsubtag", ""},
+	}
+	for _, tc := range tests {
+		got, ok := canonicalLocale(tc.in)
+		if tc.want == "" {
+			if ok {
+				t.Errorf("canonicalLocale(%q) = %q, true; want it rejected", tc.in, got)
+			}
+			continue
+		}
+		if !ok || got != tc.want {
+			t.Errorf("canonicalLocale(%q) = %q, %v; want %q, true", tc.in, got, ok, tc.want)
+		}
 	}
 }
 

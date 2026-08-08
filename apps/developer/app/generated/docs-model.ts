@@ -1909,7 +1909,7 @@ export const docsModel: DocsModel = {
                           {
                             "name": "localized",
                             "required": true,
-                            "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                            "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
                             "type": "map",
                             "itemsOf": {
                               "type": "object",
@@ -2739,7 +2739,7 @@ export const docsModel: DocsModel = {
                           {
                             "name": "localized",
                             "required": true,
-                            "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                            "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
                             "type": "map",
                             "itemsOf": {
                               "type": "object",
@@ -3216,7 +3216,7 @@ export const docsModel: DocsModel = {
                               {
                                 "name": "localized",
                                 "required": true,
-                                "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
                                 "type": "map",
                                 "itemsOf": {
                                   "type": "object",
@@ -3549,7 +3549,7 @@ export const docsModel: DocsModel = {
                               {
                                 "name": "localized",
                                 "required": true,
-                                "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
                                 "type": "map",
                                 "itemsOf": {
                                   "type": "object",
@@ -3919,7 +3919,7 @@ export const docsModel: DocsModel = {
                               {
                                 "name": "localized",
                                 "required": true,
-                                "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
                                 "type": "map",
                                 "itemsOf": {
                                   "type": "object",
@@ -4268,7 +4268,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "localized",
                                       "required": true,
-                                      "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
                                       "type": "map",
                                       "itemsOf": {
                                         "type": "object",
@@ -4606,7 +4606,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "localized",
                                       "required": true,
-                                      "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
                                       "type": "map",
                                       "itemsOf": {
                                         "type": "object",
@@ -4976,7 +4976,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "localized",
                                       "required": true,
-                                      "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
                                       "type": "map",
                                       "itemsOf": {
                                         "type": "object",
@@ -5470,7 +5470,7 @@ export const docsModel: DocsModel = {
                           {
                             "name": "localized",
                             "required": true,
-                            "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                            "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
                             "type": "map",
                             "itemsOf": {
                               "type": "object",

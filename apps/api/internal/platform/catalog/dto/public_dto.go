@@ -304,16 +304,30 @@ type PublicNameBuckets struct {
 // PublicLocalizedName is an entity's PREFERRED name for one locale — the value
 // a consumer renders when its UI is in that language.
 //
-// It is the value half of the `localized` map, whose KEY is the locale in the
-// upstream BCP-47 spelling exactly as filed (`zh-Hans`, `ja`, …). A map rather
-// than an array on purpose: the whole job of this field is
-// `localized[myLocale] ?? display_name`, and an array makes every consumer
-// write — and separately get wrong — its own scan.
+// It is the value half of the `localized` map, whose KEY is a BCP-47 tag in
+// canonical casing (`zh-Hans`, `ja`, `pt-BR`). A map rather than an array on
+// purpose: the whole job of this field is one lookup by the caller's locale, and
+// an array makes every consumer write — and separately get wrong — its own scan.
 //
-// The map is an OPEN vocabulary (which locales exist is data, not an enum), it
-// is ALWAYS present ({} when the entity has no localized name at all), and it
-// never contains an empty-string key: a row with no declared language cannot
-// answer "the name in language X" and is served only through aliases[].
+// The map is an OPEN vocabulary (which locales exist is data, not an enum) and
+// is ALWAYS present ({} when the entity has no localized name at all). Only the
+// KEY's casing is normalised, never a value: `pt-br` and `pt-BR` are the same
+// tag by BCP-47's own equality rule, and the tables hold the former while every
+// consumer will ask for the latter. A stored lang that is not a language tag at
+// all — one row reads literally `日语` — is likewise absent, as is a row with no
+// declared language: neither can answer "the name in language X". Both still
+// reach aliases[], where such a row is only ever a spelling.
+//
+// SPARSE BY DESIGN — a consumer MUST fall back
+// `localized[myLocale] ?? display_name ?? latin` and must never render the
+// absence as blank or "not available". Full coverage does not exist in this
+// domain and is not being pursued: measured 2026-08-08, characters are at 9.1%
+// zh, credit names at 1.3%, labels at 1.5%. The character figure will rise
+// steeply (a name-completion wave is queued, and 42% of the remainder are
+// pure-kanji names that a Chinese UI should render verbatim — display_name is
+// the CORRECT answer there, not a degraded one). The credit-name figure will
+// not: those are real people's names, where kanji should not be "translated"
+// and most kana pen names have no accepted Chinese spelling.
 //
 // One entry per locale: where several rows compete, is_primary_for_locale wins
 // first, then translation over spelling_variant, then the flat-alias order.
@@ -368,7 +382,7 @@ type PublicName struct {
 	DisplayName string `json:"display_name"`
 	Lang        string `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
 	// Localized is the per-locale rendering map (wave 191). Always present.
-	Localized map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name"`
+	Localized map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank"`
 	Latin     string                         `json:"latin,omitempty"`
 	PersonID  int64                          `json:"person_id,omitempty"`
 	Siblings  []PublicSiblingName            `json:"siblings"`
@@ -454,7 +468,7 @@ type PublicCharacter struct {
 	// byte-identical in shape to PublicLabel.Aliases and PublicName.Aliases.
 	Aliases []string `json:"aliases" doc:"alternate spellings; deduplicated, the display name excluded, [] when it has none"`
 	// Localized is the per-locale rendering map (wave 191). Always present.
-	Localized map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name"`
+	Localized map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank"`
 	Latin     string                         `json:"latin,omitempty"`
 	// Refs are this character's EXACT cross-source identity anchors (doc 106 G4).
 	Refs       []PublicCatalogRef    `json:"refs"`
@@ -544,7 +558,7 @@ type PublicLabel struct {
 	// display-name excluded, always present ([] when the label has none).
 	Aliases []string `json:"aliases"`
 	// Localized is the per-locale rendering map (wave 191). Always present.
-	Localized map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name"`
+	Localized map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank"`
 	// WorkCount is NSFW-AWARE, exactly like the browse lane's (A2-1e): the
 	// number of works this caller would page through via
 	// works?label_id=&claim_state=live — the call an entity page makes (146).
