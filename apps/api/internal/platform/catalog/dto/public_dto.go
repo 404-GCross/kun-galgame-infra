@@ -348,10 +348,22 @@ type PublicLocalizedName struct {
 
 // PublicSiblingName is another credited name of the same person (public links
 // only — a hidden link never surfaces, 裁定 6).
+//
+// display_name + lang complete the wave-191 expand here (wave 193): they were
+// added to the entity records themselves but not to this one, which left the
+// only consumer of sibling names with nothing to migrate to before the buckets
+// go. They cost no extra query — the row this is projected from already carries
+// both.
+//
+// There is deliberately no localized{} on a sibling. It would cost one alias
+// query per sibling, and a sibling is a LINK to a record that carries its own
+// full localized map: a consumer that needs the reader's locale follows the id.
 type PublicSiblingName struct {
-	ID    int64             `json:"id"`
-	Name  PublicNameBuckets `json:"name"`
-	Latin string            `json:"latin,omitempty"`
+	ID          int64             `json:"id"`
+	Name        PublicNameBuckets `json:"name"`
+	DisplayName string            `json:"display_name"`
+	Lang        string            `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
+	Latin       string            `json:"latin,omitempty"`
 }
 
 // PublicNameRole is one role a credited name holds on a work (with the voiced

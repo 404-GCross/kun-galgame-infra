@@ -2137,9 +2137,14 @@ components:
     PublicSiblingName:
       additionalProperties: false
       properties:
+        display_name:
+          type: string
         id:
           format: int64
           type: integer
+        lang:
+          description: BCP-47 language of display_name; empty when unrecorded
+          type: string
         latin:
           type: string
         name:
@@ -2147,6 +2152,7 @@ components:
       required:
         - id
         - name
+        - display_name
       type: object
     PublicStatsEntities:
       additionalProperties: false

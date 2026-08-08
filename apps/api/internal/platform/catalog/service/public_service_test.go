@@ -528,6 +528,47 @@ func TestPublicWorkCreditsLabelSigner(t *testing.T) {
 	}
 }
 
+// TestPublicSiblingNameCarriesDisplayName pins wave 193: a sibling publishes
+// display_name + lang beside its buckets, so the one consumer of sibling names
+// can move off the buckets before they are removed.
+//
+// The two assertions that matter are that display_name equals whatever the
+// buckets already carry — a sibling row renders identically before and after a
+// consumer migrates, so adopting is a shape change and not a behaviour one —
+// and that lang survives, which the buckets cannot express: zh-Hant collapses
+// into the same `zh` bucket as zh-Hans.
+func TestPublicSiblingNameCarriesDisplayName(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	p := createPerson(t, "Key")
+	main := createCreditName(t, &p.ID, "麻枝准")
+	sib := createCreditName(t, &p.ID, "織田杏子")
+	if err := testDB.Model(sib).Update("lang", "zh-Hant").Error; err != nil {
+		t.Fatalf("set sibling lang: %v", err)
+	}
+
+	got, found, err := svc.Name(ctx, main.ID, false, false, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("name: found=%v err=%v", found, err)
+	}
+	if len(got.Siblings) != 1 {
+		t.Fatalf("public sibling must surface: %+v", got.Siblings)
+	}
+	s := got.Siblings[0]
+	if s.DisplayName != "織田杏子" {
+		t.Fatalf("sibling display_name = %q, want the name of record", s.DisplayName)
+	}
+	if s.Name.Zh != s.DisplayName {
+		t.Fatalf("display_name %q must equal the populated bucket %+v", s.DisplayName, s.Name)
+	}
+	// The buckets said only "Chinese"; lang says which Chinese.
+	if s.Lang != "zh-Hant" {
+		t.Fatalf("sibling lang = %q, want the tag the buckets cannot carry", s.Lang)
+	}
+}
+
 // publicPhotoHash is the person photograph the public name face publishes
 // (wave 172) — the same content-hash currency as a work cover's image_hash.
 const publicPhotoHash = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"

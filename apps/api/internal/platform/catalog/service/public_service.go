@@ -742,7 +742,14 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 	}
 	for _, sib := range res.Siblings {
 		p.Siblings = append(p.Siblings, dto.PublicSiblingName{
-			ID: sib.ID, Name: nameBuckets(sib.Lang, sib.Name), Latin: derefStrPub(sib.Latin),
+			ID:   sib.ID,
+			Name: nameBuckets(sib.Lang, sib.Name),
+			// The same row the buckets are derived from, said plainly (wave
+			// 193) — no second query, and the value is identical to whichever
+			// bucket nameBuckets picks.
+			DisplayName: sib.Name,
+			Lang:        sib.Lang,
+			Latin:       derefStrPub(sib.Latin),
 		})
 	}
 	if p.Aliases, p.Localized, err = s.nameAliases(ctx, id); err != nil {

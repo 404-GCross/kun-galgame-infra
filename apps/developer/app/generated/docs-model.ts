@@ -4003,10 +4003,20 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
+                                    },
+                                    {
+                                      "name": "lang",
+                                      "doc": "BCP-47 language of display_name; empty when unrecorded",
+                                      "type": "string"
                                     },
                                     {
                                       "name": "latin",
@@ -5060,10 +5070,20 @@ export const docsModel: DocsModel = {
                                         "type": "object",
                                         "children": [
                                           {
+                                            "name": "display_name",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
                                             "name": "id",
                                             "required": true,
                                             "format": "int64",
                                             "type": "integer"
+                                          },
+                                          {
+                                            "name": "lang",
+                                            "doc": "BCP-47 language of display_name; empty when unrecorded",
+                                            "type": "string"
                                           },
                                           {
                                             "name": "latin",
@@ -5554,10 +5574,20 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
                                   "name": "id",
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "lang",
+                                  "doc": "BCP-47 language of display_name; empty when unrecorded",
+                                  "type": "string"
                                 },
                                 {
                                   "name": "latin",
