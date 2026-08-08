@@ -12,8 +12,9 @@ import (
 )
 
 // expectedTools is the frozen tool surface (design §4; the M1 five that survive
-// + catalog_name_get + the canonical-W1 trio + the eight A2 read ops). If this
-// list changes, the design doc and portal docs page must change with it.
+// + catalog_name_get + the canonical-W1 trio + the eight A2 read ops + the
+// wave-189 trio). If this list changes, the design doc and portal docs page
+// must change with it.
 //
 // galgame_search / galgame_get left the surface at wave 146 (2026-07-30) with
 // the /v1/galgame face they proxied; this list doubles as the assertion that
@@ -31,6 +32,9 @@ var expectedTools = []string{
 	"catalog_lookup_external",
 	"catalog_name_get",
 	"catalog_search",
+	"catalog_series_get",
+	"catalog_series_list",
+	"catalog_stats",
 	"catalog_tag_get",
 	"catalog_tags_list",
 	"catalog_work_get",

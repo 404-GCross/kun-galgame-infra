@@ -10,10 +10,11 @@ import (
 // read-only, idempotent GET against an open-world external registry.
 var readOnly = &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true}
 
-// registerTools installs the seventeen tools on the server (M1 five surviving +
+// registerTools installs the twenty tools on the server (M1 five surviving +
 // catalog_name_get + the canonical-W1 trio: works-list / changes / tag + the
 // eight A2 read ops: works search, the three calendar buckets, the three
-// taxonomy browse lanes and engine detail). Names are unversioned
+// taxonomy browse lanes and engine detail + the wave-189 trio: the series
+// browse/detail pair and catalogue stats). Names are unversioned
 // (the /v1 contract is versioned upstream); descriptions are English and written
 // for the calling LLM, with the lookup-vs-search division spelled out.
 //
@@ -143,6 +144,27 @@ func registerTools(s *mcp.Server, up *Upstream) {
 		Description: descCatalogEngineGet,
 		Annotations: readOnly,
 	}, t.catalogEngineGet)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_series_list",
+		Title:       "Browse catalog series",
+		Description: descCatalogSeriesList,
+		Annotations: readOnly,
+	}, t.catalogSeriesList)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_series_get",
+		Title:       "Get a catalog series by id",
+		Description: descCatalogSeriesGet,
+		Annotations: readOnly,
+	}, t.catalogSeriesGet)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_stats",
+		Title:       "Catalogue-wide counts",
+		Description: descCatalogStats,
+		Annotations: readOnly,
+	}, t.catalogStats)
 }
 
 // ─────────────────────────── catalog face ───────────────────────────
@@ -555,4 +577,59 @@ func (t *tools) catalogEngineGet(ctx context.Context, req *mcp.CallToolRequest, 
 	q := newQuery()
 	setBool(q, "nsfw", in.Nsfw)
 	return t.run(ctx, req, "catalog_engine_get", pathID("/v1/catalog/engines", in.ID), q)
+}
+
+const descCatalogSeriesList = "Browse the series vocabulary itself (a series groups a work's sequels / fandiscs / " +
+	"remakes under one banner), id ascending and keyset paginated; each row carries an nsfw-aware work_count and the " +
+	"source that filed it. Series are NOT reachable from catalog_search — this lane is the only way to discover a " +
+	"series id; to fetch one with its member works use catalog_series_get."
+
+type catalogSeriesListInput struct {
+	Cursor string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
+	Nsfw   bool   `json:"nsfw,omitempty" jsonschema:"true = count r18 works in work_count (default false = excluded)."`
+	Source string `json:"source,omitempty" jsonschema:"Comma-separated filter on the same key each row prints in source: curated (hand-filed), derived (built by the automatic series lane), dlsite (filed by that importer). An OPEN vocabulary — an unrecognized token yields an empty page rather than an error."`
+}
+
+func (t *tools) catalogSeriesList(ctx context.Context, req *mcp.CallToolRequest, in catalogSeriesListInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	setStr(q, "source", in.Source)
+	return t.run(ctx, req, "catalog_series_list", "/v1/catalog/series", q)
+}
+
+const descCatalogSeriesGet = "Fetch one series by its numeric id: identity, the source anchor and intros, plus its " +
+	"member works IN READING ORDER when include_works is set — which is what makes this the tool to answer \"what " +
+	"order do I play this in\". Find an id with catalog_series_list."
+
+type catalogSeriesGetInput struct {
+	ID           int  `json:"id" jsonschema:"The catalog series id (required)."`
+	IncludeWorks bool `json:"include_works,omitempty" jsonschema:"true = attach the series' member works in reading order (default false = identity only)."`
+	Nsfw         bool `json:"nsfw,omitempty" jsonschema:"true = keep r18 works among the members (default false = dropped)."`
+	Limit        int  `json:"limit,omitempty" jsonschema:"Member works per page 1-50 (default 50)."`
+	Offset       int  `json:"offset,omitempty" jsonschema:"Member works to skip, for paging past the first page."`
+}
+
+func (t *tools) catalogSeriesGet(ctx context.Context, req *mcp.CallToolRequest, in catalogSeriesGetInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	if in.IncludeWorks {
+		setStr(q, "include", "works")
+	}
+	setBool(q, "nsfw", in.Nsfw)
+	setInt(q, "limit", in.Limit)
+	setInt(q, "offset", in.Offset)
+	return t.run(ctx, req, "catalog_series_get", pathID("/v1/catalog/series", in.ID), q)
+}
+
+const descCatalogStats = "Catalogue-wide totals: LIVE work counts per medium plus the identity-family totals " +
+	"(names / characters / labels and friends). Takes no arguments. Use this to answer \"how big is the catalogue\" " +
+	"or to sanity-check coverage before claiming something is absent — it is a summary, never a way to find a " +
+	"specific entity."
+
+type catalogStatsInput struct{}
+
+func (t *tools) catalogStats(ctx context.Context, req *mcp.CallToolRequest, _ catalogStatsInput) (*mcp.CallToolResult, any, error) {
+	return t.run(ctx, req, "catalog_stats", "/v1/catalog/stats", newQuery())
 }

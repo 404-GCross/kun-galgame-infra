@@ -10,13 +10,14 @@ useSeoMeta({
     '把 NextMoe 开放 API 作为 MCP（Model Context Protocol）server 接入 AI 助手：端点、密钥配置，以及 Claude Code / Claude Desktop / 通用 MCP 客户端三段配置示例。'
 })
 
-// The seventeen tools (mirrors apps/api/internal/platform/mcpface). Each maps
+// The twenty tools (mirrors apps/api/internal/platform/mcpface). Each maps
 // 1:1 to a public /v1 endpoint; lookup/get take an id, search takes natural
 // language, _list browses a vocabulary to discover the ids the filters take.
 // R18 is hidden by default (nsfw=true opts in). The two galgame_* tools retired
 // on 2026-07-30 with the /v1/galgame face they proxied — catalog_search
 // (type=works) and catalog_work_get replace them; the eight A2 catalog ops
-// (works search, the calendar buckets, the browse lanes) joined at wave 7.
+// (works search, the calendar buckets, the browse lanes) joined at wave 7, and
+// the series pair + catalogue stats at wave 189.
 const tools = [
   {
     name: 'catalog_search',
@@ -82,6 +83,18 @@ const tools = [
   {
     name: 'catalog_engine_get',
     desc: '按 id 取引擎记录（名称 + nsfw 感知 work_count + 跨源 refs）。'
+  },
+  {
+    name: 'catalog_series_list',
+    desc: '浏览系列词表本身（source= 泳道过滤：curated / derived / dlsite，每行带 nsfw 感知 work_count）——系列不进搜索索引，这是发现 series id 的唯一入口。'
+  },
+  {
+    name: 'catalog_series_get',
+    desc: '按 id 取系列（身份 + 源锚 + 简介），include_works 附成员作品并按阅读顺序排列——回答「这个系列按什么顺序玩」。'
+  },
+  {
+    name: 'catalog_stats',
+    desc: '全库计数：各媒介 LIVE 作品数 + 身份家族总量（无参数）。'
   }
 ]
 

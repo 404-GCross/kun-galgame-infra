@@ -40,7 +40,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 - MCP 规范的 OAuth 2.1 授权流 = M2(第三方实际开放后,与 `dev:manage`
   同期评估);M1 的静态 key 模式对 agent 场景已充分。
 
-## 4. 工具面(17 个 = M1 五个幸存 + `catalog_name_get` + canonical-W1 三件 + A2 八件;2026-07-30 与 A2 canonical 轨 spec 同步)
+## 4. 工具面(20 个 = M1 五个幸存 + `catalog_name_get` + canonical-W1 三件 + A2 八件 + wave-189 三件;2026-08-07 与 canonical 轨 spec 同步)
 
 > **wave 146(2026-07-30)**:`galgame_search` / `galgame_get` **随其上游 `/v1/galgame` 面一同退役**——该面现返回 `410 Gone`,继续注册这两个工具只会稳定地喂给调用方一个错误。后继:`catalog_search`(`type=works`)接自然语言搜索,`catalog_work_get` 接按 id 取详情。
 
@@ -63,11 +63,17 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 | `catalog_tags_list` | `GET /v1/catalog/tags` | 正典标签词表浏览(`tier`/`kind` 过滤;发现 tag id 喂给 works 过滤) |
 | `catalog_engines_list` | `GET /v1/catalog/engines` | 引擎词表浏览(发现 engine id 喂给 `catalog_works_search`) |
 | `catalog_engine_get` | `GET /v1/catalog/engines/{id}` | 引擎记录(名称 + nsfw 感知 `work_count` + 跨源 refs) |
+| `catalog_series_list` | `GET /v1/catalog/series` | 系列词表浏览(`source=` 泳道过滤,开词表;发现 series id 用——系列**不进搜索索引**,此为唯一发现入口) |
+| `catalog_series_get` | `GET /v1/catalog/series/{id}` | 系列记录(身份 + 源锚 + intros;`include_works` 附成员作品**按阅读顺序**,分页 `limit`/`offset`) |
+| `catalog_stats` | `GET /v1/catalog/stats` | 全库计数(各媒介 LIVE 作品数 + 身份家族总量;无参数) |
 
-- **catalog 覆盖面(17/22:三条「有意留白」+ 两条「待裁定」)**:公开 catalog 面
-  现共 22 op,上表覆盖 17。**待裁定**两条 = wave-149b/c 新增(晚于 wave 7 定稿):
-  `GET /v1/catalog/stats`(瘦身公开计数)与 `GET /v1/catalog/series/{id}`(系列
-  读面)——均为 GET 纯透传适格,是否收进工具面待 owner 裁定。上一波记为「待裁定」的 A2 八条(calendar 三桶 / taxonomy 列表三条 /
+- **catalog 覆盖面(20/25:三条「有意留白」+ 两条「待裁定」)**:公开 catalog 面
+  现共 25 op,上表覆盖 20。上一波记为「待裁定」的 `stats` 与 `series` 已由 owner
+  裁定收进工具面(wave 189,2026-08-07),且 `series` 实收**两条**而非一条——
+  系列不进任何搜索索引,只有 `series/{id}` 详情道的话调用方**永远拿不到 id**,
+  浏览道是它的唯一发现入口,两条必须成对进面。**新的待裁定**两条 =
+  `GET /v1/catalog/labels/{id}/relation-graph`(wave 188 会社家族多跳读面)与
+  `GET /v1/catalog/releases`——均为 GET 纯透传适格,待 owner 裁定。上一波记为「待裁定」的 A2 八条(calendar 三桶 / taxonomy 列表三条 /
   `engines/{id}` / `works/search`)已由 owner 裁定收进工具面(wave 7,2026-07-30),
   八条全是 GET,合乎纯透传红线。**有意留白**仍是三条:`POST /v1/catalog/lookup/batch`
   (批量外部 id 水合)、`GET /v1/catalog/redirects`(合并事件 keyset 流,供镜像清理
@@ -97,7 +103,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
   Deploy 姿态,`docker-compose.mcp.yml`);镜像走现有 CI 矩阵。
 - healthz 照平台惯例;结构化日志记 tool 名 + 上游状态码 + 时延,
   **永不记 key 明文**(fingerprint 前 8 hex)。
-- 冒烟:MCP `initialize` + `tools/list` + 一次 `catalog_search` 真调用。(wave 7 / 2026-07-30 同步后 `tools/list` 应回 17 工具;冒烟调用早先写的是 `galgame_search`,该工具已随 `/v1/galgame` 面于 wave 146 退役。)
+- 冒烟:MCP `initialize` + `tools/list` + 一次 `catalog_search` 真调用。(wave 189 / 2026-08-07 同步后 `tools/list` 应回 20 工具;冒烟调用早先写的是 `galgame_search`,该工具已随 `/v1/galgame` 面于 wave 146 退役。)
 
 ## 6. 阶段
 
