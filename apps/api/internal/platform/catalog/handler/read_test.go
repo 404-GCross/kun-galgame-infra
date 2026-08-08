@@ -486,7 +486,9 @@ func TestNameWorks(t *testing.T) {
 	data := body["data"].(map[string]any)
 	head := data["name"].(map[string]any)
 	assert.EqualValues(t, f.nameA, head["id"])
-	assert.Equal(t, "名義A", head["name"].(map[string]any)["ja"])
+	// wave 194: the head names itself with display_name + its own lang tag, not
+	// with a bucket that could only ever say which of three scripts it was in.
+	assert.Equal(t, "名義A", head["display_name"])
 	assert.EqualValues(t, f.personP, head["person_id"])
 	// wave 172: the person block travels with the public link — photo hash plus
 	// gender and the fuzzy birth date, joined from catalog_person.
@@ -574,7 +576,7 @@ func TestCharacterWorks(t *testing.T) {
 	require.Equal(t, 200, code)
 	data := body["data"].(map[string]any)
 	assert.EqualValues(t, f.char1, data["character"].(map[string]any)["id"])
-	assert.Equal(t, "キャラ1", data["character"].(map[string]any)["name"].(map[string]any)["ja"])
+	assert.Equal(t, "キャラ1", data["character"].(map[string]any)["display_name"])
 	assert.EqualValues(t, 2, data["total"], "union: w1 (voiced) + w3 (appearance-only)")
 	items := data["items"].([]any)
 	require.Len(t, items, 2)

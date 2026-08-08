@@ -417,17 +417,6 @@ type EntitySearchHit struct {
 
 // --- entity reverse-lookups (step 19: names/{id}/works & characters/{id}/works) ---
 
-// NameBuckets holds a name in exactly ONE language bucket — a credit name or
-// character lives in a single language (search invariant 1: never mix zh/ja).
-// Only the matching bucket is populated; consumers pick by their UI locale.
-// Used for the entity SELF-DESCRIPTION heads (and sibling names); works-list
-// annotations stay flat (name+lang), mirroring the credits endpoint.
-type NameBuckets struct {
-	Ja    string `json:"ja,omitempty"`
-	Zh    string `json:"zh,omitempty"`
-	Other string `json:"other,omitempty"`
-}
-
 // WorkBrief is the lightweight work projection shared by the reverse-lookup
 // rows: identity + claim state, no body (the body lives in a product DB).
 type WorkBrief struct {
@@ -455,11 +444,16 @@ type NameWorksResponse struct {
 // neither (the name appears as an independent identity — the link-visibility
 // doctrine, model.LinkVisibility).
 type NameHead struct {
-	ID       int64         `json:"id"`
-	Name     NameBuckets   `json:"name"`
-	Latin    string        `json:"latin,omitempty"`
-	PersonID int64         `json:"person_id,omitempty" doc:"same-person group id (public links only; absent = orphan or hidden)"`
-	Siblings []SiblingName `json:"siblings" doc:"the same person's other public-linked names"`
+	ID int64 `json:"id"`
+	// DisplayName is the name of record and is never empty; Lang is its own
+	// BCP-47 tag, empty when the source never declared one. They replace the
+	// retired name{ja,zh,other} buckets, which only ever filed this one name
+	// under this one language and could say nothing about any other.
+	DisplayName string        `json:"display_name"`
+	Lang        string        `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
+	Latin       string        `json:"latin,omitempty"`
+	PersonID    int64         `json:"person_id,omitempty" doc:"same-person group id (public links only; absent = orphan or hidden)"`
+	Siblings    []SiblingName `json:"siblings" doc:"the same person's other public-linked names"`
 	// The person block (wave 172) rides EXACTLY the PersonID gate: a hidden
 	// credit_name→person link withholds all five, because a photograph and a
 	// birthday are person facts and publishing them under a hidden link is the
@@ -477,9 +471,10 @@ type NameHead struct {
 
 // SiblingName is another credit name of the same person (public links only).
 type SiblingName struct {
-	ID    int64       `json:"id"`
-	Name  NameBuckets `json:"name"`
-	Latin string      `json:"latin,omitempty"`
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Lang        string `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
+	Latin       string `json:"latin,omitempty"`
 }
 
 // NameWorkRow is one work a name is credited on, with every role it holds there.
@@ -508,9 +503,10 @@ type CharacterWorksResponse struct {
 
 // CharacterHead is a character's own identity (self-sufficient on direct nav).
 type CharacterHead struct {
-	ID    int64       `json:"id"`
-	Name  NameBuckets `json:"name"`
-	Latin string      `json:"latin,omitempty"`
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Lang        string `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
+	Latin       string `json:"latin,omitempty"`
 }
 
 // CharacterWorkRow is one work a character appears in — the UNION of the roster

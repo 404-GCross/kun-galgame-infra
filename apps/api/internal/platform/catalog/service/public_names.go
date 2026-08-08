@@ -23,9 +23,9 @@ import (
 // the rows to bare strings and deduplicated by spelling, discarding lang; the
 // character record published no aliases at all. So a consumer could not answer
 // "what is this character called in Chinese?" from the public API even though
-// the answer was sitting in the table. PublicNameBuckets made that worse by
-// LOOKING like an answer: {"ja": "…"} with no zh key reads as "no Chinese name",
-// which was never what it meant.
+// the answer was sitting in the table. The name buckets (retired in wave 194)
+// made that worse by LOOKING like an answer: {"ja": "…"} with no zh key reads
+// as "no Chinese name", which was never what it meant.
 //
 // One loader serves all three because the tables are identical; the two
 // projections below then answer two genuinely different questions, which is why

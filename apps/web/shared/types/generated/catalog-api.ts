@@ -658,10 +658,12 @@ export interface components {
             weight_kg?: number;
         };
         CharacterHead: {
+            display_name: string;
             /** Format: int64 */
             id: number;
+            /** @description BCP-47 language of display_name; empty when unrecorded */
+            lang?: string;
             latin?: string;
-            name: components["schemas"]["NameBuckets"];
         };
         CharacterTrait: {
             /** @description root-group display name; absent for a root trait */
@@ -1451,11 +1453,6 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
-        NameBuckets: {
-            ja?: string;
-            other?: string;
-            zh?: string;
-        };
         NameHead: {
             /**
              * Format: int32
@@ -1472,6 +1469,7 @@ export interface components {
              * @description fuzzy birth date, year; absent = not recorded at this precision
              */
             birth_y?: number;
+            display_name: string;
             /**
              * Format: int32
              * @description person gender code; absent = unknown, orphan or hidden link
@@ -1479,8 +1477,9 @@ export interface components {
             gender?: number;
             /** Format: int64 */
             id: number;
+            /** @description BCP-47 language of display_name; empty when unrecorded */
+            lang?: string;
             latin?: string;
-            name: components["schemas"]["NameBuckets"];
             /**
              * Format: int64
              * @description same-person group id (public links only; absent = orphan or hidden)
@@ -1575,10 +1574,12 @@ export interface components {
             redirected?: number[] | null;
         };
         SiblingName: {
+            display_name: string;
             /** Format: int64 */
             id: number;
+            /** @description BCP-47 language of display_name; empty when unrecorded */
+            lang?: string;
             latin?: string;
-            name: components["schemas"]["NameBuckets"];
         };
         SourceFreshness: {
             /** @description RFC3339 max(created_at) of that source's anchors */

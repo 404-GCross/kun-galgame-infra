@@ -711,11 +711,7 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 		return dto.PublicName{}, false, nil
 	}
 	p := dto.PublicName{
-		ID:   res.Head.ID,
-		Name: nameBuckets(res.Head.Lang, res.Head.Name),
-		// display_name + lang say plainly what the buckets encode obliquely
-		// (wave 191); the buckets stay until the next breaking window so a
-		// consumer can move over before they go.
+		ID:          res.Head.ID,
 		DisplayName: res.Head.Name,
 		Lang:        res.Head.Lang,
 		Latin:       derefStrPub(res.Head.Latin),
@@ -742,11 +738,7 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 	}
 	for _, sib := range res.Siblings {
 		p.Siblings = append(p.Siblings, dto.PublicSiblingName{
-			ID:   sib.ID,
-			Name: nameBuckets(sib.Lang, sib.Name),
-			// The same row the buckets are derived from, said plainly (wave
-			// 193) — no second query, and the value is identical to whichever
-			// bucket nameBuckets picks.
+			ID:          sib.ID,
 			DisplayName: sib.Name,
 			Lang:        sib.Lang,
 			Latin:       derefStrPub(sib.Latin),
@@ -803,10 +795,7 @@ func (s *PublicService) Character(ctx context.Context, id int64, withWorks, nsfw
 		return dto.PublicCharacter{}, false, nil
 	}
 	ch := dto.PublicCharacter{
-		ID:   res.Head.ID,
-		Name: nameBuckets(res.Head.Lang, res.Head.DisplayName),
-		// display_name + lang say plainly what the buckets encode obliquely
-		// (wave 191); the buckets stay until the next breaking window.
+		ID:          res.Head.ID,
 		DisplayName: res.Head.DisplayName,
 		Lang:        res.Head.Lang,
 		Latin:       derefStrPub(res.Head.Latin),
@@ -1426,19 +1415,6 @@ func claimedBy(site *string, productWorkID *int64, claimState *int16, displayNSF
 	return &dto.PublicClaimedBy{
 		Site: *site, WorkID: *productWorkID, State: state,
 		ContentLimit: model.DisplayLimitKey(site, productWorkID, displayNSFW, contentRating),
-	}
-}
-
-// nameBuckets places a name into its single language bucket by the row's lang
-// (catalog imports default ” to Japanese).
-func nameBuckets(lang, name string) dto.PublicNameBuckets {
-	switch {
-	case strings.HasPrefix(lang, "zh"):
-		return dto.PublicNameBuckets{Zh: name}
-	case strings.HasPrefix(lang, "ja"), lang == "":
-		return dto.PublicNameBuckets{Ja: name}
-	default:
-		return dto.PublicNameBuckets{Other: name}
 	}
 }
 

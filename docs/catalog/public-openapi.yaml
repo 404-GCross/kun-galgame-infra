@@ -818,8 +818,6 @@ components:
             $ref: "#/components/schemas/PublicLocalizedName"
           description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank
           type: object
-        name:
-          $ref: "#/components/schemas/PublicNameBuckets"
         next_offset:
           format: int64
           type: integer
@@ -843,7 +841,6 @@ components:
             - "null"
       required:
         - id
-        - name
         - display_name
         - aliases
         - localized
@@ -1561,8 +1558,6 @@ components:
             $ref: "#/components/schemas/PublicLocalizedName"
           description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank
           type: object
-        name:
-          $ref: "#/components/schemas/PublicNameBuckets"
         next_offset:
           format: int64
           type: integer
@@ -1586,7 +1581,6 @@ components:
             - "null"
       required:
         - id
-        - name
         - display_name
         - localized
         - siblings
@@ -1595,16 +1589,6 @@ components:
         - links
         - intros
         - refs
-      type: object
-    PublicNameBuckets:
-      additionalProperties: false
-      properties:
-        ja:
-          type: string
-        other:
-          type: string
-        zh:
-          type: string
       type: object
     PublicNameCredit:
       additionalProperties: false
@@ -2147,11 +2131,8 @@ components:
           type: string
         latin:
           type: string
-        name:
-          $ref: "#/components/schemas/PublicNameBuckets"
       required:
         - id
-        - name
         - display_name
       type: object
     PublicStatsEntities:

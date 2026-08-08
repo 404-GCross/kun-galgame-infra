@@ -611,9 +611,10 @@ func (s *S2SServer) nameWorks(ctx context.Context, in *nameWorksInput) (*nameWor
 	}
 	resp := dto.NameWorksResponse{
 		Name: dto.NameHead{
-			ID:    res.Head.ID,
-			Name:  langBuckets(res.Head.Lang, res.Head.Name),
-			Latin: derefStr(res.Head.Latin),
+			ID:          res.Head.ID,
+			DisplayName: res.Head.Name,
+			Lang:        res.Head.Lang,
+			Latin:       derefStr(res.Head.Latin),
 			// Siblings pre-sized non-nil so no person / no siblings serializes
 			// `[]`, not `null` (docs/proj/16 #3).
 			Siblings: make([]dto.SiblingName, 0, len(res.Siblings)),
@@ -633,7 +634,7 @@ func (s *S2SServer) nameWorks(ctx context.Context, in *nameWorksInput) (*nameWor
 	}
 	for _, sib := range res.Siblings {
 		resp.Name.Siblings = append(resp.Name.Siblings, dto.SiblingName{
-			ID: sib.ID, Name: langBuckets(sib.Lang, sib.Name), Latin: derefStr(sib.Latin),
+			ID: sib.ID, DisplayName: sib.Name, Lang: sib.Lang, Latin: derefStr(sib.Latin),
 		})
 	}
 	for _, w := range res.Works {
@@ -679,7 +680,7 @@ func (s *S2SServer) characterWorks(ctx context.Context, in *characterWorksInput)
 	}
 	resp := dto.CharacterWorksResponse{
 		Character: dto.CharacterHead{
-			ID: res.Head.ID, Name: langBuckets(res.Head.Lang, res.Head.DisplayName), Latin: derefStr(res.Head.Latin),
+			ID: res.Head.ID, DisplayName: res.Head.DisplayName, Lang: res.Head.Lang, Latin: derefStr(res.Head.Latin),
 		},
 		Items: make([]dto.CharacterWorkRow, 0, len(res.Works)),
 		Total: res.Total,
@@ -781,20 +782,6 @@ func pageParams(limit, offset int) (int, int) {
 		offset = 0
 	}
 	return limit, offset
-}
-
-// langBuckets places a name into its single language bucket by the row's lang
-// (mirrors the search index's invariant 1: a name lives in exactly one of
-// ja/zh/other; catalog imports default ” to Japanese).
-func langBuckets(lang, name string) dto.NameBuckets {
-	switch {
-	case strings.HasPrefix(lang, "zh"):
-		return dto.NameBuckets{Zh: name}
-	case strings.HasPrefix(lang, "ja"), lang == "":
-		return dto.NameBuckets{Ja: name}
-	default:
-		return dto.NameBuckets{Other: name}
-	}
 }
 
 func workBriefDTO(b service.WorkBriefRow) dto.WorkBrief {

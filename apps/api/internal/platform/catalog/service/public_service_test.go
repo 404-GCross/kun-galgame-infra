@@ -560,12 +560,9 @@ func TestPublicSiblingNameCarriesDisplayName(t *testing.T) {
 	if s.DisplayName != "織田杏子" {
 		t.Fatalf("sibling display_name = %q, want the name of record", s.DisplayName)
 	}
-	if s.Name.Zh != s.DisplayName {
-		t.Fatalf("display_name %q must equal the populated bucket %+v", s.DisplayName, s.Name)
-	}
-	// The buckets said only "Chinese"; lang says which Chinese.
+	// The retired buckets could say only "Chinese"; lang says which Chinese.
 	if s.Lang != "zh-Hant" {
-		t.Fatalf("sibling lang = %q, want the tag the buckets cannot carry", s.Lang)
+		t.Fatalf("sibling lang = %q, want the tag the buckets could not carry", s.Lang)
 	}
 }
 

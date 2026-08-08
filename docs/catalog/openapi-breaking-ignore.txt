@@ -41,3 +41,20 @@ in API POST /api/v1/catalog/edit/proposals/{id}/withdraw api path removed withou
 in API GET /api/v1/catalog/edit/schema/{entity_type} api path removed without deprecation
 in API POST /api/v1/catalog/works/submit api path removed without deprecation
 in API POST /api/v1/catalog/works/{id}/claim-actions/{action} api path removed without deprecation
+
+# Wave 194 (2026-08-08) removes the name{ja,zh,other} buckets from the S2S read
+# face's NameHead / SiblingName / CharacterHead, replacing them with
+# display_name + lang — the same retirement the public face takes in this wave,
+# for the same reason: the buckets look like "this name in three languages" and
+# are in fact one name filed under its own language, so an absent zh key reads
+# as "no Chinese name" when it means nothing of the kind.
+#
+# Unlike the public face this needed no expand step first, because these shapes
+# have ZERO live consumers. A sweep for callers of
+# /api/v1/catalog/{names,characters}/{id}/works found only letmoe, which is not
+# launched and is out of scope, and apps/web's generated catalog-api.ts, a
+# whole-spec type dump no apps/web code calls. Ledger: refs/proj/193 §2.
+
+in API GET /api/v1/catalog/characters/{id}/works removed the required property `data/character/name` from the response with the `200` status
+in API GET /api/v1/catalog/names/{id}/works removed the required property `data/name/name` from the response with the `200` status
+in API GET /api/v1/catalog/names/{id}/works removed the required property `data/name/siblings/items/name` from the response with the `200` status

@@ -284,23 +284,6 @@ type PublicMovedData struct {
 	CurrentID  int64  `json:"current_id"`
 }
 
-// PublicNameBuckets holds an entity display name in exactly ONE language bucket
-// (a credit name / character lives in a single language). Consumers pick by their
-// UI locale.
-//
-// DEPRECATED (wave 191). The shape reads as "this name in three languages" and
-// is in fact "one name, filed under whichever language it happens to be in", so
-// {"ja": "…"} with no zh key says nothing about whether a Chinese name exists —
-// yet every consumer reads it as "there is none". Use display_name + lang for
-// the name of record and localized[] for the per-locale renderings; both are
-// present on the same records from this wave on. The buckets are retired in the
-// next spec-breaking window.
-type PublicNameBuckets struct {
-	Ja    string `json:"ja,omitempty"`
-	Zh    string `json:"zh,omitempty"`
-	Other string `json:"other,omitempty"`
-}
-
 // PublicLocalizedName is an entity's PREFERRED name for one locale — the value
 // a consumer renders when its UI is in that language.
 //
@@ -359,11 +342,10 @@ type PublicLocalizedName struct {
 // query per sibling, and a sibling is a LINK to a record that carries its own
 // full localized map: a consumer that needs the reader's locale follows the id.
 type PublicSiblingName struct {
-	ID          int64             `json:"id"`
-	Name        PublicNameBuckets `json:"name"`
-	DisplayName string            `json:"display_name"`
-	Lang        string            `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
-	Latin       string            `json:"latin,omitempty"`
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Lang        string `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
+	Latin       string `json:"latin,omitempty"`
 }
 
 // PublicNameRole is one role a credited name holds on a work (with the voiced
@@ -386,11 +368,10 @@ type PublicNameCredit struct {
 // grouping (person_id + public siblings) via the existing link-visibility
 // doctrine. credits are include-gated + keyset-less offset paginated.
 type PublicName struct {
-	ID   int64             `json:"id"`
-	Name PublicNameBuckets `json:"name"`
-	// DisplayName + Lang are the name of record and its own language tag (wave
-	// 191) — the honest form of what Name encodes awkwardly. DisplayName is
-	// never empty; Lang is empty when the source never declared one.
+	ID int64 `json:"id"`
+	// DisplayName + Lang are the name of record and its own language tag.
+	// DisplayName is never empty; Lang is empty when the source never declared
+	// one.
 	DisplayName string `json:"display_name"`
 	Lang        string `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
 	// Localized is the per-locale rendering map (wave 191). Always present.
@@ -466,10 +447,8 @@ type PublicCharacterWork struct {
 // PublicCharacter is the frozen v1 character record (GET
 // /v1/catalog/characters/{id}). works (appears-in) are include-gated.
 type PublicCharacter struct {
-	ID   int64             `json:"id"`
-	Name PublicNameBuckets `json:"name"`
-	// DisplayName + Lang are the name of record and its own language tag (wave
-	// 191), the honest form of what Name encodes awkwardly.
+	ID int64 `json:"id"`
+	// DisplayName + Lang are the name of record and its own language tag.
 	DisplayName string `json:"display_name"`
 	Lang        string `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
 	// Aliases are this character's alternate spellings (catalog_character_alias)

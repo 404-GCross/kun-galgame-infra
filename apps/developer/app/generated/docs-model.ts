@@ -1929,25 +1929,6 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
-                            "name": "name",
-                            "required": true,
-                            "type": "object",
-                            "children": [
-                              {
-                                "name": "ja",
-                                "type": "string"
-                              },
-                              {
-                                "name": "other",
-                                "type": "string"
-                              },
-                              {
-                                "name": "zh",
-                                "type": "string"
-                              }
-                            ]
-                          },
-                          {
                             "name": "next_offset",
                             "format": "int64",
                             "type": "integer"
@@ -3236,25 +3217,6 @@ export const docsModel: DocsModel = {
                                 }
                               },
                               {
-                                "name": "name",
-                                "required": true,
-                                "type": "object",
-                                "children": [
-                                  {
-                                    "name": "ja",
-                                    "type": "string"
-                                  },
-                                  {
-                                    "name": "other",
-                                    "type": "string"
-                                  },
-                                  {
-                                    "name": "zh",
-                                    "type": "string"
-                                  }
-                                ]
-                              },
-                              {
                                 "name": "next_offset",
                                 "format": "int64",
                                 "type": "integer"
@@ -3939,25 +3901,6 @@ export const docsModel: DocsModel = {
                                 }
                               },
                               {
-                                "name": "name",
-                                "required": true,
-                                "type": "object",
-                                "children": [
-                                  {
-                                    "name": "ja",
-                                    "type": "string"
-                                  },
-                                  {
-                                    "name": "other",
-                                    "type": "string"
-                                  },
-                                  {
-                                    "name": "zh",
-                                    "type": "string"
-                                  }
-                                ]
-                              },
-                              {
                                 "name": "next_offset",
                                 "format": "int64",
                                 "type": "integer"
@@ -4021,25 +3964,6 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "latin",
                                       "type": "string"
-                                    },
-                                    {
-                                      "name": "name",
-                                      "required": true,
-                                      "type": "object",
-                                      "children": [
-                                        {
-                                          "name": "ja",
-                                          "type": "string"
-                                        },
-                                        {
-                                          "name": "other",
-                                          "type": "string"
-                                        },
-                                        {
-                                          "name": "zh",
-                                          "type": "string"
-                                        }
-                                      ]
                                     }
                                   ]
                                 }
@@ -4296,25 +4220,6 @@ export const docsModel: DocsModel = {
                                           }
                                         ]
                                       }
-                                    },
-                                    {
-                                      "name": "name",
-                                      "required": true,
-                                      "type": "object",
-                                      "children": [
-                                        {
-                                          "name": "ja",
-                                          "type": "string"
-                                        },
-                                        {
-                                          "name": "other",
-                                          "type": "string"
-                                        },
-                                        {
-                                          "name": "zh",
-                                          "type": "string"
-                                        }
-                                      ]
                                     },
                                     {
                                       "name": "next_offset",
@@ -5006,25 +4911,6 @@ export const docsModel: DocsModel = {
                                       }
                                     },
                                     {
-                                      "name": "name",
-                                      "required": true,
-                                      "type": "object",
-                                      "children": [
-                                        {
-                                          "name": "ja",
-                                          "type": "string"
-                                        },
-                                        {
-                                          "name": "other",
-                                          "type": "string"
-                                        },
-                                        {
-                                          "name": "zh",
-                                          "type": "string"
-                                        }
-                                      ]
-                                    },
-                                    {
                                       "name": "next_offset",
                                       "format": "int64",
                                       "type": "integer"
@@ -5088,25 +4974,6 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "latin",
                                             "type": "string"
-                                          },
-                                          {
-                                            "name": "name",
-                                            "required": true,
-                                            "type": "object",
-                                            "children": [
-                                              {
-                                                "name": "ja",
-                                                "type": "string"
-                                              },
-                                              {
-                                                "name": "other",
-                                                "type": "string"
-                                              },
-                                              {
-                                                "name": "zh",
-                                                "type": "string"
-                                              }
-                                            ]
                                           }
                                         ]
                                       }
@@ -5510,25 +5377,6 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
-                            "name": "name",
-                            "required": true,
-                            "type": "object",
-                            "children": [
-                              {
-                                "name": "ja",
-                                "type": "string"
-                              },
-                              {
-                                "name": "other",
-                                "type": "string"
-                              },
-                              {
-                                "name": "zh",
-                                "type": "string"
-                              }
-                            ]
-                          },
-                          {
                             "name": "next_offset",
                             "format": "int64",
                             "type": "integer"
@@ -5592,25 +5440,6 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "latin",
                                   "type": "string"
-                                },
-                                {
-                                  "name": "name",
-                                  "required": true,
-                                  "type": "object",
-                                  "children": [
-                                    {
-                                      "name": "ja",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "name": "other",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "name": "zh",
-                                      "type": "string"
-                                    }
-                                  ]
                                 }
                               ]
                             }

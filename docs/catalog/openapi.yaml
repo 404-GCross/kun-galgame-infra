@@ -196,16 +196,19 @@ components:
     CharacterHead:
       additionalProperties: false
       properties:
+        display_name:
+          type: string
         id:
           format: int64
           type: integer
+        lang:
+          description: BCP-47 language of display_name; empty when unrecorded
+          type: string
         latin:
           type: string
-        name:
-          $ref: "#/components/schemas/NameBuckets"
       required:
         - id
-        - name
+        - display_name
       type: object
     CharacterTrait:
       additionalProperties: false
@@ -1749,16 +1752,6 @@ components:
         - total
         - items
       type: object
-    NameBuckets:
-      additionalProperties: false
-      properties:
-        ja:
-          type: string
-        other:
-          type: string
-        zh:
-          type: string
-      type: object
     NameHead:
       additionalProperties: false
       properties:
@@ -1774,6 +1767,8 @@ components:
           description: fuzzy birth date, year; absent = not recorded at this precision
           format: int32
           type: integer
+        display_name:
+          type: string
         gender:
           description: person gender code; absent = unknown, orphan or hidden link
           format: int32
@@ -1781,10 +1776,11 @@ components:
         id:
           format: int64
           type: integer
+        lang:
+          description: BCP-47 language of display_name; empty when unrecorded
+          type: string
         latin:
           type: string
-        name:
-          $ref: "#/components/schemas/NameBuckets"
         person_id:
           description: same-person group id (public links only; absent = orphan or hidden)
           format: int64
@@ -1801,7 +1797,7 @@ components:
             - "null"
       required:
         - id
-        - name
+        - display_name
         - siblings
         - photo_hash
       type: object
@@ -2013,16 +2009,19 @@ components:
     SiblingName:
       additionalProperties: false
       properties:
+        display_name:
+          type: string
         id:
           format: int64
           type: integer
+        lang:
+          description: BCP-47 language of display_name; empty when unrecorded
+          type: string
         latin:
           type: string
-        name:
-          $ref: "#/components/schemas/NameBuckets"
       required:
         - id
-        - name
+        - display_name
       type: object
     SourceFreshness:
       additionalProperties: false

@@ -53,3 +53,36 @@ in API GET /v1/catalog/tags/{id} media type `application/problem+json` was chang
 in API GET /v1/catalog/works media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
 in API GET /v1/catalog/works/search media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
 in API GET /v1/catalog/works/{id} media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+
+# Wave 194 (2026-08-08) removes the name{ja,zh,other} buckets from PublicName,
+# PublicCharacter and PublicSiblingName — and therefore from names/{id},
+# characters/{id}, lookup and lookup/batch, which embed those records.
+#
+# The shape was a false trilingual. It never held three names: the registry
+# files the ONE name of record into whichever bucket its own language falls in,
+# so at most one was ever populated. What that could not express is the case
+# that mattered — a Japanese name WITH a Chinese rendering on file published
+# {"ja": "…"} and no zh key, which every consumer reads as "no Chinese name
+# exists" while the rendering sat unreachable in catalog_name_alias.
+#
+# The replacement shipped first and is live: display_name + lang (the name of
+# record and its own BCP-47 tag) plus localized{} (per-locale renderings, keyed
+# canonically), waves 191/192/193. Contract rule:
+# localized[locale] ?? display_name ?? latin.
+#
+# Every consumer was measured, not assumed. forum was the only repo decoding
+# these buckets; it adopted in 79fd3cc0 and is deployed — verified in production
+# on 2026-08-08, where GET /api/galgame-staff/74 now answers name_zh "伊东杂音",
+# a value the buckets could never publish. patch decodes no buckets at all: its
+# lookup DTO reads only work + claimed_by. letmoe is not launched and is out of
+# scope. Rationale and the migration note: docs/developer-platform/02-public-api.md §3.7.
+
+in API GET /v1/catalog/characters/{id} removed the required property `data/name` from the response with the `200` status
+in API GET /v1/catalog/lookup removed the required property `data/character/name` from the response with the `200` status
+in API GET /v1/catalog/lookup removed the required property `data/name/name` from the response with the `200` status
+in API GET /v1/catalog/lookup removed the required property `data/name/siblings/items/name` from the response with the `200` status
+in API POST /v1/catalog/lookup/batch removed the required property `data/items/items/character/name` from the response with the `200` status
+in API POST /v1/catalog/lookup/batch removed the required property `data/items/items/name/name` from the response with the `200` status
+in API POST /v1/catalog/lookup/batch removed the required property `data/items/items/name/siblings/items/name` from the response with the `200` status
+in API GET /v1/catalog/names/{id} removed the required property `data/name` from the response with the `200` status
+in API GET /v1/catalog/names/{id} removed the required property `data/siblings/items/name` from the response with the `200` status
