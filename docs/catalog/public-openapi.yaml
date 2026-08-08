@@ -1038,6 +1038,11 @@ components:
         id:
           format: int64
           type: integer
+        label:
+          type: string
+        label_id:
+          format: int64
+          type: integer
         lang:
           type: string
         latin:

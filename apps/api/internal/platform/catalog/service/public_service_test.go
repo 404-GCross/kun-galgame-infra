@@ -466,10 +466,52 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 	if len(rec.Credits) != 1 || len(rec.Credits[0].Credits) != 1 || rec.Credits[0].Credits[0].ID != name.ID {
 		t.Fatalf("credits projection: %+v", rec.Credits)
 	}
+	// A purely personal credit carries no signer — the pair stays absent rather
+	// than shipping a zero id.
+	if rec.Credits[0].Credits[0].LabelID != 0 || rec.Credits[0].Credits[0].Label != "" {
+		t.Fatalf("personal credit must carry no label: %+v", rec.Credits[0].Credits[0])
+	}
+
 	// The bare record (no include) omits credits entirely.
 	bare, _, _ := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false, 0)
 	if bare.Credits != nil {
 		t.Fatalf("bare record must omit credits: %+v", bare.Credits)
+	}
+}
+
+// TestPublicWorkCreditsLabelSigner pins the organizational signer on
+// label-natured credits: the character_id/character pair's counterpart for
+// organizations, addressable via /v1/catalog/labels/{id}.
+func TestPublicWorkCreditsLabelSigner(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "signed")
+	name := createCreditName(t, nil, "Key")
+	label := &model.CatalogLabel{DisplayName: "Visual Arts", Kind: model.LabelKindGameBrand}
+	if err := testDB.Create(label).Error; err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+	c := createCredit(t, w.ID, name.ID, seededRoleID(t), nil)
+	if err := testDB.Model(c).Update("label_id", label.ID).Error; err != nil {
+		t.Fatalf("set signer: %v", err)
+	}
+
+	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{Credits: true}, false, 0)
+	if err != nil || !found {
+		t.Fatalf("detail: found=%v err=%v", found, err)
+	}
+	if len(rec.Credits) != 1 || len(rec.Credits[0].Credits) != 1 {
+		t.Fatalf("credits projection: %+v", rec.Credits)
+	}
+	item := rec.Credits[0].Credits[0]
+	if item.LabelID != label.ID || item.Label != "Visual Arts" {
+		t.Fatalf("signer must reach the wire with its id and name: %+v", item)
+	}
+	// The credited name is NOT replaced by the signer — they coexist.
+	if item.ID != name.ID {
+		t.Fatalf("signer must not displace the credited name: %+v", item)
 	}
 }
 

@@ -39,6 +39,15 @@ type CatalogCredit struct {
 	// NULL = credit applies to the work.
 	ReleaseID *int64 `json:"release_id"`
 	// Spoiler uses the Spoiler* constants (per-edge spoiler level).
+	//
+	// UNPOPULATED, and the read path does not gate on it: every row in prod is
+	// 0, so ReadService.WorkCredits neither selects nor filters the column, and
+	// the public face publishes credits whole at the default spoilers=0 posture
+	// (unlike tags and character traits, which ARE capped). That is safe only
+	// for as long as the column stays zero. Whichever ingest wave first writes
+	// a non-zero spoiler here MUST add the cap to WorkCredits in the same
+	// change — otherwise a secret casting credit ships to callers who asked for
+	// the safe view, silently.
 	Spoiler int16  `gorm:"not null" json:"spoiler"`
 	Note    string `gorm:"not null;default:''" json:"note"`
 	// SourceID is row-level provenance; NULL = user-curated.

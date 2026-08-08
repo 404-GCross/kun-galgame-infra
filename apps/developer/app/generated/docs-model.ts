@@ -9030,6 +9030,15 @@ export const docsModel: DocsModel = {
                                         "type": "integer"
                                       },
                                       {
+                                        "name": "label",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "label_id",
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
                                         "name": "lang",
                                         "required": true,
                                         "type": "string"

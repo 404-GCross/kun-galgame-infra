@@ -104,6 +104,16 @@ type PublicCreditItem struct {
 	Latin       string `json:"latin,omitempty"`
 	CharacterID int64  `json:"character_id,omitempty"`
 	Character   string `json:"character,omitempty"`
+	// LabelID / Label are the organizational signer on label-natured roles
+	// (developer / publisher), addressable via /v1/catalog/labels/{id} — the
+	// character_id / character pair one row up, for organizations. Absent on a
+	// purely personal credit, which is the overwhelming majority.
+	//
+	// Not a 裁定-7 exception: that whitelist strips note / provenance /
+	// audit-class fields. A signer is neither — it is the same class of
+	// addressable identity pointer as the character.
+	LabelID int64  `json:"label_id,omitempty"`
+	Label   string `json:"label,omitempty"`
 }
 
 // PublicCreditGroup is all credits sharing one role.

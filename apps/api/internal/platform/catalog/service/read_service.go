@@ -1477,8 +1477,14 @@ type CreditRow struct {
 	Latin        *string
 	CharacterID  *int64
 	CharacterNM  *string
-	Note         string
-	SourceKey    *string
+	// LabelID / LabelNM are the organizational signer on label-natured roles
+	// (developer / publisher credits), which coexists with the credited name
+	// rather than replacing it. NULL on the ~98% of rows that are purely
+	// personal credits.
+	LabelID   *int64
+	LabelNM   *string
+	Note      string
+	SourceKey *string
 }
 
 // WorkCredits loads a work's credits ordered by role then source then name.
@@ -1489,11 +1495,13 @@ func (s *ReadService) WorkCredits(ctx context.Context, workID int64) ([]CreditRo
 	err := s.db.WithContext(ctx).Raw(`SELECT
 		c.role_id, ro.key AS role_key, ro.name_cn AS role_name_cn, ro.name_ja AS role_name_ja,
 		cn.id AS credit_name_id, cn.name, cn.lang, cn.latin,
-		c.character_id, ch.display_name AS character_nm, c.note, src.key AS source_key
+		c.character_id, ch.display_name AS character_nm,
+		c.label_id, la.display_name AS label_nm, c.note, src.key AS source_key
 		FROM catalog_credit c
 		JOIN catalog_role ro ON ro.id = c.role_id
 		JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
 		LEFT JOIN catalog_character ch ON ch.id = c.character_id
+		LEFT JOIN catalog_label la ON la.id = c.label_id
 		LEFT JOIN catalog_source src ON src.id = c.source_id
 		WHERE c.work_id = ?
 		ORDER BY c.role_id ASC, src.key ASC NULLS LAST, cn.id ASC`, workID).Scan(&rows).Error

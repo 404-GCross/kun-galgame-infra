@@ -651,6 +651,12 @@ func (s *PublicService) workCredits(ctx context.Context, workID int64) ([]dto.Pu
 		if r.CharacterNM != nil {
 			item.Character = *r.CharacterNM
 		}
+		if r.LabelID != nil {
+			item.LabelID = *r.LabelID
+		}
+		if r.LabelNM != nil {
+			item.Label = *r.LabelNM
+		}
 		cur.Credits = append(cur.Credits, item)
 	}
 	return groups, nil

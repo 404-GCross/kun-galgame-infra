@@ -197,6 +197,20 @@ catalog 的 release 日期是**部分 ISO**:`YYYY` / `YYYY-MM` / `YYYY-MM-DD`,�
 - 消费端解析建议:按长度分派(4 / 7 / 10),**不要**用 `Date.parse` 后取字段——那会把 `"2021"` 悄悄变成 1 月 1 日,正是本表要避免的失真。
 - **日历三桶与本表同一个分类锚**(A2-1c):`calendar` / `calendar/pending` / `calendar/tba` 的桶籍就是由这里的作品级 `release_date` 决定的——长度 10 / 7 落月桶、长度 4 落 pending 桶、`null` 且有 release 行落 tba、`null` 且无 release 行不进任何桶。所以一行的**桶籍与它印出来的 `release_date` 永不打架**。
 
+**②b credits 的组织署名者(wave 189 加法)**
+
+`works/{id}?include=credits` 的每个 credit 槽新增 `label_id` + `label`(厂牌显示名),**语义与既有的 `character_id` + `character` 完全对称**——后者是"这条 credit 演的角色",前者是"这条 credit 的组织署名者"(developer / publisher 一类**厂牌性质**的 role)。可寻址:`label_id` 直接进 `/v1/catalog/labels/{id}`。
+
+- **署名者不取代被署名的名义**:两者共存(模型里 `label_id` 与 `credit_name_id` 并列),纯人物 credit 无署名者时两键**双双缺席**,不出 `0`。
+- 覆盖率约 2%(101 万 credit 行中 21,419 行带 `label_id`),故绝大多数槽形状与本波前逐字节相同。
+- **不违反裁定 7**:该白名单剔除的是 `note` / provenance / 审计类字段;署名者与角色同属**可寻址身份指针**,不是其中任何一类。
+
+> **仍被裁定 7 挡住、待裁定反转的两键**(见 `refs/plans/05-open-api/03-catalog-public-face.md` 第 7 条):
+> - `note`(101 万行中 185,581 行非空,18.3%)——credit 的说明文字(如"as 某某"、担当范围),S2S 面已出且 forum BFF 在消费。
+> - `source`(100% 覆盖)——credit 的来源归因。**注意此键与全面其余部分已不自洽**:intros / links / screenshots / ratings 全部带 `source` 归因,「响应携带 attribution 归源」本身就是本平台的对外卖点;裁定 7 写于 Phase-1,早于归因成为产品特性。
+>
+> 两键都是**纯加法**,反转裁定即可落地;此处不擅自反转,留作裁定项。
+
 **③ intro `machine` 旗标语义**
 
 | `machine` | 含义 | 消费端建议 |
