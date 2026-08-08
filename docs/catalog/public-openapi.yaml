@@ -483,64 +483,25 @@ components:
         - code
         - message
       type: object
-    ErrorDetail:
-      additionalProperties: false
-      properties:
-        location:
-          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
-          type: string
-        message:
-          description: Error message text
-          type: string
-        value:
-          description: The value at the given location
-      type: object
-    ErrorModel:
+    HouseError:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - https://example.com/ErrorModel.json
+            - https://example.com/HouseError.json
           format: uri
           readOnly: true
           type: string
-        detail:
-          description: A human-readable explanation specific to this occurrence of the problem.
-          examples:
-            - Property foo is required but is missing.
-          type: string
-        errors:
-          description: Optional list of individual error details
-          items:
-            $ref: "#/components/schemas/ErrorDetail"
-          type:
-            - array
-            - "null"
-        instance:
-          description: A URI reference that identifies the specific occurrence of the problem.
-          examples:
-            - https://example.com/error-log/abc123
-          format: uri
-          type: string
-        status:
-          description: HTTP status code
-          examples:
-            - 400
+        code:
           format: int64
           type: integer
-        title:
-          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
-          examples:
-            - Bad Request
+        data: {}
+        message:
           type: string
-        type:
-          default: about:blank
-          description: A URI reference to human-readable documentation for the error.
-          examples:
-            - https://example.com/errors/example
-          format: uri
-          type: string
+      required:
+        - code
+        - message
       type: object
     PublicCalendarData:
       additionalProperties: false
@@ -2662,9 +2623,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Release calendar, one ISO month (date ASC keyset); default = the current Asia/Tokyo month
       tags:
@@ -2733,9 +2694,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Release calendar, one year's month-still-unknown bucket (id ASC keyset); default = the current Asia/Tokyo year
       tags:
@@ -2797,9 +2758,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Release calendar, the global announced-but-undated bucket (id ASC keyset)
       tags:
@@ -2842,9 +2803,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Incremental works changes feed ((updated,id) keyset; next_cursor always present — keep polling it for new rows)
       tags:
@@ -2908,9 +2869,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Character identity; include=works attaches the works it appears in with voice names
       tags:
@@ -2951,9 +2912,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Keyset engine browse lane (id ASC); each row carries an nsfw-aware work_count
       tags:
@@ -2986,9 +2947,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Engine record: name + nsfw-aware work_count + exact cross-source refs"
       tags:
@@ -3050,9 +3011,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Keyset label browse lane (id ASC); filter by kind, each row carries an nsfw-aware work_count
       tags:
@@ -3108,9 +3069,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Label (brand / circle / publisher …) identity; include=works attaches attributed works
       tags:
@@ -3144,9 +3105,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Corporate-structure graph around a label: the connected family (parents, subsidiaries, imprints, spin-offs, succession) in one call"
       tags:
@@ -3198,9 +3159,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Reverse-lookup an external id via an EXACT anchor (killer feature); type=work|name|character|label, 404 on miss/hidden
       tags:
@@ -3223,9 +3184,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Batch external-id reverse-lookup (≤100 pairs, per-pair type); misses return null blocks in order
       tags:
@@ -3281,9 +3242,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Credited identity (same-person grouping via public links); include=credits attaches works + roles
       tags:
@@ -3323,9 +3284,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Keyset feed of id-convergence (merge) events for stored-id cleanup; filter by entity_type
       tags:
@@ -3442,9 +3403,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Release-grain new-releases timeline: every dated release row, ports and re-editions included (date keyset)"
       tags:
@@ -3467,9 +3428,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Batch old id → canonical id (redirect flattening) for a given entity_type
       tags:
@@ -3534,9 +3495,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Entity autocomplete over names / characters / labels / works / tags, projected to public briefs
       tags:
@@ -3584,9 +3545,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Keyset series browse lane (id ASC); each row carries an nsfw-aware work_count
       tags:
@@ -3643,9 +3604,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Series record: identity + source anchor + intros; include=works attaches its member works in reading order"
       tags:
@@ -3663,9 +3624,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Slim catalogue counts: LIVE works per medium + the identity-family totals"
       tags:
@@ -3734,9 +3695,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Keyset canonical-tag browse lane (id ASC); filter by tier / kind, each row carries an nsfw-aware work_count
       tags:
@@ -3792,9 +3753,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Canonical tag (cross-source vocabulary): name / tier / kind / intros; include=works attaches the tagged works"
       tags:
@@ -3962,9 +3923,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Keyset works browse lane: the LIVE galgame registry set (claimed + bodyless) with conjunctive filters; sort=id|updated"
       tags:
@@ -4134,9 +4095,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Works product search: free text + the works-list filter set, page-paginated, with opt-in facets and five sort lanes"
       tags:
@@ -4184,9 +4145,9 @@ paths:
           description: OK
         default:
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Frozen work record: identity + titles + exact cross-source refs + claim pointer; include=relations,credits"
       tags:

@@ -349,6 +349,17 @@ type publicReleasesOutput struct {
 // to derive the frozen public OpenAPI. Handlers are stubs (Fiber serves the live
 // paths); this only shapes the spec.
 func SetupCatalogPublicSpec(app *fiber.App) huma.API {
+	// huma.NewError is a package-level var, and huma derives every operation's
+	// error schema + content type from whatever it returns AT REGISTRATION TIME.
+	// Every runtime mount of this service swaps it for the house envelope
+	// (admin.go, s2s.go, user_cover_votes.go), so a binary answers errors with
+	// {code,message,data} as application/json. This spec-only path used to be the
+	// one caller that skipped the swap, and so froze Huma's stock RFC7807
+	// ErrorModel as application/problem+json into the published contract — a
+	// document that disagreed with the service on all 27 error responses, and
+	// with it every SDK generated from it. Install before the Registers below.
+	InstallErrorEnvelope()
+
 	cfg := huma.DefaultConfig("NextMoe Open API — Catalog", "1.0.0")
 	cfg.OpenAPIPath = ""
 	cfg.DocsPath = ""

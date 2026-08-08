@@ -1,0 +1,55 @@
+# Declared breaking changes for docs/catalog/public-openapi.yaml.
+#
+# oasdiff --err-ignore matches by SUBSTRING: an entry suppresses a breaking
+# change when the entry line CONTAINS oasdiff's own error text verbatim
+# ("in API <METHOD> <path> <description>"), so prose may surround an entry but
+# never interrupt it. Lines that match nothing — this header included — are
+# inert. Removing an entry re-arms the gate for that change.
+#
+# Wave 190 (2026-08-08) corrects the error envelope on all 25 operations:
+# application/problem+json + RFC7807 ErrorModel became application/json +
+# HouseError {code,message,data}.
+#
+# READ THE DIRECTION CAREFULLY — this is not the service changing. The service
+# has ALWAYS answered errors with the house envelope: huma.NewError is a
+# package-level var, and every runtime mount of catalog swaps it (handler/
+# admin.go, s2s.go, user_cover_votes.go) before registering anything. The one
+# caller that skipped the swap was the spec-only path, SetupCatalogPublicSpec,
+# which therefore froze Huma's stock RFC7807 model into the PUBLISHED contract.
+# So for the whole life of this spec the document has been describing an error
+# body no deployment ever sent, and any client generated from it had its error
+# handling written against a fiction. Proven by diffing the frozen YAML against
+# the spec the production binary serves at /v1/catalog/openapi.json: the error
+# envelope was the ONLY disagreement between them, and it is now gone.
+#
+# oasdiff is right to call it breaking — a consumer that matched on
+# application/problem+json will stop matching. But that consumer was already
+# broken at runtime; what changes here is only that the document stops lying
+# about it. No deploy accompanies this: the served spec is already correct.
+# Rationale and the corrected contract text: docs/developer-platform/02-public-api.md §3.6.
+
+in API GET /v1/catalog/calendar media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/calendar/pending media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/calendar/tba media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/changes media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/characters/{id} media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/engines media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/engines/{id} media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/labels media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/labels/{id} media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/labels/{id}/relation-graph media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/lookup media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API POST /v1/catalog/lookup/batch media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/names/{id} media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/redirects media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/releases media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API POST /v1/catalog/resolve media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/search media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/series media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/series/{id} media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/stats media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/tags media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/tags/{id} media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/works media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/works/search media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`
+in API GET /v1/catalog/works/{id} media type `application/problem+json` was changed to a more general media type `application/json` for the response status `default`

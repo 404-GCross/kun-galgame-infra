@@ -544,57 +544,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -1128,57 +1089,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -1705,57 +1627,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -1864,57 +1747,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -2254,57 +2098,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -2432,57 +2237,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -2600,57 +2366,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -2804,57 +2531,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -3162,57 +2850,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -3349,57 +2998,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -4341,57 +3951,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -5354,57 +4925,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -5782,57 +5314,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -5945,57 +5438,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -6612,57 +6066,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -6751,57 +6166,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -6959,57 +6335,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -7138,57 +6475,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -7441,57 +6739,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -7614,57 +6873,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -7825,57 +7045,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -8090,57 +7271,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -8733,57 +7875,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -9775,57 +8878,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]
@@ -10442,57 +9506,18 @@ export const docsModel: DocsModel = {
                     "type": "object",
                     "children": [
                       {
-                        "name": "detail",
-                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
-                        "type": "string"
-                      },
-                      {
-                        "name": "errors",
-                        "nullable": true,
-                        "doc": "Optional list of individual error details",
-                        "type": "array",
-                        "itemsOf": {
-                          "type": "object",
-                          "children": [
-                            {
-                              "name": "location",
-                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
-                              "type": "string"
-                            },
-                            {
-                              "name": "message",
-                              "doc": "Error message text",
-                              "type": "string"
-                            },
-                            {
-                              "name": "value",
-                              "doc": "The value at the given location",
-                              "type": "object"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "name": "instance",
-                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
-                        "format": "uri",
-                        "type": "string"
-                      },
-                      {
-                        "name": "status",
-                        "doc": "HTTP status code",
+                        "name": "code",
+                        "required": true,
                         "format": "int64",
                         "type": "integer"
                       },
                       {
-                        "name": "title",
-                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-                        "type": "string"
+                        "name": "data",
+                        "type": "object"
                       },
                       {
-                        "name": "type",
-                        "doc": "A URI reference to human-readable documentation for the error.",
-                        "format": "uri",
+                        "name": "message",
+                        "required": true,
                         "type": "string"
                       }
                     ]

@@ -412,6 +412,25 @@ A2-1b 给 **taxonomy 浏览道与其详情面**发了 nsfw 感知的 `work_count
 4. **内部面 = 公开契约的试验缓冲层**:新字段 / 新形状先在内部 S2S / 站点读面消化验证,形状稳定后再投影到公开面冻结。公开面永远是内部契约的**精选滞后投影**,不承载未经内部实战的实验形状——这样绝大多数迭代压力被内部面吸收,公开契约的破坏性变更趋近于零。
 5. **新数据源 = 加键,新媒介 = 加面**:新增第四 / 第五源评分或外部锚,是在 `refs` / `scores` 等**键控对象**上加键(这正是把它们设计成键控对象而非并列标量字段的本意);新增媒介(manga / novel…)是加新面 `/v1/<medium>/*`。两者都是加性演进,天然不触碰既有契约。
 
+### 3.6 错误体 = 房内信封(2026-08-08 wave 190 更正)
+
+公开面的错误响应与生态其余部分同形,**不是** RFC7807:
+
+```
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+
+{"code": 4, "message": "资源不存在"}
+```
+
+`code` 是房内错误码(`pkg/errors`),`message` 人读,可选 `data` 只在错误自带结构化载荷时出现(如认领冲突 409 回带占位方的身份)。**服务从第一天起就是这么答的**——`huma.NewError` 是包级变量,catalog 的每个运行时挂载点(`handler/admin.go`、`s2s.go`、`user_cover_votes.go`)在注册任何 op 之前都会把它换成房内信封。
+
+> **但冻结 spec 一直写的是别的东西。** 唯一漏掉这次替换的调用者恰好是 spec-only 路径 `SetupCatalogPublicSpec`,于是它把 Huma 库存的 RFC7807 `ErrorModel` + `application/problem+json` 冻进了**已发布契约**,25 条 op 全中。也就是说:在此之前,门户文档和任何据此生成的 SDK,其错误处理写的是一个**任何部署都从未发出过的**响应体。
+>
+> 证伪方式是把冻结 YAML 与生产二进制在 `/v1/catalog/openapi.json` 上服务的 spec 逐字段对拍:错误信封是两者**唯一**的分歧,现已消除。
+>
+> 这一条**不走 §3.5 第 3 条的 `/v2` 并行流程**,因为它不是语义变更:线上行为一字未动,变的只是文档不再说谎——把它塞进 12 个月迁移窗口,只会让文档多骗一年。oasdiff 仍按破坏性记账(媒体类型收窄),故在 `docs/catalog/public-openapi-breaking-ignore.txt` 具名声明。**本条不伴随任何部署**:线上 spec 早已是正确的那份。
+
 ---
 
 ## 10. OpenAPI 策略
@@ -420,5 +439,5 @@ v1 设计时"galgame 无 spec"的前提已过时——现状是**两个面都有
 
 - **galgame 面**:读面已 Huma 出谱(条件缓存端点为 spec-only 形态)。公开 `/v1` 投影 = 沿同一管线(`cmd/gen-openapi` 加一个 public 目标)产出**独立的公开 spec**(白名单端点 + `/v1` 前缀 + 公开 DTO),与内部 spec 解耦。
 - **catalog 面**:服务自带 Huma spec(`/openapi.json`)。同法产出公开投影(白名单只读子集)。
-- 产出 `api.nextmoe.dev/v1/catalog/openapi.json`(galgame 面的同名 spec URL 已随该面于 2026-07-30 摘牌,现落 410) → 门户 Scalar 渲染 → 第三方据此生成 SDK(TS 优先,`@kungal/api-*` 发包纪律届时启用)。**✅ spec URL 已上线(2026-07-28;galgame 面那条已于 2026-07-30 随面摘牌,现仅剩 catalog 一条)**:`cmd/catalog` 无鉴权在线服务——boot 时经 `cmd/gen-openapi` 同一 spec-only 管线构建一次(与仓内冻结 Tier-A YAML 恒等,CI 冻结门背书),JSON 渲染,`Cache-Control: public, max-age=3600`;精确 GET 路由先于 `/v1` 键控组注册,故这两条免 key,其余 `/v1/*` 照旧要 key。门户侧为自建文档体验(06c 已弃 Scalar);SDK 生成策略见 [08](./08-downstream-faces-and-sdk.md)。
+- 产出 `api.nextmoe.dev/v1/catalog/openapi.json`(galgame 面的同名 spec URL 已随该面于 2026-07-30 摘牌,现落 410) → 门户 Scalar 渲染 → 第三方据此生成 SDK(TS 优先,`@kungal/api-*` 发包纪律届时启用)。**✅ spec URL 已上线(2026-07-28;galgame 面那条已于 2026-07-30 随面摘牌,现仅剩 catalog 一条)**:`cmd/catalog` 无鉴权在线服务——boot 时经 `cmd/gen-openapi` 同一 spec-only 管线构建一次(与仓内冻结 Tier-A YAML 恒等,CI 冻结门背书——**该"恒等"在 2026-08-08 前并不成立**:线上 boot 路径先挂 admin/s2s、房内错误信封已就位,离线生成路径不挂,于是两份 spec 的错误体一直不同;wave 190 让生成路径自己装信封后才真正恒等,详见 [§3.6](#36-错误体--房内信封2026-08-08-wave-190-更正)。冻结门只比 spec 与 spec,照不出这类"生成器与运行时不同源"的偏差),JSON 渲染,`Cache-Control: public, max-age=3600`;精确 GET 路由先于 `/v1` 键控组注册,故这两条免 key,其余 `/v1/*` 照旧要 key。门户侧为自建文档体验(06c 已弃 Scalar);SDK 生成策略见 [08](./08-downstream-faces-and-sdk.md)。
 - 公开 spec 纳入 `docs:verify` + oasdiff 破坏性门,升级为 **Tier-A 对外契约**(在 kungal-docs 登记)。
