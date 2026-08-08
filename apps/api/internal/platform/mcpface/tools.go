@@ -10,11 +10,12 @@ import (
 // read-only, idempotent GET against an open-world external registry.
 var readOnly = &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true}
 
-// registerTools installs the twenty tools on the server (M1 five surviving +
+// registerTools installs the twenty-two tools on the server (M1 five surviving +
 // catalog_name_get + the canonical-W1 trio: works-list / changes / tag + the
 // eight A2 read ops: works search, the three calendar buckets, the three
 // taxonomy browse lanes and engine detail + the wave-189 trio: the series
-// browse/detail pair and catalogue stats). Names are unversioned
+// browse/detail pair and catalogue stats + the wave-196 pair: the label
+// relation graph and the release-grain timeline). Names are unversioned
 // (the /v1 contract is versioned upstream); descriptions are English and written
 // for the calling LLM, with the lookup-vs-search division spelled out.
 //
@@ -165,6 +166,20 @@ func registerTools(s *mcp.Server, up *Upstream) {
 		Description: descCatalogStats,
 		Annotations: readOnly,
 	}, t.catalogStats)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_label_relation_graph",
+		Title:       "Corporate family around a label",
+		Description: descCatalogLabelRelationGraph,
+		Annotations: readOnly,
+	}, t.catalogLabelRelationGraph)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_releases",
+		Title:       "Release-grain timeline",
+		Description: descCatalogReleases,
+		Annotations: readOnly,
+	}, t.catalogReleases)
 }
 
 // ─────────────────────────── catalog face ───────────────────────────
@@ -632,4 +647,70 @@ type catalogStatsInput struct{}
 
 func (t *tools) catalogStats(ctx context.Context, req *mcp.CallToolRequest, _ catalogStatsInput) (*mcp.CallToolResult, any, error) {
 	return t.run(ctx, req, "catalog_stats", "/v1/catalog/stats", newQuery())
+}
+
+const descCatalogLabelRelationGraph = "Fetch the whole corporate family around one brand/label in a single call: parents, " +
+	"subsidiaries, imprints, spin-offs and succession, as nodes[] + edges[]. Use this — not repeated catalog_label_get " +
+	"calls — whenever the question is structural (\"which brands belong to X\", \"who owns Y\", \"is A related to B\"): " +
+	"catalog_label_get.relations[] is only ONE HOP from the label you asked about, so reconstructing a family from it " +
+	"means guessing which neighbour to walk next. The walk is bounded server-side at depth 4 and 60 nodes, breadth-first " +
+	"from the seed, so a truncated answer keeps the neighbourhood NEAREST the label you asked for; there is no paging. " +
+	"nodes[0] is always the seed. A label with no relations is a one-node, zero-edge graph — that is the answer \"it " +
+	"stands alone\", not an error. EDGE READING: {from, to, relation} means \"`to` is the `relation` of `from`\"."
+
+type catalogLabelRelationGraphInput struct {
+	ID   int  `json:"id" jsonschema:"The catalog label id to grow the graph from (required)."`
+	Nsfw bool `json:"nsfw,omitempty" jsonschema:"true = count r18 works in every node's work_count (default false = excluded, matching an sfw catalog_label_get)."`
+}
+
+func (t *tools) catalogLabelRelationGraph(ctx context.Context, req *mcp.CallToolRequest, in catalogLabelRelationGraphInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setBool(q, "nsfw", in.Nsfw)
+	return t.run(ctx, req, "catalog_label_relation_graph",
+		pathID("/v1/catalog/labels", in.ID)+"/relation-graph", q)
+}
+
+const descCatalogReleases = "Query individual RELEASES — the calendar one grain down, and the tool for any question that " +
+	"names a platform, a language, an edition or a date RANGE. catalog_calendar places a work in the month of its " +
+	"EARLIEST release and shows it once, so a Switch port, a Steam re-issue or a Chinese localisation of an older title " +
+	"is invisible there by construction; here every release row is its own dated item. is_first tells the two apart: " +
+	"true = the work genuinely coming out, false = a later edition. Filter by date_from/date_to, platform, lang " +
+	"(the RELEASE's language) vs olang (the parent WORK's original language), kind and official. Note two defaults that " +
+	"silently narrow the feed: kind defaults to default,digital,physical (demos and translation patches are EXCLUDED — " +
+	"pass kind=default,digital,physical,trial,patch for everything, or kind=patch to watch localisations land), and olang " +
+	"defaults to the ja + zh* family (pass olang=all to switch it off). Only releases dated to at least the MONTH appear; " +
+	"year-only and undated ones live in catalog_calendar_pending and catalog_calendar_tba."
+
+type catalogReleasesInput struct {
+	Sort         string `json:"sort,omitempty" jsonschema:"date_desc (default, newest first) or date_asc. A cursor minted in one direction is refused in the other."`
+	DateFrom     string `json:"date_from,omitempty" jsonschema:"YYYY-MM-DD inclusive lower bound on the release's own date. A month-precision release sits at its month's START, so date_from=2024-06-01 excludes a 2024-06 release while 2024-05-31 includes it. Malformed = 400."`
+	DateTo       string `json:"date_to,omitempty" jsonschema:"YYYY-MM-DD inclusive upper bound, same precision rule as date_from. Malformed = 400."`
+	Olang        string `json:"olang,omitempty" jsonschema:"Original language of the PARENT WORK: comma-separated BCP-47 (ja, zh-Hans, en, …) or all. Default = the ja + zh* family. Open vocabulary — an unknown value yields an empty feed, never a 400."`
+	Lang         string `json:"lang,omitempty" jsonschema:"The RELEASE's own language: comma-separated BCP-47, or all. Default = no gate. Store-SKU lanes record no language of their own and match their work's original language. Open vocabulary."`
+	Kind         string `json:"kind,omitempty" jsonschema:"Comma-separated CLOSED vocabulary: default,digital,physical,trial,patch. DEFAULT (absent) = default,digital,physical only — demos and patches are excluded. Unknown token = 400."`
+	Official     string `json:"official,omitempty" jsonschema:"true drops explicitly-unofficial rows (fan translations, unofficial editions); false selects exactly those. Absent = no gate; a row without the flag counts as official."`
+	Platform     string `json:"platform,omitempty" jsonschema:"vndb platform code (win/and/ios/…) matched against the release's PRIMARY platform. Open vocabulary — an unknown code is an empty feed."`
+	ContentLimit string `json:"content_limit,omitempty" jsonschema:"Comma-separated CLOSED vocabulary sfw,nsfw — the editorial DISPLAY axis on the parent work (not the age rating). Unknown token = 400."`
+	Cursor       string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20); above 100 is clamped."`
+	Nsfw         bool   `json:"nsfw,omitempty" jsonschema:"true = include releases of r18 works (default false = dropped)."`
+	Include      string `json:"include,omitempty" jsonschema:"Comma-separated rich-brief blocks applied to each item's attached WORK: names,intros,labels,ratings,covers,refs. The release's own refs[] are always present."`
+}
+
+func (t *tools) catalogReleases(ctx context.Context, req *mcp.CallToolRequest, in catalogReleasesInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "sort", in.Sort)
+	setStr(q, "date_from", in.DateFrom)
+	setStr(q, "date_to", in.DateTo)
+	setStr(q, "olang", in.Olang)
+	setStr(q, "lang", in.Lang)
+	setStr(q, "kind", in.Kind)
+	setStr(q, "official", in.Official)
+	setStr(q, "platform", in.Platform)
+	setStr(q, "content_limit", in.ContentLimit)
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	setStr(q, "include", in.Include)
+	return t.run(ctx, req, "catalog_releases", "/v1/catalog/releases", q)
 }

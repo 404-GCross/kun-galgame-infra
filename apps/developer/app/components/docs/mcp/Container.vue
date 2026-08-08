@@ -10,7 +10,7 @@ useSeoMeta({
     '把 NextMoe 开放 API 作为 MCP（Model Context Protocol）server 接入 AI 助手：端点、密钥配置，以及 Claude Code / Claude Desktop / 通用 MCP 客户端三段配置示例。'
 })
 
-// The twenty tools (mirrors apps/api/internal/platform/mcpface). Each maps
+// The twenty-two tools (mirrors apps/api/internal/platform/mcpface). Each maps
 // 1:1 to a public /v1 endpoint; lookup/get take an id, search takes natural
 // language, _list browses a vocabulary to discover the ids the filters take.
 // R18 is hidden by default (nsfw=true opts in). The two galgame_* tools retired
@@ -95,6 +95,14 @@ const tools = [
   {
     name: 'catalog_stats',
     desc: '全库计数：各媒介 LIVE 作品数 + 身份家族总量（无参数）。'
+  },
+  {
+    name: 'catalog_label_relation_graph',
+    desc: '一次拿到一个厂牌周围的整个会社家族（母公司 / 子品牌 / 文库 / 继承），nodes[] + edges[]。catalog_label_get 的 relations[] 只有一跳，问「某社旗下有哪些牌子」用这个。服务端封顶 depth 4 / 60 节点，不分页。'
+  },
+  {
+    name: 'catalog_releases',
+    desc: '发售动态的 release 粒度：每一条发售行各自成项，移植版 / 复刻 / 中文化都看得见（calendar 只把作品放在最早发售月且只显示一次）。可按日期区间、平台、发行语言、版本类型、官方性过滤；is_first 分辨首发与再版。'
   }
 ]
 
