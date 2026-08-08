@@ -171,7 +171,8 @@ func (s *AnchorStats) add(o AnchorStats) {
 	s.SkipUngradeable += o.SkipUngradeable
 	s.VNDBInAnchored += o.VNDBInAnchored
 	s.Errors += o.Errors
-	s.Spine.add(o.Spine)
+	// Spine is deliberately untouched: it runs once per PASS, outside the
+	// per-source loop this method folds, and anchorAll composes it directly.
 }
 
 // RunAnchor opens the pools and executes the E2a anchoring wave for the
@@ -242,7 +243,8 @@ func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit i
 			slog.Info("org-label spine pass done", "pass", pass, "apply", apply,
 				"considered", sp.Considered, "minted", sp.Minted, "anchored", sp.Anchored,
 				"candidates", sp.Candidates, "candidate_rows", sp.CandidateRows,
-				"skip_claimed", sp.SkipClaimed, "errors", sp.Errors)
+				"skip_claimed", sp.SkipClaimed, "skip_edgeless", sp.SkipEdgeless,
+				"skip_alias_only", sp.SkipAliasOnly, "errors", sp.Errors)
 			pt.Spine = sp
 		}
 
@@ -256,8 +258,12 @@ func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit i
 			total.NewEdges += pt.NewEdges
 			total.VNDBInAnchored += pt.VNDBInAnchored
 			total.Errors += pt.Errors
-			total.Spine.add(pt.Spine)
+			total.Spine.addWrites(pt.Spine)
 		}
+		// The spine's skip buckets describe what is STILL unresolved, not events —
+		// summing them across passes would report 77 pending candidates as 154.
+		// The last pass is the settled state, so it replaces rather than adds.
+		total.Spine.setState(pt.Spine)
 		// Dry runs never write, so the fixpoint is a single pass by construction.
 		// The spine's writes count towards convergence too: a label it mints is a
 		// name-match target for the next iteration's co-work pass.

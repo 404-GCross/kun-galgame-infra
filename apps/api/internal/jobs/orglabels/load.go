@@ -49,6 +49,28 @@ func loadLabelNorms(db *gorm.DB) (map[string][]int64, error) {
 	return m, nil
 }
 
+// loadLabelDisplayNorms is loadLabelNorms WITHOUT the alias union — the label's
+// own name and nothing else. The spine needs the two separately: an alias is
+// good enough to stop it minting a twin, but not to nominate a merge. See the
+// banner on planSpine.
+func loadLabelDisplayNorms(db *gorm.DB) (map[string][]int64, error) {
+	var rows []struct {
+		Norm    string `gorm:"column:norm"`
+		LabelID int64  `gorm:"column:label_id"`
+	}
+	if err := db.Raw(`
+		SELECT display_name_norm AS norm, id AS label_id FROM catalog_label
+		    WHERE display_name_norm <> ''
+	`).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	m := make(map[string][]int64, len(rows))
+	for _, r := range rows {
+		m[r.Norm] = append(m[r.Norm], r.LabelID)
+	}
+	return m, nil
+}
+
 // existingAnchors holds the idempotency index for one source: which external
 // ids already carry a label anchor, and which labels are already identity-
 // claimed (exact OR probable) by this source. A label claimed by either tier

@@ -34,7 +34,7 @@ package orglabels
 //     dedup worklist, because "these two same-named labels are one brand" is a
 //     curation judgement this package is not entitled to make (see the classLabel
 //     banner in catalog-dedup-batch: same-name labels are routinely NOT the same
-//     brand).
+//     brand). What counts as "same-named" is itself graded — see planSpine.
 //
 // VNDB type=in producers are excluded — a person is not a label, and minting one
 // would smuggle the frozen person-identity resolution into the label space
@@ -58,22 +58,51 @@ const (
 )
 
 // graphFacts is what producers_relations says about a producer, independent of
-// any work: whether it appears in the graph at all, and whether anything hangs
-// UNDER it (which is what makes it a publisher rather than a brand).
+// any work.
+//
+// linkable, not mere membership, is the existence test. A producer whose only
+// upstream relations point at type=in individuals has nothing this catalog can
+// render: persons are not labels, so those edges can never land, and minting it
+// would produce a page with no works AND no family — the empty entity the whole
+// wave exists to avoid creating. Measured: 39 of 1,100 graph members are in
+// that position.
 type graphFacts struct {
-	member map[string]bool
-	parent map[string]bool
+	member   map[string]bool // appears in producers_relations at all
+	linkable map[string]bool // …and at least one neighbour is a co/ng producer
+	parent   map[string]bool // …and something hangs UNDER it (publisher, not brand)
 }
 
 // spineAct is the planner's verdict for one producer.
 type spineAct int
 
 const (
-	spineMint        spineAct = iota // no same-named label exists — bring the node into being
-	spineAnchor                      // exactly one free same-named label — it IS this producer
-	spineCandidate                   // several same-named labels — hand the pair to the dedup queue
-	spineSkipClaimed                 // the one same-named label is already another producer's identity
+	spineMint          spineAct = iota // no same-named label exists — bring the node into being
+	spineAnchor                        // exactly one free same-named label — it IS this producer
+	spineCandidate                     // several same-named labels — hand the pair to the dedup queue
+	spineSkipClaimed                   // the one same-named label is already another producer's identity
+	spineSkipAliasOnly                 // several labels matched, all of them only by alias
 )
+
+// matchLabels returns the labels any of these name folds resolves to, ascending
+// (catalog_match_candidate has an a_id < b_id check constraint, so the order is
+// load-bearing, not cosmetic).
+func matchLabels(norms []string, index map[string][]int64) []int64 {
+	hit := make(map[int64]bool)
+	for _, n := range norms {
+		if n == "" {
+			continue
+		}
+		for _, l := range index[n] {
+			hit[l] = true
+		}
+	}
+	out := make([]int64, 0, len(hit))
+	for l := range hit {
+		out = append(out, l)
+	}
+	slices.Sort(out)
+	return out
+}
 
 // spinePlan is one decided producer. labelID is set for spineAnchor; labels
 // carries the ambiguous set for spineCandidate.
@@ -91,19 +120,31 @@ type SpineStats struct {
 	Minted        int
 	Anchored      int
 	Candidates    int // producers routed to the dedup queue
-	CandidateRows int // label pairs actually written (a producer can raise several)
+	CandidateRows int // DISTINCT label pairs written (two producers can raise one pair)
 	SkipClaimed   int // same-named label already claimed by another producer
+	SkipEdgeless  int // in the graph, but every neighbour is an individual — see graphFacts
+	SkipAliasOnly int // several labels matched, none of them by its own display name
 	Errors        int
 }
 
-func (s *SpineStats) add(o SpineStats) {
-	s.Considered += o.Considered
+// addWrites accumulates only what a pass DID. The counters below it describe
+// what is still unresolved after a pass, which is state, not events.
+func (s *SpineStats) addWrites(o SpineStats) {
 	s.Minted += o.Minted
 	s.Anchored += o.Anchored
-	s.Candidates += o.Candidates
-	s.CandidateRows += o.CandidateRows
-	s.SkipClaimed += o.SkipClaimed
 	s.Errors += o.Errors
+}
+
+// setState overwrites the "what is left" counters with a pass's view. The
+// fixpoint's LAST pass is the settled answer, so it replaces earlier ones —
+// adding them would report the same pending candidate once per iteration.
+func (s *SpineStats) setState(o SpineStats) {
+	s.Considered = o.Considered
+	s.Candidates = o.Candidates
+	s.CandidateRows = o.CandidateRows
+	s.SkipClaimed = o.SkipClaimed
+	s.SkipEdgeless = o.SkipEdgeless
+	s.SkipAliasOnly = o.SkipAliasOnly
 }
 
 // writes reports whether the pass changed anything — the fixpoint loop's
@@ -117,7 +158,26 @@ func (s SpineStats) writes() int { return s.Minted + s.Anchored }
 // and GROWS as the plan is built: two producers that name-match the same lone
 // label cannot both be it, and the first by external id wins so a re-plan is
 // stable.
-func planSpine(orgs []orgRec, g graphFacts, ea *existingAnchors, labelNorms map[string][]int64) ([]spinePlan, SpineStats) {
+//
+// It takes TWO name indices, because the two things a name match can do here
+// need different strengths of evidence.
+//
+// labelNorms folds display names AND label aliases; displayNorms folds display
+// names only. A label alias is NOT reliably an "is also called" — catalog_label
+// carries aliases like ネクストン on the labels PSYCHO and RaSeN, where the
+// upstream meaning is "PUBLISHED BY NEXTON". So:
+//
+//   - alias evidence may BLOCK a mint (creating a twin of a label that already
+//     answers to this name is the one irreversible mistake here), and may anchor
+//     when it points at exactly ONE label with no competition — that is how the
+//     legal names land (株式会社ビジュアルアーツ → VISUAL ARTS, 株式会社ウィルプラス
+//     → ウィルプラス);
+//   - but once SEVERAL labels match, the alias is exactly what created the
+//     ambiguity, so the proposal is narrowed to labels matched by their own
+//     display name. NEXTON matches four labels and only two of them are named
+//     NEXTON; nominating PSYCHO for a merge into NEXTON would be a wrong answer
+//     handed to a human as a suggestion.
+func planSpine(orgs []orgRec, g graphFacts, ea *existingAnchors, labelNorms, displayNorms map[string][]int64) ([]spinePlan, SpineStats) {
 	var st SpineStats
 	claimed := make(map[int64]bool, len(ea.claimedByLabel))
 	for l := range ea.claimedByLabel {
@@ -134,41 +194,69 @@ func planSpine(orgs []orgRec, g graphFacts, ea *existingAnchors, labelNorms map[
 		if _, done := ea.byExtID[o.extID]; done {
 			continue
 		}
+		// Counted, not silently dropped: a bucket that vanishes reads as coverage.
+		if !g.linkable[o.extID] {
+			st.SkipEdgeless++
+			continue
+		}
 		st.Considered++
 
-		hit := make(map[int64]bool)
-		for _, n := range o.nameNorms {
-			if n == "" {
-				continue
-			}
-			for _, l := range labelNorms[n] {
-				hit[l] = true
-			}
+		any := matchLabels(o.nameNorms, labelNorms)
+		// Only one label answers to this name at all: no ambiguity for the alias
+		// to have manufactured, so alias evidence is good enough to anchor.
+		target := any
+		if len(any) > 1 {
+			target = matchLabels(o.nameNorms, displayNorms)
 		}
-		labels := make([]int64, 0, len(hit))
-		for l := range hit {
-			labels = append(labels, l)
-		}
-		slices.Sort(labels)
 
 		switch {
-		case len(labels) == 0:
+		case len(any) == 0:
 			out = append(out, spinePlan{act: spineMint, org: o})
 			st.Minted++
-		case len(labels) == 1 && !claimed[labels[0]]:
-			claimed[labels[0]] = true
-			out = append(out, spinePlan{act: spineAnchor, org: o, labelID: labels[0]})
+		case len(target) == 0:
+			// Several labels matched, none by its own display name — the match is
+			// alias noise. Neither mint (a twin would be worse) nor assert.
+			out = append(out, spinePlan{act: spineSkipAliasOnly, org: o, labels: any})
+			st.SkipAliasOnly++
+		case len(target) == 1 && !claimed[target[0]]:
+			claimed[target[0]] = true
+			out = append(out, spinePlan{act: spineAnchor, org: o, labelID: target[0]})
 			st.Anchored++
-		case len(labels) == 1:
-			out = append(out, spinePlan{act: spineSkipClaimed, org: o, labelID: labels[0]})
+		case len(target) == 1:
+			out = append(out, spinePlan{act: spineSkipClaimed, org: o, labelID: target[0]})
 			st.SkipClaimed++
 		default:
-			out = append(out, spinePlan{act: spineCandidate, org: o, labels: labels})
+			out = append(out, spinePlan{act: spineCandidate, org: o, labels: target})
 			st.Candidates++
-			st.CandidateRows += len(labels) * (len(labels) - 1) / 2
 		}
 	}
+	st.CandidateRows = len(candidatePairs(out))
 	return out, st
+}
+
+// candidatePairs is the deduped set of label pairs a plan raises, in plan order.
+// Two producers can name-match the same labels and so nominate the same pair;
+// one shared derivation keeps the dry run's count and the apply run's inserts
+// from disagreeing about what "candidate rows" means.
+func candidatePairs(plans []spinePlan) [][2]int64 {
+	seen := make(map[[2]int64]bool)
+	out := make([][2]int64, 0, len(plans))
+	for _, p := range plans {
+		if p.act != spineCandidate {
+			continue
+		}
+		for i := 0; i < len(p.labels); i++ {
+			for j := i + 1; j < len(p.labels); j++ {
+				pair := [2]int64{p.labels[i], p.labels[j]} // labels are sorted: a < b
+				if seen[pair] {
+					continue
+				}
+				seen[pair] = true
+				out = append(out, pair)
+			}
+		}
+	}
+	return out
 }
 
 // spineKind is the label kind a minted spine node gets. A producer with
@@ -196,33 +284,34 @@ func runSpine(ctx context.Context, db *gorm.DB, labelNorms map[string][]int64, l
 	if err != nil {
 		return SpineStats{}, err
 	}
+	displayNorms, err := loadLabelDisplayNorms(db)
+	if err != nil {
+		return SpineStats{}, err
+	}
 
-	plans, st := planSpine(orgs, g, ea, labelNorms)
+	plans, st := planSpine(orgs, g, ea, labelNorms, displayNorms)
 	if !apply {
 		return st, nil
 	}
 
 	refs := make([]model.CatalogExternalRef, 0, st.Anchored)
-	cands := make([]model.CatalogMatchCandidate, 0, st.CandidateRows)
 	for _, p := range plans {
-		switch p.act {
-		case spineAnchor:
+		if p.act == spineAnchor {
 			refs = append(refs, model.CatalogExternalRef{
 				EntityType: model.EntityTypeLabel, EntityID: p.labelID, SourceID: sourceVNDB,
 				ExternalID: p.org.extID, LinkKind: model.LinkKindExact, MatchedBy: ruleSpineName,
 			})
-		case spineCandidate:
-			for i := 0; i < len(p.labels); i++ {
-				for j := i + 1; j < len(p.labels); j++ {
-					cands = append(cands, model.CatalogMatchCandidate{
-						EntityType: model.EntityTypeLabel,
-						AID:        p.labels[i], BID: p.labels[j],
-						Reason: model.CandidateReasonNameNormEqual,
-						Status: model.CandidateStatusPending,
-					})
-				}
-			}
 		}
+	}
+	pairs := candidatePairs(plans)
+	cands := make([]model.CatalogMatchCandidate, 0, len(pairs))
+	for _, pair := range pairs {
+		cands = append(cands, model.CatalogMatchCandidate{
+			EntityType: model.EntityTypeLabel,
+			AID:        pair[0], BID: pair[1],
+			Reason: model.CandidateReasonNameNormEqual,
+			Status: model.CandidateStatusPending,
+		})
 	}
 	if len(refs) > 0 {
 		if err := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).
@@ -284,18 +373,33 @@ func mintSpineLabel(ctx context.Context, db *gorm.DB, o *orgRec, kind int16) err
 // "the producer at pid is <rel> of the producer at id", so a row with rel in
 // (sub, imp) means something hangs UNDER the producer at id.
 func loadGraphFacts(db *gorm.DB) (graphFacts, error) {
-	g := graphFacts{member: map[string]bool{}, parent: map[string]bool{}}
+	g := graphFacts{member: map[string]bool{}, linkable: map[string]bool{}, parent: map[string]bool{}}
 	var rows []struct {
 		ID       string `gorm:"column:id"`
 		PID      string `gorm:"column:pid"`
 		Relation string `gorm:"column:relation"`
+		AType    string `gorm:"column:a_type"`
+		BType    string `gorm:"column:b_type"`
 	}
-	if err := db.Raw(`SELECT id, pid, relation FROM src_vndb.producers_relations`).Scan(&rows).Error; err != nil {
+	// The join drops edges whose endpoint is missing from the producers table —
+	// an edge to an entity the dump does not describe is not a fact about
+	// anything, and it must not make its other end look connected.
+	if err := db.Raw(`
+		SELECT r.id, r.pid, r.relation, a.type AS a_type, b.type AS b_type
+		FROM src_vndb.producers_relations r
+		JOIN src_vndb.producers a ON a.id = r.id
+		JOIN src_vndb.producers b ON b.id = r.pid`).Scan(&rows).Error; err != nil {
 		return g, err
 	}
+	corporate := func(t string) bool { return t == "co" || t == "ng" }
 	for _, r := range rows {
-		g.member[r.ID] = true
-		g.member[r.PID] = true
+		g.member[r.ID], g.member[r.PID] = true, true
+		if corporate(r.BType) {
+			g.linkable[r.ID] = true
+		}
+		if corporate(r.AType) {
+			g.linkable[r.PID] = true
+		}
 		if r.Relation == "sub" || r.Relation == "imp" {
 			g.parent[r.ID] = true
 		}

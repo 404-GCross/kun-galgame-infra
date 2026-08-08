@@ -61,7 +61,8 @@ func main() {
 		"considered", st.Spine.Considered, "minted", st.Spine.Minted,
 		"anchored", st.Spine.Anchored, "candidates", st.Spine.Candidates,
 		"candidate_rows", st.Spine.CandidateRows,
-		"skip_claimed", st.Spine.SkipClaimed, "errors", st.Spine.Errors)
+		"skip_claimed", st.Spine.SkipClaimed, "skip_edgeless", st.Spine.SkipEdgeless,
+		"skip_alias_only", st.Spine.SkipAliasOnly, "errors", st.Spine.Errors)
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
