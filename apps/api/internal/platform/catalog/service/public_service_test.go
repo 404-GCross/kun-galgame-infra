@@ -1228,3 +1228,74 @@ func TestSeriesSiblingsClosureShapes(t *testing.T) {
 		}
 	})
 }
+
+// TestPublicCharacterLocalizedNames pins the wave-191 opening of the character
+// face. Until this wave the record published NO aliases at all, so the bangumi
+// zh-Hans character-name lane — the largest localized-name population in the
+// catalog — was unreachable through the public API, while name{ja:…} with no zh
+// key actively read as "this character has no Chinese name".
+func TestPublicCharacterLocalizedNames(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	ch := createCharacter(t, "美坂香里")
+	createCharacterAlias(t, ch.ID, "美坂香里", "ja") // the display name itself
+	createCharacterAlias(t, ch.ID, "美坂香裡", "ja") // a real ja variant
+	primary := &model.CatalogCharacterAlias{
+		CharacterID: ch.ID, Name: "美坂香里", Lang: "zh-Hans",
+		Kind: model.AliasKindTranslation, IsPrimaryForLocale: true,
+	}
+	if err := testDB.Create(primary).Error; err != nil {
+		t.Fatalf("create zh primary: %v", err)
+	}
+	hint := &model.CatalogCharacterAlias{
+		CharacterID: ch.ID, Name: "misaka-kaori-hint", Lang: "en",
+		Kind: model.AliasKindSearchHint,
+	}
+	if err := testDB.Create(hint).Error; err != nil {
+		t.Fatalf("create search hint: %v", err)
+	}
+
+	rec, found, err := svc.Character(ctx, ch.ID, false, false, 0, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("character: found=%v err=%v", found, err)
+	}
+
+	// display_name + lang say plainly what name{} encodes obliquely.
+	if rec.DisplayName != "美坂香里" {
+		t.Fatalf("display_name = %q", rec.DisplayName)
+	}
+	// aliases[] is the also-known-as list: display name out, deduplicated.
+	if len(rec.Aliases) != 1 || rec.Aliases[0] != "美坂香裡" {
+		t.Fatalf("aliases = %+v (want the ja variant only)", rec.Aliases)
+	}
+	// localized{} answers the question aliases[] cannot: the zh name is known
+	// even though it is spelled identically to the display name.
+	zh, ok := rec.Localized["zh-Hans"]
+	if !ok || zh.Value != "美坂香里" || zh.Kind != "translation" {
+		t.Fatalf("localized[zh-Hans] = %+v (ok=%v), want the sourced zh name", zh, ok)
+	}
+	// A search hint is findability-only and reaches neither projection.
+	if _, leaked := rec.Localized["en"]; leaked {
+		t.Fatal("a search-hint row must never reach localized{}")
+	}
+	for _, a := range rec.Aliases {
+		if a == "misaka-kaori-hint" {
+			t.Fatal("a search-hint row must never reach aliases[]")
+		}
+	}
+
+	// A character with no aliases serializes [] and {}, never null.
+	bare := createCharacter(t, "無別名")
+	rec, _, err = svc.Character(ctx, bare.ID, false, false, 0, 50, 0)
+	if err != nil {
+		t.Fatalf("bare character: %v", err)
+	}
+	if rec.Aliases == nil || len(rec.Aliases) != 0 {
+		t.Fatalf("an alias-less character must serialize []: %#v", rec.Aliases)
+	}
+	if rec.Localized == nil || len(rec.Localized) != 0 {
+		t.Fatalf("an alias-less character must serialize {}: %#v", rec.Localized)
+	}
+}

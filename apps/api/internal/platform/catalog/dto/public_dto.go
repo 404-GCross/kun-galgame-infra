@@ -287,10 +287,49 @@ type PublicMovedData struct {
 // PublicNameBuckets holds an entity display name in exactly ONE language bucket
 // (a credit name / character lives in a single language). Consumers pick by their
 // UI locale.
+//
+// DEPRECATED (wave 191). The shape reads as "this name in three languages" and
+// is in fact "one name, filed under whichever language it happens to be in", so
+// {"ja": "…"} with no zh key says nothing about whether a Chinese name exists —
+// yet every consumer reads it as "there is none". Use display_name + lang for
+// the name of record and localized[] for the per-locale renderings; both are
+// present on the same records from this wave on. The buckets are retired in the
+// next spec-breaking window.
 type PublicNameBuckets struct {
 	Ja    string `json:"ja,omitempty"`
 	Zh    string `json:"zh,omitempty"`
 	Other string `json:"other,omitempty"`
+}
+
+// PublicLocalizedName is an entity's PREFERRED name for one locale — the value
+// a consumer renders when its UI is in that language.
+//
+// It is the value half of the `localized` map, whose KEY is the locale in the
+// upstream BCP-47 spelling exactly as filed (`zh-Hans`, `ja`, …). A map rather
+// than an array on purpose: the whole job of this field is
+// `localized[myLocale] ?? display_name`, and an array makes every consumer
+// write — and separately get wrong — its own scan.
+//
+// The map is an OPEN vocabulary (which locales exist is data, not an enum), it
+// is ALWAYS present ({} when the entity has no localized name at all), and it
+// never contains an empty-string key: a row with no declared language cannot
+// answer "the name in language X" and is served only through aliases[].
+//
+// One entry per locale: where several rows compete, is_primary_for_locale wins
+// first, then translation over spelling_variant, then the flat-alias order.
+// Unlike aliases[], a value EQUAL to the entity's own display_name is kept —
+// "the Chinese name is 美坂栞" stays true and useful even when that is also the
+// name of record, and dropping it is precisely how the buckets came to imply
+// that no Chinese name existed.
+//
+// There is no provenance here yet: the three alias tables carry no source_id /
+// provenance columns (unlike the *_intro tables), so every row is currently a
+// SOURCED name — nothing in catalog machine-translates a name. If that ever
+// changes, the columns land first and this shape grows a `machine` flag; it
+// must never start carrying invented names silently.
+type PublicLocalizedName struct {
+	Value string `json:"value"`
+	Kind  string `json:"kind" doc:"translation|spelling_variant"`
 }
 
 // PublicSiblingName is another credited name of the same person (public links
@@ -321,11 +360,18 @@ type PublicNameCredit struct {
 // grouping (person_id + public siblings) via the existing link-visibility
 // doctrine. credits are include-gated + keyset-less offset paginated.
 type PublicName struct {
-	ID       int64               `json:"id"`
-	Name     PublicNameBuckets   `json:"name"`
-	Latin    string              `json:"latin,omitempty"`
-	PersonID int64               `json:"person_id,omitempty"`
-	Siblings []PublicSiblingName `json:"siblings"`
+	ID   int64             `json:"id"`
+	Name PublicNameBuckets `json:"name"`
+	// DisplayName + Lang are the name of record and its own language tag (wave
+	// 191) — the honest form of what Name encodes awkwardly. DisplayName is
+	// never empty; Lang is empty when the source never declared one.
+	DisplayName string `json:"display_name"`
+	Lang        string `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
+	// Localized is the per-locale rendering map (wave 191). Always present.
+	Localized map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name"`
+	Latin     string                         `json:"latin,omitempty"`
+	PersonID  int64                          `json:"person_id,omitempty"`
+	Siblings  []PublicSiblingName            `json:"siblings"`
 	// Aliases are THIS credit name's alternate spellings (catalog_name_alias)
 	// — the zh-Hans renderings the bangumi name wave files, among others.
 	// Deduplicated, the name itself excluded, always present ([] when there are
@@ -394,9 +440,22 @@ type PublicCharacterWork struct {
 // PublicCharacter is the frozen v1 character record (GET
 // /v1/catalog/characters/{id}). works (appears-in) are include-gated.
 type PublicCharacter struct {
-	ID    int64             `json:"id"`
-	Name  PublicNameBuckets `json:"name"`
-	Latin string            `json:"latin,omitempty"`
+	ID   int64             `json:"id"`
+	Name PublicNameBuckets `json:"name"`
+	// DisplayName + Lang are the name of record and its own language tag (wave
+	// 191), the honest form of what Name encodes awkwardly.
+	DisplayName string `json:"display_name"`
+	Lang        string `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
+	// Aliases are this character's alternate spellings (catalog_character_alias)
+	// — chiefly the zh-Hans renderings the bangumi name wave files. Until wave
+	// 191 the character face published NONE of them, so tens of thousands of
+	// Chinese character names sat in the table unreachable by any consumer.
+	// Flat, deduplicated, display-name excluded, always present ([] when none),
+	// byte-identical in shape to PublicLabel.Aliases and PublicName.Aliases.
+	Aliases []string `json:"aliases" doc:"alternate spellings; deduplicated, the display name excluded, [] when it has none"`
+	// Localized is the per-locale rendering map (wave 191). Always present.
+	Localized map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name"`
+	Latin     string                         `json:"latin,omitempty"`
 	// Refs are this character's EXACT cross-source identity anchors (doc 106 G4).
 	Refs       []PublicCatalogRef    `json:"refs"`
 	Works      []PublicCharacterWork `json:"works,omitempty"`
@@ -484,6 +543,8 @@ type PublicLabel struct {
 	// — the 12,935 rows the wiki's official aliases migrated into. Deduplicated,
 	// display-name excluded, always present ([] when the label has none).
 	Aliases []string `json:"aliases"`
+	// Localized is the per-locale rendering map (wave 191). Always present.
+	Localized map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name"`
 	// WorkCount is NSFW-AWARE, exactly like the browse lane's (A2-1e): the
 	// number of works this caller would page through via
 	// works?label_id=&claim_state=live — the call an entity page makes (146).

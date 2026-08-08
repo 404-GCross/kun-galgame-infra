@@ -1839,6 +1839,21 @@ export const docsModel: DocsModel = {
                         "type": "object",
                         "children": [
                           {
+                            "name": "aliases",
+                            "required": true,
+                            "nullable": true,
+                            "doc": "alternate spellings; deduplicated, the display name excluded, [] when it has none",
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "name": "display_name",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
                             "name": "figure",
                             "type": "string"
                           },
@@ -1883,8 +1898,35 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
+                            "name": "lang",
+                            "doc": "BCP-47 language of display_name; empty when unrecorded",
+                            "type": "string"
+                          },
+                          {
                             "name": "latin",
                             "type": "string"
+                          },
+                          {
+                            "name": "localized",
+                            "required": true,
+                            "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                            "type": "map",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "translation|spelling_variant",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "value",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "name",
@@ -2695,6 +2737,28 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
+                            "name": "localized",
+                            "required": true,
+                            "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                            "type": "map",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "translation|spelling_variant",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "value",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "name": "logo_hash",
                             "required": true,
                             "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -3082,6 +3146,21 @@ export const docsModel: DocsModel = {
                             "type": "object",
                             "children": [
                               {
+                                "name": "aliases",
+                                "required": true,
+                                "nullable": true,
+                                "doc": "alternate spellings; deduplicated, the display name excluded, [] when it has none",
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "name": "display_name",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
                                 "name": "figure",
                                 "type": "string"
                               },
@@ -3126,8 +3205,35 @@ export const docsModel: DocsModel = {
                                 }
                               },
                               {
+                                "name": "lang",
+                                "doc": "BCP-47 language of display_name; empty when unrecorded",
+                                "type": "string"
+                              },
+                              {
                                 "name": "latin",
                                 "type": "string"
+                              },
+                              {
+                                "name": "localized",
+                                "required": true,
+                                "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                "type": "map",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "doc": "translation|spelling_variant",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "value",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
                               },
                               {
                                 "name": "name",
@@ -3441,6 +3547,28 @@ export const docsModel: DocsModel = {
                                 }
                               },
                               {
+                                "name": "localized",
+                                "required": true,
+                                "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                "type": "map",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "doc": "translation|spelling_variant",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "value",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
                                 "name": "logo_hash",
                                 "required": true,
                                 "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -3712,6 +3840,11 @@ export const docsModel: DocsModel = {
                                 }
                               },
                               {
+                                "name": "display_name",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
                                 "name": "gender",
                                 "doc": "person gender code; absent = unknown, orphan or hidden link",
                                 "format": "int32",
@@ -3754,6 +3887,11 @@ export const docsModel: DocsModel = {
                                 }
                               },
                               {
+                                "name": "lang",
+                                "doc": "BCP-47 language of display_name; empty when unrecorded",
+                                "type": "string"
+                              },
+                              {
                                 "name": "latin",
                                 "type": "string"
                               },
@@ -3772,6 +3910,28 @@ export const docsModel: DocsModel = {
                                     },
                                     {
                                       "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "localized",
+                                "required": true,
+                                "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                "type": "map",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "doc": "translation|spelling_variant",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "value",
                                       "required": true,
                                       "type": "string"
                                     }
@@ -4038,6 +4198,21 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "aliases",
+                                      "required": true,
+                                      "nullable": true,
+                                      "doc": "alternate spellings; deduplicated, the display name excluded, [] when it has none",
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "figure",
                                       "type": "string"
                                     },
@@ -4082,8 +4257,35 @@ export const docsModel: DocsModel = {
                                       }
                                     },
                                     {
+                                      "name": "lang",
+                                      "doc": "BCP-47 language of display_name; empty when unrecorded",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "latin",
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     },
                                     {
                                       "name": "name",
@@ -4402,6 +4604,28 @@ export const docsModel: DocsModel = {
                                       }
                                     },
                                     {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
                                       "name": "logo_hash",
                                       "required": true,
                                       "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -4673,6 +4897,11 @@ export const docsModel: DocsModel = {
                                       }
                                     },
                                     {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "gender",
                                       "doc": "person gender code; absent = unknown, orphan or hidden link",
                                       "format": "int32",
@@ -4715,6 +4944,11 @@ export const docsModel: DocsModel = {
                                       }
                                     },
                                     {
+                                      "name": "lang",
+                                      "doc": "BCP-47 language of display_name; empty when unrecorded",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "latin",
                                       "type": "string"
                                     },
@@ -4733,6 +4967,28 @@ export const docsModel: DocsModel = {
                                           },
                                           {
                                             "name": "url",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "value",
                                             "required": true,
                                             "type": "string"
                                           }
@@ -5135,6 +5391,11 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
+                            "name": "display_name",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
                             "name": "gender",
                             "doc": "person gender code; absent = unknown, orphan or hidden link",
                             "format": "int32",
@@ -5177,6 +5438,11 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
+                            "name": "lang",
+                            "doc": "BCP-47 language of display_name; empty when unrecorded",
+                            "type": "string"
+                          },
+                          {
                             "name": "latin",
                             "type": "string"
                           },
@@ -5195,6 +5461,28 @@ export const docsModel: DocsModel = {
                                 },
                                 {
                                   "name": "url",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "localized",
+                            "required": true,
+                            "doc": "preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name",
+                            "type": "map",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "translation|spelling_variant",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "value",
                                   "required": true,
                                   "type": "string"
                                 }

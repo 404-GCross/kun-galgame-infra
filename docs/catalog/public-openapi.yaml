@@ -786,6 +786,15 @@ components:
     PublicCharacter:
       additionalProperties: false
       properties:
+        aliases:
+          description: alternate spellings; deduplicated, the display name excluded, [] when it has none
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        display_name:
+          type: string
         figure:
           type: string
         id:
@@ -799,8 +808,16 @@ components:
           type:
             - array
             - "null"
+        lang:
+          description: BCP-47 language of display_name; empty when unrecorded
+          type: string
         latin:
           type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name
+          type: object
         name:
           $ref: "#/components/schemas/PublicNameBuckets"
         next_offset:
@@ -827,6 +844,9 @@ components:
       required:
         - id
         - name
+        - display_name
+        - aliases
+        - localized
         - refs
         - traits
         - intros
@@ -1173,6 +1193,11 @@ components:
           type:
             - array
             - "null"
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name
+          type: object
         logo_hash:
           description: brand logo content hash in the image service; "" = this label has no logo
           type: string
@@ -1205,6 +1230,7 @@ components:
         - display_name
         - kind
         - aliases
+        - localized
         - work_count
         - logo_hash
         - refs
@@ -1377,6 +1403,18 @@ components:
         - next_cursor
         - total
       type: object
+    PublicLocalizedName:
+      additionalProperties: false
+      properties:
+        kind:
+          description: translation|spelling_variant
+          type: string
+        value:
+          type: string
+      required:
+        - value
+        - kind
+      type: object
     PublicLookupBatchData:
       additionalProperties: false
       properties:
@@ -1492,6 +1530,8 @@ components:
           type:
             - array
             - "null"
+        display_name:
+          type: string
         gender:
           description: person gender code; absent = unknown, orphan or hidden link
           format: int32
@@ -1505,6 +1545,9 @@ components:
           type:
             - array
             - "null"
+        lang:
+          description: BCP-47 language of display_name; empty when unrecorded
+          type: string
         latin:
           type: string
         links:
@@ -1513,6 +1556,11 @@ components:
           type:
             - array
             - "null"
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by BCP-47 tag; {} when none. Render localized[yourLocale] ?? display_name
+          type: object
         name:
           $ref: "#/components/schemas/PublicNameBuckets"
         next_offset:
@@ -1539,6 +1587,8 @@ components:
       required:
         - id
         - name
+        - display_name
+        - localized
         - siblings
         - aliases
         - photo_hash

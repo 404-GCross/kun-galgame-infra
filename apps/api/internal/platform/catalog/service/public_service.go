@@ -711,10 +711,15 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 		return dto.PublicName{}, false, nil
 	}
 	p := dto.PublicName{
-		ID:       res.Head.ID,
-		Name:     nameBuckets(res.Head.Lang, res.Head.Name),
-		Latin:    derefStrPub(res.Head.Latin),
-		Siblings: make([]dto.PublicSiblingName, 0, len(res.Siblings)),
+		ID:   res.Head.ID,
+		Name: nameBuckets(res.Head.Lang, res.Head.Name),
+		// display_name + lang say plainly what the buckets encode obliquely
+		// (wave 191); the buckets stay until the next breaking window so a
+		// consumer can move over before they go.
+		DisplayName: res.Head.Name,
+		Lang:        res.Head.Lang,
+		Latin:       derefStrPub(res.Head.Latin),
+		Siblings:    make([]dto.PublicSiblingName, 0, len(res.Siblings)),
 		// The person block (wave 172). NameWorks has already applied the
 		// link-visibility gate to all five, so this copies them verbatim.
 		PhotoHash: res.Head.PhotoHash,
@@ -740,7 +745,7 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 			ID: sib.ID, Name: nameBuckets(sib.Lang, sib.Name), Latin: derefStrPub(sib.Latin),
 		})
 	}
-	if p.Aliases, err = s.nameAliases(ctx, id); err != nil {
+	if p.Aliases, p.Localized, err = s.nameAliases(ctx, id); err != nil {
 		return dto.PublicName{}, false, err
 	}
 	// p.PersonID is 0 unless NameWorks published a visible person link above,
@@ -791,9 +796,16 @@ func (s *PublicService) Character(ctx context.Context, id int64, withWorks, nsfw
 		return dto.PublicCharacter{}, false, nil
 	}
 	ch := dto.PublicCharacter{
-		ID:    res.Head.ID,
-		Name:  nameBuckets(res.Head.Lang, res.Head.DisplayName),
-		Latin: derefStrPub(res.Head.Latin),
+		ID:   res.Head.ID,
+		Name: nameBuckets(res.Head.Lang, res.Head.DisplayName),
+		// display_name + lang say plainly what the buckets encode obliquely
+		// (wave 191); the buckets stay until the next breaking window.
+		DisplayName: res.Head.DisplayName,
+		Lang:        res.Head.Lang,
+		Latin:       derefStrPub(res.Head.Latin),
+	}
+	if ch.Aliases, ch.Localized, err = s.characterAliases(ctx, id); err != nil {
+		return dto.PublicCharacter{}, false, err
 	}
 	if ch.Traits, err = s.characterTraits(ctx, id, spoilers, nsfw); err != nil {
 		return dto.PublicCharacter{}, false, err
@@ -865,7 +877,7 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks, nsfw boo
 	}
 	l.WorkCount = counts[id]
 	// intros / links / aliases are part of the base record (not include-gated).
-	if l.Aliases, err = s.labelAliases(ctx, id); err != nil {
+	if l.Aliases, l.Localized, err = s.labelAliases(ctx, id); err != nil {
 		return dto.PublicLabel{}, false, err
 	}
 	if l.Intros, err = s.labelIntros(ctx, id); err != nil {
@@ -939,39 +951,29 @@ func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.P
 }
 
 // labelAliases loads a label's alternate spellings (A2-1e) as a flat, ordered,
-// deduplicated string list. The display name is excluded — it is already the
-// record's display_name and repeating it in aliases[] would make every
-// consumer filter it out again. Empty → [].
-//
-// Flat strings rather than {name, lang, kind} objects: the alias table's lang /
-// kind columns describe the alias row's provenance, and every downstream
-// consumer of this field (search-as-you-type matching, "also known as" lines)
-// wants the strings. A richer shape stays available as a later addition.
-//
-// Search-hint rows (AliasKindSearchHint) are excluded: findability-only by the
-// kind's own contract, never displayed — e.g. the verbatim DLsite slash string
-// a heal demoted (refs/proj/175).
-func (s *PublicService) labelAliases(ctx context.Context, labelID int64) ([]string, error) {
-	var rows []struct {
-		Name string `gorm:"column:name"`
+// deduplicated string list, plus the wave-191 per-locale map. The display name
+// is excluded from the flat list — it is already the record's display_name and
+// repeating it in aliases[] would make every consumer filter it out again — but
+// deliberately KEPT in the map; see public_names.go for why the two projections
+// differ. Empty → [] and {}, never nil.
+func (s *PublicService) labelAliases(ctx context.Context, labelID int64) ([]string, map[string]dto.PublicLocalizedName, error) {
+	rows, err := s.entityAliases(ctx, labelAliasSource, labelID)
+	if err != nil {
+		return nil, nil, err
 	}
-	if err := s.db.WithContext(ctx).Raw(`
-		SELECT a.name FROM catalog_label_alias a
-		JOIN catalog_label l ON l.id = a.label_id
-		WHERE a.label_id = ? AND a.name <> l.display_name AND a.kind <> ?
-		ORDER BY a.name, a.id`, labelID, model.AliasKindSearchHint).Scan(&rows).Error; err != nil {
-		return nil, err
+	return flatAliases(rows), localizedNames(rows), nil
+}
+
+// characterAliases is labelAliases for characters. Until wave 191 the character
+// face published no aliases at all, so the bangumi lane's zh-Hans character
+// names — by far the largest localized-name population in the catalog — were
+// unreachable through the public API.
+func (s *PublicService) characterAliases(ctx context.Context, characterID int64) ([]string, map[string]dto.PublicLocalizedName, error) {
+	rows, err := s.entityAliases(ctx, characterAliasSource, characterID)
+	if err != nil {
+		return nil, nil, err
 	}
-	out := make([]string, 0, len(rows))
-	seen := make(map[string]struct{}, len(rows))
-	for _, r := range rows {
-		if _, dup := seen[r.Name]; dup {
-			continue // the same spelling under two langs renders once
-		}
-		seen[r.Name] = struct{}{}
-		out = append(out, r.Name)
-	}
-	return out, nil
+	return flatAliases(rows), localizedNames(rows), nil
 }
 
 // labelLinks projects a label's non-identity web-presence links from its
@@ -1576,10 +1578,8 @@ func (s *PublicService) characterIntros(ctx context.Context, characterID int64) 
 }
 
 // nameAliases loads a credit name's alternate spellings from catalog_name_alias
-// as a flat, ordered, deduplicated string list — the exact shape and query of
-// labelAliases, for the exact same reasons (flat strings serve every consumer:
-// search-as-you-type matching and "also known as" lines; a richer {name, lang,
-// kind} shape stays available as a later addition). Empty → [].
+// — the exact shape and query of labelAliases: the flat also-known-as list plus
+// the wave-191 per-locale map. Empty → [] and {}.
 //
 // HEAD NAME ONLY, never the siblings'. A credit name is the alias owner
 // (catalog_name_alias hangs off credit_name_id, the doc 10 invariant), and the
@@ -1594,27 +1594,12 @@ func (s *PublicService) characterIntros(ctx context.Context, characterID int64) 
 // name does not already disclose.
 //
 // Search-hint rows (AliasKindSearchHint) are excluded, as in labelAliases.
-func (s *PublicService) nameAliases(ctx context.Context, nameID int64) ([]string, error) {
-	var rows []struct {
-		Name string `gorm:"column:name"`
+func (s *PublicService) nameAliases(ctx context.Context, nameID int64) ([]string, map[string]dto.PublicLocalizedName, error) {
+	rows, err := s.entityAliases(ctx, creditNameAliasSource, nameID)
+	if err != nil {
+		return nil, nil, err
 	}
-	if err := s.db.WithContext(ctx).Raw(`
-		SELECT a.name FROM catalog_name_alias a
-		JOIN catalog_credit_name cn ON cn.id = a.credit_name_id
-		WHERE a.credit_name_id = ? AND a.name <> cn.name AND a.kind <> ?
-		ORDER BY a.name, a.id`, nameID, model.AliasKindSearchHint).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(rows))
-	seen := make(map[string]struct{}, len(rows))
-	for _, r := range rows {
-		if _, dup := seen[r.Name]; dup {
-			continue // the same spelling under two langs renders once
-		}
-		seen[r.Name] = struct{}{}
-		out = append(out, r.Name)
-	}
-	return out, nil
+	return flatAliases(rows), localizedNames(rows), nil
 }
 
 // nameIntros assembles a credited identity's descriptions from two lanes,

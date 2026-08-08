@@ -115,6 +115,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 名义(署名)反查:这个名义参与了哪些作品。用途 = letmoe 实体页(人物/名义页,step 20)的数据源之一——「这个制作方/声优/脚本还做了哪些」硬需求①,页面直达即自足。
 
 - **名义自述**(`name`):`id` + **lang 分桶名**(`ja`/`zh`/`other` 三桶,名义只落其一——search 不变量 1)+ `latin` + `person_id` + **`siblings`(同一 person 的其他名义,各 `id`/分桶名/latin)**。`person_id` 与 `siblings` 一并给,消费方的人物页免二次查其余名义。
+  - ⚠️ **分桶名只在本 S2S 面存续**。公开面 `GET /v1/catalog/names/{id}` 的同名 `name{}` 自 wave 191 起**弃用**——三桶看起来像「一名三语」,实为「一个名字,按它自己的语言归档」,于是无 `zh` 键被普遍误读为「无中文名」。公开面的替代物 = `display_name` + `lang` + `localized{}`(按 locale 取名的 map,供给同为三张别名表),见 `docs/developer-platform/02-public-api.md` §3.7。
   - ⚠️ **link-visibility 铁则**(`model.LinkVisibility`,search/doc.go 把「人物页装配时过滤」明确指向此端点):credit_name→person 的**隐藏链接从不进入「同一人」聚合**。故 ①被查名义自身链接为隐藏时,`person_id` 与 `siblings` 一律不出(该名义呈现为独立身份);②`siblings` 恒只含**公开链接**的兄弟名义。
   - **wave 172 加法——人物块**:`photo_hash`(人物照片在图床的内容哈希,与作品封面 `image_hash` 同币种,消费端据此拼 CDN URL;**恒出**,空串=无照片)+ `gender` + `birth_y`/`birth_m`/`birth_d`(模糊生日三列,精度自表达;未记录则该键缺席)。五键**与 `person_id` 同一道闸**:隐藏链接下一律不出(`photo_hash=""`、其余缺席)——照片与生日是**人物事实**,在被刻意隐藏的链接下公开它们,等于泄露那条链接本身。人物列经 `LEFT JOIN catalog_person`(`deleted_at IS NULL`)取,孤儿名义照常返回自身行。
   - **wave 186 加法——公开面人物 `links[]`**:公开面 `GET /v1/catalog/names/{id}` 的人物块新增 **`links`**,元素 `{ source, url }`(与 label 的 `links` 同形、同一张模板表),投影自**人物**的 `entity_type=0 / link_kind=related` 锚——官网 / twitter / pixiv / ci-en 等**非身份**网址;身份锚(exact/probable)在查询层即排除,两者永不相交。它**与 `person_id` 同一道闸**:隐藏链接下不出——主页是**人物事实**,在被刻意隐藏的链接下公开它,等于泄露那条链接本身。孤儿名义与隐藏链接一律 `[]`(**恒出,不为 null**),排序 `(source_id, external_id)`。
