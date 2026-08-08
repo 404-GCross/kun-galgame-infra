@@ -32,6 +32,57 @@ func seriesApp(db *gorm.DB) *fiber.App {
 	return app
 }
 
+// TestSeriesListSourceLane pins source=: the browse lane can be asked for one
+// provenance lane at a time, on the same key the rows print. Without it a
+// consumer cannot tell a hand-filed series from a machine-inferred one except
+// by fetching every row and sorting client-side.
+func TestSeriesListSourceLane(t *testing.T) {
+	db := openCatalogTestDB(t)
+	seriesID, emptyID, _, _ := seedSeries(t, db)
+	// A third series on the MACHINE INFERENCE lane, so the filter has two
+	// populations to tell apart rather than one to echo back.
+	derived := model.CatalogSeries{DisplayName: "推論シリーズ", SourceID: derivedSourceID, ExternalID: "DRV0000001"}
+	require.NoError(t, db.Create(&derived).Error)
+	app := seriesApp(db)
+
+	code, body := getJSON(t, app, "/v1/catalog/series?source=derived")
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	items := data["items"].([]any)
+	require.Len(t, items, 1)
+	assert.EqualValues(t, derived.ID, items[0].(map[string]any)["id"])
+	assert.Equal(t, "derived", items[0].(map[string]any)["source"])
+	assert.EqualValues(t, 1, data["total"],
+		"total counts the filtered lane, not the whole catalogue")
+
+	// Comma-separated union, still in id ASC.
+	code, body = getJSON(t, app, "/v1/catalog/series?source=dlsite,derived")
+	require.Equal(t, 200, code)
+	data = body["data"].(map[string]any)
+	items = data["items"].([]any)
+	require.Len(t, items, 3)
+	assert.EqualValues(t, seriesID, items[0].(map[string]any)["id"])
+	assert.EqualValues(t, emptyID, items[1].(map[string]any)["id"])
+	assert.EqualValues(t, derived.ID, items[2].(map[string]any)["id"])
+	assert.EqualValues(t, 3, data["total"])
+
+	// OPEN vocabulary: an unknown lane is an empty page, never a 400 — which
+	// sources file series is registry data, not a code-level enum.
+	code, body = getJSON(t, app, "/v1/catalog/series?source=nosuchsource")
+	require.Equal(t, 200, code)
+	data = body["data"].(map[string]any)
+	assert.Empty(t, data["items"])
+	assert.EqualValues(t, 0, data["total"])
+
+	// Absent = no gate, byte-identical to a pre-filter caller.
+	code, body = getJSON(t, app, "/v1/catalog/series")
+	require.Equal(t, 200, code)
+	assert.Len(t, body["data"].(map[string]any)["items"], 3)
+}
+
+// derivedSourceID is the machine-inference lane (wave 184 series builder).
+const derivedSourceID int16 = 18
+
 // dlsiteSourceID is the source the series lane is fed from today (the step-94
 // importer is dlsite-only); its public key is "dlsite".
 const dlsiteSourceID int16 = 4

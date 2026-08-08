@@ -13,14 +13,15 @@ import (
 )
 
 // SeriesList serves GET /v1/catalog/series — the keyset series browse lane
-// (id ASC), the fourth member of the labels / tags / engines family. No
-// filters; work_count is nsfw-aware, exactly like its three siblings.
+// (id ASC), the fourth member of the labels / tags / engines family.
+// work_count is nsfw-aware, exactly like its three siblings. source= selects
+// lanes (curated / derived / dlsite) by the same key the rows print.
 func (h *PublicHandler) SeriesList(c fiber.Ctx) error {
 	limit, ok := limitPub(c.Query("limit"), 20, 100)
 	if !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)
 	}
-	data, err := h.svc.SeriesList(c.Context(), nsfwQuery(c), c.Query("cursor"), limit)
+	data, err := h.svc.SeriesList(c.Context(), nsfwQuery(c), c.Query("cursor"), c.Query("source"), limit)
 	if err != nil {
 		return taxonomyListError(c, err)
 	}

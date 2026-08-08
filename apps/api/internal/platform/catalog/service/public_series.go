@@ -166,12 +166,22 @@ func (s *PublicService) seriesIntros(ctx context.Context, seriesID int64) ([]dto
 // population two keyset pages cover.
 //
 // A malformed cursor is ErrBadCursor (the handler maps it to 400).
-func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor string, limit int) (dto.PublicSeriesListData, error) {
+func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor, source string, limit int) (dto.PublicSeriesListData, error) {
 	cur, err := decodePublicCursor(cursor, taxonomyLaneSeries)
 	if err != nil {
 		return dto.PublicSeriesListData{}, err
 	}
 	limit = clampBrowseLimit(limit)
+
+	// source= selects lanes by the SAME key the rows print (curated / derived /
+	// dlsite today). An OPEN vocabulary, like works/search's olang: which
+	// sources produce series is registry data, not a code-level enum, so an
+	// unknown token yields an empty page rather than a 400 — a closed list
+	// would have to be edited every time an importer starts filing series.
+	sourceIDs, filterSource := s.resolveSourceIDs(source)
+	if filterSource && len(sourceIDs) == 0 {
+		return dto.PublicSeriesListData{Items: []dto.PublicSeriesListItem{}}, nil
+	}
 
 	// No deleted_at predicate, unlike the other three lanes: catalog_series
 	// carries no soft-delete column at all (see SeriesDetail — the importer
@@ -181,6 +191,10 @@ func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor string
 	if cur.ID > 0 {
 		where = append(where, "s.id > ?")
 		args = append(args, cur.ID)
+	}
+	if filterSource {
+		where = append(where, "s.source_id IN ?")
+		args = append(args, sourceIDs)
 	}
 	args = append(args, limit+taxonomyOverFetch)
 
@@ -213,7 +227,18 @@ func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor string
 			WorkCount: counts[r.ID], HasNSFW: nsfwWorks[r.ID] > 0,
 		}
 	}
-	if out.Total, err = s.taxonomyTotal(ctx, "catalog_series", nil, nil); err != nil {
+	// total counts the SAME filtered population as the page (the works/search
+	// rule), so a source-filtered lane never reports the whole catalogue's
+	// count. The cursor is deliberately NOT part of it — total is the size of
+	// the lane, not of what is left to walk. No alias here: taxonomyTotal
+	// queries the bare table.
+	var totalWhere []string
+	var totalArgs []any
+	if filterSource {
+		totalWhere = append(totalWhere, "source_id IN ?")
+		totalArgs = append(totalArgs, sourceIDs)
+	}
+	if out.Total, err = s.taxonomyTotal(ctx, "catalog_series", totalWhere, totalArgs); err != nil {
 		return dto.PublicSeriesListData{}, err
 	}
 	out.NextCursor = taxonomyNextCursor(taxonomyLaneSeries, ids, more)

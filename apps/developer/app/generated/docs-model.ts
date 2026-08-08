@@ -7041,6 +7041,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "boolean",
                   "doc": "true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?series_id= call returns)"
+                },
+                {
+                  "name": "source",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated lane filter on the SAME key each row prints in source: curated (hand-filed), derived (built by the automatic series lane), dlsite (filed by that importer). An OPEN vocabulary, like works/search's olang — which sources file series is registry data, not a code-level enum, so an unrecognized token yields an empty page rather than a 400. Absent = no gate, byte-identical to a pre-A4 call. total counts the same filtered population as items"
                 }
               ],
               "responses": [

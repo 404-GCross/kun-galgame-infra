@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -537,6 +538,35 @@ func (s *PublicService) imageURL(hash string) string {
 // sourceKey maps a source id to its PUBLIC key ("" when unknown).
 func (s *PublicService) sourceKey(id int16) string {
 	return s.sources[id]
+}
+
+// resolveSourceIDs turns a comma-separated source= parameter into registry ids.
+// filter=false means the caller passed nothing and wants no gate at all; an
+// empty ids slice with filter=true means every token was unrecognized, which
+// the caller answers with an empty page (OPEN vocabulary — see SeriesList).
+// Both the public and the registry spelling of a key are accepted, matching
+// what the lookup face already does.
+func (s *PublicService) resolveSourceIDs(param string) (ids []int16, filter bool) {
+	param = strings.TrimSpace(param)
+	if param == "" {
+		return nil, false
+	}
+	seen := map[int16]bool{}
+	for tok := range strings.SplitSeq(param, ",") {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		want := publicSourceKey(registrySourceKey(tok))
+		for id, key := range s.sources {
+			if key == want && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	slices.Sort(ids)
+	return ids, true
 }
 
 // popularityMetricKey projects the PopularityMetric* vocabulary to stable
