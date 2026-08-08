@@ -471,6 +471,10 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 	if rec.Credits[0].Credits[0].LabelID != 0 || rec.Credits[0].Credits[0].Label != "" {
 		t.Fatalf("personal credit must carry no label: %+v", rec.Credits[0].Credits[0])
 	}
+	// A hand-entered credit has no attributing source — omitted, not "".
+	if rec.Credits[0].Credits[0].Source != "" {
+		t.Fatalf("sourceless credit must omit source: %+v", rec.Credits[0].Credits[0])
+	}
 
 	// The bare record (no include) omits credits entirely.
 	bare, _, _ := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false, 0)
@@ -494,7 +498,12 @@ func TestPublicWorkCreditsLabelSigner(t *testing.T) {
 		t.Fatalf("create label: %v", err)
 	}
 	c := createCredit(t, w.ID, name.ID, seededRoleID(t), nil)
-	if err := testDB.Model(c).Update("label_id", label.ID).Error; err != nil {
+	// erogamespace is the registry spelling; the wire must say erogamescape.
+	var srcID int16
+	if err := testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'erogamespace'`).Scan(&srcID).Error; err != nil || srcID == 0 {
+		t.Fatalf("erogamespace source id=%d err=%v", srcID, err)
+	}
+	if err := testDB.Model(c).Updates(map[string]any{"label_id": label.ID, "source_id": srcID}).Error; err != nil {
 		t.Fatalf("set signer: %v", err)
 	}
 
@@ -512,6 +521,10 @@ func TestPublicWorkCreditsLabelSigner(t *testing.T) {
 	// The credited name is NOT replaced by the signer — they coexist.
 	if item.ID != name.ID {
 		t.Fatalf("signer must not displace the credited name: %+v", item)
+	}
+	// The 裁定-7 source carve-out, in the public spelling.
+	if item.Source != "erogamescape" {
+		t.Fatalf("credit must name its attributing source, publicly spelled: %q", item.Source)
 	}
 }
 

@@ -221,11 +221,13 @@ catalog 的 release 日期是**部分 ISO**:`YYYY` / `YYYY-MM` / `YYYY-MM-DD`,�
 - 覆盖率约 2%(101 万 credit 行中 21,419 行带 `label_id`),故绝大多数槽形状与本波前逐字节相同。
 - **不违反裁定 7**:该白名单剔除的是 `note` / provenance / 审计类字段;署名者与角色同属**可寻址身份指针**,不是其中任何一类。
 
-> **仍被裁定 7 挡住、待裁定反转的两键**(见 `refs/plans/05-open-api/03-catalog-public-face.md` 第 7 条):
-> - `note`(101 万行中 185,581 行非空,18.3%)——credit 的说明文字(如"as 某某"、担当范围),S2S 面已出且 forum BFF 在消费。
-> - `source`(100% 覆盖)——credit 的来源归因。**注意此键与全面其余部分已不自洽**:intros / links / screenshots / ratings 全部带 `source` 归因,「响应携带 attribution 归源」本身就是本平台的对外卖点;裁定 7 写于 Phase-1,早于归因成为产品特性。
->
-> 两键都是**纯加法**,反转裁定即可落地;此处不擅自反转,留作裁定项。
+**②d credit 的来源归因 `source`(wave 189 加法,裁定 7 的唯一例外)**
+
+每个 credit 槽新增 `source`,取值是与 refs / intros / screenshots / ratings **完全同一套公开源键拼写**(`erogamespace` 在 wire 上一律作 `erogamescape`)。
+
+- **这是对裁定 7 的定向反转**(2026-08-07 裁定;原文见 `refs/plans/05-open-api/03-catalog-public-face.md` 第 7 条)。理由:该裁定写于 Phase-1,早于「响应携带 attribution 归源」成为本平台的对外卖点;本面每一个多源数组都已指名出处,唯独 credit 沉默,消费端拿两个上游的花名册对账时无法判断哪条是谁说的。
+- **`note` 维持剔除**:自由文本、18.3% 覆盖(101 万行中 185,581 行非空)、未经审校,与本键不是一类。
+- 无来源行的手工 credit **缺席该键**(`omitempty`),不出空串。
 
 **③ intro `machine` 旗标语义**
 

@@ -95,8 +95,9 @@ type PublicRelation struct {
 }
 
 // PublicCreditItem is one credited name under a role. id is the credit-name id
-// (addressable via /v1/catalog/names/{id}). note / provenance / source are
-// stripped (裁定 7 whitelist).
+// (addressable via /v1/catalog/names/{id}). note is stripped (裁定 7 whitelist);
+// source is the one carve-out from that whitelist, ruled 2026-08-07 — see the
+// Source field.
 type PublicCreditItem struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
@@ -114,6 +115,19 @@ type PublicCreditItem struct {
 	// addressable identity pointer as the character.
 	LabelID int64  `json:"label_id,omitempty"`
 	Label   string `json:"label,omitempty"`
+	// Source is the upstream that attributed this credit, in the same public
+	// key spelling used by refs / intros / screenshots / ratings.
+	//
+	// 裁定 7 originally stripped it alongside note / provenance. Reversed
+	// 2026-08-07: that ruling predates attribution becoming a headline property
+	// of this face, where every other multi-source array already names its
+	// origin — a credit staying silent was the odd one out, and a consumer
+	// reconciling two upstreams' rosters could not tell which said what. note
+	// stays stripped: free text, 18.3% coverage, unreviewed.
+	//
+	// Empty when the credit carries no source row (hand-entered), which is why
+	// it is omitempty rather than always present.
+	Source string `json:"source,omitempty"`
 }
 
 // PublicCreditGroup is all credits sharing one role.

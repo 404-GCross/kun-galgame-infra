@@ -9064,6 +9064,10 @@ export const docsModel: DocsModel = {
                                         "name": "name",
                                         "required": true,
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "type": "string"
                                       }
                                     ]
                                   }

@@ -1049,6 +1049,8 @@ components:
           type: string
         name:
           type: string
+        source:
+          type: string
       required:
         - id
         - name

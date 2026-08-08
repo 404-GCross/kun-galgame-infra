@@ -654,8 +654,8 @@ func publicPlatformsFromExtra(extra datatypes.JSON) []string {
 }
 
 // workCredits projects a work's credits (reusing the S2S read query), grouping
-// consecutive rows by role and whitelisting fields (note / provenance / source
-// stripped, 裁定 7).
+// consecutive rows by role and whitelisting fields (note / provenance stripped,
+// 裁定 7; source published since the 2026-08-07 carve-out).
 func (s *PublicService) workCredits(ctx context.Context, workID int64) ([]dto.PublicCreditGroup, error) {
 	rows, err := s.read.WorkCredits(ctx, workID)
 	if err != nil {
@@ -686,6 +686,9 @@ func (s *PublicService) workCredits(ctx context.Context, workID int64) ([]dto.Pu
 		}
 		if r.LabelNM != nil {
 			item.Label = *r.LabelNM
+		}
+		if r.SourceKey != nil {
+			item.Source = publicSourceKey(*r.SourceKey)
 		}
 		cur.Credits = append(cur.Credits, item)
 	}
