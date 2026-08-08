@@ -166,7 +166,27 @@ func TestTaxonomyItemsCarryWorkCount(t *testing.T) {
 	// wave 170: the 会社 browse row carries the brand logo hash, always present
 	// (a label with no logo reports "" rather than omitting the key).
 	assert.Equal(t, fixtureLogoHash, row["logo_hash"])
+	// A label with no corporate family reports false rather than omitting the
+	// key — the browse row's whole job here is to say a relation-graph call
+	// would be wasted.
+	assert.Equal(t, false, row["has_relations"])
 	assert.Nil(t, body["data"].(map[string]any)["next_cursor"])
+
+	// Once it has an edge, the flag flips — this is what turns twenty
+	// speculative relation-graph calls into one.
+	parent := model.CatalogLabel{DisplayName: "Wire Holdings", Kind: model.LabelKindPublisher}
+	require.NoError(t, db.Create(&parent).Error)
+	require.NoError(t, db.Create(&model.CatalogLabelRelation{
+		LabelID: labelID, OtherLabelID: parent.ID, Relation: model.LabelRelationParent,
+		SourceID: 1, MatchedBy: "rule:test",
+	}).Error)
+	code, body = getJSON(t, app, "/v1/catalog/labels")
+	require.Equal(t, 200, code)
+	items = body["data"].(map[string]any)["items"].([]any)
+	require.Len(t, items, 2)
+	assert.Equal(t, true, items[0].(map[string]any)["has_relations"], "the label with the edge")
+	assert.Equal(t, false, items[1].(map[string]any)["has_relations"],
+		"the other end is reached by the MIRROR row, which this fixture does not write")
 
 	code, body = getJSON(t, app, "/v1/catalog/tags")
 	require.Equal(t, 200, code)

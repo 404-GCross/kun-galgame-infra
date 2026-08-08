@@ -2743,6 +2743,12 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "has_relations",
+                                  "required": true,
+                                  "doc": "true = this label has corporate-family edges; follow labels/{id}/relation-graph. False rows need no such call",
+                                  "type": "boolean"
+                                },
+                                {
                                   "name": "id",
                                   "required": true,
                                   "format": "int64",

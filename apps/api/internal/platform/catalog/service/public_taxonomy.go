@@ -120,17 +120,52 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 	if err != nil {
 		return dto.PublicLabelsListData{}, err
 	}
+	related, err := s.labelsWithRelations(ctx, ids)
+	if err != nil {
+		return dto.PublicLabelsListData{}, err
+	}
 	out := dto.PublicLabelsListData{Items: make([]dto.PublicLabelListItem, len(rows))}
 	for i, r := range rows {
 		out.Items[i] = dto.PublicLabelListItem{
 			ID: r.ID, DisplayName: r.DisplayName, Kind: labelKindKey(r.Kind), WorkCount: counts[r.ID],
-			LogoHash: r.LogoHash,
+			LogoHash: r.LogoHash, HasRelations: related[r.ID],
 		}
 	}
 	if out.Total, err = s.taxonomyTotal(ctx, "catalog_label", filterWhere, filterArgs); err != nil {
 		return dto.PublicLabelsListData{}, err
 	}
 	out.NextCursor = taxonomyNextCursor(taxonomyLaneLabels, ids, more)
+	return out, nil
+}
+
+// labelsWithRelations reports, for one page of label ids, which of them have at
+// least one corporate-family edge. One grouped query per page — the same shape
+// as workCountsFor, and the reason the browse row can answer this at all
+// without an N+1.
+//
+// It publishes a FLAG rather than the edges themselves on purpose. Only 2,139
+// of 39,653 labels carry any relation (5.4%), so shipping relations[] on every
+// row would join the whole page to serve a twentieth of it, on a lane that is
+// deliberately thin. The flag is what a consumer actually needs from a list:
+// which rows are worth a labels/{id}/relation-graph call. Without it, browsing
+// twenty labels means twenty speculative calls to find the one family — the
+// exact N+1 this closes. Same reasoning as has_nsfw on the series lane.
+func (s *PublicService) labelsWithRelations(ctx context.Context, ids []int64) (map[int64]bool, error) {
+	out := map[int64]bool{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		LabelID int64 `gorm:"column:label_id"`
+	}
+	if err := s.db.WithContext(ctx).Raw(
+		`SELECT DISTINCT label_id FROM catalog_label_relation WHERE label_id IN ?`, ids,
+	).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.LabelID] = true
+	}
 	return out, nil
 }
 

@@ -963,6 +963,15 @@ type PublicLabelListItem struct {
 	// LogoHash — see PublicLabel.LogoHash. Always present: the 会社 browse
 	// list renders the logo beside the name, and "" is the real "no logo".
 	LogoHash string `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
+	// HasRelations says this label has at least one corporate-family edge, so
+	// labels/{id}/relation-graph will return something. Always present.
+	//
+	// A flag, not the edges: only 5.4% of labels carry any relation, so
+	// shipping relations[] on every browse row would join the whole page to
+	// serve a twentieth of it. What a list consumer needs is which rows are
+	// worth the graph call — without this, browsing twenty labels means twenty
+	// speculative calls to find the one family.
+	HasRelations bool `json:"has_relations" doc:"true = this label has corporate-family edges; follow labels/{id}/relation-graph. False rows need no such call"`
 }
 
 // PublicLabelsListData is the keyset label-list envelope. next_cursor is null

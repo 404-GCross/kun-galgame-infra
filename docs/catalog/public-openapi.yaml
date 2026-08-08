@@ -1343,6 +1343,9 @@ components:
       properties:
         display_name:
           type: string
+        has_relations:
+          description: true = this label has corporate-family edges; follow labels/{id}/relation-graph. False rows need no such call
+          type: boolean
         id:
           format: int64
           type: integer
@@ -1361,6 +1364,7 @@ components:
         - kind
         - work_count
         - logo_hash
+        - has_relations
       type: object
     PublicLabelRelation:
       additionalProperties: false
