@@ -704,7 +704,9 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 	if p.Aliases, err = s.nameAliases(ctx, id); err != nil {
 		return dto.PublicName{}, false, err
 	}
-	if p.Intros, err = s.nameIntros(ctx, id); err != nil {
+	// p.PersonID is 0 unless NameWorks published a visible person link above,
+	// which is exactly the gate the person intro lane must ride.
+	if p.Intros, err = s.nameIntros(ctx, id, p.PersonID); err != nil {
 		return dto.PublicName{}, false, err
 	}
 	if p.Refs, err = s.entityRefs(ctx, model.EntityTypeCreditName, id); err != nil {
@@ -1576,15 +1578,52 @@ func (s *PublicService) nameAliases(ctx context.Context, nameID int64) ([]string
 	return out, nil
 }
 
-// nameIntros bridges a credit name's description at read time from its OWN
-// bangumi anchor (wave 108): src_bangumi.person.summary, lowest external_id
-// wins when a name holds several anchors. Per-name provenance — reading a
-// name's anchored source is NOT a person-identity assertion (that resolution
-// stays frozen); the E2 label-links doctrine applied to names. vndb staff
-// descriptions are a documented follow-up lane (aid→sid mapping first).
-// Empty → [].
-func (s *PublicService) nameIntros(ctx context.Context, nameID int64) ([]dto.PublicNameIntro, error) {
-	var rows []struct {
+// nameIntros assembles a credited identity's descriptions from two lanes,
+// merged to one element per language.
+//
+// Lane 1 — the PERSON's own catalog_person_intro rows (personID > 0 only).
+// These are catalog-native: a declared lang column and row-level provenance
+// (0=source / 1=machine), the exact catalog_character_intro shape. personID is
+// passed in ALREADY GATED by the caller — NameWorks nils the person link out
+// when it is hidden, so a zero here means "no person to publish", never "look
+// it up yourself". A biography rides the person_id gate for the same reason
+// the photo and the birthday do (wave 172): it is a person fact, and shipping
+// it under a withheld link would leak the association being withheld.
+//
+// Lane 2 — the wave-108 read-time bridge from the name's OWN bangumi anchor
+// (src_bangumi.person.summary, lowest external_id wins when a name holds
+// several). Per-name provenance: reading a name's anchored source is NOT a
+// person-identity assertion (that resolution stays frozen); the E2 label-links
+// doctrine applied to names. This lane is what an orphan name answers with,
+// and orphans are the vast majority of credit names — it is not a fallback to
+// be retired once persons fill in.
+//
+// Precedence per language: person source row, then bridge, then person machine
+// translation. The person lane leads because it declares its language, where
+// the bridge can only infer one from the script (introLang). Source beats
+// machine across lanes — the step-75 rule.
+//
+// vndb staff descriptions are a documented follow-up lane (aid→sid mapping
+// first). Empty → [].
+func (s *PublicService) nameIntros(ctx context.Context, nameID, personID int64) ([]dto.PublicNameIntro, error) {
+	var personRows []struct {
+		Lang       string
+		Intro      string
+		SourceID   int16 `gorm:"column:source_id"`
+		Provenance int16 `gorm:"column:provenance"`
+	}
+	if personID > 0 {
+		// provenance ASC puts source rows ahead of machine translations within
+		// a language, source_id ASC breaks the remaining ties — the step-65
+		// merge convention characterIntros uses.
+		if err := s.db.WithContext(ctx).Raw(`SELECT lang, intro, source_id, provenance
+			FROM catalog_person_intro WHERE person_id = ?
+			ORDER BY lang, provenance, source_id`, personID).Scan(&personRows).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	var bridged []struct {
 		Summary  string
 		SourceID int16 `gorm:"column:source_id"`
 	}
@@ -1595,12 +1634,31 @@ func (s *PublicService) nameIntros(ctx context.Context, nameID int64) ([]dto.Pub
 		JOIN src_bangumi.person p ON p.id::text = r.external_id
 		WHERE r.entity_type = 1 AND r.entity_id = ? AND r.link_kind = 0
 			AND coalesce(p.summary, '') <> ''
-		ORDER BY r.external_id LIMIT 1`, nameID).Scan(&rows).Error; err != nil {
+		ORDER BY r.external_id LIMIT 1`, nameID).Scan(&bridged).Error; err != nil {
 		return nil, err
 	}
-	out := make([]dto.PublicNameIntro, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, dto.PublicNameIntro{Lang: introLang(r.Summary), Intro: r.Summary, Source: s.sourceKey(r.SourceID)})
+
+	out := make([]dto.PublicNameIntro, 0, len(personRows)+len(bridged))
+	seen := map[string]bool{}
+	add := func(lang, intro, source string, machine bool) {
+		if lang == "" || seen[lang] {
+			return
+		}
+		seen[lang] = true
+		out = append(out, dto.PublicNameIntro{Lang: lang, Intro: intro, Source: source, Machine: machine})
+	}
+	for _, r := range personRows {
+		if r.Provenance == 0 {
+			add(r.Lang, r.Intro, s.sourceKey(r.SourceID), false)
+		}
+	}
+	for _, r := range bridged {
+		add(introLang(r.Summary), r.Summary, s.sourceKey(r.SourceID), false)
+	}
+	for _, r := range personRows {
+		if r.Provenance == 1 {
+			add(r.Lang, r.Intro, s.sourceKey(r.SourceID), true)
+		}
 	}
 	return out, nil
 }

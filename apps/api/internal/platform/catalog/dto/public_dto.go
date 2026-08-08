@@ -329,9 +329,23 @@ type PublicName struct {
 	// link the doctrine is withholding would leak the association itself. An
 	// orphan name (and a hidden link) yields [], never null.
 	Links []PublicPersonLink `json:"links"`
-	// Intros is the multilingual description set (wave 108): bridged at read
-	// time from the credit name's OWN bangumi anchor (per-name provenance —
-	// never a person-identity assertion; person resolution stays frozen).
+	// Intros is the multilingual description set, merged from two lanes, one
+	// element per language:
+	//
+	//  1. the PERSON's catalog_person_intro rows — catalog-native, carrying a
+	//     real lang column and row-level provenance. These ride the SAME
+	//     person_id gate as photo_hash / gender / birth / links above, and for
+	//     the same reason: a biography is a person fact, so publishing it under
+	//     a link the doctrine is withholding would leak the association itself.
+	//  2. the wave-108 read-time bridge from the credit name's OWN bangumi
+	//     anchor (per-name provenance — never a person-identity assertion).
+	//     This is what an ORPHAN name answers with, and orphans are the
+	//     overwhelming majority of credited identities.
+	//
+	// Precedence per language: a person source row wins, then the name bridge,
+	// then a person machine translation. The person lane leads because it
+	// carries a declared language, where the bridge can only infer one from the
+	// script (introLang).
 	Intros []PublicNameIntro `json:"intros"`
 	// Refs are this name's EXACT cross-source identity anchors (doc 106 G4).
 	Refs       []PublicCatalogRef `json:"refs"`
@@ -900,12 +914,19 @@ type PublicCharacterIntro struct {
 	Machine bool `json:"machine,omitempty"`
 }
 
-// PublicNameIntro is one description of a credited name (wave 108). source is
-// the catalog_source key.
+// PublicNameIntro is one description of a credited identity. source is the
+// catalog_source key. Two lanes feed it (see PublicService.nameIntros): the
+// PERSON's own catalog_person_intro rows, and the wave-108 read-time bridge
+// from the credit name's own bangumi anchor.
 type PublicNameIntro struct {
 	Lang   string `json:"lang"`
 	Intro  string `json:"intro"`
 	Source string `json:"source"`
+	// Machine mirrors PublicWorkIntro/PublicCharacterIntro/PublicLabelIntro:
+	// an LLM machine translation, surfaced only when that language has no
+	// source row on either lane. The shape is deliberately isomorphic across
+	// all four intro faces so a consumer writes one renderer.
+	Machine bool `json:"machine,omitempty"`
 }
 
 // ── A2-1b: the taxonomy browse lanes (labels / tags / engines) ───────────────

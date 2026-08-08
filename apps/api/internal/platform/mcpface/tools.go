@@ -207,8 +207,8 @@ func (t *tools) catalogLookupExternal(ctx context.Context, req *mcp.CallToolRequ
 }
 
 const descCatalogNameGet = "Fetch one credited name (creator identity) by its numeric id: localized intros[] (creator " +
-	"bio), siblings[] (same-person alternate names) and external refs. Pass include=credits to attach the " +
-	"works this name is credited on, with roles."
+	"bio; each entry carries source and machine=true when it is a machine translation), siblings[] (same-person " +
+	"alternate names) and external refs. Pass include=credits to attach the works this name is credited on, with roles."
 
 type catalogNameGetInput struct {
 	ID      int    `json:"id" jsonschema:"The name id (required). Find one with catalog_search type=names."`

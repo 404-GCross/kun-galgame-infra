@@ -78,14 +78,19 @@ func (CatalogPerson) TableName() string { return "catalog_person" }
 // CatalogPersonIntro is one multilingual intro/description row for a person
 // (field PR C1, refs/proj/65), the exact catalog_character_intro shape keyed by
 // person. Persons are catalog-NATIVE entities — no claimed/bodyless split, no
-// XOR, no bridging. One row per (person, language, source); the read face (a
-// future person-detail endpoint wave) merges per language, source_id ascending.
+// XOR, no bridging. One row per (person, language, source), merged per language
+// source_id ascending.
+//
+// The read face is GET /v1/catalog/names/{id} (wave 189): there is no
+// persons/{id} endpoint, because the public entity layer addresses credited
+// identities, not persons (doc 10 invariant 1). These rows reach the wire as
+// one lane of that face's intros[], riding the SAME person_id visibility gate
+// as the photo and the birthday — see PublicService.nameIntros.
 //
 // The backfill reads PERSON-level anchors only (catalog_external_ref
 // entity_type=0) — never credit-name anchors: projecting a NAME's source page
 // onto its person would smuggle in the identity-resolution judgment that is
-// explicitly deferred (and under-name linkage is sensitivity-gated). Person
-// anchors are empty today; the pipeline auto-expands when they land.
+// explicitly deferred (and under-name linkage is sensitivity-gated).
 //
 // source_id is row-level provenance — NOT NULL with NO default (the
 // default-tag zero-value trap).

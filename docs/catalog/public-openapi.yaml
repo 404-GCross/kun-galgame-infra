@@ -1606,6 +1606,8 @@ components:
           type: string
         lang:
           type: string
+        machine:
+          type: boolean
         source:
           type: string
       required:

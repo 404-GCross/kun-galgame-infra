@@ -857,6 +857,103 @@ func TestPublicNameIntros(t *testing.T) {
 	}
 }
 
+// TestPublicNamePersonIntros pins the person intro lane on GET
+// /v1/catalog/names/{id}: catalog_person_intro reaches the wire for the first
+// time, riding the person_id gate, ahead of the wave-108 bridge per language,
+// with machine translations last and honestly flagged.
+func TestPublicNamePersonIntros(t *testing.T) {
+	cleanTables(t)
+	if err := srcb.EnsureSchema(testDB); err != nil {
+		t.Fatalf("src_bangumi schema: %v", err)
+	}
+	if err := testDB.Exec(`TRUNCATE src_bangumi.person RESTART IDENTITY CASCADE`).Error; err != nil {
+		t.Fatalf("truncate person: %v", err)
+	}
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	p := createPerson(t, "Person")
+	visible := createCreditName(t, &p.ID, "公開名義")
+	hidden := &model.CatalogCreditName{
+		PersonID: &p.ID, Name: "裏名義", Kind: model.CreditNameKindDistinctPersona,
+		LinkVisibility: model.LinkVisibilityHidden,
+	}
+	if err := testDB.Create(hidden).Error; err != nil {
+		t.Fatalf("create hidden name: %v", err)
+	}
+
+	// The person owns a ja source row and a zh-Hans machine translation.
+	for _, row := range []model.CatalogPersonIntro{
+		{PersonID: p.ID, Lang: "ja", Intro: "人物レベルの紹介。", SourceID: 3, Provenance: 0},
+		{PersonID: p.ID, Lang: "zh-Hans", Intro: "人物级简介（机翻）。", SourceID: 3, Provenance: 1, MTModel: "test-model"},
+	} {
+		if err := testDB.Create(&row).Error; err != nil {
+			t.Fatalf("create person intro: %v", err)
+		}
+	}
+
+	// BOTH names carry their own bangumi anchor, whose summary is kana-bearing
+	// and so lands on ja — the language the person lane already answers. That
+	// collision is the point: it proves which lane wins.
+	addExternalRef(t, model.EntityTypeCreditName, visible.ID, int16(3), "999101", model.LinkKindExact)
+	addExternalRef(t, model.EntityTypeCreditName, hidden.ID, int16(3), "999102", model.LinkKindExact)
+	if err := testDB.Exec(`INSERT INTO src_bangumi.person (id, name, type, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at)
+		VALUES (999101, 'a', 1, '', '', '名義レベルの紹介。', 0, 0, 'x', now()),
+		       (999102, 'b', 1, '', '', '裏名義レベルの紹介。', 0, 0, 'x', now())`).Error; err != nil {
+		t.Fatalf("person fixture: %v", err)
+	}
+
+	got, found, err := svc.Name(ctx, visible.ID, false, false, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("visible name: found=%v err=%v", found, err)
+	}
+	if len(got.Intros) != 2 {
+		t.Fatalf("want one intro per language, got %+v", got.Intros)
+	}
+	// ja: the person source row beats the name bridge — it declares its
+	// language where the bridge only infers one from the script.
+	if got.Intros[0].Lang != "ja" || got.Intros[0].Intro != "人物レベルの紹介。" || got.Intros[0].Machine {
+		t.Fatalf("person source row must win ja: %+v", got.Intros[0])
+	}
+	if got.Intros[0].Source != "bangumi" {
+		t.Fatalf("source must be the catalog_source key: %q", got.Intros[0].Source)
+	}
+	// zh-Hans is answered only by the machine row, and says so.
+	if got.Intros[1].Lang != "zh-Hans" || !got.Intros[1].Machine {
+		t.Fatalf("machine row must surface flagged: %+v", got.Intros[1])
+	}
+
+	// The hidden link withholds the person lane entirely — the biography is a
+	// person fact, so publishing it would leak the association being withheld.
+	// The name's OWN bridge still answers, because that asserts nothing.
+	h, found, err := svc.Name(ctx, hidden.ID, false, false, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("hidden name: found=%v err=%v", found, err)
+	}
+	if h.PersonID != 0 {
+		t.Fatalf("hidden link must withhold person_id: %d", h.PersonID)
+	}
+	if len(h.Intros) != 1 || h.Intros[0].Intro != "裏名義レベルの紹介。" || h.Intros[0].Machine {
+		t.Fatalf("hidden link must withhold the person lane and keep its own bridge: %+v", h.Intros)
+	}
+
+	// An orphan name has no person at all: the bridge is its only lane, and it
+	// is the majority case (106k of 119k credit names carry no person link).
+	orphan := createCreditName(t, nil, "孤児名義")
+	addExternalRef(t, model.EntityTypeCreditName, orphan.ID, int16(3), "999103", model.LinkKindExact)
+	if err := testDB.Exec(`INSERT INTO src_bangumi.person (id, name, type, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at)
+		VALUES (999103, 'c', 1, '', '', '孤児レベルの紹介。', 0, 0, 'x', now())`).Error; err != nil {
+		t.Fatalf("orphan person fixture: %v", err)
+	}
+	o, found, err := svc.Name(ctx, orphan.ID, false, false, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("orphan name: found=%v err=%v", found, err)
+	}
+	if len(o.Intros) != 1 || o.Intros[0].Intro != "孤児レベルの紹介。" {
+		t.Fatalf("orphan must still answer from its own bridge: %+v", o.Intros)
+	}
+}
+
 // TestPublicNameAliases pins the wave-175 addition to GET
 // /v1/catalog/names/{id}: aliases[] carries THIS credit name's alternate
 // spellings — the surface that makes the bangumi zh-Hans name lane visible —
