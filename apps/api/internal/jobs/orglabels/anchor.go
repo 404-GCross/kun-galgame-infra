@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 
 	"api/internal/platform/catalog/model"
@@ -152,6 +153,9 @@ type AnchorStats struct {
 	SkipUngradeable int
 	VNDBInAnchored  int // VNDB type=in orgs that anchored an existing label
 	Errors          int
+	// Spine is the corporate-graph pass — the producers this grader cannot
+	// reach because they publish nothing under their own name. See spine.go.
+	Spine SpineStats
 }
 
 func (s *AnchorStats) add(o AnchorStats) {
@@ -167,6 +171,7 @@ func (s *AnchorStats) add(o AnchorStats) {
 	s.SkipUngradeable += o.SkipUngradeable
 	s.VNDBInAnchored += o.VNDBInAnchored
 	s.Errors += o.Errors
+	s.Spine.add(o.Spine)
 }
 
 // RunAnchor opens the pools and executes the E2a anchoring wave for the
@@ -225,6 +230,22 @@ func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit i
 			pt.add(st)
 		}
 
+		// The spine runs LAST in the iteration, over what the co-work grader
+		// could not reach — see spine.go. It is a VNDB-only lane (it is the only
+		// upstream that publishes company structure at all), so a run scoped to
+		// another source skips it.
+		if slices.Contains(wantedSources(source), "vndb") {
+			sp, err := runSpine(ctx, catalog, labelNorms, limit, apply)
+			if err != nil {
+				return total, fmt.Errorf("spine pass: %w", err)
+			}
+			slog.Info("org-label spine pass done", "pass", pass, "apply", apply,
+				"considered", sp.Considered, "minted", sp.Minted, "anchored", sp.Anchored,
+				"candidates", sp.Candidates, "candidate_rows", sp.CandidateRows,
+				"skip_claimed", sp.SkipClaimed, "errors", sp.Errors)
+			pt.Spine = sp
+		}
+
 		if pass == 1 {
 			total = pt // the first pass is the plan (matches the dry run)
 		} else {
@@ -235,9 +256,12 @@ func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit i
 			total.NewEdges += pt.NewEdges
 			total.VNDBInAnchored += pt.VNDBInAnchored
 			total.Errors += pt.Errors
+			total.Spine.add(pt.Spine)
 		}
 		// Dry runs never write, so the fixpoint is a single pass by construction.
-		if !apply || pt.AnchorsExact+pt.AnchorsProbable+pt.NewLabels == 0 {
+		// The spine's writes count towards convergence too: a label it mints is a
+		// name-match target for the next iteration's co-work pass.
+		if !apply || pt.AnchorsExact+pt.AnchorsProbable+pt.NewLabels+pt.Spine.writes() == 0 {
 			break
 		}
 	}

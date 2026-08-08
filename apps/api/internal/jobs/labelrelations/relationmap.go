@@ -16,14 +16,23 @@ import "api/internal/platform/catalog/model"
 //
 //     i.e. "the producer named by pid is <rel> of the producer named by id".
 //
-// The direction is PROVISIONAL: VNDB's dump ships the graph mirrored and its
-// schema notes do not state which endpoint the relation word describes, so the
-// reading above is a hypothesis to be pinned EMPIRICALLY at ops time against a
-// pair whose real-world structure is unambiguous — Key and VisualArt's (Key is
-// a brand under VisualArt's, so the mirrored pair must come out as
-// "VisualArt's is the PARENT of Key" and "Key is the SUBSIDIARY of VisualArt's").
+// The direction was PINNED EMPIRICALLY on 2026-08-08 and is no longer
+// provisional. The pair this banner originally nominated — Key / VisualArt's —
+// turned out to be unusable: VISUAL ARTS (p993) carried no label anchor, so the
+// check could never run, and the graph shipped for two waves with an unverified
+// reading. It was confirmed instead against three both-anchored pairs whose
+// real-world structure is unambiguous, all of which came out right way up:
 //
-// If that check comes out inverted, THIS FILE IS THE ONLY EDIT: swap the four
+//	Hudson Soft  --parent-->  コナミ         (Konami acquired Hudson Soft)
+//	KCET         --parent-->  コナミ         (Konami Computer Entertainment Tokyo)
+//	Genius Yaoi Studio --parent--> Genius Inc.
+//
+// i.e. a row selected WHERE label_id = X names X's parent in other_label_id,
+// which is what the reading above says. (The lesson generalises: an ops check
+// nominating a specific pair must first assert that pair is reachable, or it
+// silently never runs.)
+//
+// If a future dump ever comes out inverted, THIS FILE IS THE ONLY EDIT: swap the four
 // inverse pairs in the table below (par↔sub, imp↔ipa, spa↔ori, new↔old) and
 // re-run the builder with --apply. Nothing else in the job, the model or the
 // read face encodes a direction — the graph is stored mirrored precisely so no

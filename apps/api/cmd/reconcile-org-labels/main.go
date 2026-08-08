@@ -54,6 +54,14 @@ func main() {
 		"conflict", st.Conflict, "skip_no_match", st.SkipNoMatch,
 		"skip_ambiguous", st.SkipAmbiguous, "skip_ungradeable", st.SkipUngradeable,
 		"vndb_in_anchored", st.VNDBInAnchored, "errors", st.Errors)
+	// The spine is reported separately, never folded into the totals above: its
+	// warrant for creating a label is participation in the corporate graph, not
+	// work attribution, and collapsing the two would hide which rule acted.
+	slog.Info("reconcile-org-labels spine summary",
+		"considered", st.Spine.Considered, "minted", st.Spine.Minted,
+		"anchored", st.Spine.Anchored, "candidates", st.Spine.Candidates,
+		"candidate_rows", st.Spine.CandidateRows,
+		"skip_claimed", st.Spine.SkipClaimed, "errors", st.Spine.Errors)
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
