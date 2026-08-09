@@ -528,6 +528,8 @@ export interface components {
         ProbableRefItem: {
             /** Format: date-time */
             created_at: string;
+            /** Format: date-time */
+            dead_at: string | null;
             entity: components["schemas"]["EntitySummary"];
             /** Format: int64 */
             entity_id: number;

@@ -622,6 +622,11 @@ components:
         created_at:
           format: date-time
           type: string
+        dead_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         entity:
           $ref: "#/components/schemas/EntitySummary"
         entity_id:
@@ -663,6 +668,7 @@ components:
         - verified_by
         - verified_at
         - created_at
+        - dead_at
       type: object
     ProposalActionData:
       additionalProperties: false
