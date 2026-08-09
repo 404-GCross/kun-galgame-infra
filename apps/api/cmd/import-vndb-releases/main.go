@@ -7,16 +7,28 @@
 // governed Extra jsonb. It NEVER touches an existing row — the 1:1 stubs host
 // the DLsite workno anchors — and adds no columns/tables. Single-vn releases get
 // an exact release anchor; multi-vn releases stay anchor-free (Extra.vndb_id
-// keeps them back-referenceable). Idempotent: the (work_id, vndb_id) resume
-// index makes a second pass write nothing — and it counts a soft-deleted holder
-// as claimed (skipped_retired), because a retired row still answers to its vndb
-// id and still squats its exact anchor slot.
+// keeps them back-referenceable, and a probable ref makes them visible to the
+// identity index). Idempotent: the (work_id, vndb_id) resume index makes a
+// second pass write nothing — and it counts a soft-deleted holder as claimed
+// (skipped_retired), because a retired row still answers to its vndb id and
+// still squats its exact anchor slot.
+//
+// Wave 202 split the two decisions the tool used to conflate. The ROW decision
+// ("does this work already host this release?") stays keyed (work_id, r-id); the
+// ANCHOR decision ("is this r-id's identity slot free?") is keyed by the r-id
+// ALONE and read from catalog_external_ref, the same shape as the partial unique
+// that governs it. A r-id whose exact slot is already held by another release
+// gets a row and a PROBABLE ref, and the sitting anchor is left untouched —
+// re-grading it would be an adjudication. Every run opens with a phase-1
+// backfill that gives legacy Extra.vndb_id rows a probable ref of their own
+// (probable_backfilled; 0 after the first apply).
 //
 // Logic lives in internal/platform/catalog/importer (RunReleases). src_vndb
 // staging shares the catalog DB — load it first with cmd/ingest-vndb. Dry-run is
 // the DEFAULT; pass --apply to write. --dsn targets the rehearsal copy locally
 // (the live catalog only in the acceptance run); it falls back to the configured
-// CatalogDatabase when omitted.
+// CatalogDatabase when omitted. --stale-anchors-out writes the human-review
+// worklist of r-ids whose anchor disagrees with upstream (dry runs included).
 //
 //	go run ./cmd/import-vndb-releases --dsn "host=localhost ... dbname=kun_catalog_rehearsal sslmode=disable"           # dry-run
 //	go run ./cmd/import-vndb-releases --apply --dsn "..."                                                               # write (×2 = idempotent)
@@ -42,6 +54,7 @@ func main() {
 	apply := flag.Bool("apply", false, "write (default: dry run — plan counts only)")
 	limit := flag.Int("limit", 0, "cap works processed (0 = all)")
 	dsn := flag.String("dsn", "", "catalog DSN (also hosts src_vndb); default: configured CatalogDatabase — pass the rehearsal copy locally")
+	staleOut := flag.String("stale-anchors-out", "", "TSV path for the stale-anchor review worklist (r-ids whose exact anchor sits under a work upstream no longer maps them to); empty = don't write")
 	flag.Parse()
 
 	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
@@ -75,7 +88,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	im := importer.New(db, nil, importer.Options{DryRun: !*apply, Limit: *limit})
+	im := importer.New(db, nil, importer.Options{DryRun: !*apply, Limit: *limit, StaleAnchorsOut: *staleOut})
 	st, err := im.RunReleases()
 	if err != nil {
 		slog.Error("vndb releases import failed", "error", err)
@@ -85,9 +98,15 @@ func main() {
 		"apply", *apply,
 		"in_gate_pairs", st.InGatePairs,
 		"planned", st.Planned,
+		"probable_backfilled", st.ProbableBackfilled,
 		"releases_written", st.ReleasesWritten,
 		"anchors_written", st.AnchorsWritten,
+		"probable_refs_written", st.ProbableRefsWritten,
 		"multi_vn_unanchored", st.MultiVNUnanchored,
+		"anchor_held_by_other", st.AnchorHeldByOther,
+		"stale_anchor_holders", st.StaleAnchorHolders,
+		"anchor_race_lost", st.AnchorRaceLost,
+		"batch_failures", st.BatchFailures,
 		"skipped_existing", st.SkippedExisting,
 		"skipped_retired", st.SkippedRetired,
 		"kind_default", st.KindDefault,

@@ -62,6 +62,10 @@ type Options struct {
 	// ConflictsOut, when set, writes the B3 conflict worklist (a dlsite_id whose
 	// claimants resolve to several different wiki works) to this TSV path.
 	ConflictsOut string
+	// StaleAnchorsOut, when set, writes the VNDB releases stale-anchor worklist (a
+	// vndb r-id whose exact anchor sits under a work upstream no longer maps it
+	// to) to this TSV path. Written by dry runs too — it is a planning artifact.
+	StaleAnchorsOut string
 }
 
 // Stats is the eight-item per-wave tally.
@@ -112,12 +116,14 @@ type Importer struct {
 	limit            int
 	resolveAmbiguous bool
 	conflictsOut     string
+	staleAnchorsOut  string
 }
 
 func New(catalog, eg *gorm.DB, opts Options) *Importer {
 	return &Importer{
 		catalog: catalog, eg: eg, dryRun: opts.DryRun, limit: opts.Limit,
 		resolveAmbiguous: opts.ResolveAmbiguous, conflictsOut: opts.ConflictsOut,
+		staleAnchorsOut: opts.StaleAnchorsOut,
 	}
 }
 
