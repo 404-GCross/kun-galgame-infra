@@ -332,3 +332,31 @@ func TestAnchorAndEnrich_Bangumi(t *testing.T) {
 	assert.Equal(t, int64(1), siteID)
 	assert.Equal(t, int64(1), twID)
 }
+
+// A merged-away label must leave the name index the moment it is retired.
+// Otherwise it keeps competing for identity: the spine sees two same-named
+// labels, declines to anchor, and files the merge candidate again — so
+// executing the merge could never clear the ambiguity that raised it.
+func TestNameIndexExcludesRetiredLabels(t *testing.T) {
+	cleanAll(t)
+	mkLabel(t, 41, "NEXTON", model.LabelKindPublisher)
+	mkLabel(t, 13231, "NEXTON", model.LabelKindPublisher)
+	dlsite := sourceDlsite
+	require.NoError(t, testDB.Create(&model.CatalogLabelAlias{
+		LabelID: 13231, Lang: "ja", Name: "ネクストン", SourceID: &dlsite}).Error)
+
+	norms, err := loadLabelNorms(testDB)
+	require.NoError(t, err)
+	require.Len(t, norms["nexton"], 2, "both are live, so both answer to the name")
+
+	require.NoError(t, testDB.Delete(&model.CatalogLabel{}, 13231).Error)
+
+	norms, err = loadLabelNorms(testDB)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{41}, norms["nexton"], "the retired twin is gone from the index")
+	assert.Empty(t, norms["ネクストン"], "and so is the alias it carried")
+
+	disp, err := loadLabelDisplayNorms(testDB)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{41}, disp["nexton"])
+}

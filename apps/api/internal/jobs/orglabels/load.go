@@ -28,6 +28,14 @@ func loadLabelWorks(db *gorm.DB) (map[int64][]int64, error) {
 // every label alias fold, so a source name matching either resolves the label.
 // Both sides use Postgres lower(normalize(x,NFKC)) (the *_norm generated
 // columns) so equality is byte-identical (bgmtype4gated precedent).
+//
+// MERGED-AWAY LABELS ARE EXCLUDED, on both sides of the union. A retired label
+// keeps its display_name forever, so without the gate it competes for identity
+// from beyond the grave: the spine sees two same-named labels, refuses to
+// anchor, and files a merge candidate — the very merge that already happened.
+// That made the candidate lane a dead end, since executing the merge could not
+// clear the ambiguity that raised it (NEXTON 41/13231, wave 189). The alias
+// side joins back to the label for the same reason.
 func loadLabelNorms(db *gorm.DB) (map[string][]int64, error) {
 	var rows []struct {
 		Norm    string `gorm:"column:norm"`
@@ -35,10 +43,11 @@ func loadLabelNorms(db *gorm.DB) (map[string][]int64, error) {
 	}
 	if err := db.Raw(`
 		SELECT display_name_norm AS norm, id AS label_id FROM catalog_label
-		    WHERE display_name_norm <> ''
+		    WHERE display_name_norm <> '' AND deleted_at IS NULL
 		UNION
-		SELECT name_norm AS norm, label_id FROM catalog_label_alias
-		    WHERE name_norm <> ''
+		SELECT a.name_norm AS norm, a.label_id FROM catalog_label_alias a
+		    JOIN catalog_label l ON l.id = a.label_id AND l.deleted_at IS NULL
+		    WHERE a.name_norm <> ''
 	`).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -52,7 +61,7 @@ func loadLabelNorms(db *gorm.DB) (map[string][]int64, error) {
 // loadLabelDisplayNorms is loadLabelNorms WITHOUT the alias union — the label's
 // own name and nothing else. The spine needs the two separately: an alias is
 // good enough to stop it minting a twin, but not to nominate a merge. See the
-// banner on planSpine.
+// banner on planSpine. Merged-away labels are excluded here too — same reason.
 func loadLabelDisplayNorms(db *gorm.DB) (map[string][]int64, error) {
 	var rows []struct {
 		Norm    string `gorm:"column:norm"`
@@ -60,7 +69,7 @@ func loadLabelDisplayNorms(db *gorm.DB) (map[string][]int64, error) {
 	}
 	if err := db.Raw(`
 		SELECT display_name_norm AS norm, id AS label_id FROM catalog_label
-		    WHERE display_name_norm <> ''
+		    WHERE display_name_norm <> '' AND deleted_at IS NULL
 	`).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
