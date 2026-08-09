@@ -261,6 +261,23 @@ func sources() []model.CatalogSource {
 		// deterministic and rides on edges those upstreams asserted, but it is
 		// still an inference, so it does not sit at first-party tier 0.
 		{ID: 18, Key: "derived", TrustTier: 1, Note: "first-party machine inference over catalog facts (wave 184 series builder)"},
+		// nextmoe is the FIRST-PARTY MEASURED lane: facts our own users
+		// produced, aggregated into the same per-source facet tables the
+		// upstream mirrors write. Its first product is the playtime median,
+		// computed from catalog_user_playtime — the totals Galgame managers
+		// report through the /api/v1/user/playtime face.
+		//
+		// Its own id rather than curated's (12) or derived's (18). Not
+		// curated: nobody edited these numbers, and filing them under the
+		// human lane would put them in reach of the edit face's curatedOnly
+		// guard, which must never rewrite a measurement. Not derived: that
+		// lane is INFERENCE over facts the catalog already holds, whereas
+		// these are new observations from outside it — the distinction is the
+		// whole reason a reader can trust one differently from the other.
+		//
+		// trust_tier 0: first-party, and the reports are identity-bound (a
+		// verified token's uid, a registered client) rather than scraped.
+		{ID: 19, Key: "nextmoe", TrustTier: 0, Note: "first-party measurements aggregated from our own users (playtime medians from catalog_user_playtime)"},
 	}
 }
 

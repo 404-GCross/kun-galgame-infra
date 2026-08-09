@@ -101,8 +101,10 @@ func TestHandSeedsIntegrity(t *testing.T) {
 	// external-page catch-all for the rescued wiki links) + getchu (id 17,
 	// refs/proj/167 — the character-roster source, anchored via VNDB extlinks)
 	// + derived (id 18, refs/proj/184 — the machine-inference lane the series
-	// builder writes under).
-	assert.Len(t, sources(), 18)
+	// builder writes under) + nextmoe (id 19 — the first-party MEASURED lane:
+	// facts our own users produced, starting with the playtime medians folded
+	// out of catalog_user_playtime).
+	assert.Len(t, sources(), 19)
 	// 13 pinned by refs/proj/02 + 3 symmetric character/setting-variation keys
 	// added in step 30 (shares_character / alternative_setting / alternative_version).
 	assert.Len(t, relationTypes(), 16)

@@ -256,6 +256,21 @@ func workFacetStmts(src, dst int64) []mergeStmt {
 		        updated_at = now()
 		    FROM catalog_work_character s
 		    WHERE d.work_id = ? AND s.work_id = ? AND s.character_id = d.character_id`, []any{dst, src}, false},
+		// Playtime reports: the second exception to first-source-wins, for the
+		// same reason as the roster edge — the loser's row carries a signal
+		// worth keeping. If one user's one client reported on both ids, they
+		// were measuring one story told twice, so the survivor keeps the
+		// LARGER total (never the sum: it is a single playthrough of a single
+		// work) and the more recent sighting. The generic move below then
+		// carries across every report the target had no row for.
+		{`UPDATE catalog_user_playtime d
+		    SET minutes = GREATEST(d.minutes, s.minutes),
+		        status = CASE WHEN s.status = 1 THEN 1 ELSE d.status END,
+		        last_played_at = GREATEST(d.last_played_at, s.last_played_at),
+		        updated_at = now()
+		    FROM catalog_user_playtime s
+		    WHERE d.work_id = ? AND s.work_id = ?
+		      AND s.actor_uid = d.actor_uid AND s.client_id = d.client_id`, []any{dst, src}, false},
 	}
 	// (table, the unique-key columns BESIDES work_id)
 	for _, f := range []struct {
@@ -269,6 +284,7 @@ func workFacetStmts(src, dst int64) []mergeStmt {
 		{"catalog_work_tag", []string{"name", "source_id"}},
 		{"catalog_work_popularity", []string{"source_id", "metric"}},
 		{"catalog_work_playtime", []string{"source_id"}},
+		{"catalog_user_playtime", []string{"actor_uid", "client_id"}},
 		{"catalog_work_platform", []string{"platform", "source_id"}},
 		{"catalog_work_engine", []string{"engine_id"}},
 		{"catalog_series_member", []string{"series_id"}},

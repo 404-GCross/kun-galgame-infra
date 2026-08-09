@@ -145,6 +145,15 @@ func main() {
 	application.Fiber.Use(catHandler.UserPrefix,
 		middleware.JWTAuth(tokenVerifier), catHandler.UserGate(clientRepo))
 
+	// Playtime face: a FOURTH disjoint prefix, for the third-party Galgame
+	// managers that report how long their user played. Its own scopes
+	// (playtime:read / playtime:write) rather than catalog:edit — recording a
+	// playtime is not a licence to edit the catalog — and deliberately NO
+	// catalog-site requirement, because a launcher is not a catalog tenant and
+	// demanding one would shut out every caller the face exists for.
+	application.Fiber.Use(catHandler.PlaytimePrefix,
+		middleware.JWTAuth(tokenVerifier), catHandler.PlaytimeGate(clientRepo))
+
 	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher, statsSvc)
 	claimSvc := service.NewClaimLifecycleService(catalogDB.DB())
 	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc, claimSvc,
@@ -219,6 +228,12 @@ func main() {
 	catHandler.SetupUser(application.Fiber, coverVoteSvc, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,
 	}, claimSvc, readSvc)
+
+	// The playtime face's own service: it touches catalog_user_playtime and
+	// nothing else, so it shares no state with the planes above. The public
+	// aggregate it feeds is produced out-of-band by cmd/aggregate-user-playtime,
+	// which is why no user's write can move a published number synchronously.
+	catHandler.SetupPlaytime(application.Fiber, service.NewUserPlaytimeService(catalogDB.DB()))
 
 	// NextMoe open API: serve the frozen public spec unauthenticated at its face
 	// root — the machine-readable contract itself must not need a key. Built ONCE

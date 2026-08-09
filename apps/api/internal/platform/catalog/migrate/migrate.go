@@ -68,6 +68,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkTag{},        // bodyless verbatim folksonomy tags (step 58b media-aggregation facet B)
 		&model.CatalogWorkPopularity{}, // bodyless per-metric popularity counters (step 62 popularity facet)
 		&model.CatalogWorkPlaytime{},   // per-source playtime estimates (step 91 playtime facet — no claimed bridge)
+		&model.CatalogUserPlaytime{},   // per-user/per-client playtime reports; aggregates INTO the row above as source nextmoe
 		&model.CatalogSeries{},         // work series entity (step 94, dlsite lane first)
 		&model.CatalogSeriesMember{},   // series membership (step 94)
 		&model.CatalogSeriesIntro{},    // multilingual series intros (refs/plans/10 W0 ruling 3)
@@ -500,6 +501,25 @@ func rawSQL(db *gorm.DB) error {
 			    FOREIGN KEY (cover_id) REFERENCES catalog_work_cover(id) ON DELETE CASCADE
 		`).Error; err != nil {
 			return fmt.Errorf("add cover vote FK: %w", err)
+		}
+	}
+
+	// (7b) user playtime → work FK with ON DELETE CASCADE. Same reasoning as
+	// the vote FK above: the column is a plain bigint on the model, and a
+	// report about a work that no longer exists is not a report. A merge
+	// rehangs rows onto the survivor before the loser is deleted, so CASCADE
+	// only ever fires on a genuine deletion.
+	playtimeFK, err := constraintExists(db, "catalog_user_playtime", "fk_catalog_user_playtime_work")
+	if err != nil {
+		return err
+	}
+	if !playtimeFK {
+		if err := db.Exec(`
+			ALTER TABLE catalog_user_playtime
+			    ADD CONSTRAINT fk_catalog_user_playtime_work
+			    FOREIGN KEY (work_id) REFERENCES catalog_work(id) ON DELETE CASCADE
+		`).Error; err != nil {
+			return fmt.Errorf("add user playtime FK: %w", err)
 		}
 	}
 

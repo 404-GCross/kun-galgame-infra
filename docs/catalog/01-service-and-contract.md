@@ -331,6 +331,41 @@ wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留�
 
 契约与全部条款见 [developer-platform/02 §3.2.9](../developer-platform/02-public-api.md)。
 
+## 4.6 游戏时长上报面(Bearer JWT + `playtime:read`/`playtime:write`,前缀 `/api/v1/user/playtime`)
+
+catalog 的**第四张脸**,给的是站外的 Galgame 管理器:用户在管理器里登录 NextMoe 账号,管理器把「这个人在这部作品上累计玩了多久」报上来。
+
+**它与 §4 用户写面的两处差别都是刻意的:**
+
+- **自己的 scope**,不复用 `catalog:edit`。启动器要记录时长,不该顺带拿到改词条的权;授权页上问 A 却意味着 B,教会用户不再读授权页。读写拆开是因为两类调用方不同:管理器两个都要(上报 + 换设备同步回来),而只想在评分表单旁边显示「你玩了 30 小时」的站点只要 read,并且**不应该**能写。
+- **不要求 `catalog_site` 绑定**。catalog 三张写面都从 `oauth_clients.catalog_site` 解析租户,因为它们写的每一行都归属某个产品站;而一条时长归属的是**用户**与**应用**。要求 catalog 租户等于把本面存在的意义——第三方应用——全部挡在门外。client 仍必须是**已注册**的:被吊销的 client 令牌写不进任何东西。
+
+**数据模型三条(细节见 `model.CatalogUserPlaytime` 的类型注释):**
+
+1. **粒度 = (user, work, client)**。两个管理器是对同一件事的两次独立测量,谁也不权威。分开存意味着服务端不必在写入时猜谁覆盖谁,也意味着一个乱报的 client **可以按名字整体剔除**而不动别人的数据。
+2. **上报绝对总量,永远不是增量**。管理器本地本来就有累计值;增量协议在每次重试上重复计数、在每次重装上归零。重发同一个数字是 no-op —— 这是本面可以无脑重试的根据。
+3. **用户在一部作品上的时长 = 各 client 的 MAX,不是 SUM**。两个管理器盯着同一个存档不是两周目;求和会在用户试用第二个管理器的当天把所有数字翻倍。
+
+**端点:**
+
+| op | 路径 | scope | 说明 |
+|---|---|---|---|
+| `reportPlaytime` | `PUT /user/playtime/works/{workID}` | write | 按 catalog work id 上报 |
+| `reportPlaytimeByRef` | `PUT /user/playtime/by-ref/{source}/{externalID}` | write | 按管理器**手上已有的**外部 id 上报(vndb/dlsite/getchu/bangumi…);**只有 exact 锚才解析**,响应回显解析出的 `work_id` 供客户端缓存;解析不到 404 |
+| `reportPlaytimeBatch` | `POST /user/playtime/batch` | write | 首次登录的库同步,≤200 条;**逐条**接受或拒绝,单条坏数据绝不整批失败 |
+| `listOwnPlaytime` | `GET /user/playtime/mine?updated_since=` | read | 按 `updated_at` 增量分页,换设备同步回来 |
+| `getOwnPlaytimeForWork` | `GET /user/playtime/works/{workID}` | read | 本人在**一部**作品上的折叠结果;没报过是 **200 + `null`**,不是 404 —— 「你没有时长」是个答案 |
+
+`by-ref` 这条是本面**能不能被接入**的关键:管理器手上是 VNDB id 或 DLsite workno,从来不是我们的 work id;强制要 work id 等于把映射问题推给每一个应用作者。
+
+**公开聚合(`playtimes[]` 里的 `nextmoe` 源)**由 `cmd/aggregate-user-playtime` 离线产出,**没有任何用户写入能同步移动一个已发布的数字**。三条发布规则:
+
+- **只统计 `finished`**。「通关要多久」与「我玩到一半」是两个量,混在一起哪个都答不了。
+- **一人一票**,不是一条一票 —— 先按用户把各 client 折成 MAX,再对用户取中位数(`percentile_disc`,取真实观测值,与 vndb / erogamespace 两源的 source-native 语义一致)。
+- **少于 3 个完成者不发布**,并且是**删除**而不是留旧值(用户 2026-08-09 裁定阈值 3)。两个人定义的中位数比没有中位数更坏,跌破阈值必须停止发布而不是冻结在最后一次的数上。
+
+计入聚合还要过 `minutes ∈ [10, 60000]`:下限剔掉「点开就退」,上限(1000 小时)说的不是 galgame 能有多长,而是过了这条线「启动器被开了一个长周末」比「真有人玩了这么久」更可信。**这些闸只管投票权,不管存储**——用户自己的行原样存、原样读得回来。
+
 ## 5. 鉴权形态
 
 - **S2S face(`/api/v1/catalog/*`)**:`Authorization: Basic <b64(client_id:client_secret)>`,对 `oauth_clients` 注册表校验。任何有效一等 client 可**认证**;但——
@@ -341,6 +376,7 @@ wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留�
 - **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ **ren 角色(超管专属)**,与 site 绑定列无关;wave 187b 起还要过 **client 闸**——令牌若签发自第三方应用(`oauth_clients.owner_user_id` 非空)一律 403,先于权限判定(空 `client_id` 的第一方会话令牌放行,见 §4.2 的缺口条)。
 - **user face(`/api/v1/user/catalog/*`,wave 176)**:Bearer **用户**访问令牌(同一 accept-both verifier)+ `catalog:edit` scope + **client 绑定**。这里 `oauth_clients.catalog_site` 的用法与 S2S 写面**不同**:S2S 校验「绑定值 == 请求体 site」,user face **根本不收 site**——绑定值**就是**写入的租户。因此新增消费站的动作仍是同一条(给其 client 设 `catalog_site`),但一等登录令牌(无 `client_id`)在本面**永远**拿不到租户,只能走 OAuth 授权码流取得 client 绑定令牌。详见 §4。
 - **编辑引擎提案桥面（过渡参考，09-open-api-phase2 06b）**：catalog 进程另托一个 galgame-family 的**平台提案面** `/internal/edit/*`（create / mine / get-own / withdraw + schema/snapshot 只读投影），走 devapi 双凭证链——scope **`galgame:propose`**、计量 face **`galgame_internal_propose`**；actor 取自已验用户 JWT（plain：trust 0 / roles ∅ / 非 owner），租户由 key 的 `oauth_clients.catalog_site` 反查（请求**不收** site/actor 断言）。它是**纯 Fiber、不进本目录 spec**（`openapi.yaml` 仅含 S2S face）；编辑引擎的 S2S 面（`/api/v1/catalog/edit/*`）在 wave 181 收缩为六条、又在 wave 185 收缩为 list(第三人称统计读)/revisions/diff **三条只读**,写与裁决全在用户面。**桥面不立独立契约文档**，第三方实际开放另议。
+- **playtime face(`/api/v1/user/playtime/*`)**:Bearer 用户访问令牌 + `playtime:read` / `playtime:write` + **client 绑定**,但**不要求** `catalog_site`——第三方 Galgame 管理器不是 catalog 租户。闸只证明令牌持有两个 scope 之一,具体哪个由每个 op 自己再判一次。详见 §4.6。
 - `GET /openapi.json`(S2S spec)、`GET /healthz` 无鉴权。
 
 ## 6. 生成 spec

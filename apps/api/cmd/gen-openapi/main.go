@@ -79,6 +79,11 @@ func main() {
 		// fourth, the multipart image upload, is spec-invisible on BOTH planes
 		// exactly like its S2S twin — docs/catalog/01 §4.4 carries it instead.
 		catHandler.RegisterUserReadOps(api, nil)
+		// The playtime face (/api/v1/user/playtime/*): its own prefix, its own
+		// scopes, and no catalog-site binding — but the same contract document,
+		// because the app author wiring a Galgame manager to it is reading
+		// about this catalog's works on the page before.
+		catHandler.RegisterPlaytimeOps(api, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil, nil, nil)
 	case *catalogPublic:

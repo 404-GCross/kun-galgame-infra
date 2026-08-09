@@ -101,6 +101,11 @@ const scopeLabels: Record<string, string> = {
   openid: '身份标识',
   profile: '用户资料 (昵称、头像)',
   email: '邮箱地址',
+  // The playtime pair is split so the consent screen can tell the truth about
+  // which half an app wants: a launcher asks for both, a site that only shows
+  // "你玩了 30 小时" beside a rating form asks for read alone.
+  'playtime:read': '读取你的游戏时长记录',
+  'playtime:write': '记录你的游戏时长',
 }
 
 // Build a server-VALIDATED error redirect and go there (deny + prompt=none).
