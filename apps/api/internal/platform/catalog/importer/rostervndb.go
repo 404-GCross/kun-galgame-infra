@@ -108,6 +108,32 @@ func (im *Importer) runRosterVNDB() (RosterStats, error) {
 	if err != nil {
 		return st, err
 	}
+	// 5. VNDB ids an ALIVE character already claims at a NON-exact grade (the
+	// merge engine demotes both anchors to probable when a merge would leave two
+	// same-source exacts on the survivor). Such an id is NOT unclaimed: minting a
+	// second body for it would create a duplicate the merge just removed. An id
+	// that also has an alive EXACT anchor resumes normally — exactness only
+	// decides which link resolves, never whether an id is free.
+	claimed, err := im.loadClaimedCharExtIDs(vndbSource)
+	if err != nil {
+		return st, err
+	}
+	for ext := range claimed {
+		if anchorV[ext] != 0 {
+			delete(claimed, ext)
+		}
+	}
+	// 6. Ids whose only exact holder is soft-deleted. A retired character SHOULD
+	// free its id, but uq_catalog_external_ref_exact is not deleted_at-aware
+	// (source_id, external_id, entity_type WHERE link_kind = 0), so the retired
+	// row still squats the exact slot and minting would fail the whole wave on a
+	// unique violation. Skip and count instead: the id is unavailable until the
+	// retired row leaves the identity index. Disjoint from anchorV by that same
+	// index — one exact holder per id, alive or not.
+	retiredExact, err := im.loadRetiredExactCharExtIDs(vndbSource)
+	if err != nil {
+		return st, err
+	}
 
 	// Resolve each in-gate character to an entity: already-anchored (resume),
 	// attach to existing, or create new. knownIDs holds the ids known before the
@@ -120,6 +146,22 @@ func (im *Importer) runRosterVNDB() (RosterStats, error) {
 	var plans []rosterPlan
 
 	for _, g := range gates {
+		// A claimed-but-not-exact id is left alone entirely: no mint, no attach,
+		// no edge, and no promotion of the probable link either — re-grading an
+		// anchor is an adjudication, not something an import may do silently.
+		// Counted once per character so the number is per-entity, not per-edge.
+		if claimed[g.CharID] != 0 || retiredExact[g.CharID] != 0 {
+			if !seen[g.CharID] {
+				seen[g.CharID] = true
+				if claimed[g.CharID] != 0 {
+					st.SkippedClaimedProbable++
+				} else {
+					st.SkippedRetiredExactSquat++
+				}
+			}
+			continue
+		}
+
 		kind := g.Kind
 		if kind == 9 { // unexpected role (never in-gate today) → unknown
 			kind = model.WorkCharacterKindUnknown
@@ -226,17 +268,63 @@ func (im *Importer) loadVNDBNames() (map[string]vndbName, error) {
 }
 
 // loadCharAnchors returns external_id → entity_id for one source's EXACT
-// character anchors (the idempotent resume index for the VNDB wave; empty on
-// the first run since no VNDB character has ever been imported).
+// character anchors held by an ALIVE character (the idempotent resume index for
+// the VNDB wave; empty on the first run since no VNDB character has ever been
+// imported). A merged-away holder is deliberately NOT a resume target: a
+// soft-deleted row keeps its refs but has left the identity indexes, so the id
+// is free again and VNDB may re-create the character.
 func (im *Importer) loadCharAnchors(source int16) (map[string]int64, error) {
+	return im.loadCharRefsByKind(source, model.LinkKindExact)
+}
+
+// loadClaimedCharExtIDs returns external_id → entity_id for one source's
+// PROBABLE character refs held by an ALIVE character. `related` is excluded on
+// purpose: it is a non-identity link and must never participate in identity
+// resolution or dedup.
+func (im *Importer) loadClaimedCharExtIDs(source int16) (map[string]int64, error) {
+	return im.loadCharRefsByKind(source, model.LinkKindProbable)
+}
+
+// loadRetiredExactCharExtIDs returns external_id → entity_id for one source's
+// EXACT character refs whose holder is soft-deleted. Non-empty only while a
+// retired row still occupies the exact identity index (see the caller).
+func (im *Importer) loadRetiredExactCharExtIDs(source int16) (map[string]int64, error) {
 	var rows []struct {
 		ExternalID string `gorm:"column:external_id"`
 		EntityID   int64  `gorm:"column:entity_id"`
 	}
 	if err := im.catalog.Raw(`
-		SELECT external_id, entity_id FROM catalog_external_ref
-		WHERE entity_type = ? AND source_id = ? AND link_kind = ?`,
+		SELECT r.external_id, min(r.entity_id) AS entity_id
+		FROM catalog_external_ref r
+		JOIN catalog_character c ON c.id = r.entity_id AND c.deleted_at IS NOT NULL
+		WHERE r.entity_type = ? AND r.source_id = ? AND r.link_kind = ?
+		GROUP BY r.external_id`,
 		model.EntityTypeCharacter, source, model.LinkKindExact).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	m := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		m[r.ExternalID] = r.EntityID
+	}
+	return m, nil
+}
+
+// loadCharRefsByKind returns external_id → entity_id for one source's character
+// refs at one link grade, restricted to alive holders. The same external id can
+// legitimately sit on several entities (the PK carries entity_id), so the
+// lowest alive holder is picked for determinism.
+func (im *Importer) loadCharRefsByKind(source, linkKind int16) (map[string]int64, error) {
+	var rows []struct {
+		ExternalID string `gorm:"column:external_id"`
+		EntityID   int64  `gorm:"column:entity_id"`
+	}
+	if err := im.catalog.Raw(`
+		SELECT r.external_id, min(r.entity_id) AS entity_id
+		FROM catalog_external_ref r
+		JOIN catalog_character c ON c.id = r.entity_id AND c.deleted_at IS NULL
+		WHERE r.entity_type = ? AND r.source_id = ? AND r.link_kind = ?
+		GROUP BY r.external_id`,
+		model.EntityTypeCharacter, source, linkKind).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	m := make(map[string]int64, len(rows))
