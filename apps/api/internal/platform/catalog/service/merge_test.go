@@ -512,6 +512,37 @@ func TestMergeLabelWorkEdgeDedup(t *testing.T) {
 	assert.Zero(t, stranded, "no brand edge may stay on the merged source")
 }
 
+// A brand logo costs a mirror + upload to obtain, and the merge is the one
+// moment it can be lost without anything complaining: the survivor is simply
+// bare afterwards. Same fill-if-empty rule as catalog_character.image_hash —
+// adopt when the survivor has none, never overwrite when it does.
+func TestMergeLabelLogoSurvivorship(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+
+	mergeLabels := func(t *testing.T, targetLogo, sourceLogo string) string {
+		t.Helper()
+		target := &model.CatalogLabel{DisplayName: "Brand", Kind: model.LabelKindGameBrand, LogoHash: targetLogo}
+		require.NoError(t, testDB.Create(target).Error)
+		source := &model.CatalogLabel{DisplayName: "brand", Kind: model.LabelKindGameBrand, LogoHash: sourceLogo}
+		require.NoError(t, testDB.Create(source).Error)
+
+		p, err := testMerge.ProposeMerge(ctx, model.EntityTypeLabel, source.ID, target.ID, 7, "same brand")
+		require.NoError(t, err)
+		approveAndForceExecutable(t, p.ID)
+		require.NoError(t, testMerge.ExecuteMerge(ctx, p.ID, nil))
+
+		var merged model.CatalogLabel
+		require.NoError(t, testDB.First(&merged, target.ID).Error)
+		return merged.LogoHash
+	}
+
+	assert.Equal(t, "source-logo", mergeLabels(t, "", "source-logo"), "a bare survivor adopts the source's logo")
+
+	cleanTables(t)
+	assert.Equal(t, "target-logo", mergeLabels(t, "target-logo", "source-logo"), "a survivor with its own logo keeps it")
+}
+
 // RejectMerge accepts an APPROVED (cooling) proposal — the 48h window's veto
 // path (step 97 #36138) — and still refuses an executed one.
 func TestRejectMergeDuringCooling(t *testing.T) {

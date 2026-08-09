@@ -203,6 +203,12 @@ func applySurvivorship(tx *gorm.DB, entityType int16, src, dst int64, resolution
 		mergerPtr(m, "latin", "latin", d.Latin, s.Latin)
 		m.str("lang", "lang", d.Lang, s.Lang)
 		m.str("note", "note", d.Note, s.Note)
+		// A brand logo is expensive signal, exactly like a character portrait
+		// (see image_hash below): it costs a mirror + upload to obtain and the
+		// merge is the one moment it can be silently lost. Fill-if-empty keeps
+		// the survivor's own logo and adopts the source's when the survivor
+		// is bare.
+		m.str("logo_hash", "logo_hash", d.LogoHash, s.LogoHash)
 		return m.changed, m.apply(tx, "catalog_label", dst)
 
 	case model.EntityTypeCharacter:
