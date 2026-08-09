@@ -212,8 +212,6 @@ func retireSource(tx *gorm.DB, entityType int16, src int64) error {
 		return tx.Delete(&model.CatalogPerson{}, src).Error
 	case model.EntityTypeCreditName:
 		return tx.Exec(`DELETE FROM catalog_credit_name WHERE id = ?`, src).Error
-	case model.EntityTypeOrg:
-		return tx.Delete(&model.CatalogOrg{}, src).Error
 	case model.EntityTypeLabel:
 		return tx.Delete(&model.CatalogLabel{}, src).Error
 	case model.EntityTypeCharacter:

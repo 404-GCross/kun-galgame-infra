@@ -37,7 +37,6 @@ func Run(db *gorm.DB) error {
 		&model.CatalogPerson{},
 		&model.CatalogCreditName{},
 		&model.CatalogNameAlias{},
-		&model.CatalogOrg{},
 		&model.CatalogLabel{},
 		&model.CatalogLabelAlias{},
 		&model.CatalogLabelIntro{}, // multilingual label intros (refs/proj/83 E2b)
@@ -118,7 +117,50 @@ func Run(db *gorm.DB) error {
 	if err := EditLegacyColumns(db); err != nil {
 		return err
 	}
+	if err := dropRetiredOrg(db); err != nil {
+		return err
+	}
 	return rawSQL(db)
+}
+
+// dropRetiredOrg removes catalog_org and catalog_label.org_id (wave 195). It
+// runs AFTER AutoMigrate on purpose: AutoMigrate is additive and would happily
+// leave both behind forever, which is how a retired table survives a
+// retirement.
+//
+// It REFUSES rather than drops if either holds data. Nothing has ever written
+// them — the table has never held a row in any database, production included —
+// so on every real catalogue this is a drop or a no-op. But a guarded drop and
+// an unguarded one are indistinguishable right up to the day they are not, and
+// the failure mode of the unguarded version is destroying rows nobody knew
+// existed. If this ever fires, the answer is to look at what wrote them, not
+// to delete the check.
+//
+// Idempotent: after the first run both objects are gone and every statement is
+// a guarded no-op.
+func dropRetiredOrg(db *gorm.DB) error {
+	var orgRows, labelRefs int64
+	if db.Migrator().HasTable("catalog_org") {
+		if err := db.Raw(`SELECT count(*) FROM catalog_org`).Scan(&orgRows).Error; err != nil {
+			return fmt.Errorf("count catalog_org: %w", err)
+		}
+	}
+	if db.Migrator().HasColumn(&model.CatalogLabel{}, "org_id") {
+		if err := db.Raw(`SELECT count(*) FROM catalog_label WHERE org_id IS NOT NULL`).Scan(&labelRefs).Error; err != nil {
+			return fmt.Errorf("count catalog_label.org_id: %w", err)
+		}
+	}
+	if orgRows > 0 || labelRefs > 0 {
+		return fmt.Errorf("catalog_org retirement: refusing to drop, %d org rows and %d labels carry an org_id", orgRows, labelRefs)
+	}
+	// The column first — it carries the FK that would block the table drop.
+	if err := db.Exec(`ALTER TABLE catalog_label DROP COLUMN IF EXISTS org_id`).Error; err != nil {
+		return fmt.Errorf("drop catalog_label.org_id: %w", err)
+	}
+	if err := db.Exec(`DROP TABLE IF EXISTS catalog_org`).Error; err != nil {
+		return fmt.Errorf("drop catalog_org: %w", err)
+	}
+	return nil
 }
 
 // EditLegacyColumns adds the strangler-migration bookkeeping columns to the
@@ -308,7 +350,6 @@ func rawSQL(db *gorm.DB) error {
 		{"catalog_name_alias", "name"},
 		{"catalog_label_alias", "name"},
 		{"catalog_character_alias", "name"},
-		{"catalog_org", "display_name"},
 		{"catalog_label", "display_name"},
 		{"catalog_character", "display_name"},
 		{"catalog_work_title", "title"},

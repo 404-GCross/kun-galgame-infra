@@ -139,17 +139,6 @@ func rebuildFromSnapshot(tx *gorm.DB, entityType int16, raw []byte) (int64, erro
 		}
 		return n.ID, nil
 
-	case model.EntityTypeOrg:
-		var o model.CatalogOrg
-		if err := json.Unmarshal(raw, &o); err != nil {
-			return 0, err
-		}
-		o.ID = 0
-		if err := tx.Create(&o).Error; err != nil {
-			return 0, err
-		}
-		return o.ID, nil
-
 	case model.EntityTypeLabel:
 		var snap labelSnapshot
 		if err := json.Unmarshal(raw, &snap); err != nil {

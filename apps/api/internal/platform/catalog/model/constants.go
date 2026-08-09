@@ -14,11 +14,18 @@ package model
 const (
 	EntityTypePerson     int16 = 0
 	EntityTypeCreditName int16 = 1
-	EntityTypeOrg        int16 = 2
-	EntityTypeLabel      int16 = 3
-	EntityTypeCharacter  int16 = 4
-	EntityTypeWork       int16 = 5
-	EntityTypeRelease    int16 = 6
+	// 2 was EntityTypeOrg, RETIRED at wave 195 and permanently unallocated.
+	// catalog_org never held a row and no label ever carried an org_id: the
+	// question it was reserved for — "which company is this brand under" —
+	// is answered by catalog_label_relation, whose eight-relation graph an
+	// org_id foreign key structurally cannot express (see the ruling on
+	// CatalogLabelRelation in label.go). Do not reuse the value: it is a
+	// persisted discriminator, and a future entity filed under 2 would be
+	// indistinguishable from an org row in any pre-retirement backup.
+	EntityTypeLabel     int16 = 3
+	EntityTypeCharacter int16 = 4
+	EntityTypeWork      int16 = 5
+	EntityTypeRelease   int16 = 6
 	// Tag (7) and Engine (8) are DATA-ONLY discriminators for now (A2-0, the
 	// wiki registrar rescue): they exist so the wiki's tid/eid id spaces can be
 	// filed in catalog_external_ref before the galgame_* tables are dropped.

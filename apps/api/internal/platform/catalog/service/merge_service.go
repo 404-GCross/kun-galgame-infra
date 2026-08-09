@@ -194,8 +194,6 @@ func entityTableName(entityType int16) (string, bool) {
 		return "catalog_person", true
 	case model.EntityTypeCreditName:
 		return "catalog_credit_name", true
-	case model.EntityTypeOrg:
-		return "catalog_org", true
 	case model.EntityTypeLabel:
 		return "catalog_label", true
 	case model.EntityTypeCharacter:

@@ -193,19 +193,6 @@ func applySurvivorship(tx *gorm.DB, entityType int16, src, dst int64, resolution
 		m.str("note", "note", d.Note, s.Note)
 		return m.changed, m.apply(tx, "catalog_credit_name", dst)
 
-	case model.EntityTypeOrg:
-		var s, d model.CatalogOrg
-		if err := loadPair(tx, &s, &d, src, dst); err != nil {
-			return nil, err
-		}
-		m := newFieldMerger(res, s.FieldProvenance, d.FieldProvenance)
-		m.str("display_name", "display_name", d.DisplayName, s.DisplayName)
-		mergerPtr(m, "latin", "latin", d.Latin, s.Latin)
-		m.str("lang", "lang", d.Lang, s.Lang)
-		m.str("description", "description", d.Description, s.Description)
-		m.trio("dissolved", "dissolved", [3]*int16{d.DissolvedY, d.DissolvedM, d.DissolvedD}, [3]*int16{s.DissolvedY, s.DissolvedM, s.DissolvedD})
-		return m.changed, m.apply(tx, "catalog_org", dst)
-
 	case model.EntityTypeLabel:
 		var s, d model.CatalogLabel
 		if err := loadPair(tx, &s, &d, src, dst); err != nil {
@@ -216,7 +203,6 @@ func applySurvivorship(tx *gorm.DB, entityType int16, src, dst int64, resolution
 		mergerPtr(m, "latin", "latin", d.Latin, s.Latin)
 		m.str("lang", "lang", d.Lang, s.Lang)
 		m.str("note", "note", d.Note, s.Note)
-		mergerPtr(m, "org_id", "org_id", d.OrgID, s.OrgID)
 		return m.changed, m.apply(tx, "catalog_label", dst)
 
 	case model.EntityTypeCharacter:

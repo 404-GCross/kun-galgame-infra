@@ -17,14 +17,15 @@
 -- mistake fails loudly instead of corrupting the seed.
 --
 -- Entity-type constants (docs/catalog/01-service-and-contract.md):
---   0=person 1=credit_name 2=org 3=label 4=character 5=work 6=release
---   7=tag 8=engine   (7/8 and 2 are keep-all families in this seed)
+--   0=person 1=credit_name 3=label 4=character 5=work 6=release
+--   7=tag 8=engine   (7/8 are keep-all families in this seed; 2 was org,
+--   retired at wave 195 and permanently unallocated)
 --
 -- Kept in full (small vocab/config, ride along):
 --   catalog_tag(+intro,+source_map), catalog_character_trait(+parent),
 --   catalog_series(+intro), catalog_engine, catalog_platform, catalog_medium,
 --   catalog_role, catalog_source(+role_map), catalog_relation_type,
---   catalog_survivorship_rule, catalog_org (empty), the empty galgame_* family.
+--   catalog_survivorship_rule, the empty galgame_* family.
 -- =============================================================================
 
 BEGIN;

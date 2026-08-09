@@ -50,7 +50,7 @@ func migrateCatalogRefpingTables(t *testing.T, db *gorm.DB) {
 		&catalogmodel.CatalogMedium{}, &catalogmodel.CatalogSource{},
 		&catalogmodel.CatalogWork{}, &catalogmodel.CatalogCharacter{},
 		&catalogmodel.CatalogWorkCover{}, &catalogmodel.CatalogWorkScreenshot{},
-		&catalogmodel.CatalogOrg{}, &catalogmodel.CatalogLabel{},
+		&catalogmodel.CatalogLabel{},
 		&catalogmodel.CatalogPerson{}))
 	// Truncate catalog_work too (CASCADE clears its cover/screenshot children):
 	// the claimed work carries a claim-unique (medium, site, product_work_id), so

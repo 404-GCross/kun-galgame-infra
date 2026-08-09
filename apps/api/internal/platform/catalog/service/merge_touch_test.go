@@ -263,36 +263,6 @@ func TestMergeIdentityLayerTouchesNoWork(t *testing.T) {
 		assert.True(t, workUpdatedAt(t, w.ID).Equal(before),
 			"person_id lives on the name face — the work renders the same bytes")
 	})
-
-	t.Run("org", func(t *testing.T) {
-		cleanTables(t)
-		ctx := t.Context()
-
-		target := &model.CatalogOrg{DisplayName: "Target Org"}
-		require.NoError(t, testDB.Create(target).Error)
-		source := &model.CatalogOrg{DisplayName: "Source Org"}
-		require.NoError(t, testDB.Create(source).Error)
-		label := &model.CatalogLabel{DisplayName: "Brand", Kind: model.LabelKindGameBrand, OrgID: &source.ID}
-		require.NoError(t, testDB.Create(label).Error)
-		w := createWork(t, "branded")
-		require.NoError(t, testDB.Create(&model.CatalogWorkLabel{
-			WorkID: w.ID, LabelID: label.ID, Kind: model.WorkLabelKindCircle}).Error)
-
-		settleWorks(t)
-		before := workUpdatedAt(t, w.ID)
-
-		p, err := testMerge.ProposeMerge(ctx, model.EntityTypeOrg, source.ID, target.ID, 7, "same org")
-		require.NoError(t, err)
-		approveAndForceExecutable(t, p.ID)
-		require.NoError(t, testMerge.ExecuteMerge(ctx, p.ID, nil))
-
-		var moved model.CatalogLabel
-		require.NoError(t, testDB.First(&moved, label.ID).Error)
-		require.NotNil(t, moved.OrgID)
-		require.Equal(t, target.ID, *moved.OrgID, "the merge must actually have rehung the label")
-		assert.True(t, workUpdatedAt(t, w.ID).Equal(before),
-			"a work renders label ids, never the org behind them")
-	})
 }
 
 // Claim transfer is the one survivorship step that writes catalog_work with

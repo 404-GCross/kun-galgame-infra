@@ -5,8 +5,11 @@
 //
 // Doctrine (refs/proj/83 裁定):
 //
-//   - The aggregation subject is catalog_label; catalog_org is NOT built this
-//     wave. An anchor is a catalog_external_ref(entity_type=label) row.
+//   - The aggregation subject is catalog_label. An anchor is a
+//     catalog_external_ref(entity_type=label) row. (This once read "catalog_org
+//     is NOT built this wave"; it was never built in any wave, and wave 195
+//     removed the table — a company is a label, and what it owns is a
+//     catalog_label_relation edge.)
 //   - Anchoring is STRUCTURE-FIRST: for a source org O with catalog-work set
 //     W(O) and a label L with work set W(L), s=|W(O)∩W(L)| grades the link
 //     (s≥2 exact / s==1+name exact / s==0+name probable). Name equality is the

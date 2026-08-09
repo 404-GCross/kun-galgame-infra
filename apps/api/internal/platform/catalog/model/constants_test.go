@@ -12,7 +12,7 @@ import (
 func TestConstantGroupsHaveUniqueValues(t *testing.T) {
 	groups := map[string][]int16{
 		"entity_type": {
-			EntityTypePerson, EntityTypeCreditName, EntityTypeOrg,
+			EntityTypePerson, EntityTypeCreditName,
 			EntityTypeLabel, EntityTypeCharacter, EntityTypeWork, EntityTypeRelease,
 			EntityTypeTag, EntityTypeEngine,
 		},
@@ -142,11 +142,13 @@ func TestLabelRelationVocabularyPairsAndRenders(t *testing.T) {
 }
 
 // The polymorphic discriminator values are pinned forever — renumbering them
-// would silently re-address every redirect/usage/revision row.
+// would silently re-address every redirect/usage/revision row. That holds for
+// the RETIRED slot too: 2 was org (wave 195) and stays unallocated, so this
+// test pins 3 to label specifically to catch the tidy-minded compaction that
+// would slide every later type down one and re-address the whole catalogue.
 func TestEntityTypeValuesArePinned(t *testing.T) {
 	assert.Equal(t, int16(0), EntityTypePerson)
 	assert.Equal(t, int16(1), EntityTypeCreditName)
-	assert.Equal(t, int16(2), EntityTypeOrg)
 	assert.Equal(t, int16(3), EntityTypeLabel)
 	assert.Equal(t, int16(4), EntityTypeCharacter)
 	assert.Equal(t, int16(5), EntityTypeWork)

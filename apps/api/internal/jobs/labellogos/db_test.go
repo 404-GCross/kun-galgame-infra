@@ -40,7 +40,7 @@ func openTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&model.CatalogSource{}, &model.CatalogOrg{}, &model.CatalogLabel{}, &model.CatalogExternalRef{}))
+		&model.CatalogSource{}, &model.CatalogLabel{}, &model.CatalogExternalRef{}))
 	require.NoError(t, db.Exec(`TRUNCATE catalog_label, catalog_external_ref RESTART IDENTITY CASCADE`).Error)
 	require.NoError(t, db.Exec(
 		`INSERT INTO catalog_source (id, key, trust_tier) VALUES (?,'bangumi',1), (?,'cien',2)

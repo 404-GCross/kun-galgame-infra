@@ -91,14 +91,6 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 		}
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
-	case model.EntityTypeOrg:
-		// A work renders label ids, never the org behind them — org merge
-		// changes the label face only.
-		stmts := []mergeStmt{
-			{`UPDATE catalog_label SET org_id = ? WHERE org_id = ?`, []any{dst, src}, false},
-		}
-		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
-
 	case model.EntityTypeLabel:
 		stmts := []mergeStmt{
 			// label_id is not part of the credit unique key — plain repoint.

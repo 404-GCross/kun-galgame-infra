@@ -73,12 +73,6 @@ func takeSnapshot(tx *gorm.DB, entityType int16, id int64) (datatypes.JSON, erro
 			return nil, err
 		}
 		doc = creditNameSnapshot{CreditName: n, Aliases: aliases}
-	case model.EntityTypeOrg:
-		var o model.CatalogOrg
-		if err := tx.First(&o, id).Error; err != nil {
-			return nil, err
-		}
-		doc = o
 	case model.EntityTypeLabel:
 		var l model.CatalogLabel
 		if err := tx.First(&l, id).Error; err != nil {
