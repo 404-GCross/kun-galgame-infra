@@ -126,8 +126,25 @@ services:
     #                            retired with the family at wave 161.
     #   effective_cache_size 12GB — planner hint (no allocation); favors index scans.
     #   maintenance_work_mem 512MB — faster VACUUM / CREATE INDEX.
+    #   max_connections 200    — the default 100 was exhausted on 2026-08-09 by
+    #                            services running UNBOUNDED pools (catalog alone
+    #                            held 66) and nothing else could connect for ~1.5h.
+    #                            The pools are capped now (config.PoolConfig, 10
+    #                            per pool), so this is headroom rather than the
+    #                            fix: ~9 infra pools + forum/patch + the deploy's
+    #                            migrate job + one-off tools. Not higher, because
+    #                            work_mem is per sort node and 200 is already a
+    #                            generous worst case on a 24GB host. (restart-only)
+    #   superuser_reserved_connections 5 — so a saturated server can still be
+    #                            DIAGNOSED. At the default 3 the incident above
+    #                            locked out psql itself, including on the local
+    #                            socket. (restart-only)
     command:
       - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - superuser_reserved_connections=5
       - -c
       - shared_buffers=2GB
       - -c

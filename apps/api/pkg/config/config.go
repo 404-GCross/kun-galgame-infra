@@ -316,6 +316,35 @@ type DatabaseConfig struct {
 	DBName   string
 	SSLMode  string
 	Timezone string
+
+	// Pool is shared by every DSN in the process — see PoolConfig for why it is
+	// not optional.
+	Pool PoolConfig
+}
+
+// PoolConfig bounds one database/sql pool.
+//
+// It exists because the stdlib defaults are wrong for a fleet sharing ONE
+// postgres. MaxOpenConns defaults to UNLIMITED, so a single service is free to
+// take every slot the server has; on 2026-08-09 catalog held 66 of postgres'
+// 100 and every other service — plus the deploy's own migrate job — got
+// "FATAL: sorry, too many clients already" for an hour and a half. MaxIdleConns
+// defaults to 2, so the connections above that were closed the moment they went
+// idle and reopened on the next request: 243 sockets sat in TIME_WAIT beside 99
+// live ones. Neither number is a load problem; both are a configuration one.
+//
+// The cap is per POOL, and a process opens one per database it talks to (main /
+// catalog / galgame), so budget the server's max_connections against the number
+// of pools in the fleet, not the number of services.
+type PoolConfig struct {
+	MaxOpen int
+	// MaxIdle is deliberately > 1: an idle connection kept is a TCP handshake,
+	// TLS negotiation and postgres backend fork NOT paid on the next request.
+	MaxIdle     int
+	MaxLifetime time.Duration
+	// MaxIdleTime returns slots to the server when a service goes quiet, so the
+	// ceiling above is a burst allowance rather than a permanent reservation.
+	MaxIdleTime time.Duration
 }
 
 // RedisConfig holds Redis-related configuration
@@ -630,6 +659,19 @@ func Load() (*Config, error) {
 		Timezone: getEnv("KUN_ARTIFACTS_PG_TIMEZONE", cfg.Database.Timezone),
 	}
 
+	// One bound for every pool in the process, applied in ONE place on purpose:
+	// per-stanza settings would mean the next database someone adds ships
+	// unbounded by omission, which is exactly the default that took production
+	// down. Adding a DatabaseConfig without adding it here is still possible,
+	// but it is now a visible gap rather than an invisible one.
+	pool := loadPoolConfig()
+	for _, d := range []*DatabaseConfig{
+		&cfg.Database, &cfg.GalgameDatabase, &cfg.CatalogDatabase, &cfg.CommunityDatabase,
+		&cfg.TrustDatabase, &cfg.AIDatabase, &cfg.ImagesDatabase, &cfg.ArtifactsDatabase,
+	} {
+		d.Pool = pool
+	}
+
 	// Artifact S3/B2 (object storage) config. Prod points at Backblaze B2
 	// (S3-compatible): endpoint s3.<region>.backblazeb2.com, UsePathStyle=false.
 	// Dev defaults to local MinIO (path style).
@@ -784,6 +826,26 @@ func (c *Config) ArtifactCleanupS3() S3Config {
 		s3.SecretAccessKey = c.ArtifactService.CleanupSecretKey
 	}
 	return s3
+}
+
+// loadPoolConfig reads the pool bounds shared by every DSN in the process.
+//
+// The defaults are budgeted against the SERVER, not against one service: the
+// fleet runs seven Go services on a single postgres whose max_connections is
+// 300, several of them holding two or three pools, and the forum / patch repos
+// bring their own. Ten per pool leaves the server comfortably over-provisioned
+// while making it impossible for one service to eat the whole allowance — the
+// failure this replaces.
+func loadPoolConfig() PoolConfig {
+	return PoolConfig{
+		MaxOpen: int(getEnvInt64("KUN_PG_MAX_OPEN_CONNS", 10)),
+		MaxIdle: int(getEnvInt64("KUN_PG_MAX_IDLE_CONNS", 5)),
+		// Lifetime bounds how long a connection may outlive the topology it was
+		// opened against — a failover or a restarted pgbouncer leaves the pool
+		// holding sockets to something that is no longer there.
+		MaxLifetime: time.Duration(getEnvInt64("KUN_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second,
+		MaxIdleTime: time.Duration(getEnvInt64("KUN_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second,
+	}
 }
 
 // getEnvInt64 parses an int64 env var, returning the default on missing/invalid.

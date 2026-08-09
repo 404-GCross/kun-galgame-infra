@@ -40,10 +40,42 @@ func NewPostgresDB(cfg config.DatabaseConfig) (*PostgresDB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ApplyPool(db, cfg.Pool); err != nil {
+		return nil, err
+	}
 
 	logger.Info("Database connected successfully")
 
 	return &PostgresDB{db: db}, nil
+}
+
+// ApplyPool bounds a pool. Exported because the batch jobs open their own gorm
+// handles rather than going through NewPostgresDB, and a job that runs against
+// production shares the same finite server as the services do.
+//
+// A zero or negative bound is left at the driver default rather than silently
+// substituted: an operator who sets KUN_PG_MAX_OPEN_CONNS=0 is asking for the
+// unlimited behaviour, and quietly overriding that would make the escape hatch
+// a lie. The defaults in config.loadPoolConfig are what keep this from being
+// unbounded in practice.
+func ApplyPool(db *gorm.DB, pool config.PoolConfig) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	if pool.MaxOpen > 0 {
+		sqlDB.SetMaxOpenConns(pool.MaxOpen)
+	}
+	if pool.MaxIdle > 0 {
+		sqlDB.SetMaxIdleConns(pool.MaxIdle)
+	}
+	if pool.MaxLifetime > 0 {
+		sqlDB.SetConnMaxLifetime(pool.MaxLifetime)
+	}
+	if pool.MaxIdleTime > 0 {
+		sqlDB.SetConnMaxIdleTime(pool.MaxIdleTime)
+	}
+	return nil
 }
 
 // DB returns the underlying gorm.DB
