@@ -1,9 +1,7 @@
 package importer
 
 import (
-	"encoding/json"
 	"log/slog"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -40,74 +38,133 @@ import (
 //     meaningful, NULL = unknown → omitted), freeware, official, the full
 //     languages set and platforms set. No column promotion (a buffer, not a home).
 //
-// Idempotence (design nail 3): the resume index is the set of existing
-// (work_id, extra->>'vndb_id') — a hit skips the whole plan, so a second pass
-// writes nothing (row + anchor + revision are created atomically per apply).
-// The index is liveness-BLIND on purpose: a retired row is not a vacancy. It
-// still answers to its vndb id, so re-minting would resurrect it on every pass,
-// and its exact anchor still squats the (source, external_id, entity_type)
-// slot — uq_catalog_external_ref_exact is not deleted_at-aware, so the mint
-// would fail on a unique violation and take the whole wave down with it.
-// external_ref: a release covering exactly ONE vn (globally) gets an exact
-// release anchor (source 2, entity_type 6, external_id = r-id, the vndb-character/
-// staff waves' tier-0 auto-exact precedent); a multi-vn release gets NO anchor
-// (it would collide on the exact (source, external_id, entity_type) unique) —
-// Extra.vndb_id keeps it back-referenceable. Counts go to the report.
+// # Identity discipline (wave 202)
+//
+// The wave answers TWO independent questions, and conflating them is what took a
+// prod --apply down on a 23505:
+//
+//	does this (work, release) association exist? → key (work_id, rid); no unique
+//	    constraint governs it, several works may legitimately host the same rid.
+//	is this rid's identity slot free?            → key (source_id, rid, entity_type),
+//	    governed by uq_catalog_external_ref_exact ... WHERE link_kind = 0, which has
+//	    NO work column.
+//
+// Answering the second with the first is a resume index FINER than the unique it
+// protects: it honestly reports "this work has not done rid yet", the wave plans
+// a mint, and the mint collides with the anchor a DIFFERENT work already holds.
+//
+// So catalog_external_ref is now the single identity index for releases and
+// Extra.vndb_id is pure payload (still written — cheap provenance, and the human
+// back-reference — but never the authority):
+//   - ROW decision: keyed (work_id, rid), read from the refs (with a transitional
+//     Extra.vndb_id arm, see loadExistingVNDBReleaseKeys). Liveness-BLIND on
+//     purpose — a retired row is not a vacancy, it still answers to its id, so
+//     re-minting would resurrect it on every pass. The two skip classes are
+//     counted apart (SkippedExisting / SkippedRetired).
+//   - ANCHOR decision: keyed by rid ALONE, read from catalog_external_ref. Free
+//     slot + exactly one upstream vid → mint the exact anchor. Slot held by
+//     anyone (alive or soft-deleted) → do NOT mint and do NOT re-grade the
+//     existing ref (re-grading an anchor is an adjudication, not something an
+//     import may do silently) — the row is still created and carries a PROBABLE
+//     ref instead. More than one upstream vid → an exact anchor would be
+//     ambiguous, so PROBABLE as well. Each class has its own counter; probable is
+//     outside the partial unique, so it can never contend for the exact slot.
+//     This is the rostervndb / vndbcredits family pattern, applied to releases.
+//
+// Every row this wave creates therefore leaves holding a ref, and RunReleases
+// opens with the phase-1 backfill that gives the legacy anchorless rows one too.
+// Exact minting goes through ONE chokepoint (mintReleaseExactAnchors) that
+// reports "claimed by someone else" instead of raising 23505, and the writes are
+// batched behind savepoints so a single bad row can never roll back the wave.
 
-const ruleVNDBRelease = "rule:vndb-release-import" // exact release anchor (external_id = r-id)
+const (
+	// ruleVNDBRelease marks the EXACT release anchor (external_id = r-id).
+	ruleVNDBRelease = "rule:vndb-release-import"
+	// ruleVNDBReleaseProbable marks the PROBABLE release ref this wave attaches
+	// when the exact slot is not available (already held) or not appropriate (the
+	// release spans several VNs). It records the id without claiming the slot.
+	ruleVNDBReleaseProbable = "rule:vndb-release-import-probable"
+	// ruleVNDBReleaseBackfill marks the phase-1 probable ref given to a release
+	// row that predates this doctrine: it carries Extra.vndb_id but never got a
+	// ref of its own, so it was invisible to the identity index.
+	ruleVNDBReleaseBackfill = "rule:vndb-release-backfill"
+)
 
 // releaseMinYear is the sanity floor for a fillable release year (matches the
 // doc-66 backfill gate; nothing catalogued predates the home-computer era).
 const releaseMinYear = 1950
 
+// releaseApplyBatch is the savepoint granularity of the apply pass. A batch that
+// fails is rolled back alone and reported; the wave keeps going.
+const releaseApplyBatch = 500
+
 // ReleaseStats is the per-wave tally.
 type ReleaseStats struct {
-	InGatePairs       int // (work, release) pairs the exact vndb work anchor admits
-	Planned           int // new rows to insert (after the idempotent skip)
-	ReleasesWritten   int
-	AnchorsWritten    int // single-vn exact release anchors created
-	MultiVNUnanchored int // plan rows whose release spans >1 vn → intentionally no anchor
-	SkippedExisting   int // idempotent resume: (work, vndb_id) already present on a live row
-	SkippedRetired    int // (work, vndb_id) held only by a soft-deleted row — claimed, not vacant
-	KindDefault       int
-	KindTrial         int
-	KindPatch         int
-	NoDate            int // TBA / out-of-gate year → date trio left NULL
-	NoTitle           int // no non-MTL title in the original language
-	Errors            int
-}
-
-// relMeta is one src_vndb.releases row's release-level fields.
-type relMeta struct {
-	olang    string
-	released int
-	minage   *int16
-	freeware bool
-	official bool
-	patch    bool
-}
-
-// relTitle is one src_vndb.releases_titles row (a release's title in ONE lang).
-type relTitle struct {
-	lang  string
-	mtl   bool
-	title string
-	latin string
+	InGatePairs int // (work, release) pairs the exact vndb work anchor admits
+	Planned     int // new rows to insert (after the idempotent skip)
+	// ProbableBackfilled is phase 1: pre-existing catalog_release rows that carry
+	// Extra.vndb_id but held no release ref at all, given a PROBABLE one so they
+	// become visible to the identity index. 0 on every run after the first.
+	ProbableBackfilled int
+	ReleasesWritten    int
+	AnchorsWritten     int // exact release anchors minted (free slot + single upstream vid)
+	// ProbableRefsWritten counts probable refs attached to rows created BY THIS
+	// wave (the anchor-held and multi-vn classes below).
+	ProbableRefsWritten int
+	MultiVNUnanchored   int // plan rows whose release spans >1 vn → probable, never exact
+	// AnchorHeldByOther counts SINGLE-VN plan rows — rows that would otherwise have
+	// been minted — whose rid already has an exact ref held by another release
+	// (alive or soft-deleted). The row is created and gets a probable ref; the
+	// sitting anchor is left exactly as it is. Multi-VN rows are classified as
+	// MultiVNUnanchored even when the slot is held: for them the held slot is the
+	// normal state, not a collision.
+	AnchorHeldByOther int
+	// StaleAnchorHolders is the subset of AnchorHeldByOther where the holder sits
+	// under a DIFFERENT work than the one upstream now gates the rid through —
+	// the human-review worklist (see exportStaleAnchors).
+	StaleAnchorHolders int
+	// AnchorRaceLost counts planned exact mints the chokepoint found already
+	// claimed at write time. Expected 0: a non-zero value means the identity index
+	// moved between planning and writing (a concurrent writer).
+	AnchorRaceLost  int
+	SkippedExisting int // idempotent resume: (work, rid) already present on a live row
+	SkippedRetired  int // (work, rid) held only by a soft-deleted row — claimed, not vacant
+	KindDefault     int
+	KindTrial       int
+	KindPatch       int
+	NoDate          int // TBA / out-of-gate year → date trio left NULL
+	NoTitle         int // no non-MTL title in the original language
+	// BatchFailures counts apply batches rolled back to their savepoint. Their
+	// rows are absent from ReleasesWritten; the wave itself still commits.
+	BatchFailures int
+	Errors        int
 }
 
 // releaseGateRow is one (work, release) gate pair with its deterministic rtype.
+// VID is the work's own vndb id — carried for the stale-holder worklist.
 type releaseGateRow struct {
 	WorkID int64  `gorm:"column:work_id"`
+	VID    string `gorm:"column:vid"`
 	RID    string `gorm:"column:rid"`
 	RType  string `gorm:"column:rtype"`
 }
 
+// anchorDecision is the ANCHOR half of a plan, decided from the rid alone and
+// independent of whether the row itself is new.
+type anchorDecision int8
+
+const (
+	anchorMint        anchorDecision = iota // slot free + exactly one upstream vid → exact
+	anchorHeldByOther                       // slot already held by another release → probable
+	anchorMultiVN                           // >1 upstream vid → an exact anchor would be ambiguous
+)
+
 // releasePlan is one planned catalog_release row plus the bookkeeping the apply
-// transaction needs (the r-id for the anchor, and whether it earns one).
+// transaction needs (the r-id for the ref, and which grade that ref gets).
 type releasePlan struct {
-	rel      model.CatalogRelease
-	rid      string
-	singleVN bool
+	rel    model.CatalogRelease
+	rid    string
+	anchor anchorDecision
 }
 
 // RunReleases lands the VNDB releases wave (step 76). Single DSN — src_vndb and
@@ -115,12 +172,22 @@ type releasePlan struct {
 func (im *Importer) RunReleases() (ReleaseStats, error) {
 	var st ReleaseStats
 
+	// 0. Phase 1 — give every legacy anchorless release row a probable ref, so
+	// catalog_external_ref is a COMPLETE identity index before anything below
+	// reads it. Idempotent; honours dry-run (counts only).
+	backfilled, err := im.backfillReleaseProbableRefs()
+	if err != nil {
+		return st, err
+	}
+	st.ProbableBackfilled = backfilled
+
 	// 1. Gate: one (work, release) per row, deduped with a deterministic rtype.
 	// VNDB external_ids carry the "v" prefix ("v38"), so the anchor JOIN is on
-	// text equality (the doc-73 recipe; a ::bigint cast would fail).
+	// text equality (the doc-73 recipe; a ::bigint cast would fail). A work may
+	// hold several exact vndb ids, so the reported vid is min() for determinism.
 	var gates []releaseGateRow
 	if err := im.catalog.Raw(`
-		SELECT r.entity_id AS work_id, rv.id AS rid, min(rv.rtype) AS rtype
+		SELECT r.entity_id AS work_id, min(r.external_id) AS vid, rv.id AS rid, min(rv.rtype) AS rtype
 		FROM src_vndb.releases_vn rv
 		JOIN catalog_external_ref r ON r.entity_type = ? AND r.source_id = ? AND r.link_kind = ? AND r.external_id = rv.vid
 		GROUP BY r.entity_id, rv.id`,
@@ -154,10 +221,18 @@ func (im *Importer) RunReleases() (ReleaseStats, error) {
 	if err != nil {
 		return st, err
 	}
+	// The ANCHOR index: rid → its exact holder, keyed by rid ALONE (no work), the
+	// same shape as uq_catalog_external_ref_exact. This is what makes the mint
+	// decision correct; the (work, rid) index above only decides the ROW.
+	exactHolders, err := im.loadReleaseExactHolders()
+	if err != nil {
+		return st, err
+	}
 
 	// 3. Build the plans, counting the skip / kind / missing-facet classes.
 	maxYear := time.Now().Year() + 3 // sanity ceiling; rejects 2050/2099 placeholders
 	var plans []releasePlan
+	var stale []staleAnchorRow
 	for _, g := range gates {
 		m, ok := meta[g.RID]
 		if !ok { // releases_vn.id absent from releases — a staging inconsistency (FK guarantees none)
@@ -213,285 +288,173 @@ func (im *Importer) RunReleases() (ReleaseStats, error) {
 
 		rel.Extra = buildReleaseExtra(g.RID, m, langSet(titles[g.RID]), plats)
 
-		single := vnCount[g.RID] == 1
-		if !single {
+		// The anchor half. Decided here (not at write time) so a dry run and an
+		// apply report exactly the same numbers.
+		// Multi-VN is tested FIRST because it is intrinsic to the release: such a
+		// row would never be minted whatever the slot's state, and one of the works
+		// it covers legitimately holds the anchor. Classifying it as "held by
+		// another" would be true but useless, and would put a normal multi-VN
+		// release into the stale worklist as a disagreement it is not.
+		anchor := anchorMint
+		switch holder, held := exactHolders[g.RID]; {
+		case vnCount[g.RID] != 1:
+			anchor = anchorMultiVN
 			st.MultiVNUnanchored++
+		case held:
+			anchor = anchorHeldByOther
+			st.AnchorHeldByOther++
+			if holder.workID != g.WorkID {
+				st.StaleAnchorHolders++
+				stale = append(stale, staleAnchorRow{
+					rid: g.RID, gateWorkID: g.WorkID, gateWorkVID: g.VID,
+					holderReleaseID: holder.releaseID, holderWorkID: holder.workID,
+					holderRetired: holder.retired,
+				})
+			}
 		}
-		plans = append(plans, releasePlan{rel: rel, rid: g.RID, singleVN: single})
+		plans = append(plans, releasePlan{rel: rel, rid: g.RID, anchor: anchor})
 	}
 	st.Planned = len(plans)
 
 	anchorable := 0
 	for _, p := range plans {
-		if p.singleVN {
+		if p.anchor == anchorMint {
 			anchorable++
 		}
 	}
 
 	slog.Info("vndb releases plan",
 		"in_gate_pairs", st.InGatePairs, "planned", st.Planned, "skipped_existing", st.SkippedExisting,
-		"skipped_retired", st.SkippedRetired,
+		"skipped_retired", st.SkippedRetired, "probable_backfilled", st.ProbableBackfilled,
 		"kind_default", st.KindDefault, "kind_trial", st.KindTrial, "kind_patch", st.KindPatch,
-		"single_vn_anchors", anchorable, "multi_vn_unanchored", st.MultiVNUnanchored,
+		"anchors_planned", anchorable, "multi_vn_unanchored", st.MultiVNUnanchored,
+		"anchor_held_by_other", st.AnchorHeldByOther, "stale_anchor_holders", st.StaleAnchorHolders,
 		"no_date", st.NoDate, "no_title", st.NoTitle, "errors", st.Errors)
+
+	// The stale-holder worklist is a review artifact, so it is written in dry-run
+	// too — seeing it is the whole point of planning before applying.
+	if im.staleAnchorsOut != "" {
+		if err := im.exportStaleAnchors(stale, im.staleAnchorsOut); err != nil {
+			return st, err
+		}
+	}
 
 	if im.dryRun {
 		st.ReleasesWritten = len(plans) // would-be (clean state == apply)
 		st.AnchorsWritten = anchorable
+		st.ProbableRefsWritten = len(plans) - anchorable
 		return st, nil
 	}
 	if len(plans) == 0 {
 		return st, nil
 	}
 
-	// 4. Apply: INSERT the rows (populating their IDENTITY ids), then the exact
-	// anchors (single-vn only) + one imported revision per new release.
+	// 4. Apply: rows + refs + revisions, in savepoint-guarded batches.
 	err = im.catalog.Transaction(func(tx *gorm.DB) error {
-		releases := make([]model.CatalogRelease, len(plans))
-		for i, p := range plans {
-			releases[i] = p.rel
-		}
-		if err := tx.CreateInBatches(releases, 1000).Error; err != nil {
-			return err
-		}
-		var refs []model.CatalogExternalRef
-		revs := make([]model.CatalogRevision, len(releases))
-		for i := range releases {
-			revs[i] = importedRev(model.EntityTypeRelease, releases[i].ID, releaseSnapshotJSON(releases[i]))
-			if plans[i].singleVN {
-				refs = append(refs, selfRef(model.EntityTypeRelease, releases[i].ID, vndbSource, plans[i].rid, ruleVNDBRelease))
-			}
-		}
-		if len(refs) > 0 {
-			if err := tx.CreateInBatches(refs, 1000).Error; err != nil {
+		for start := 0; start < len(plans); start += releaseApplyBatch {
+			end := min(start+releaseApplyBatch, len(plans))
+			if err := applyReleaseBatch(tx, plans[start:end], &st); err != nil {
 				return err
 			}
 		}
-		if err := tx.CreateInBatches(revs, 1000).Error; err != nil {
-			return err
-		}
-		st.ReleasesWritten = len(releases)
-		st.AnchorsWritten = len(refs)
-		// The releases hang off works that already existed, so their hosts have
-		// to surface on the public changes feed. plans is the not-yet-stored set
-		// (releaseKey dedup above), so a re-run plans nothing and touches nothing.
-		hosts := make([]int64, 0, len(releases))
-		for _, r := range releases {
-			hosts = append(hosts, r.WorkID)
-		}
-		return touchWorks(tx, hosts)
+		return nil
 	})
 	return st, err
 }
 
-// releaseKey is the idempotence identity of a planned row: (work, vndb r-id).
+// applyReleaseBatch writes one batch inside its own SAVEPOINT. A batch that
+// fails is rolled back alone and reported through BatchFailures — one bad row
+// must never cost the other 4,000 (the wave-wide rollback that motivated this
+// refactor). Only a failure to roll back is fatal: the subtransaction is then
+// unusable and the wave cannot honestly continue.
+func applyReleaseBatch(tx *gorm.DB, plans []releasePlan, st *ReleaseStats) error {
+	const sp = "vndb_releases_batch"
+	if err := tx.SavePoint(sp).Error; err != nil {
+		return err
+	}
+	var delta ReleaseStats
+	if err := writeReleaseBatch(tx, plans, &delta); err != nil {
+		if rbErr := tx.RollbackTo(sp).Error; rbErr != nil {
+			return rbErr
+		}
+		st.BatchFailures++
+		st.Errors++
+		slog.Error("vndb releases batch rolled back",
+			"rows", len(plans), "first_rid", plans[0].rid, "last_rid", plans[len(plans)-1].rid, "error", err)
+		return nil
+	}
+	if err := tx.Exec("RELEASE SAVEPOINT " + sp).Error; err != nil {
+		return err
+	}
+	st.ReleasesWritten += delta.ReleasesWritten
+	st.AnchorsWritten += delta.AnchorsWritten
+	st.ProbableRefsWritten += delta.ProbableRefsWritten
+	st.AnchorRaceLost += delta.AnchorRaceLost
+	return nil
+}
+
+// writeReleaseBatch inserts the batch's rows, then their refs and revisions, and
+// bumps the host works. Every exact ref goes through mintReleaseExactAnchors —
+// the file's single exact-minting chokepoint — and anything it could not claim
+// falls back to a probable ref rather than failing.
+func writeReleaseBatch(tx *gorm.DB, plans []releasePlan, st *ReleaseStats) error {
+	releases := make([]model.CatalogRelease, len(plans))
+	for i, p := range plans {
+		releases[i] = p.rel
+	}
+	if err := tx.CreateInBatches(releases, 1000).Error; err != nil {
+		return err
+	}
+
+	var mints, probables []releaseAnchorItem
+	revs := make([]model.CatalogRevision, len(releases))
+	for i := range releases {
+		revs[i] = importedRev(model.EntityTypeRelease, releases[i].ID, releaseSnapshotJSON(releases[i]))
+		item := releaseAnchorItem{releaseID: releases[i].ID, rid: plans[i].rid}
+		if plans[i].anchor == anchorMint {
+			mints = append(mints, item)
+		} else {
+			probables = append(probables, item)
+		}
+	}
+
+	landed, err := mintReleaseExactAnchors(tx, mints)
+	if err != nil {
+		return err
+	}
+	for _, m := range mints {
+		if !landed[m.releaseID] {
+			// The slot was claimed between planning and writing. The row still
+			// deserves to be findable by its rid, so it drops to probable.
+			st.AnchorRaceLost++
+			probables = append(probables, m)
+		}
+	}
+	st.AnchorsWritten = len(landed)
+
+	written, err := insertReleaseProbableRefs(tx, probables, ruleVNDBReleaseProbable)
+	if err != nil {
+		return err
+	}
+	st.ProbableRefsWritten = written
+
+	if err := tx.CreateInBatches(revs, 1000).Error; err != nil {
+		return err
+	}
+	st.ReleasesWritten = len(releases)
+
+	// The releases hang off works that already existed, so their hosts have to
+	// surface on the public changes feed. plans is the not-yet-stored set
+	// (releaseKey dedup above), so a re-run plans nothing and touches nothing.
+	hosts := make([]int64, 0, len(releases))
+	for _, r := range releases {
+		hosts = append(hosts, r.WorkID)
+	}
+	return touchWorks(tx, hosts)
+}
+
+// releaseKey is the ROW identity of a planned row: (work, vndb r-id). It is
+// deliberately NOT the anchor key — see the file header.
 func releaseKey(workID int64, vndbID string) string {
 	return strconv.FormatInt(workID, 10) + "|" + vndbID
-}
-
-// originalTitle returns the release's title in its original language — the
-// non-MTL row for olang (title, or its latin form when the native title is
-// empty). ok=false when no such row exists (an MTL-only original language).
-func originalTitle(rows []relTitle, olang string) (string, bool) {
-	for _, t := range rows {
-		if t.lang != olang || t.mtl {
-			continue
-		}
-		if v := strings.TrimSpace(t.title); v != "" {
-			return t.title, true
-		}
-		if v := strings.TrimSpace(t.latin); v != "" {
-			return t.latin, true
-		}
-		return "", false // the olang row exists but carries no usable text
-	}
-	return "", false
-}
-
-// langSet is the release's full language list (every releases_titles row's lang,
-// distinct, ascending — the rows arrive pre-sorted by the loader).
-func langSet(rows []relTitle) []string {
-	out := make([]string, 0, len(rows))
-	seen := map[string]bool{}
-	for _, t := range rows {
-		if seen[t.lang] {
-			continue
-		}
-		seen[t.lang] = true
-		out = append(out, t.lang)
-	}
-	return out
-}
-
-// buildReleaseExtra assembles the governed Extra jsonb. minage is included only
-// when known (0 = all-ages is meaningful, NULL = unknown → omitted); languages/
-// platforms only when non-empty. Map marshal sorts keys → deterministic bytes.
-func buildReleaseExtra(rid string, m relMeta, langs, plats []string) datatypes.JSON {
-	extra := map[string]any{
-		"vndb_id":  rid,
-		"freeware": m.freeware,
-		"official": m.official,
-	}
-	if m.minage != nil {
-		extra["minage"] = *m.minage
-	}
-	if len(langs) > 0 {
-		extra["languages"] = langs
-	}
-	if len(plats) > 0 {
-		extra["platforms"] = plats
-	}
-	b, _ := json.Marshal(extra)
-	return b
-}
-
-// parseVNDBReleased splits a VNDB `released` integer (yyyymmdd; 99999999 = TBA;
-// month|day 0 = partial) into the nullable released_y/m/d trio, gated to a sane
-// [releaseMinYear, maxYear] window (the doc-66 gate — drops TBA, whose year is
-// 9999, and any placeholder). ok=false → no usable date (leave the trio NULL).
-func parseVNDBReleased(released, maxYear int) (y int16, m, d *int16, ok bool) {
-	yy := released / 10000
-	if yy < releaseMinYear || yy > maxYear {
-		return 0, nil, nil, false
-	}
-	y = int16(yy)
-	if mm := (released / 100) % 100; mm >= 1 && mm <= 12 {
-		mv := int16(mm)
-		m = &mv
-		if dd := released % 100; dd >= 1 && dd <= 31 {
-			dv := int16(dd)
-			d = &dv
-		}
-	}
-	return y, m, d, true
-}
-
-// --- loaders ---------------------------------------------------------------
-
-func (im *Importer) loadReleaseMeta() (map[string]relMeta, error) {
-	var rows []struct {
-		ID       string `gorm:"column:id"`
-		OLang    string `gorm:"column:olang"`
-		Released int    `gorm:"column:released"`
-		Minage   *int16 `gorm:"column:minage"`
-		Freeware bool   `gorm:"column:freeware"`
-		Official bool   `gorm:"column:official"`
-		Patch    bool   `gorm:"column:patch"`
-	}
-	if err := im.catalog.Raw(`SELECT id, olang, released, minage, freeware, official, patch FROM src_vndb.releases`).
-		Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	m := make(map[string]relMeta, len(rows))
-	for _, r := range rows {
-		m[r.ID] = relMeta{olang: r.OLang, released: r.Released, minage: r.Minage, freeware: r.Freeware, official: r.Official, patch: r.Patch}
-	}
-	return m, nil
-}
-
-func (im *Importer) loadReleasePlatforms() (map[string][]string, error) {
-	var rows []struct {
-		ID       string `gorm:"column:id"`
-		Platform string `gorm:"column:platform"`
-	}
-	if err := im.catalog.Raw(`SELECT id, platform FROM src_vndb.releases_platforms ORDER BY id, platform`).
-		Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	m := map[string][]string{}
-	for _, r := range rows {
-		m[r.ID] = append(m[r.ID], r.Platform)
-	}
-	return m, nil
-}
-
-func (im *Importer) loadReleaseTitles() (map[string][]relTitle, error) {
-	var rows []struct {
-		ID    string `gorm:"column:id"`
-		Lang  string `gorm:"column:lang"`
-		MTL   bool   `gorm:"column:mtl"`
-		Title string `gorm:"column:title"`
-		Latin string `gorm:"column:latin"`
-	}
-	if err := im.catalog.Raw(`SELECT id, lang, mtl, title, latin FROM src_vndb.releases_titles ORDER BY id, lang`).
-		Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	m := map[string][]relTitle{}
-	for _, r := range rows {
-		m[r.ID] = append(m[r.ID], relTitle{lang: r.Lang, mtl: r.MTL, title: r.Title, latin: r.Latin})
-	}
-	return m, nil
-}
-
-func (im *Importer) loadReleaseVNCounts() (map[string]int, error) {
-	var rows []struct {
-		ID string `gorm:"column:id"`
-		C  int    `gorm:"column:c"`
-	}
-	if err := im.catalog.Raw(`SELECT id, count(*) AS c FROM src_vndb.releases_vn GROUP BY id`).
-		Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	m := make(map[string]int, len(rows))
-	for _, r := range rows {
-		m[r.ID] = r.C
-	}
-	return m, nil
-}
-
-// loadExistingVNDBReleaseKeys is the resume index: every (work_id, vndb_id)
-// already claimed, mapped to whether its only holders are soft-deleted. The
-// query is deliberately NOT restricted to live rows — a retired row keeps both
-// the id and its exact anchor slot, so treating it as a vacancy re-creates it
-// on every pass (or aborts the wave on the exact unique). The value separates
-// the two skip classes for the report; a key with any live holder counts as
-// live. The `extra->>'vndb_id' IS NOT NULL` filter avoids the jsonb `?`
-// operator (which collides with GORM's positional placeholder).
-func (im *Importer) loadExistingVNDBReleaseKeys() (map[string]bool, error) {
-	var rows []struct {
-		WorkID  int64  `gorm:"column:work_id"`
-		VndbID  string `gorm:"column:vndb_id"`
-		Retired bool   `gorm:"column:retired"`
-	}
-	if err := im.catalog.Raw(`
-		SELECT work_id, extra->>'vndb_id' AS vndb_id, bool_and(deleted_at IS NOT NULL) AS retired
-		FROM catalog_release
-		WHERE extra->>'vndb_id' IS NOT NULL
-		GROUP BY work_id, extra->>'vndb_id'`).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	m := make(map[string]bool, len(rows))
-	for _, r := range rows {
-		m[releaseKey(r.WorkID, r.VndbID)] = r.Retired
-	}
-	return m, nil
-}
-
-// capReleaseGatesByWork keeps only the gates for the first n distinct work ids
-// (ascending) — the --limit debugging aid, deterministic.
-func capReleaseGatesByWork(gates []releaseGateRow, n int) []releaseGateRow {
-	works := map[int64]bool{}
-	for _, g := range gates {
-		works[g.WorkID] = true
-	}
-	keys := make([]int64, 0, len(works))
-	for k := range works {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-	if n < len(keys) {
-		keys = keys[:n]
-	}
-	keep := make(map[int64]bool, len(keys))
-	for _, k := range keys {
-		keep[k] = true
-	}
-	out := gates[:0:0]
-	for _, g := range gates {
-		if keep[g.WorkID] {
-			out = append(out, g)
-		}
-	}
-	return out
 }
