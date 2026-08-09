@@ -43,6 +43,19 @@ type RosterStats struct {
 	SkippedNoWorkAnchor int // roster row whose work has no exact anchor (out of gate)
 	SkippedNoName       int // staging character carries no usable name — cannot build the entity
 	Errors              int // materialize drops (character unresolved) — expected 0
+	// SkippedClaimedProbable counts source characters whose external id an ALIVE
+	// catalog character already claims at a non-exact grade (a merge demoted the
+	// two competing anchors to probable). The id is taken, so nothing is minted;
+	// the pending link is left for adjudication. Visible on its own so operators
+	// see the size of the "waiting on a human" set instead of it hiding inside
+	// `already`.
+	SkippedClaimedProbable int
+	// SkippedRetiredExactSquat counts ids whose only exact holder is a
+	// soft-deleted character. The id should be free again, but the exact-tier
+	// unique index ignores deleted_at, so the retired row still occupies it and
+	// minting would fail the wave. Expected 0 — a non-zero value is the signal
+	// that retired rows are not leaving the identity index.
+	SkippedRetiredExactSquat int
 	// VNDB wave (step 47) only: the same-work same-name attach split.
 	AttachedExisting   int // VNDB char attached to an existing entity (no new row)
 	AliasesCreated     int // spelling_variant romaji aliases added (new + attached)
@@ -55,6 +68,8 @@ func (s *RosterStats) add(o RosterStats) {
 	s.Already += o.Already
 	s.SkippedNoWorkAnchor += o.SkippedNoWorkAnchor
 	s.SkippedNoName += o.SkippedNoName
+	s.SkippedClaimedProbable += o.SkippedClaimedProbable
+	s.SkippedRetiredExactSquat += o.SkippedRetiredExactSquat
 	s.Errors += o.Errors
 	s.AttachedExisting += o.AttachedExisting
 	s.AliasesCreated += o.AliasesCreated

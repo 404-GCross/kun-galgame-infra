@@ -161,6 +161,99 @@ func TestRosterVNDBAttach(t *testing.T) {
 	assert.Equal(t, 2, st2.Already)
 }
 
+// seedClaimingChar creates a catalog character that holds a VNDB (source 2) ref
+// for vid at the given link_kind, optionally soft-deleted — the shape a merge
+// leaves behind when it demotes two competing exacts to probable.
+func seedClaimingChar(t *testing.T, name, vid string, linkKind int16, deleted bool) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_character (display_name, lang, description, field_provenance)
+		VALUES (?,'ja','','{}') RETURNING id`, name).Scan(&id).Error)
+	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
+		VALUES (4, ?, 2, ?, ?, 'rule:test-claim')`, id, vid, linkKind).Error)
+	if deleted {
+		require.NoError(t, testDB.Exec(`UPDATE catalog_character SET deleted_at = now() WHERE id = ?`, id).Error)
+	}
+	return id
+}
+
+// TestRosterVNDBClaimedIDsAreNotReminted pins the wave-199 rule: an external id
+// an ALIVE character already claims is not a new character at ANY grade. A
+// probable claim (what a merge leaves when it demotes two competing exacts)
+// skips the character and shows up in its own counter; a soft-deleted PROBABLE
+// holder does not block minting; an alive exact holder resumes exactly as
+// before. A soft-deleted EXACT holder is covered by its own test below.
+func TestRosterVNDBClaimedIDsAreNotReminted(t *testing.T) {
+	clean(t)
+	work := seedVNDBWork(t, "v300")
+
+	// c60: an alive survivor claims it at PROBABLE → skip (no second body).
+	// c61: only a merged-away character claims it (probable) → mint.
+	// c62: an alive character claims it EXACT → resume onto that entity.
+	seedVNDBChar(t, "c60", "生存者", "Seizonsha", "")
+	seedVNDBChar(t, "c61", "亡霊", "Bourei", "")
+	seedVNDBChar(t, "c62", "常連", "Jouren", "")
+	for _, c := range []string{"c60", "c61", "c62"} {
+		seedCharVN(t, c, "v300", "main", 0)
+	}
+	survivor := seedClaimingChar(t, "生存者", "c60", model.LinkKindProbable, false)
+	seedClaimingChar(t, "亡霊", "c61", model.LinkKindProbable, true)
+	anchored := seedClaimingChar(t, "常連", "c62", model.LinkKindExact, false)
+
+	st, err := New(testDB, nil, Options{Source: "vndb"}).RunRoster("vndb")
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.SkippedClaimedProbable, "c60 is claimed probable by an alive character")
+	assert.Equal(t, 1, st.CharactersCreated, "only c61 (merged-away holder) is minted")
+	assert.Zero(t, st.SkippedRetiredExactSquat)
+	assert.Zero(t, st.AttachedExisting)
+	assert.Equal(t, 2, st.EdgesWritten, "c61 + c62; c60 gets no edge at all")
+	assert.Zero(t, st.Errors, "the skipped plan is dropped up front, not counted as an error")
+
+	// c60: no second body, no new ref, no grade promotion — the probable link is
+	// left exactly as the merge left it.
+	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='c60'`))
+	assert.Equal(t, int64(model.LinkKindProbable), scalarInt(t, `SELECT link_kind FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='c60'`))
+	assert.Zero(t, scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_work_character WHERE character_id=%d`, survivor)))
+	assert.Zero(t, scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_character_alias WHERE character_id=%d`, survivor)))
+
+	// c61: minted as a brand-new entity, distinct from the soft-deleted holder.
+	fresh := scalarInt(t, `SELECT entity_id FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='c61' AND matched_by='rule:vndb-character-import'`)
+	assert.NotZero(t, fresh)
+	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_work_character WHERE work_id=%d AND character_id=%d`, work, fresh)))
+
+	// c62: unchanged behaviour — the edge lands on the already-anchored entity.
+	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_work_character WHERE work_id=%d AND character_id=%d`, work, anchored)))
+
+	// The dry run reports the same skip count (and plans no edge for c60).
+	stDry, err := New(testDB, nil, Options{Source: "vndb", DryRun: true}).RunRoster("vndb")
+	require.NoError(t, err)
+	assert.Equal(t, 1, stDry.SkippedClaimedProbable)
+	assert.Zero(t, stDry.CharactersCreated)
+	assert.Equal(t, 2, stDry.EdgesWritten, "c61 + c62 only")
+}
+
+// TestRosterVNDBRetiredExactSquat documents the one case where a soft-deleted
+// holder still blocks minting: uq_catalog_external_ref_exact ignores deleted_at,
+// so a retired character's EXACT ref keeps occupying the id. Minting would fail
+// the whole wave on a unique violation, so the id is skipped and counted under
+// its own name rather than mixed into the probable-claim number.
+func TestRosterVNDBRetiredExactSquat(t *testing.T) {
+	clean(t)
+	seedVNDBWork(t, "v310")
+	seedVNDBChar(t, "c70", "亡者", "Mouja", "")
+	seedCharVN(t, "c70", "v310", "main", 0)
+	dead := seedClaimingChar(t, "亡者", "c70", model.LinkKindExact, true)
+
+	st, err := New(testDB, nil, Options{Source: "vndb"}).RunRoster("vndb")
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.SkippedRetiredExactSquat)
+	assert.Zero(t, st.SkippedClaimedProbable)
+	assert.Zero(t, st.CharactersCreated)
+	assert.Zero(t, st.EdgesWritten)
+	// No edge onto the retired entity either.
+	assert.Zero(t, scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_work_character WHERE character_id=%d`, dead)))
+}
+
 func vndbCharID(t *testing.T, extID string) int64 {
 	t.Helper()
 	return scalarInt(t, `SELECT entity_id FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='`+extID+`'`)
