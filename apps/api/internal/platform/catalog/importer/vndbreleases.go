@@ -43,6 +43,11 @@ import (
 // Idempotence (design nail 3): the resume index is the set of existing
 // (work_id, extra->>'vndb_id') — a hit skips the whole plan, so a second pass
 // writes nothing (row + anchor + revision are created atomically per apply).
+// The index is liveness-BLIND on purpose: a retired row is not a vacancy. It
+// still answers to its vndb id, so re-minting would resurrect it on every pass,
+// and its exact anchor still squats the (source, external_id, entity_type)
+// slot — uq_catalog_external_ref_exact is not deleted_at-aware, so the mint
+// would fail on a unique violation and take the whole wave down with it.
 // external_ref: a release covering exactly ONE vn (globally) gets an exact
 // release anchor (source 2, entity_type 6, external_id = r-id, the vndb-character/
 // staff waves' tier-0 auto-exact precedent); a multi-vn release gets NO anchor
@@ -62,7 +67,8 @@ type ReleaseStats struct {
 	ReleasesWritten   int
 	AnchorsWritten    int // single-vn exact release anchors created
 	MultiVNUnanchored int // plan rows whose release spans >1 vn → intentionally no anchor
-	SkippedExisting   int // idempotent resume: (work, vndb_id) already present
+	SkippedExisting   int // idempotent resume: (work, vndb_id) already present on a live row
+	SkippedRetired    int // (work, vndb_id) held only by a soft-deleted row — claimed, not vacant
 	KindDefault       int
 	KindTrial         int
 	KindPatch         int
@@ -158,8 +164,12 @@ func (im *Importer) RunReleases() (ReleaseStats, error) {
 			st.Errors++
 			continue
 		}
-		if existing[releaseKey(g.WorkID, g.RID)] {
-			st.SkippedExisting++
+		if retired, held := existing[releaseKey(g.WorkID, g.RID)]; held {
+			if retired {
+				st.SkippedRetired++
+			} else {
+				st.SkippedExisting++
+			}
 			continue
 		}
 
@@ -220,6 +230,7 @@ func (im *Importer) RunReleases() (ReleaseStats, error) {
 
 	slog.Info("vndb releases plan",
 		"in_gate_pairs", st.InGatePairs, "planned", st.Planned, "skipped_existing", st.SkippedExisting,
+		"skipped_retired", st.SkippedRetired,
 		"kind_default", st.KindDefault, "kind_trial", st.KindTrial, "kind_patch", st.KindPatch,
 		"single_vn_anchors", anchorable, "multi_vn_unanchored", st.MultiVNUnanchored,
 		"no_date", st.NoDate, "no_title", st.NoTitle, "errors", st.Errors)
@@ -429,22 +440,30 @@ func (im *Importer) loadReleaseVNCounts() (map[string]int, error) {
 	return m, nil
 }
 
-// loadExistingVNDBReleaseKeys is the resume index: the (work_id, vndb_id) set
-// already present. The `extra->>'vndb_id' IS NOT NULL` filter avoids the jsonb
-// `?` operator (which collides with GORM's positional placeholder).
+// loadExistingVNDBReleaseKeys is the resume index: every (work_id, vndb_id)
+// already claimed, mapped to whether its only holders are soft-deleted. The
+// query is deliberately NOT restricted to live rows — a retired row keeps both
+// the id and its exact anchor slot, so treating it as a vacancy re-creates it
+// on every pass (or aborts the wave on the exact unique). The value separates
+// the two skip classes for the report; a key with any live holder counts as
+// live. The `extra->>'vndb_id' IS NOT NULL` filter avoids the jsonb `?`
+// operator (which collides with GORM's positional placeholder).
 func (im *Importer) loadExistingVNDBReleaseKeys() (map[string]bool, error) {
 	var rows []struct {
-		WorkID int64  `gorm:"column:work_id"`
-		VndbID string `gorm:"column:vndb_id"`
+		WorkID  int64  `gorm:"column:work_id"`
+		VndbID  string `gorm:"column:vndb_id"`
+		Retired bool   `gorm:"column:retired"`
 	}
 	if err := im.catalog.Raw(`
-		SELECT work_id, extra->>'vndb_id' AS vndb_id FROM catalog_release
-		WHERE extra->>'vndb_id' IS NOT NULL AND deleted_at IS NULL`).Scan(&rows).Error; err != nil {
+		SELECT work_id, extra->>'vndb_id' AS vndb_id, bool_and(deleted_at IS NOT NULL) AS retired
+		FROM catalog_release
+		WHERE extra->>'vndb_id' IS NOT NULL
+		GROUP BY work_id, extra->>'vndb_id'`).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	m := make(map[string]bool, len(rows))
 	for _, r := range rows {
-		m[releaseKey(r.WorkID, r.VndbID)] = true
+		m[releaseKey(r.WorkID, r.VndbID)] = r.Retired
 	}
 	return m, nil
 }
