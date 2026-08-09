@@ -81,6 +81,11 @@ type WorksListFilter struct {
 	// status=2 answering anything but 404 is a contract break.
 	Statuses []int16
 	LabelID  int64 // via catalog_work_label
+	// LabelRollup widens LabelID to the label's imprints and subsidiaries
+	// (wave 199). Ignored without LabelID. Every row that came in through a
+	// child carries via_label — see public_label_rollup.go for why the
+	// attribution is not optional.
+	LabelRollup bool
 	// TagIDs are canonical tag ids ANDed together (A2-1e): a work must carry a
 	// source tag mapped to EVERY id, which is what a facet sidebar's "narrow by
 	// another tag" means. One id behaves exactly as the pre-A2-1e scalar did.
@@ -165,8 +170,19 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		args = append(args, pargs...)
 	}
 	if f.LabelID > 0 {
-		where = append(where, "EXISTS (SELECT 1 FROM catalog_work_label wl WHERE wl.work_id = w.id AND wl.label_id = ?)")
-		args = append(args, f.LabelID)
+		if f.LabelRollup {
+			// The company page's population: this label's own works UNION the
+			// works of its one-hop imprints/subsidiaries. One EXISTS, so the
+			// roll-up is a widened probe inside the same conjunction — the
+			// keyset page and its next_cursor stay honest about the set they
+			// describe. Each row's attribution is restored below.
+			where = append(where, `EXISTS (SELECT 1 FROM catalog_work_label wl
+				WHERE wl.work_id = w.id AND (wl.label_id = ? OR wl.label_id IN (`+labelRollupChildren+`)))`)
+			args = append(args, f.LabelID, f.LabelID, labelRollupRelations)
+		} else {
+			where = append(where, "EXISTS (SELECT 1 FROM catalog_work_label wl WHERE wl.work_id = w.id AND wl.label_id = ?)")
+			args = append(args, f.LabelID)
+		}
 	}
 	for _, tagID := range f.TagIDs {
 		// Canonical tag → any source tag mapped to it (idx on catalog_work_tag
@@ -266,6 +282,21 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 	items, err := s.enrichWorkListItems(ctx, src, f.NSFW, f.Include)
 	if err != nil {
 		return dto.PublicWorksListData{}, err
+	}
+	if f.LabelID > 0 && f.LabelRollup {
+		ids := make([]int64, len(items))
+		for i, it := range items {
+			ids[i] = it.ID
+		}
+		via, verr := s.labelRollupVia(ctx, f.LabelID, ids)
+		if verr != nil {
+			return dto.PublicWorksListData{}, verr
+		}
+		for i := range items {
+			if v, ok := via[items[i].ID]; ok {
+				items[i].ViaLabel = &v
+			}
+		}
 	}
 	out := dto.PublicWorksListData{Items: items}
 	if len(rows) == limit {

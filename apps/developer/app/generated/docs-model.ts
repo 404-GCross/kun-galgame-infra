@@ -479,6 +479,23 @@ export const docsModel: DocsModel = {
                                   "name": "updated",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "via_label",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -1024,6 +1041,23 @@ export const docsModel: DocsModel = {
                                   "name": "updated",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "via_label",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -1562,6 +1596,23 @@ export const docsModel: DocsModel = {
                                   "name": "updated",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "via_label",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -2658,6 +2709,13 @@ export const docsModel: DocsModel = {
                             "type": "integer"
                           },
                           {
+                            "name": "imprint_work_count",
+                            "required": true,
+                            "doc": "works reachable one hop down through imprints/subsidiaries and NOT attributed to this label itself; follow it with works?label_id=<id>&label_rollup=1",
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
                             "name": "intros",
                             "required": true,
                             "nullable": true,
@@ -3445,6 +3503,13 @@ export const docsModel: DocsModel = {
                               {
                                 "name": "id",
                                 "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "imprint_work_count",
+                                "required": true,
+                                "doc": "works reachable one hop down through imprints/subsidiaries and NOT attributed to this label itself; follow it with works?label_id=<id>&label_rollup=1",
                                 "format": "int64",
                                 "type": "integer"
                               },
@@ -4455,6 +4520,13 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "id",
                                       "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "imprint_work_count",
+                                      "required": true,
+                                      "doc": "works reachable one hop down through imprints/subsidiaries and NOT attributed to this label itself; follow it with works?label_id=<id>&label_rollup=1",
                                       "format": "int64",
                                       "type": "integer"
                                     },
@@ -6184,6 +6256,23 @@ export const docsModel: DocsModel = {
                                       "name": "updated",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "via_label",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "id",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "name",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -7509,6 +7598,13 @@ export const docsModel: DocsModel = {
                   "doc": "Only works attributed to this label (the catalog_work_label edge)"
                 },
                 {
+                  "name": "label_rollup",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = widen label_id one hop DOWN the corporate graph, to the label's imprints and subsidiaries (wave 199) — the page a holding company that publishes nothing under its own name needs. Every row that came in through a child carries via_label naming that child; the company's own works carry none. The population is exactly work_count + imprint_work_count of labels/{id}. Spin-offs (spawned) and successions (succeeded_by) are NOT followed: those are other companies' catalogues. Ignored without label_id"
+                },
+                {
                   "name": "tag_id",
                   "in": "query",
                   "required": false,
@@ -7995,6 +8091,23 @@ export const docsModel: DocsModel = {
                                   "name": "updated",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "via_label",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -9707,6 +9820,23 @@ export const docsModel: DocsModel = {
                                   "name": "updated",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "via_label",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               ]
                             }

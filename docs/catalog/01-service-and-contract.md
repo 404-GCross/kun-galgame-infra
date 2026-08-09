@@ -100,6 +100,10 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
     - 遍历 = 自种子沿 `catalog_label_relation` 的**广度优先**walk + visited 集(镜像存储本身即成环,无 visited 不停机),**depth ≤ 4、nodes ≤ 60**;上限**按广度生效**,故被截断时留下的是离种子**最近**的一圈。JOIN `catalog_label` 排除软删(被合并掉的 label 在任何一跳都不出),渲染的边恒在节点集**内部**(不出悬空引用)。**不分页**——切片后的图不是图。
     - 边语义:`{from, to, relation}` 读作「**`to` 是 `from` 的 `relation`**」,与 `relations[].relation` 同一读法(那里 `from` 即被查看的厂牌)。因图**镜像存**,本面每个事实**只出一次**:仅渲染互逆对的**正向**四值 `parent | imprint | spawned | succeeded_by`,四个反向值(`subsidiary | imprint_of | origin | formerly`)由**反读同一条边**得到(要「X 的子公司」= 取 `to` 为 X 且 relation 为 `parent` 的边)。多源断言同一 `(from,to,relation)` 折叠为一条,`source` 不出面。
     - 种子不存在 → 404;种子被合并掉 → 与 `labels/{id}` 同样的 **301 + `current_id`**;种子无边 → **单节点零边图**(不是 404)。`relations[]` 一跳面**保持不动**。
+  - **wave 199 加法——imprint 上卷**:186 给了箭头、188 给了整张图,但**所有读面仍只问「归属到本行的作品有哪些」**,于是 **311 个会社页答以空列表,而 10,668 部作品就挂在它下面一跳**(VISUAL ARTS 自有 19、75 个 imprint 下 553;NEXTON 自有 38、下挂 339)。上卷是**显式开关 + 强制归因**两件事:
+    - `GET /v1/catalog/labels/{id}` 恒出 **`imprint_work_count`**:沿 `imprint`/`subsidiary` **向下一跳**多摸到的作品数,与 `work_count` 同一 nsfw 感知 + live 认领聚合。**永不并入 `work_count`** —— 并进去就抹掉了 186 建图正是为了留住的那支箭头。两个人口**不相交**(母子共同署名的作品只算在母公司一侧)。
+    - `GET /v1/catalog/works?label_id=<id>&label_rollup=1` 是跟着那个数走的那一页,人口恰为 `work_count + imprint_work_count`——**「chip 上的数 = 点进去拿到的数」这条全 taxonomy 道赖以成立的不变式,对第二个数同样成立**。经子厂牌进来的行带 **`via_label{id,name}`**,会社自有的行不带。
+    - **不跟** `spawned` 与 `succeeded_by`:分家出去的公司目录是它自己的(fairys 之于 sprite),公司承继是**两实体一箭头**(wave 198 复核员已裁)。跟了它们就等于把别家的作品挂在本会社名下,而归因存在的意义正是防这件事。软删(被合并掉)的子厂牌在两处都不出。
 
 ### 2.8 `GET /catalog/works/search?q=&medium_id=&limit=` — 作品标题搜索(只读)
 

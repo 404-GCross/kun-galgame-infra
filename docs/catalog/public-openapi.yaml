@@ -1177,6 +1177,10 @@ components:
         id:
           format: int64
           type: integer
+        imprint_work_count:
+          description: works reachable one hop down through imprints/subsidiaries and NOT attributed to this label itself; follow it with works?label_id=<id>&label_rollup=1
+          format: int64
+          type: integer
         intros:
           items:
             $ref: "#/components/schemas/PublicLabelIntro"
@@ -1232,6 +1236,7 @@ components:
         - aliases
         - localized
         - work_count
+        - imprint_work_count
         - logo_hash
         - refs
         - intros
@@ -1370,6 +1375,18 @@ components:
         - id
         - name
         - relation
+      type: object
+    PublicLabelVia:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
       type: object
     PublicLabelWork:
       additionalProperties: false
@@ -2524,6 +2541,8 @@ components:
             - "null"
         updated:
           type: string
+        via_label:
+          $ref: "#/components/schemas/PublicLabelVia"
       required:
         - id
         - medium
@@ -3864,6 +3883,13 @@ paths:
             description: Only works attributed to this label (the catalog_work_label edge)
             format: int64
             type: integer
+        - description: "true/1 = widen label_id one hop DOWN the corporate graph, to the label's imprints and subsidiaries (wave 199) — the page a holding company that publishes nothing under its own name needs. Every row that came in through a child carries via_label naming that child; the company's own works carry none. The population is exactly work_count + imprint_work_count of labels/{id}. Spin-offs (spawned) and successions (succeeded_by) are NOT followed: those are other companies' catalogues. Ignored without label_id"
+          explode: false
+          in: query
+          name: label_rollup
+          schema:
+            description: "true/1 = widen label_id one hop DOWN the corporate graph, to the label's imprints and subsidiaries (wave 199) — the page a holding company that publishes nothing under its own name needs. Every row that came in through a child carries via_label naming that child; the company's own works carry none. The population is exactly work_count + imprint_work_count of labels/{id}. Spin-offs (spawned) and successions (succeeded_by) are NOT followed: those are other companies' catalogues. Ignored without label_id"
+            type: boolean
         - description: Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400
           explode: false
           in: query

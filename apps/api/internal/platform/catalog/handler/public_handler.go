@@ -792,6 +792,11 @@ func (h *PublicHandler) WorksList(c fiber.Ctx) error {
 	if f.LabelID, ok = posIntQueryPub(c.Query("label_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "label_id must be a positive integer")
 	}
+	// label_rollup (wave 199): widen label_id to the label's imprints and
+	// subsidiaries. Silently ignored without label_id — it is a modifier of
+	// that filter, and 400ing a parameter that changes nothing would break
+	// callers who pass their whole filter state on every request.
+	f.LabelRollup = boolQueryPub(c.Query("label_rollup"))
 	if f.TagIDs, ok = posIntListQueryPub(c.Query("tag_id"), maxTagIDFilters); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadTagIDs)
 	}

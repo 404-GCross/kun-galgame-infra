@@ -532,6 +532,16 @@ type PublicLabelRelation struct {
 	Relation string `json:"relation" doc:"parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<name> is the <relation> of this label\""`
 }
 
+// PublicLabelVia names the imprint (or subsidiary) a work came up through on a
+// rolled-up company page (wave 199, works?label_id=&label_rollup=1). It is the
+// attribution that keeps the roll-up honest: the row is on VISUAL ARTS' page,
+// but the work is Key's, and the reader is told so. Absent on a work the
+// company attributes to itself.
+type PublicLabelVia struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // PublicPersonLink is one non-identity web-presence link of a PERSON (wave
 // 186), the same shape and the same rendering table as PublicLabelLink. It
 // projects the person's entity_type=0, link_kind=related refs; identity anchors
@@ -561,6 +571,15 @@ type PublicLabel struct {
 	// number of works this caller would page through via
 	// works?label_id=&claim_state=live — the call an entity page makes (146).
 	WorkCount int `json:"work_count"`
+	// ImprintWorkCount is how many MORE works hang off this label's imprints
+	// and subsidiaries (wave 199) — the same nsfw-aware, live-claim aggregate
+	// over the one-hop downward edges of relations[]. It is a SECOND number,
+	// never folded into work_count: a holding company that publishes nothing
+	// under its own name reads 0 + 553, and the reader can still tell which
+	// works are the company's own. The two populations are disjoint, so
+	// work_count + imprint_work_count is exactly what
+	// works?label_id=&label_rollup=1 pages through.
+	ImprintWorkCount int `json:"imprint_work_count" doc:"works reachable one hop down through imprints/subsidiaries and NOT attributed to this label itself; follow it with works?label_id=<id>&label_rollup=1"`
 	// LogoHash is the brand logo's content hash in the image service (wave
 	// 170) — the same currency as a work cover's image_hash, so a consumer
 	// builds the CDN URL from it the same way. ALWAYS present (never
@@ -868,6 +887,11 @@ type PublicWorkListItem struct {
 	// caller may see (sfw callers never receive a sexual-flagged cover).
 	Cover   string `json:"cover,omitempty"`
 	Updated string `json:"updated"`
+	// ViaLabel appears ONLY under label_rollup=1 (wave 199), and only on the
+	// rows that reached the page through an imprint or subsidiary rather than
+	// through the queried label itself. Render it: a rolled-up company page
+	// that does not say `via <imprint>` has quietly reassigned the publisher.
+	ViaLabel *PublicLabelVia `json:"via_label,omitempty"`
 
 	// ── include= rich-brief blocks (A2-1a, refs/proj/126 D1/D7) ──────────
 	// Every block is absent unless its token appears in include=, so the

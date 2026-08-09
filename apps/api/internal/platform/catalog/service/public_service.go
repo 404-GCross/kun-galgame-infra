@@ -877,6 +877,12 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks, nsfw boo
 		return dto.PublicLabel{}, false, err
 	}
 	l.WorkCount = counts[id]
+	// …and the roll-up companion (wave 199): what a holding company would show
+	// if it followed its own imprint arrows. A SECOND number, disjoint from the
+	// first — never folded in.
+	if l.ImprintWorkCount, err = s.imprintWorkCount(ctx, id, nsfw); err != nil {
+		return dto.PublicLabel{}, false, err
+	}
 	// intros / links / aliases are part of the base record (not include-gated).
 	if l.Aliases, l.Localized, err = s.labelAliases(ctx, id); err != nil {
 		return dto.PublicLabel{}, false, err
