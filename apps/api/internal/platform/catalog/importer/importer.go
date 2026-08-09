@@ -72,8 +72,22 @@ type Stats struct {
 	CreditsWritten      int
 	SkippedUnmappedRole int
 	SkippedGate         int
-	Already             int
-	Errors              int
+	// SkippedClaimedProbableName counts distinct source alias ids skipped
+	// because an ALIVE credit_name already answers to them at probable grade —
+	// the trace of a merge that folded two same-source exacts together. Minting
+	// a second credit_name for such an id would re-split that merge, so the
+	// whole credit row is dropped instead.
+	SkippedClaimedProbableName int
+	// SkippedClaimedProbableChar counts distinct source character ids whose VA
+	// credits were dropped for the same reason (the character exists, but only
+	// at probable grade — resolving onto it would be an adjudication).
+	SkippedClaimedProbableChar int
+	// SkippedRetiredExactChar counts distinct source character ids whose only
+	// exact holder is soft-deleted: the id still squats the non-liveness-aware
+	// exact identity index, so it is neither resolvable nor free.
+	SkippedRetiredExactChar int
+	Already                 int
+	Errors                  int
 }
 
 func (s *Stats) add(o Stats) {
@@ -83,6 +97,9 @@ func (s *Stats) add(o Stats) {
 	s.CreditsWritten += o.CreditsWritten
 	s.SkippedUnmappedRole += o.SkippedUnmappedRole
 	s.SkippedGate += o.SkippedGate
+	s.SkippedClaimedProbableName += o.SkippedClaimedProbableName
+	s.SkippedClaimedProbableChar += o.SkippedClaimedProbableChar
+	s.SkippedRetiredExactChar += o.SkippedRetiredExactChar
 	s.Already += o.Already
 	s.Errors += o.Errors
 }

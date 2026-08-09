@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"fmt"
 	"log/slog"
 	"sort"
 	"strconv"
@@ -33,6 +34,14 @@ import (
 // (work, credit_name, role, COALESCE(character,0)) makes re-runs write nothing.
 // eid (edition) is ignored — ReleaseID stays NULL and same-alias/same-role rows
 // that differ only by edition collapse onto the one work-level credit.
+//
+// ⚠️ Identity discipline (the same ruling the VNDB roster wave carries): an
+// external id a LIVING entity already answers to is not a vacancy at ANY grade.
+// Exactness governs how strongly a link is asserted, never whether the upstream
+// thing already has a body here. So a claimed id is skipped outright — not
+// minted, not attached, and not re-graded (re-grading is an adjudication, not
+// an import) — and every skip class gets its own counter so an unattended run
+// reports what it declined to do instead of hiding it in a generic bucket.
 
 const ruleVNDBStaff = "rule:vndb-staff-import" // credit_name self-anchor (external_id = alias aid)
 
@@ -106,12 +115,67 @@ func (im *Importer) runVNDBCredits() (Stats, error) {
 	if err != nil {
 		return st, err
 	}
+	// 2b. Ids an ALIVE entity already answers to at a NON-exact grade, and ids
+	// whose only exact holder is retired. An external id with a body is not a
+	// vacancy at any grade: for a credit_name alias minting a second one would
+	// re-split a merge the platform deliberately made (and re-claim the id with a
+	// fresh exact anchor); for a character resolving onto nothing would drop the
+	// VA credit. Neither is re-graded here — promoting a probable ref is an
+	// adjudication for the confirmation queue, not something an import may do
+	// silently. An id that ALSO has an alive exact anchor is not claimed at all:
+	// exactness decides which link resolves, never whether an id is free.
+	claimedNames, err := im.loadVNDBClaimedRefs(model.EntityTypeCreditName)
+	if err != nil {
+		return st, err
+	}
+	claimedChars, err := im.loadVNDBClaimedRefs(model.EntityTypeCharacter)
+	if err != nil {
+		return st, err
+	}
+	for ext := range claimedNames {
+		if cnAnchor[ext] != 0 {
+			delete(claimedNames, ext)
+		}
+	}
+	for ext := range claimedChars {
+		if charAnchor[ext] != 0 {
+			delete(claimedChars, ext)
+		}
+	}
+	// Disjoint from charAnchor by the exact unique index — one exact holder per
+	// id, alive or not. Empty for credit_name (no soft delete), so not loaded.
+	retiredChars, err := im.loadVNDBRetiredExactRefs(model.EntityTypeCharacter)
+	if err != nil {
+		return st, err
+	}
 
-	// 3. Build the credit plans (resolvable by source ext id), counting the two
-	// skip classes. roleCounts is the per-role dry-run breakdown.
+	// 3. Build the credit plans (resolvable by source ext id), counting the skip
+	// classes. roleCounts is the per-role dry-run breakdown. claimedNameSeen
+	// keeps the alias skip counter per-entity (like the roster wave) rather than
+	// per-credit-row; the row totals go to the plan log below.
 	roleCounts := map[string]int{}
+	claimedNameSeen := map[string]bool{}
+	claimedCharSeen := map[string]bool{}
+	retiredCharSeen := map[string]bool{}
+	rowsClaimedName, rowsClaimedChar, rowsRetiredChar := 0, 0, 0
+	// skipClaimedName reports whether this alias id already has a body at
+	// probable grade; the whole credit row is dropped when it does.
+	skipClaimedName := func(aid string) bool {
+		if claimedNames[aid] == 0 {
+			return false
+		}
+		rowsClaimedName++
+		if !claimedNameSeen[aid] {
+			claimedNameSeen[aid] = true
+			st.SkippedClaimedProbableName++
+		}
+		return true
+	}
 	var plans []creditPlan
 	for _, r := range staffRows {
+		if skipClaimedName(strconv.Itoa(r.AID)) {
+			continue
+		}
 		roleID, ok := roleMap[r.Role]
 		if !ok {
 			st.SkippedUnmappedRole++
@@ -132,8 +196,32 @@ func (im *Importer) runVNDBCredits() (Stats, error) {
 	}
 	skippedVANoChar := 0
 	for _, r := range seiyuuRows {
-		if charAnchor[r.CID] == 0 { // character never imported by the roster wave → skip (this wave writes only credits)
-			skippedVANoChar++
+		if skipClaimedName(strconv.Itoa(r.AID)) {
+			continue
+		}
+		if charAnchor[r.CID] == 0 {
+			// The character has no ALIVE exact anchor. Three distinct reasons, kept
+			// in three counters because they need different follow-ups: a probable
+			// claim is a merge survivor waiting on a human confirmation, a retired
+			// squat needs the dead ref out of the identity index, and a plain miss
+			// means the roster wave never imported the character. None of them mint
+			// or attach anything — this wave writes ONLY credits.
+			switch {
+			case claimedChars[r.CID] != 0:
+				rowsClaimedChar++
+				if !claimedCharSeen[r.CID] {
+					claimedCharSeen[r.CID] = true
+					st.SkippedClaimedProbableChar++
+				}
+			case retiredChars[r.CID] != 0:
+				rowsRetiredChar++
+				if !retiredCharSeen[r.CID] {
+					retiredCharSeen[r.CID] = true
+					st.SkippedRetiredExactChar++
+				}
+			default:
+				skippedVANoChar++
+			}
 			continue
 		}
 		roleCounts["seiyuu"]++
@@ -160,6 +248,12 @@ func (im *Importer) runVNDBCredits() (Stats, error) {
 		"in_gate_staff_rows", len(staffRows), "in_gate_seiyuu_rows", len(seiyuuRows),
 		"planned_credits", len(plans), "names_to_create", len(newNames),
 		"skipped_unmapped_role", st.SkippedUnmappedRole, "skipped_va_no_char", skippedVANoChar,
+		"skipped_claimed_probable_name", st.SkippedClaimedProbableName,
+		"skipped_claimed_probable_char", st.SkippedClaimedProbableChar,
+		"skipped_retired_exact_char", st.SkippedRetiredExactChar,
+		"skipped_rows_claimed_name", rowsClaimedName,
+		"skipped_rows_claimed_char", rowsClaimedChar,
+		"skipped_rows_retired_char", rowsRetiredChar,
 		"per_role", roleCounts)
 
 	if im.dryRun {
@@ -203,18 +297,85 @@ func (im *Importer) runVNDBCredits() (Stats, error) {
 	return st, err
 }
 
+// vndbAnchorEntities maps the entity types the VNDB ref loaders serve to their
+// entity table and whether that table soft-deletes. catalog_credit_name has NO
+// soft delete by design (a merge hard-deletes the losing row and its refs move
+// or drop, see service.retireSource), so a credit_name ref can never have a
+// retired holder — only a live one or none at all.
+var vndbAnchorEntities = map[int16]struct {
+	table      string
+	softDelete bool
+}{
+	model.EntityTypeCreditName: {"catalog_credit_name", false},
+	model.EntityTypeCharacter:  {"catalog_character", true},
+	model.EntityTypeWork:       {"catalog_work", true},
+}
+
 // loadVNDBAnchors returns external_id → entity_id for source-2 EXACT anchors of
-// one entity type (ext-only keys — this wave is single-source). Empty for
-// credit_name on the first run.
+// one entity type held by an ALIVE entity (ext-only keys — this wave is
+// single-source). Empty for credit_name on the first run.
+//
+// The liveness restriction is the point: a merged-away holder has left the
+// identity indexes, so an anchor pointing at it must not resolve — for
+// credit_name a hard-deleted holder would make insertCredits fail its FK, and
+// for character/work it would silently hang new rows off an entity the merge
+// removed. The callers pair this with the claimed/retired loaders below so an
+// id that drops out here is skipped and counted rather than treated as vacant.
 func (im *Importer) loadVNDBAnchors(entityType int16) (map[string]int64, error) {
+	return im.loadVNDBRefs(entityType, model.LinkKindExact, false)
+}
+
+// loadVNDBClaimedRefs returns external_id → entity_id for source-2 PROBABLE
+// refs held by an ALIVE entity. Such an id is NOT vacant: the merge engine
+// demotes every competing same-source exact on a survivor to probable
+// (service.mergeExternalRefs, doc 10 §6.2-4), so a probable ref is the trace of
+// a body the catalog already has for that id. `related` (link_kind 2) is
+// excluded on purpose — doc 10 forbids a non-identity link from participating
+// in identity resolution.
+func (im *Importer) loadVNDBClaimedRefs(entityType int16) (map[string]int64, error) {
+	return im.loadVNDBRefs(entityType, model.LinkKindProbable, false)
+}
+
+// loadVNDBRetiredExactRefs returns external_id → entity_id for source-2 EXACT
+// refs whose holder is soft-deleted. A retired entity SHOULD free its id, but
+// uq_catalog_external_ref_exact is (source_id, external_id, entity_type) WHERE
+// link_kind = 0 and is not deleted_at-aware, so the retired row still squats
+// the exact slot. Always empty for an entity type that does not soft-delete.
+func (im *Importer) loadVNDBRetiredExactRefs(entityType int16) (map[string]int64, error) {
+	return im.loadVNDBRefs(entityType, model.LinkKindExact, true)
+}
+
+// loadVNDBRefs is the shared loader: source-2 refs of one entity type at one
+// link grade, restricted to holders of the requested liveness. The same
+// external id can legitimately sit on several entities (the ref PK carries
+// entity_id), so the lowest matching holder is picked for determinism.
+func (im *Importer) loadVNDBRefs(entityType, linkKind int16, retired bool) (map[string]int64, error) {
+	e, ok := vndbAnchorEntities[entityType]
+	if !ok {
+		return nil, fmt.Errorf("vndb ref load: unsupported entity type %d", entityType)
+	}
+	liveness := "e.deleted_at IS NULL"
+	switch {
+	case !e.softDelete && retired:
+		return map[string]int64{}, nil // no deleted_at column → no retired holder can exist
+	case !e.softDelete:
+		liveness = "TRUE" // the row existing IS its liveness
+	case retired:
+		liveness = "e.deleted_at IS NOT NULL"
+	}
+
 	var rows []struct {
 		ExternalID string `gorm:"column:external_id"`
 		EntityID   int64  `gorm:"column:entity_id"`
 	}
-	if err := im.catalog.Raw(`
-		SELECT external_id, entity_id FROM catalog_external_ref
-		WHERE entity_type = ? AND source_id = ? AND link_kind = ?`,
-		entityType, vndbSource, model.LinkKindExact).Scan(&rows).Error; err != nil {
+	// The table name comes from the package-level map above, never from input.
+	q := fmt.Sprintf(`
+		SELECT r.external_id, min(r.entity_id) AS entity_id
+		FROM catalog_external_ref r
+		JOIN %s e ON e.id = r.entity_id AND %s
+		WHERE r.entity_type = ? AND r.source_id = ? AND r.link_kind = ?
+		GROUP BY r.external_id`, e.table, liveness)
+	if err := im.catalog.Raw(q, entityType, vndbSource, linkKind).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	m := make(map[string]int64, len(rows))

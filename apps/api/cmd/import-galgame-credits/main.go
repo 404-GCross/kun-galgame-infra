@@ -70,6 +70,9 @@ func main() {
 		"credits_written", stats.CreditsWritten,
 		"skipped_unmapped_role", stats.SkippedUnmappedRole,
 		"skipped_gate", stats.SkippedGate,
+		"skipped_claimed_probable_name", stats.SkippedClaimedProbableName,
+		"skipped_claimed_probable_char", stats.SkippedClaimedProbableChar,
+		"skipped_retired_exact_char", stats.SkippedRetiredExactChar,
 		"already", stats.Already,
 		"errors", stats.Errors,
 	)
