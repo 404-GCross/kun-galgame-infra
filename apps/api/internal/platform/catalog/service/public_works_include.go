@@ -183,7 +183,10 @@ func (s *PublicService) attachWorkListBlocks(
 // One query for the whole page — the release join happens in SQL rather than by
 // loading release rows per work. link_kind is pinned to EXACT in the predicate:
 // probable is an unreviewed hypothesis and related is a web link, and neither
-// has ever crossed the public face (硬红线). Works with no anchor are simply
+// has ever crossed the public face (硬红线). dead_at IS NULL joins that
+// predicate: an anchor whose upstream entry has been deleted would render as a
+// link that 404s, so it drops out of the projection (the assertion itself
+// stays in the table — see CatalogExternalRef.DeadAt). Works with no anchor are simply
 // absent from the map, so their block is omitted rather than an empty array —
 // the same "absent means nothing to say" rule the other include= blocks follow.
 func (s *PublicService) workListRefs(ctx context.Context, ids []int64) (map[int64][]dto.PublicCatalogRef, error) {
@@ -199,13 +202,13 @@ func (s *PublicService) workListRefs(ctx context.Context, ids []int64) (map[int6
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT r.entity_id AS work_id, src.key AS source, r.external_id
 		FROM catalog_external_ref r JOIN catalog_source src ON src.id = r.source_id
-		WHERE r.entity_type = ? AND r.entity_id IN ? AND r.link_kind = ?
+		WHERE r.entity_type = ? AND r.entity_id IN ? AND r.link_kind = ? AND r.dead_at IS NULL
 		UNION ALL
 		SELECT rel.work_id, src.key AS source, r.external_id
 		FROM catalog_external_ref r
 		JOIN catalog_release rel ON rel.id = r.entity_id AND rel.deleted_at IS NULL
 		JOIN catalog_source src ON src.id = r.source_id
-		WHERE r.entity_type = ? AND rel.work_id IN ? AND r.link_kind = ?
+		WHERE r.entity_type = ? AND rel.work_id IN ? AND r.link_kind = ? AND r.dead_at IS NULL
 		ORDER BY work_id, source, external_id`,
 		model.EntityTypeWork, ids, model.LinkKindExact,
 		model.EntityTypeRelease, ids, model.LinkKindExact).Scan(&rows).Error; err != nil {

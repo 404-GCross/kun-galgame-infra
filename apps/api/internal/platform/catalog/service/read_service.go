@@ -6,6 +6,7 @@ import (
 	stderrors "errors"
 	"sort"
 	"strings"
+	"time"
 
 	"api/internal/platform/catalog/model"
 
@@ -282,6 +283,16 @@ type AnchorDetail struct {
 	MatchedBy  string
 }
 
+// anchorKey identifies one release-level anchor inside a single work detail
+// load. It exists so upstream-liveness can be carried from the anchor query to
+// the Refs projection WITHOUT putting a dead_at field on AnchorDetail, which
+// is a serialized wire struct.
+type anchorKey struct {
+	EntityID   int64
+	Source     string
+	ExternalID string
+}
+
 // LabelAttribution is one work↔label edge with the label denormalized.
 type LabelAttribution struct {
 	LabelID     int64
@@ -372,6 +383,7 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 		return nil, err
 	}
 	anchorsByRelease := map[int64][]AnchorDetail{}
+	deadAnchors := map[anchorKey]struct{}{}
 	if len(releases) > 0 {
 		relIDs := make([]int64, len(releases))
 		for i, r := range releases {
@@ -383,8 +395,9 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 			ExternalID string
 			LinkKind   int16
 			MatchedBy  string
+			DeadAt     *time.Time
 		}
-		if err := db.Raw(`SELECT r.entity_id, s.key AS source, r.external_id, r.link_kind, r.matched_by
+		if err := db.Raw(`SELECT r.entity_id, s.key AS source, r.external_id, r.link_kind, r.matched_by, r.dead_at
 			FROM catalog_external_ref r JOIN catalog_source s ON s.id = r.source_id
 			WHERE r.entity_type = ? AND r.entity_id IN ?
 			ORDER BY r.link_kind, s.key`, model.EntityTypeRelease, relIDs).Scan(&arows).Error; err != nil {
@@ -393,6 +406,13 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 		for _, a := range arows {
 			anchorsByRelease[a.EntityID] = append(anchorsByRelease[a.EntityID],
 				AnchorDetail{Source: a.Source, ExternalID: a.ExternalID, LinkKind: a.LinkKind, MatchedBy: a.MatchedBy})
+			// Anchors[] is the full assertion record and keeps every row,
+			// dead ones included — it is what the matching lane reads. Only
+			// the Refs projection below drops them, so the dead keys are
+			// remembered here rather than filtered out of the query.
+			if a.DeadAt != nil {
+				deadAnchors[anchorKey{a.EntityID, a.Source, a.ExternalID}] = struct{}{}
+			}
 		}
 	}
 	for _, r := range releases {
@@ -412,13 +432,18 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	// flattened into one list. Work-level refs come from a dedicated query;
 	// release-level refs are the exact subset of the anchors already loaded
 	// above (no second scan of the ref table).
+	//
+	// Refs is the rendered-identity projection (a consumer turns each entry
+	// into an upstream link), so it also drops anchors whose upstream entry is
+	// gone — dead_at IS NULL here, and the deadAnchors set for the
+	// release-level half. Anchors[] above deliberately keeps them.
 	var workRefs []struct {
 		Source     string
 		ExternalID string
 	}
 	if err := db.Raw(`SELECT s.key AS source, r.external_id
 		FROM catalog_external_ref r JOIN catalog_source s ON s.id = r.source_id
-		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ?
+		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ? AND r.dead_at IS NULL
 		ORDER BY s.key`, model.EntityTypeWork, workID, model.LinkKindExact).Scan(&workRefs).Error; err != nil {
 		return nil, err
 	}
@@ -427,6 +452,9 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	}
 	for _, rd := range detail.Releases {
 		for _, a := range rd.Anchors {
+			if _, dead := deadAnchors[anchorKey{rd.Release.ID, a.Source, a.ExternalID}]; dead {
+				continue
+			}
 			if a.LinkKind == model.LinkKindExact {
 				detail.Refs = append(detail.Refs, RefDetail{
 					Source: a.Source, ExternalID: a.ExternalID,

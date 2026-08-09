@@ -35,6 +35,20 @@ type CatalogExternalRef struct {
 	VerifiedBy *int64     `json:"verified_by"`
 	VerifiedAt *time.Time `json:"verified_at"`
 	CreatedAt  time.Time  `json:"created_at"`
+	// DeadAt is UPSTREAM LIVENESS, not a soft delete: NULL = the external
+	// entry is believed to still exist at the source; non-NULL = the entry was
+	// OBSERVED ABSENT upstream at that moment. The assertion itself stays true
+	// and stays enforced — a dead anchor still occupies the exact slot, still
+	// blocks a duplicate claim on the same external id, and still records what
+	// the source (or the wiki) asserted. Only USER-FACING projections drop it,
+	// because a link to a deleted upstream entry is a 404.
+	//
+	// Generic across sources by design, even though cmd/audit-vndb-anchors is
+	// the only writer today: "did the upstream row disappear" is the same
+	// question for every source. No `default:` tag (the GORM default-tag
+	// zero-value trap) — the column is plain nullable and every writer sets it
+	// explicitly, including back to NULL when the entry reappears.
+	DeadAt *time.Time `json:"dead_at"`
 
 	Source *CatalogSource `gorm:"foreignKey:SourceID" json:"source,omitempty"`
 }

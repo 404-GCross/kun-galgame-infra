@@ -2,6 +2,13 @@
 // (doc 106 G4: refs are isomorphic across every entity). EXACT tier only —
 // probable is a review-lane hypothesis and related is a non-identity link;
 // neither ever crosses the public face (硬红线). FROZEN after W1.
+//
+// ONE amendment since the freeze (upstream-liveness wave): the query now also
+// requires r.dead_at IS NULL. Anchors whose upstream entry has been deleted
+// (VNDB removes ~20 entries a week, and we anchor ~98.7% of it) were still
+// being rendered as vndb.org/v… links that 404. The wire SHAPE is untouched —
+// refs[] keeps its exact structure and ordering; dead entries simply drop out.
+// Nothing else about this loader changed.
 package service
 
 import (
@@ -28,6 +35,7 @@ func (s *PublicService) entityRefsFor(ctx context.Context, entityType int16, ids
 		SELECT r.entity_id, src.key AS source, r.external_id
 		FROM catalog_external_ref r JOIN catalog_source src ON src.id = r.source_id
 		WHERE r.entity_type = ? AND r.entity_id IN ? AND r.link_kind = ?
+			AND r.dead_at IS NULL
 		ORDER BY r.entity_id, r.source_id, r.external_id`,
 		entityType, ids, model.LinkKindExact).Scan(&rows).Error; err != nil {
 		return nil, err

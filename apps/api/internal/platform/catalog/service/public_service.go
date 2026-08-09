@@ -998,6 +998,14 @@ func (s *PublicService) characterAliases(ctx context.Context, characterID int64)
 // anchors and web links never cross, a hard red line. Each external id is
 // rendered to an absolute URL per source; an unknown related source (a future
 // addition) has no template and is skipped, never guessed.
+//
+// dead_at IS NULL is the upstream-liveness predicate every user-facing
+// external-id projection carries (see CatalogExternalRef.DeadAt): a row whose
+// upstream entry has been observed absent renders as a 404. Only the VNDB
+// anchor audit writes that column today and it never touches related rows, so
+// this is a no-op right now — it is here so the liveness rule holds for the
+// whole face rather than for the one lane that happens to have a writer, and
+// personLinks / workLinks below carry it for the same reason.
 // Deterministic (source_id, external_id); empty → [].
 func (s *PublicService) labelLinks(ctx context.Context, labelID int64) ([]dto.PublicLabelLink, error) {
 	var rows []struct {
@@ -1007,7 +1015,7 @@ func (s *PublicService) labelLinks(ctx context.Context, labelID int64) ([]dto.Pu
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT src.key AS source, r.external_id
 		FROM catalog_external_ref r JOIN catalog_source src ON src.id = r.source_id
-		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ?
+		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ? AND r.dead_at IS NULL
 		ORDER BY r.source_id, r.external_id`,
 		model.EntityTypeLabel, labelID, model.LinkKindRelated).Scan(&rows).Error; err != nil {
 		return nil, err
@@ -1070,7 +1078,7 @@ func (s *PublicService) personLinks(ctx context.Context, personID int64) ([]dto.
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT src.key AS source, r.external_id
 		FROM catalog_external_ref r JOIN catalog_source src ON src.id = r.source_id
-		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ?
+		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ? AND r.dead_at IS NULL
 		ORDER BY r.source_id, r.external_id`,
 		model.EntityTypePerson, personID, model.LinkKindRelated).Scan(&rows).Error; err != nil {
 		return nil, err
@@ -1122,7 +1130,7 @@ func (s *PublicService) workLinks(ctx context.Context, workID int64) ([]dto.Publ
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT src.key AS source, r.external_id
 		FROM catalog_external_ref r JOIN catalog_source src ON src.id = r.source_id
-		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ?
+		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ? AND r.dead_at IS NULL
 		ORDER BY r.source_id, r.external_id`,
 		model.EntityTypeWork, workID, model.LinkKindRelated).Scan(&rows).Error; err != nil {
 		return nil, err
