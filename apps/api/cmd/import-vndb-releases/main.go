@@ -8,7 +8,9 @@
 // the DLsite workno anchors — and adds no columns/tables. Single-vn releases get
 // an exact release anchor; multi-vn releases stay anchor-free (Extra.vndb_id
 // keeps them back-referenceable). Idempotent: the (work_id, vndb_id) resume
-// index makes a second pass write nothing.
+// index makes a second pass write nothing — and it counts a soft-deleted holder
+// as claimed (skipped_retired), because a retired row still answers to its vndb
+// id and still squats its exact anchor slot.
 //
 // Logic lives in internal/platform/catalog/importer (RunReleases). src_vndb
 // staging shares the catalog DB — load it first with cmd/ingest-vndb. Dry-run is
@@ -87,6 +89,7 @@ func main() {
 		"anchors_written", st.AnchorsWritten,
 		"multi_vn_unanchored", st.MultiVNUnanchored,
 		"skipped_existing", st.SkippedExisting,
+		"skipped_retired", st.SkippedRetired,
 		"kind_default", st.KindDefault,
 		"kind_trial", st.KindTrial,
 		"kind_patch", st.KindPatch,

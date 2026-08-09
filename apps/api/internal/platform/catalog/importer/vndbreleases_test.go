@@ -220,6 +220,34 @@ func TestVNDBReleasesLimit(t *testing.T) {
 	assert.Equal(t, int64(1), countWhere(t, `SELECT count(*) FROM catalog_release WHERE work_id=?`, workA))
 }
 
+// TestVNDBReleasesRetiredHolderIsNotVacant pins the liveness-blind resume
+// index: a soft-deleted release still answers to its vndb id (and still holds
+// the exact anchor, which uq_catalog_external_ref_exact would not let a second
+// one join), so a later pass must skip it instead of resurrecting it.
+func TestVNDBReleasesRetiredHolderIsNotVacant(t *testing.T) {
+	clean(t)
+	cleanReleases(t)
+	seedVNDBWork(t, "v30")
+	insRelease(t, "r20", "ja", 20200101, nil, false, false, true)
+	insReleaseVN(t, "r20", "v30", "complete")
+	insReleaseTitle(t, "r20", "ja", false, "退役", "")
+
+	first, err := New(testDB, nil, Options{}).RunReleases()
+	require.NoError(t, err)
+	require.Equal(t, 1, first.ReleasesWritten)
+	require.Equal(t, 1, first.AnchorsWritten)
+
+	require.NoError(t, testDB.Exec(`UPDATE catalog_release SET deleted_at = now() WHERE extra->>'vndb_id'='r20'`).Error)
+
+	st, err := New(testDB, nil, Options{}).RunReleases()
+	require.NoError(t, err)
+	assert.Zero(t, st.Planned, "a retired holder is a claim, not a vacancy")
+	assert.Zero(t, st.ReleasesWritten)
+	assert.Equal(t, 1, st.SkippedRetired)
+	assert.Zero(t, st.SkippedExisting, "the skip is counted in its own class, not folded into the live one")
+	assert.Equal(t, int64(1), countWhere(t, `SELECT count(*) FROM catalog_release WHERE extra->>'vndb_id'='r20'`), "no resurrection")
+}
+
 func TestParseVNDBReleased(t *testing.T) {
 	maxYear := 2029
 	cases := []struct {
