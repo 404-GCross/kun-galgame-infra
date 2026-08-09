@@ -22,6 +22,7 @@ package service
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"api/internal/platform/catalog/dto"
@@ -305,19 +306,62 @@ func (s *PublicService) publicWorkIntros(intros []WorkIntroRow) *dto.PublicWorkI
 
 // publicWorkLabels projects the label attributions to the same shape the
 // detail face's labels[] carries. nil (block omitted) when the work has none.
+//
+// ONE ENTRY PER COMPANY (wave 200). The storage grain is (work, label, kind),
+// so a studio that both made and published a work is two rows — and 56,438
+// works carried at least one company twice, which every consumer then printed
+// twice. A company is one company; the capacities it acted in are a property of
+// it, not a reason to list it again.
 func publicWorkLabels(rows []LabelAttribution) []dto.PublicWorkLabel {
 	if len(rows) == 0 {
 		return nil
 	}
 	out := make([]dto.PublicWorkLabel, 0, len(rows))
+	at := make(map[int64]int, len(rows))
+	primary := make(map[int64]int16, len(rows))
 	for _, l := range rows {
+		kind := workLabelKindKey(l.Kind)
+		if i, ok := at[l.LabelID]; ok {
+			out[i].Kinds = append(out[i].Kinds, kind)
+			if workLabelKindRank(l.Kind) < workLabelKindRank(primary[l.LabelID]) {
+				primary[l.LabelID] = l.Kind
+				out[i].Kind = kind
+			}
+			continue
+		}
+		at[l.LabelID] = len(out)
+		primary[l.LabelID] = l.Kind
 		out = append(out, dto.PublicWorkLabel{
 			ID: l.LabelID, DisplayName: l.DisplayName,
-			LabelKind: labelKindKey(l.LabelKind), Kind: workLabelKindKey(l.Kind), Lang: l.Lang,
+			LabelKind: labelKindKey(l.LabelKind), Kind: kind, Kinds: []string{kind}, Lang: l.Lang,
 			LogoHash: l.LogoHash,
 		})
 	}
+	for i := range out {
+		slices.Sort(out[i].Kinds)
+		out[i].Kinds = slices.Compact(out[i].Kinds)
+	}
 	return out
+}
+
+// workLabelKindRank orders the capacities by how much they identify the work's
+// maker, so `kind` (the singular field consumers already read) keeps naming the
+// most identifying one when a company acted in several. Brand and circle are
+// the name a galgame actually ships under; developer beats publisher because
+// "who made it" identifies a work better than "who put it on shelves".
+func workLabelKindRank(k int16) int {
+	switch k {
+	case model.WorkLabelKindBrand:
+		return 0
+	case model.WorkLabelKindCircle:
+		return 1
+	case model.WorkLabelKindDeveloper:
+		return 2
+	case model.WorkLabelKindPublisher:
+		return 3
+	default:
+		return 4
+	}
 }
 
 // publicRatings projects the rating rows to the same shape (and the same

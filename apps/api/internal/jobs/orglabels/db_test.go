@@ -63,7 +63,7 @@ func cleanAll(t *testing.T) {
 		"catalog_external_ref", "catalog_match_rejection",
 		"catalog_work_label", "catalog_label_intro", "catalog_label_alias",
 		"catalog_revision", "catalog_label", "catalog_work",
-		"src_vndb.producers", "src_vndb.releases_vn", "src_vndb.releases_producers",
+		"src_vndb.producers", "src_vndb.releases", "src_vndb.releases_vn", "src_vndb.releases_producers",
 		"src_bangumi.person", "src_bangumi.subject_person", "brands", "games",
 	}
 	for _, tbl := range tables {
@@ -127,6 +127,13 @@ func TestAnchorAndEnrich_VNDB(t *testing.T) {
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.producers (id,type,lang,name,latin,alias,description) VALUES
 		('p1','co','ja','アージュ','age','エイジ'||E'\n'||'age-alias','age is a Japanese developer of visual novels'),
 		('p2','co','ja','新ブランド','','','')`).Error)
+	// The releases themselves: all Japanese originals, so every producer here
+	// is attributable. The edition layer is what the attribution gate reads
+	// (wave 200) — a fixture without it would exercise a code path prod never
+	// takes.
+	for _, rid := range []string{"r1", "r2", "r3"} {
+		require.NoError(t, testDB.Create(&srcv.Release{ID: rid, OLang: "ja", Official: true}).Error)
+	}
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.releases_vn (id,vid,rtype) VALUES
 		('r1','v901','complete'),('r2','v902','complete'),('r3','v903','complete')`).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.releases_producers (id,pid,developer,publisher) VALUES

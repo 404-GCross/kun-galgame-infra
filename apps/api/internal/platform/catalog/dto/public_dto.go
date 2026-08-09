@@ -787,7 +787,13 @@ type PublicWorkLabel struct {
 	ID          int64  `json:"id"`
 	DisplayName string `json:"display_name"`
 	LabelKind   string `json:"label_kind"`
-	Kind        string `json:"kind" doc:"attribution nature: circle|publisher|developer|brand"`
+	Kind        string `json:"kind" doc:"primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all."`
+	// Kinds is every capacity this ONE company acted in on this work, sorted.
+	// The list holds one entry per company (wave 200), so a studio that both
+	// developed and published appears once with two kinds rather than twice —
+	// render the roles from here, and `kind` alone still reads correctly for a
+	// consumer that wants a single word.
+	Kinds []string `json:"kinds" doc:"every capacity this company acted in, sorted; always at least one"`
 	// Lang is the label name's own language tag (BCP-47, A2-1e) — a Japanese
 	// brand name and its English rendering are different strings and a consumer
 	// that renders both needs to know which is which. Empty when unrecorded.

@@ -66,9 +66,18 @@ func mintLabel(ctx context.Context, db *gorm.DB, source int16, o *orgRec) (int, 
 		}).Error; err != nil {
 			return err
 		}
-		edges := make([]model.CatalogWorkLabel, 0, len(o.works))
+		// Edges follow the ATTRIBUTABLE set, not the evidence set: the works
+		// this org is responsible for, not every work it stood next to. Only a
+		// source with no edition layer at all falls back to the evidence set —
+		// never a source that HAS one and found nothing attributable, which is
+		// a real answer (see orgRec.editionAware).
+		attrib := o.attribWorks
+		if !o.editionAware {
+			attrib = o.works
+		}
+		edges := make([]model.CatalogWorkLabel, 0, len(attrib))
 		src := source
-		for _, w := range o.works {
+		for _, w := range attrib {
 			edges = append(edges, model.CatalogWorkLabel{
 				WorkID: w, LabelID: label.ID, Kind: edgeKind, SourceID: &src,
 			})
@@ -84,7 +93,7 @@ func mintLabel(ctx context.Context, db *gorm.DB, source int16, o *orgRec) (int, 
 			// feed shows them. A re-run never reaches this function again (the
 			// org is anchored by then), so nothing drifts.
 			if edgesWritten > 0 {
-				if err := repository.TouchWorks(ctx, tx, o.works); err != nil {
+				if err := repository.TouchWorks(ctx, tx, attrib); err != nil {
 					return err
 				}
 			}

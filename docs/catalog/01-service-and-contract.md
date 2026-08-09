@@ -104,6 +104,10 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
     - `GET /v1/catalog/labels/{id}` 恒出 **`imprint_work_count`**:沿 `imprint`/`subsidiary` **向下一跳**多摸到的作品数,与 `work_count` 同一 nsfw 感知 + live 认领聚合。**永不并入 `work_count`** —— 并进去就抹掉了 186 建图正是为了留住的那支箭头。两个人口**不相交**(母子共同署名的作品只算在母公司一侧)。
     - `GET /v1/catalog/works?label_id=<id>&label_rollup=1` 是跟着那个数走的那一页,人口恰为 `work_count + imprint_work_count`——**「chip 上的数 = 点进去拿到的数」这条全 taxonomy 道赖以成立的不变式,对第二个数同样成立**。经子厂牌进来的行带 **`via_label{id,name}`**,会社自有的行不带。
     - **不跟** `spawned` 与 `succeeded_by`:分家出去的公司目录是它自己的(fairys 之于 sprite),公司承继是**两实体一箭头**(wave 198 复核员已裁)。跟了它们就等于把别家的作品挂在本会社名下,而归因存在的意义正是防这件事。软删(被合并掉)的子厂牌在两处都不出。
+  - **wave 200 更正——一家公司只占一格,版次事实下沉到 release**:`labels[]` 的存储粒度是 `(work, label, kind)`,于是「既开发又发行」的公司**占两行**,**56,438 部作品**因此把同一家公司印了两遍。同时 vndb 本就按 release 记录发行方,而 `orglabels` 的 W(O) 无任何语言闸,把移植商 / 本地化商 / 汉化补丁组一并压平到作品级——あまいろショコラータ 因此列出 5 家「会社」,且压得并不一致(英文版发行商进来了、俄文版的没有)。
+    - `labels[]` **一家公司一条**,其担任的全部身份进 **`kinds[]`**(排序,恒非空);单数 `kind` 保留,含义收紧为**最具识别力的那一个**(brand → circle → developer → publisher 优先级)。消费端渲染角色请读 `kinds[]`。
+    - 作品级归属的定义收窄为「**原语言 · 非补丁** release 的公司」。`orglabels` 内部把**证据集**(用于共现判定,保持宽)与**可归属集**(用于铸边,收窄)拆开;判据是 `src_vndb.releases.olang`,而非旧闸读的 `releases_titles`——后者答的是「有没有该语言的标题」,双语本地化版照样通过。**必须先改规则再谈清理**:删掉的边下一次 mint 会照原规则推回来。
+    - 新表 **`catalog_release_label`**(release ↔ label,`kind` 复用 `WorkLabelKind*`):被收窄挤出去的事实落在它真正成立的那一层,而不是被丢弃。`cmd/import-release-labels` 从 vndb 回填,**无语言闸**——release 自己就说明了版次。
 
 ### 2.8 `GET /catalog/works/search?q=&medium_id=&limit=` — 作品标题搜索(只读)
 

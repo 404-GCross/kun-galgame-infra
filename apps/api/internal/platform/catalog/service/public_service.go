@@ -531,13 +531,12 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 		}
 		rec.Characters = append(rec.Characters, pc)
 	}
-	rec.Labels = make([]dto.PublicWorkLabel, 0, len(detail.Labels))
-	for _, l := range detail.Labels {
-		rec.Labels = append(rec.Labels, dto.PublicWorkLabel{
-			ID: l.LabelID, DisplayName: l.DisplayName,
-			LabelKind: labelKindKey(l.LabelKind), Kind: workLabelKindKey(l.Kind), Lang: l.Lang,
-			LogoHash: l.LogoHash,
-		})
+	// Same collapser as the list face — one entry per company, capacities in
+	// kinds[]. Two projections of the same edges must not disagree about how
+	// many companies a work has.
+	rec.Labels = publicWorkLabels(detail.Labels)
+	if rec.Labels == nil {
+		rec.Labels = []dto.PublicWorkLabel{}
 	}
 }
 

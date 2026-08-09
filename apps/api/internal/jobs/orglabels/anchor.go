@@ -19,14 +19,34 @@ import (
 // the org has no matching label; canCreate is false for VNDB persons (type=in),
 // which may anchor an existing label but never mint one.
 type orgRec struct {
-	extID       string
-	works       []int64
-	nameNorms   []string
-	displayName string
-	latin       *string
-	lang        string
-	newKind     int16
-	canCreate   bool
+	extID string
+	// works is EVIDENCE: every work this org touched through any edition, in
+	// any language. Breadth is what makes the co-occurrence grader able to
+	// recognise a label, so this set stays wide.
+	works []int64
+	// attribWorks is the subset an ATTRIBUTION may be minted for — the works
+	// this org is responsible for as the source states it, not merely ones it
+	// appears next to (wave 200). For vndb: the original-language, non-patch
+	// releases.
+	//
+	// Splitting the two is the whole point. Before, minting reused the evidence
+	// set, so an English localisation publisher became a co-author of the
+	// Japanese work — and anything deleted downstream came straight back on the
+	// next mint, because the rule that proposed it was never changed.
+	attribWorks []int64
+	// editionAware says whether attribWorks is MEANINGFUL for this source, and
+	// it must be a flag rather than a nil check on the slice above. A
+	// localisation-only publisher legitimately has an EMPTY attributable set —
+	// that is the whole point of the gate — and "empty" is indistinguishable
+	// from "unset" in a slice. Falling back on emptiness would hand exactly
+	// those orgs the full evidence set and quietly restore the bug.
+	editionAware bool
+	nameNorms    []string
+	displayName  string
+	latin        *string
+	lang         string
+	newKind      int16
+	canCreate    bool
 }
 
 // resKind is the outcome of grading one org.

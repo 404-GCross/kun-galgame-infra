@@ -37,6 +37,7 @@ func finalize(recByExt map[string]*orgRec, limit int) []orgRec {
 	for _, r := range recByExt {
 		r.nameNorms = dedupStrings(r.nameNorms)
 		r.works = dedupInts(r.works)
+		r.attribWorks = dedupInts(r.attribWorks)
 		out = append(out, *r)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].extID < out[j].extID })
@@ -106,13 +107,34 @@ func loadVNDBOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 		}
 	}
 
+	// Evidence: every work reachable through ANY release of this producer.
 	if err := attachWorks(db, recByExt, `
 		SELECT DISTINCT rp.pid AS ext_id, vwa.work_id AS work_id
 		FROM src_vndb.releases_producers rp
 		JOIN src_vndb.releases_vn rv ON rv.id = rp.id
 		JOIN (SELECT external_id AS vid, entity_id AS work_id FROM catalog_external_ref
-		      WHERE entity_type = 5 AND source_id = 2 AND link_kind = 0) vwa ON vwa.vid = rv.vid`); err != nil {
+		      WHERE entity_type = 5 AND source_id = 2 AND link_kind = 0) vwa ON vwa.vid = rv.vid`,
+		func(r *orgRec, workID int64) { r.works = append(r.works, workID) }); err != nil {
 		return nil, err
+	}
+	// Attribution: only the ORIGINAL-language, non-patch releases. vndb records
+	// a release's own language (releases.olang) — the earlier gate asked
+	// releases_titles instead, which answers "does a title exist in that
+	// language", a different question that a bilingual localisation passes.
+	if err := attachWorks(db, recByExt, `
+		SELECT DISTINCT rp.pid AS ext_id, vwa.work_id AS work_id
+		FROM src_vndb.releases_producers rp
+		JOIN src_vndb.releases sr ON sr.id = rp.id
+		JOIN src_vndb.releases_vn rv ON rv.id = rp.id
+		JOIN (SELECT external_id AS vid, entity_id AS work_id FROM catalog_external_ref
+		      WHERE entity_type = 5 AND source_id = 2 AND link_kind = 0) vwa ON vwa.vid = rv.vid
+		JOIN catalog_work w ON w.id = vwa.work_id AND w.deleted_at IS NULL
+		WHERE NOT sr.patch AND sr.olang = w.olang`,
+		func(r *orgRec, workID int64) { r.attribWorks = append(r.attribWorks, workID) }); err != nil {
+		return nil, err
+	}
+	for _, r := range recByExt {
+		r.editionAware = true
 	}
 	return finalize(recByExt, limit), nil
 }
@@ -172,7 +194,11 @@ func loadBGMOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 		FROM src_bangumi.subject_person sp
 		JOIN (SELECT external_id::bigint AS sid, entity_id AS work_id FROM catalog_external_ref
 		      WHERE entity_type = 5 AND source_id = 3 AND link_kind = 0) bwa ON bwa.sid = sp.subject_id
-		JOIN src_bangumi.person p ON p.id = sp.person_id WHERE p.type IN (2, 3)`); err != nil {
+		JOIN src_bangumi.person p ON p.id = sp.person_id WHERE p.type IN (2, 3)`,
+		// Bangumi's subject↔person link carries no edition layer at all, so
+		// there is nothing narrower to attribute from: evidence and
+		// attribution are the same set here, and attribWorks stays nil.
+		func(r *orgRec, workID int64) { r.works = append(r.works, workID) }); err != nil {
 		return nil, err
 	}
 	return finalize(recByExt, limit), nil
@@ -248,9 +274,10 @@ func loadEGOrgs(catalog, eg *gorm.DB, limit int) ([]orgRec, error) {
 	return finalize(recByExt, limit), nil
 }
 
-// attachWorks runs a (ext_id, work_id) query and appends the works to the
-// matching records.
-func attachWorks(db *gorm.DB, recByExt map[string]*orgRec, query string) error {
+// attachWorks runs an (ext_id, work_id) query and hands each pair to add, which
+// decides WHICH set of the record it lands in — the wide evidence set or the
+// narrow attributable one.
+func attachWorks(db *gorm.DB, recByExt map[string]*orgRec, query string, add func(*orgRec, int64)) error {
 	var works []struct {
 		ExtID  string `gorm:"column:ext_id"`
 		WorkID int64  `gorm:"column:work_id"`
@@ -260,7 +287,7 @@ func attachWorks(db *gorm.DB, recByExt map[string]*orgRec, query string) error {
 	}
 	for _, w := range works {
 		if r := recByExt[w.ExtID]; r != nil {
-			r.works = append(r.works, w.WorkID)
+			add(r, w.WorkID)
 		}
 	}
 	return nil

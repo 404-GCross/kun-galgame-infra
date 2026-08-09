@@ -76,6 +76,42 @@ type CatalogWorkLabel struct {
 
 func (CatalogWorkLabel) TableName() string { return "catalog_work_label" }
 
+// CatalogReleaseLabel is the SAME attribution fact one layer down: "this label
+// published / developed THIS RELEASE". It exists because the work-level edge
+// above cannot express what the sources actually record (wave 200).
+//
+// あまいろショコラータ is the worked example. vndb holds it per release —
+// きゃべつそふと made the PC original, Dramatic Create and HuneX shipped the
+// Switch port, Sekai Project the English one, and a Russian group a fan patch.
+// Flattened onto the work those become five interchangeable "companies", and
+// the flattening is not even consistent: the English publisher arrived, the
+// Russian one did not. Nobody chose that — it fell out of two importers with
+// two different doctrines writing the same table (see the orglabels W(O)
+// comment for the gate that was missing).
+//
+// So the fact lives where it is TRUE, and the work-level edge goes back to
+// answering one narrow question ("who made this work") instead of accumulating
+// everyone who ever touched any edition of it.
+//
+// Same shape as CatalogWorkLabel on purpose — ONE row per
+// (release, label, kind), kind in the PK because a company is routinely both
+// developer and publisher of the same release. Kind reuses the WorkLabelKind*
+// constants: it is the same vocabulary of capacities, and a second enum
+// meaning the same thing would drift.
+type CatalogReleaseLabel struct {
+	ReleaseID int64 `gorm:"primaryKey;autoIncrement:false" json:"release_id"`
+	LabelID   int64 `gorm:"primaryKey;autoIncrement:false;index" json:"label_id"` // reverse: label→releases
+	Kind      int16 `gorm:"primaryKey;autoIncrement:false" json:"kind"`
+	// SourceID records which import asserted it; NULL = user.
+	SourceID  *int16    `json:"source_id"`
+	CreatedAt time.Time `json:"created_at"`
+
+	Release *CatalogRelease `gorm:"foreignKey:ReleaseID" json:"release,omitempty"`
+	Label   *CatalogLabel   `gorm:"foreignKey:LabelID" json:"label,omitempty"`
+}
+
+func (CatalogReleaseLabel) TableName() string { return "catalog_release_label" }
+
 // CatalogWorkCharacter is a work↔character ROSTER edge — "this character
 // appears in this work" (the花名册 membership fact). It is deliberately
 // DISTINCT from a voice credit (catalog_credit.character_id): a credit is an

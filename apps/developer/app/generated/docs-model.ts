@@ -358,8 +358,18 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "doc": "primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all.",
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "kinds",
+                                        "required": true,
+                                        "nullable": true,
+                                        "doc": "every capacity this company acted in, sorted; always at least one",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "string"
+                                        }
                                       },
                                       {
                                         "name": "label_kind",
@@ -920,8 +930,18 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "doc": "primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all.",
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "kinds",
+                                        "required": true,
+                                        "nullable": true,
+                                        "doc": "every capacity this company acted in, sorted; always at least one",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "string"
+                                        }
                                       },
                                       {
                                         "name": "label_kind",
@@ -1475,8 +1495,18 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "doc": "primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all.",
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "kinds",
+                                        "required": true,
+                                        "nullable": true,
+                                        "doc": "every capacity this company acted in, sorted; always at least one",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "string"
+                                        }
                                       },
                                       {
                                         "name": "label_kind",
@@ -6135,8 +6165,18 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "attribution nature: circle|publisher|developer|brand",
+                                            "doc": "primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all.",
                                             "type": "string"
+                                          },
+                                          {
+                                            "name": "kinds",
+                                            "required": true,
+                                            "nullable": true,
+                                            "doc": "every capacity this company acted in, sorted; always at least one",
+                                            "type": "array",
+                                            "itemsOf": {
+                                              "type": "string"
+                                            }
                                           },
                                           {
                                             "name": "label_kind",
@@ -7970,8 +8010,18 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "doc": "primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all.",
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "kinds",
+                                        "required": true,
+                                        "nullable": true,
+                                        "doc": "every capacity this company acted in, sorted; always at least one",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "string"
+                                        }
                                       },
                                       {
                                         "name": "label_kind",
@@ -8632,8 +8682,18 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "kind",
                                   "required": true,
-                                  "doc": "attribution nature: circle|publisher|developer|brand",
+                                  "doc": "primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all.",
                                   "type": "string"
+                                },
+                                {
+                                  "name": "kinds",
+                                  "required": true,
+                                  "nullable": true,
+                                  "doc": "every capacity this company acted in, sorted; always at least one",
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "string"
+                                  }
                                 },
                                 {
                                   "name": "label_kind",
@@ -9699,8 +9759,18 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "doc": "primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all.",
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "kinds",
+                                        "required": true,
+                                        "nullable": true,
+                                        "doc": "every capacity this company acted in, sorted; always at least one",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "string"
+                                        }
                                       },
                                       {
                                         "name": "label_kind",

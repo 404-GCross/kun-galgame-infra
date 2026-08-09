@@ -79,6 +79,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},
 		&model.CatalogWorkLabel{},     // work↔label attribution edge (step 18)
+		&model.CatalogReleaseLabel{},  // release↔label attribution edge (wave 200)
 		&model.CatalogWorkCharacter{}, // work↔character roster edge (step 45)
 		&model.CatalogLabelRelation{}, // label↔label corporate-structure edge (wave 186)
 
