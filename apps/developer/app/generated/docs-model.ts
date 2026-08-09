@@ -8202,6 +8202,99 @@ export const docsModel: DocsModel = {
                             "type": "string"
                           },
                           {
+                            "name": "cover_slots",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "banner",
+                                "required": true,
+                                "type": "object",
+                                "children": [
+                                  {
+                                    "name": "height",
+                                    "format": "int64",
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "name": "sexual",
+                                    "required": true,
+                                    "format": "int32",
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "name": "source",
+                                    "required": true,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "thumbhash",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "url",
+                                    "required": true,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "violence",
+                                    "required": true,
+                                    "format": "int32",
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "name": "width",
+                                    "format": "int64",
+                                    "type": "integer"
+                                  }
+                                ]
+                              },
+                              {
+                                "name": "portrait",
+                                "required": true,
+                                "type": "object",
+                                "children": [
+                                  {
+                                    "name": "height",
+                                    "format": "int64",
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "name": "sexual",
+                                    "required": true,
+                                    "format": "int32",
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "name": "source",
+                                    "required": true,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "thumbhash",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "url",
+                                    "required": true,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "violence",
+                                    "required": true,
+                                    "format": "int32",
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "name": "width",
+                                    "format": "int64",
+                                    "type": "integer"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
                             "name": "covers",
                             "required": true,
                             "nullable": true,
