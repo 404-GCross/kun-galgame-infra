@@ -1,6 +1,10 @@
 package orglabels
 
-import "gorm.io/gorm"
+import (
+	"fmt"
+
+	"gorm.io/gorm"
+)
 
 // loadLabelWorks returns work_id → the labels attributed to it (distinct
 // catalog_work_label edges). This is W(L) inverted, the index the co-occurrence
@@ -114,4 +118,36 @@ func loadExistingAnchors(db *gorm.DB, source int16) (*existingAnchors, error) {
 		ea.claimedByLabel[r.EntityID] = true
 	}
 	return ea, nil
+}
+
+// rejKey is the (label, external id) grain of a human "these are not the same
+// company" ruling.
+func rejKey(labelID int64, externalID string) string {
+	return fmt.Sprintf("%d\x00%s", labelID, externalID)
+}
+
+// loadRejections preloads this source's human rejections (doc 17 R7 negative
+// knowledge). Without it a reviewer's ruling has no way to stick: deleting a
+// wrong anchor only removes the row, and the very next run's name/co-work rule
+// re-derives it from the same upstream data. Observed in wave 198 — a stripped
+// erogamescape anchor was back within the minute, because the store lists the
+// disbanded brand's titles under its successor's maker page, so the co-work
+// rule keeps seeing the overlap. The rejection is the only durable record that
+// a human looked at exactly this pairing and said no.
+func loadRejections(db *gorm.DB, source int16) (map[string]struct{}, error) {
+	var rows []struct {
+		EntityID   int64  `gorm:"column:entity_id"`
+		ExternalID string `gorm:"column:external_id"`
+	}
+	if err := db.Raw(`
+		SELECT entity_id, external_id FROM catalog_match_rejection
+		    WHERE entity_type = 3 AND source_id = ?`, source,
+	).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		out[rejKey(r.EntityID, r.ExternalID)] = struct{}{}
+	}
+	return out, nil
 }

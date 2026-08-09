@@ -60,7 +60,8 @@ func TestMain(m *testing.M) {
 func cleanAll(t *testing.T) {
 	t.Helper()
 	tables := []string{
-		"catalog_external_ref", "catalog_work_label", "catalog_label_intro", "catalog_label_alias",
+		"catalog_external_ref", "catalog_match_rejection",
+		"catalog_work_label", "catalog_label_intro", "catalog_label_alias",
 		"catalog_revision", "catalog_label", "catalog_work",
 		"src_vndb.producers", "src_vndb.releases_vn", "src_vndb.releases_producers",
 		"src_bangumi.person", "src_bangumi.subject_person", "brands", "games",
@@ -220,6 +221,46 @@ func TestAnchor_ProbableIdempotent(t *testing.T) {
 	assert.Equal(t, 0, st2.AnchorsProbable, "rerun writes no new probable")
 	assert.Equal(t, 0, st2.AnchorsExact)
 	assert.Equal(t, 0, st2.NewLabels)
+}
+
+// A human ruling must outlive the rule that produced the bad anchor. Deleting
+// the wrong external_ref row is not enough — the co-work rule re-derives it
+// from the same upstream data on the very next run (wave 198: a stripped
+// erogamescape anchor was back within the minute, because the store lists a
+// disbanded brand's titles under its successor's maker page). The rejection
+// row is the durable record, and this pins that the anchorer honours it.
+func TestAnchorSkipsAHumanRejectedPairing(t *testing.T) {
+	if testDB == nil {
+		t.Skip("no test db")
+	}
+	cleanAll(t)
+
+	mkWork(t, 701)
+	mkWork(t, 702)
+	mkLabel(t, 600, "アリスソフト", model.LabelKindGameBrand)
+	mkEdge(t, 701, 600, model.WorkLabelKindBrand)
+	mkEdge(t, 702, 600, model.WorkLabelKindBrand)
+	mkWorkAnchor(t, sourceEG, "701", 701)
+	mkWorkAnchor(t, sourceEG, "702", 702)
+	require.NoError(t, testDB.Exec(`INSERT INTO brands (id, raw) VALUES
+		(50, '{"id":50,"kind":"CORPORATION","brandname":"アリスソフト"}'::jsonb)`).Error)
+	require.NoError(t, testDB.Exec(`INSERT INTO games (id, brand_id) VALUES (701,50),(702,50)`).Error)
+
+	// Two shared works would otherwise be an exact anchor.
+	require.NoError(t, testDB.Exec(`
+		INSERT INTO catalog_match_rejection (entity_type, entity_id, source_id, external_id, reason)
+		VALUES (3, 600, ?, '50', 'different company, same catalogue via succession')`, sourceEG).Error)
+
+	ctx := context.Background()
+	st, err := anchorAll(ctx, testDB, testDB, "eg", 0, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.SkipRejected, "the rejected pairing is skipped and counted")
+	assert.Equal(t, 0, st.AnchorsExact, "and never anchored")
+
+	var refs int64
+	testDB.Raw(`SELECT count(*) FROM catalog_external_ref WHERE entity_type=3 AND source_id=? AND external_id='50'`,
+		sourceEG).Scan(&refs)
+	assert.Zero(t, refs, "no anchor row may exist for a rejected pairing")
 }
 
 func TestAnchorAndEnrich_EG(t *testing.T) {

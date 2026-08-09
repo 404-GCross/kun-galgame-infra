@@ -151,6 +151,7 @@ type AnchorStats struct {
 	SkipNoMatch     int
 	SkipAmbiguous   int
 	SkipUngradeable int
+	SkipRejected    int // a human rejection blocks this (label, external id)
 	VNDBInAnchored  int // VNDB type=in orgs that anchored an existing label
 	Errors          int
 	// Spine is the corporate-graph pass — the producers this grader cannot
@@ -169,6 +170,7 @@ func (s *AnchorStats) add(o AnchorStats) {
 	s.SkipNoMatch += o.SkipNoMatch
 	s.SkipAmbiguous += o.SkipAmbiguous
 	s.SkipUngradeable += o.SkipUngradeable
+	s.SkipRejected += o.SkipRejected
 	s.VNDBInAnchored += o.VNDBInAnchored
 	s.Errors += o.Errors
 	// Spine is deliberately untouched: it runs once per PASS, outside the
@@ -227,7 +229,7 @@ func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit i
 				"probable", st.AnchorsProbable, "new_labels", st.NewLabels, "new_edges", st.NewEdges,
 				"conflict", st.Conflict, "skip_no_match", st.SkipNoMatch,
 				"skip_ambiguous", st.SkipAmbiguous, "skip_ungradeable", st.SkipUngradeable,
-				"vndb_in_anchored", st.VNDBInAnchored)
+				"skip_rejected", st.SkipRejected, "vndb_in_anchored", st.VNDBInAnchored)
 			pt.add(st)
 		}
 
@@ -289,6 +291,10 @@ func anchorSource(ctx context.Context, db *gorm.DB, g *grader, orgs []orgRec, so
 	if err != nil {
 		return AnchorStats{}, fmt.Errorf("load existing anchors: %w", err)
 	}
+	rejected, err := loadRejections(db, source)
+	if err != nil {
+		return AnchorStats{}, fmt.Errorf("load rejections: %w", err)
+	}
 	st := AnchorStats{Orgs: len(orgs)}
 
 	type planItem struct {
@@ -305,6 +311,15 @@ func anchorSource(ctx context.Context, db *gorm.DB, g *grader, orgs []orgRec, so
 		res := g.grade(o)
 		switch res.kind {
 		case resAnchorExisting:
+			// A human already ruled on exactly this (label, external id). Skip
+			// the org rather than falling through to the runner-up label: the
+			// ruling says this pairing is wrong, not that some other label is
+			// right, and inventing a second guess is how a rejection turns
+			// into a different bad anchor.
+			if _, no := rejected[rejKey(res.labelID, o.extID)]; no {
+				st.SkipRejected++
+				continue
+			}
 			anchors = append(anchors, planItem{o, res})
 		case resNewLabel:
 			newLabels = append(newLabels, planItem{o, res})
