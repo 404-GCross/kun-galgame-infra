@@ -432,10 +432,10 @@ func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workList
 			ContentRating: contentRatingKey(r.ContentRating), OLang: r.OLang,
 			ReleaseDate: dates[r.ID],
 			ClaimedBy:   claimedBy(r.Site, r.ProductWorkID, r.ClaimState, limits[r.ID], r.ContentRating),
-			Cover:       s.pickListCover(covers[r.ID], nsfw), Updated: r.UpdatedAt,
+			Cover:       s.pickListCover(covers[r.ID], nsfw && limits[r.ID]), Updated: r.UpdatedAt,
 		}
 	}
-	if err := s.attachWorkListBlocks(ctx, out, rows, subjects, covers, inc, nsfw); err != nil {
+	if err := s.attachWorkListBlocks(ctx, out, rows, subjects, covers, inc, nsfw, limits); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -483,12 +483,15 @@ func partialISOFromOrdinal(ord int64) string {
 }
 
 // pickListCover picks one representative cover URL for a list item: portrait
-// pin first, then the loader's (sort_order, image_hash) order. An sfw caller
-// never receives a sexual-flagged cover ("" when none qualifies).
-func (s *PublicService) pickListCover(rows []WorkCoverRow, nsfw bool) string {
+// pin first, then the loader's (sort_order, image_hash) order. allowSexual
+// carries the same conjunction the slot picker runs on — the caller's age gate
+// AND the work's editorial display flag — so a work that declares its art
+// display-safe never represents itself with a sexual-flagged cover ("" when
+// none qualifies).
+func (s *PublicService) pickListCover(rows []WorkCoverRow, allowSexual bool) string {
 	var fallback string
 	for _, c := range rows {
-		if !nsfw && c.Sexual != 0 {
+		if !allowSexual && c.Sexual != 0 {
 			continue
 		}
 		url := s.imageURL(c.ImageHash)

@@ -340,7 +340,7 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		Created:       w.CreatedAt.UTC().Format(time.RFC3339),
 		Updated:       w.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	s.attachWorkFacets(ctx, &rec, detail, nsfw, spoilers)
+	s.attachWorkFacets(ctx, &rec, detail, nsfw, limits[w.ID], spoilers)
 	if rec.Engines, err = s.workEngines(ctx, id); err != nil {
 		return dto.PublicCatalogWork{}, false, err
 	}
@@ -394,7 +394,11 @@ func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool, limit
 // nsfw reaches only cover_slots: covers[] publishes every row with its flags
 // and lets the consumer choose, but a SLOT is a rendering decision, so it obeys
 // the same sfw rule the list face applies.
-func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCatalogWork, detail *WorkDetail, nsfw bool, spoilers int16) {
+// attachWorkFacets projects every non-include facet of a loaded detail onto the
+// public record. displayNSFW is the SUBJECT work's editorial display flag (not
+// the caller's age gate) — the cover slots need it to decide whether sexual art
+// may represent a work at all.
+func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCatalogWork, detail *WorkDetail, nsfw, displayNSFW bool, spoilers int16) {
 	rec.Releases = make([]dto.PublicRelease, 0, len(detail.Releases))
 	for _, rd := range detail.Releases {
 		r := rd.Release
@@ -488,7 +492,13 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 		rec.Covers = append(rec.Covers, pc)
 	}
 	// Same picker, same batch as the list face — one policy, two faces.
-	rec.CoverSlots = s.pickCoverSlots(detail.Covers, imgMeta, nsfw)
+	//
+	// nsfw is the AGE gate, and every consumer holds it open just to see that
+	// r18 works exist, so it cannot be the whole permission to render sexual
+	// ART: on production 223 works declared display-safe (display_nsfw=false)
+	// were handed a sexual-flagged hero by it. The IMAGERY question is the
+	// editorial display axis, and both must say yes.
+	rec.CoverSlots = s.pickCoverSlots(detail.Covers, imgMeta, nsfw && displayNSFW)
 	rec.Screenshots = make([]dto.PublicScreenshot, 0, len(detail.Screenshots))
 	for _, sc := range detail.Screenshots {
 		url := s.imageURL(sc.ImageHash)

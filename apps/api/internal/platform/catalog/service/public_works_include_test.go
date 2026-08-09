@@ -308,14 +308,29 @@ func TestWorksListIncludeCoverSlots(t *testing.T) {
 		t.Fatalf("sfw caller received a sexual-flagged cover: %+v / %+v", cov.Portrait, cov.Banner)
 	}
 
-	// nsfw=1: the sexual landscape cover sorts first, so it now takes the banner.
+	// nsfw=1 alone does NOT unlock the sexual cover: the age gate says which
+	// WORKS the caller may see, and every consumer holds it open just to reach
+	// the r18 registry. Whether sexual art may REPRESENT this work is a
+	// different question, answered by the work's own editorial display flag.
 	page, err = svc.WorksList(t.Context(), WorksListFilter{Sort: "id", NSFW: true, Include: inc}, "", 50)
 	if err != nil {
 		t.Fatalf("WorksList covers nsfw: %v", err)
 	}
 	cov = page.Items[0].Covers
-	if cov.Banner == nil || cov.Banner.URL != testCDNBase+"/ee/ff/"+sexualHash+".webp" || cov.Banner.Sexual != 2 {
-		t.Fatalf("nsfw banner = %+v, want the sexual landscape cover", cov.Banner)
+	if cov.Banner == nil || cov.Banner.URL != testCDNBase+"/cc/dd/"+bannerHash+".webp" {
+		t.Fatalf("nsfw banner = %+v, want the display-safe cover: the work is not display_nsfw", cov.Banner)
+	}
+
+	// With the work's own flag set the sexual cover becomes eligible — and still
+	// loses to the display-safe candidate at the same tier.
+	setDisplayNSFW(t, w.ID, true)
+	page, err = svc.WorksList(t.Context(), WorksListFilter{Sort: "id", NSFW: true, Include: inc}, "", 50)
+	if err != nil {
+		t.Fatalf("WorksList covers nsfw+display: %v", err)
+	}
+	cov = page.Items[0].Covers
+	if cov.Banner == nil || cov.Banner.URL != testCDNBase+"/cc/dd/"+bannerHash+".webp" {
+		t.Fatalf("banner = %+v, want the display-safe cover to keep winning its tier", cov.Banner)
 	}
 	// The pinned portrait is unaffected by the gate.
 	if cov.Portrait == nil || cov.Portrait.URL != testCDNBase+"/aa/bb/"+portraitHash+".webp" {

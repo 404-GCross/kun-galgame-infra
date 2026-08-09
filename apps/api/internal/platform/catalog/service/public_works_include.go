@@ -96,6 +96,7 @@ func d7ProductKey(lang string) (string, bool) {
 func (s *PublicService) attachWorkListBlocks(
 	ctx context.Context, items []dto.PublicWorkListItem, rows []workListSourceRow,
 	subjects []claimSubject, covers map[int64][]WorkCoverRow, inc WorksListInclude, nsfw bool,
+	displayNSFW map[int64]bool,
 ) error {
 	if !inc.any() || len(items) == 0 {
 		return nil
@@ -159,7 +160,7 @@ func (s *PublicService) attachWorkListBlocks(
 		}
 		meta := s.coverMetaFor(ctx, all)
 		for i, r := range rows {
-			items[i].Covers = s.pickCoverSlots(covers[r.ID], meta, nsfw)
+			items[i].Covers = s.pickCoverSlots(covers[r.ID], meta, nsfw && displayNSFW[r.ID])
 		}
 	}
 	if inc.Refs {
@@ -342,12 +343,25 @@ func (s *PublicService) publicRatings(rows []WorkRatingRow) []dto.PublicRating {
 func isPortraitDims(w, h int) bool { return int64(h)*20 > int64(w)*21 }
 
 // isBannerDims reports whether an image is WIDE enough to be hero art: at
-// least 3:2. "Not portrait" is not the same thing as "banner" — a scan of a
+// least 4:3. "Not portrait" is not the same thing as "banner" — a scan of a
 // disc face or a booklet spread lands within a few pixels of square, clears
 // any not-portrait test, and then outranks the real art because it happens to
 // sort first. A hero slot wants art that is actually wide, so the near-square
 // band belongs to NEITHER slot.
-func isBannerDims(w, h int) bool { return int64(w)*2 >= int64(h)*3 }
+//
+// The cutoff is 4:3 and not 3:2 because 4:3 is the shape the wiki's own hero
+// art is in: on production ~20k covers sit wide of portrait but short of 3:2,
+// and they are overwhelmingly wiki uploads, while the near-square scans this
+// test exists to stop cluster at 1.0-1.1. 3:2 threw both away together.
+func isBannerDims(w, h int) bool { return int64(w)*3 >= int64(h)*4 }
+
+// bannerMinWidth is the width a wide cover must reach to be a FIRST-CHOICE
+// hero. The wiki bridge carried a large population of 256px-wide thumbnails —
+// the right shape, hopeless as art — and 40% of production's banner slots were
+// filled by something under 400px. Width is a TIER, not a veto: when a work
+// owns nothing wider, a small banner still beats center-cropping a portrait
+// into a 16:9 frame, so it takes the slot on the second tier.
+const bannerMinWidth = 800
 
 // isCoverArt reports whether a cover's kind is the game's ARTWORK rather than
 // a photograph of the physical product. The back of a box, a disc face, a
@@ -378,29 +392,102 @@ func isCoverArt(kind string) bool {
 //     its kind) → else the first portrait-shaped ARTWORK cover → else the
 //     first portrait-shaped cover → else the first visible cover, so a card
 //     always has key art when any cover is visible.
-//   - banner: the first genuinely wide (isBannerDims) ARTWORK cover; null when
-//     the work has none. Null is the honest answer — a consumer with an empty
-//     hero falls back to the portrait, which beats hanging a disc face there.
+//   - banner: the first wide (isBannerDims) ARTWORK cover at bannerMinWidth or
+//     more → else the first wide ARTWORK cover of any width; null when the
+//     work has none. Null is the honest answer — a consumer with an empty hero
+//     falls back to the portrait, which beats hanging a disc face there.
 //
 // Candidates arrive in the loader's (sort_order, image_hash) order, so "first"
-// IS "lowest sort order". An sfw caller never sees a sexual-flagged cover in
-// either slot (the list face's existing single-cover rule; violence is not
-// gated here either, matching it).
-func (s *PublicService) pickCoverSlots(rows []WorkCoverRow, meta map[string]ImageMeta, nsfw bool) *dto.PublicWorkCoverSlots {
-	var pinned, portraitArt, portraitAny, banner, first *WorkCoverRow
+// IS "lowest sort order". allowSexual decides whether a sexual-flagged cover
+// may fill a slot AT ALL, and even when it may, a display-safe candidate wins
+// every tier: the whole scan runs once over the safe covers and only re-runs
+// over the rest for the slots still empty. Violence is not gated here, matching
+// the list face's single-cover rule.
+func (s *PublicService) pickCoverSlots(rows []WorkCoverRow, meta map[string]ImageMeta, allowSexual bool) *dto.PublicWorkCoverSlots {
+	cand := s.scanCovers(rows, meta, false)
+	if allowSexual && !cand.complete() {
+		cand.fillFrom(s.scanCovers(rows, meta, true))
+	}
+	if cand.first == nil {
+		return nil // no cover this caller may see → block omitted
+	}
+	return &dto.PublicWorkCoverSlots{
+		Portrait: s.coverSlot(cand.portrait(), meta),
+		Banner:   s.coverSlot(cand.banner(), meta),
+	}
+}
+
+// coverCandidates is one scan's answer for every tier of both slots. Keeping
+// the tiers separate (rather than resolving to a winner per scan) is what lets
+// a display-safe cover outrank a sexual one AT ITS OWN TIER instead of only
+// when the sexual one would have won outright.
+type coverCandidates struct {
+	pinned, portraitArt, portraitAny *WorkCoverRow
+	bannerWide, bannerAny            *WorkCoverRow
+	first                            *WorkCoverRow
+}
+
+// portrait resolves the portrait slot's tier ladder; never nil once a scan saw
+// any visible cover, so a card always has key art.
+func (c coverCandidates) portrait() *WorkCoverRow {
+	switch {
+	case c.pinned != nil:
+		return c.pinned
+	case c.portraitArt != nil:
+		return c.portraitArt
+	case c.portraitAny != nil:
+		return c.portraitAny
+	default:
+		return c.first
+	}
+}
+
+// banner resolves the banner slot's tier ladder; nil when the work owns no
+// wide artwork at all.
+func (c coverCandidates) banner() *WorkCoverRow {
+	if c.bannerWide != nil {
+		return c.bannerWide
+	}
+	return c.bannerAny
+}
+
+// complete reports whether every tier is filled, i.e. a second scan could not
+// contribute anything.
+func (c coverCandidates) complete() bool {
+	return c.pinned != nil && c.portraitArt != nil && c.portraitAny != nil &&
+		c.bannerWide != nil && c.bannerAny != nil && c.first != nil
+}
+
+// fillFrom takes other's answer for each tier this scan left empty.
+func (c *coverCandidates) fillFrom(other coverCandidates) {
+	for _, pair := range []struct{ dst, src **WorkCoverRow }{
+		{&c.pinned, &other.pinned}, {&c.portraitArt, &other.portraitArt},
+		{&c.portraitAny, &other.portraitAny}, {&c.bannerWide, &other.bannerWide},
+		{&c.bannerAny, &other.bannerAny}, {&c.first, &other.first},
+	} {
+		if *pair.dst == nil {
+			*pair.dst = *pair.src
+		}
+	}
+}
+
+// scanCovers walks a work's covers once and records the first candidate for
+// every tier. allowSexual=false restricts the walk to display-safe covers.
+func (s *PublicService) scanCovers(rows []WorkCoverRow, meta map[string]ImageMeta, allowSexual bool) coverCandidates {
+	var out coverCandidates
 	for i := range rows {
 		c := &rows[i]
-		if !nsfw && c.Sexual != 0 {
+		if !allowSexual && c.Sexual != 0 {
 			continue
 		}
 		if s.imageURL(c.ImageHash) == "" {
 			continue // never a bare hash on the public face
 		}
-		if first == nil {
-			first = c
+		if out.first == nil {
+			out.first = c
 		}
-		if c.PortraitPinned && pinned == nil {
-			pinned = c
+		if c.PortraitPinned && out.pinned == nil {
+			out.pinned = c
 		}
 		m, ok := meta[c.ImageHash]
 		if !ok || m.Width <= 0 || m.Height <= 0 {
@@ -408,35 +495,22 @@ func (s *PublicService) pickCoverSlots(rows []WorkCoverRow, meta map[string]Imag
 		}
 		switch {
 		case isPortraitDims(m.Width, m.Height):
-			if portraitAny == nil {
-				portraitAny = c
+			if out.portraitAny == nil {
+				out.portraitAny = c
 			}
-			if isCoverArt(c.Kind) && portraitArt == nil {
-				portraitArt = c
+			if isCoverArt(c.Kind) && out.portraitArt == nil {
+				out.portraitArt = c
 			}
 		case isBannerDims(m.Width, m.Height) && isCoverArt(c.Kind):
-			if banner == nil {
-				banner = c
+			if out.bannerAny == nil {
+				out.bannerAny = c
+			}
+			if m.Width >= bannerMinWidth && out.bannerWide == nil {
+				out.bannerWide = c
 			}
 		}
 	}
-	if first == nil {
-		return nil // no cover this caller may see → block omitted
-	}
-	best := pinned
-	if best == nil {
-		best = portraitArt
-	}
-	if best == nil {
-		best = portraitAny
-	}
-	if best == nil {
-		best = first
-	}
-	return &dto.PublicWorkCoverSlots{
-		Portrait: s.coverSlot(best, meta),
-		Banner:   s.coverSlot(banner, meta),
-	}
+	return out
 }
 
 // coverSlot renders one chosen cover row to its public slot (nil → nil, the
