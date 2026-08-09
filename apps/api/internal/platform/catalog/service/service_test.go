@@ -92,7 +92,7 @@ func cleanTables(t *testing.T) {
 		"catalog_series_member", "catalog_series",
 		"catalog_work_label", "catalog_work_character",
 		"catalog_name_alias", "catalog_credit_name", "catalog_person_intro", "catalog_person",
-		"catalog_label_alias", "catalog_label_intro", "catalog_label",
+		"catalog_label_alias", "catalog_label_intro", "catalog_label_relation", "catalog_label",
 		"catalog_character_alias", "catalog_character_intro",
 		"catalog_character_trait_link", "catalog_character_trait", "catalog_character",
 		"catalog_survivorship_rule",

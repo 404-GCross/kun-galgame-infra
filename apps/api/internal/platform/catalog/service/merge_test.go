@@ -544,3 +544,70 @@ func TestRejectMergeDuringCooling(t *testing.T) {
 	err = testMerge.RejectMerge(ctx, p2.ID, 1, "too late")
 	require.ErrorIs(t, err, ErrProposalState)
 }
+
+// The derived corporate graph must survive a label merge. catalog_label_relation
+// is rebuilt wholesale by import-label-relations, so the edges would eventually
+// land on the survivor anyway — but "eventually" is the next import run, and
+// until then the read face would hand out edges pointing at a retired label.
+// All four shapes at once: the mirrored pair moves, the edge BETWEEN the pair
+// drops rather than becoming a self-edge, a duplicate under the composite PK
+// drops, and the same edge from a DIFFERENT source survives because source_id
+// is part of that PK.
+func TestMergeLabelRelationRehang(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+
+	target := &model.CatalogLabel{DisplayName: "Brand", Kind: model.LabelKindGameBrand}
+	require.NoError(t, testDB.Create(target).Error)
+	source := &model.CatalogLabel{DisplayName: "brand", Kind: model.LabelKindGameBrand}
+	require.NoError(t, testDB.Create(source).Error)
+	x := &model.CatalogLabel{DisplayName: "Imprint X", Kind: model.LabelKindGameBrand}
+	require.NoError(t, testDB.Create(x).Error)
+	y := &model.CatalogLabel{DisplayName: "Imprint Y", Kind: model.LabelKindGameBrand}
+	require.NoError(t, testDB.Create(y).Error)
+
+	const vndb, bangumi = int16(2), int16(3)
+	for _, e := range []model.CatalogLabelRelation{
+		// mirrored pair hanging off the source — both halves must move
+		{LabelID: source.ID, OtherLabelID: x.ID, Relation: model.LabelRelationImprint, SourceID: vndb, MatchedBy: "rule:t"},
+		{LabelID: x.ID, OtherLabelID: source.ID, Relation: model.LabelRelationImprintOf, SourceID: vndb, MatchedBy: "rule:t"},
+		// the pair's own edge — would become a self-edge, so it drops
+		{LabelID: source.ID, OtherLabelID: target.ID, Relation: model.LabelRelationParent, SourceID: vndb, MatchedBy: "rule:t"},
+		{LabelID: target.ID, OtherLabelID: source.ID, Relation: model.LabelRelationSubsidiary, SourceID: vndb, MatchedBy: "rule:t"},
+		// duplicate under (label, other, relation, source) — drops on repoint
+		{LabelID: source.ID, OtherLabelID: y.ID, Relation: model.LabelRelationImprint, SourceID: vndb, MatchedBy: "rule:t"},
+		{LabelID: target.ID, OtherLabelID: y.ID, Relation: model.LabelRelationImprint, SourceID: vndb, MatchedBy: "rule:t"},
+		// same edge, other source — a distinct PK, so it moves and survives
+		{LabelID: source.ID, OtherLabelID: y.ID, Relation: model.LabelRelationImprint, SourceID: bangumi, MatchedBy: "rule:t"},
+	} {
+		require.NoError(t, testDB.Create(&e).Error)
+	}
+
+	p, err := testMerge.ProposeMerge(ctx, model.EntityTypeLabel, source.ID, target.ID, 7, "same brand")
+	require.NoError(t, err)
+	approveAndForceExecutable(t, p.ID)
+	require.NoError(t, testMerge.ExecuteMerge(ctx, p.ID, nil))
+
+	var stranded int64
+	testDB.Raw(`SELECT count(*) FROM catalog_label_relation WHERE label_id = ? OR other_label_id = ?`,
+		source.ID, source.ID).Scan(&stranded)
+	assert.Zero(t, stranded, "no corporate edge may point at a retired label")
+
+	var selfEdges int64
+	testDB.Raw(`SELECT count(*) FROM catalog_label_relation WHERE label_id = other_label_id`).Scan(&selfEdges)
+	assert.Zero(t, selfEdges, "the edge between the merged pair must drop, not fold into a self-edge")
+
+	var got []model.CatalogLabelRelation
+	require.NoError(t, testDB.Order("label_id, other_label_id, source_id").Find(&got).Error)
+	require.Len(t, got, 4)
+	assert.Equal(t, model.CatalogLabelRelation{
+		LabelID: target.ID, OtherLabelID: x.ID, Relation: model.LabelRelationImprint,
+		SourceID: vndb, MatchedBy: "rule:t", CreatedAt: got[0].CreatedAt,
+	}, got[0])
+	assert.Equal(t, y.ID, got[1].OtherLabelID)
+	assert.Equal(t, vndb, got[1].SourceID, "the deduped survivor is the target's own row")
+	assert.Equal(t, y.ID, got[2].OtherLabelID)
+	assert.Equal(t, bangumi, got[2].SourceID, "a second source asserting the same edge is not a duplicate")
+	assert.Equal(t, x.ID, got[3].LabelID, "the mirror half now points at the survivor")
+	assert.Equal(t, target.ID, got[3].OtherLabelID)
+}

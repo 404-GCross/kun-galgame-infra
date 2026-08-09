@@ -114,6 +114,7 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			  RETURNING e.work_id`, []any{dst, src, dst}, true},
 			{`DELETE FROM catalog_work_label WHERE label_id = ? RETURNING work_id`, []any{src}, true},
 		}
+		stmts = append(stmts, labelRelationStmts(src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeCharacter:
@@ -299,6 +300,40 @@ func workFacetRehang(table string, keyCols []string, src, dst int64) []mergeStmt
 	return []mergeStmt{
 		{move, []any{dst, src, dst}, false},
 		{fmt.Sprintf(`DELETE FROM %s WHERE work_id = ?`, table), []any{src}, false},
+	}
+}
+
+// labelRelationStmts moves the DERIVED corporate-graph edges (wave 186), the
+// table catalog_label_relation, which import-label-relations rebuilds wholesale
+// per source. Rehanging a derived table looks redundant — the next import puts
+// the edge on the survivor anyway, because the merge moved the source anchor
+// with it — but "the next import" can be weeks away, and until it runs the read
+// face carries edges pointing at a retired label. So this is not inventing a
+// derived fact: it is applying early exactly what the rebuild will conclude.
+//
+// Both endpoints move because storage is mirrored (an imprint edge is stored
+// alongside its imprint_of twin), and repointing only one side would leave the
+// pair contradicting itself. The edges BETWEEN src and dst drop first: they
+// would become self-edges, which the graph reader would render as a company
+// owning itself. Dedup is against the full composite PK, source_id included —
+// two sources may legitimately assert the same edge.
+func labelRelationStmts(src, dst int64) []mergeStmt {
+	return []mergeStmt{
+		{`DELETE FROM catalog_label_relation
+		   WHERE (label_id = ? AND other_label_id = ?) OR (label_id = ? AND other_label_id = ?)`,
+			[]any{src, dst, dst, src}, false},
+		{`UPDATE catalog_label_relation r SET label_id = ? WHERE r.label_id = ?
+		    AND NOT EXISTS (SELECT 1 FROM catalog_label_relation x
+		                     WHERE x.label_id = ? AND x.other_label_id = r.other_label_id
+		                       AND x.relation = r.relation AND x.source_id = r.source_id)`,
+			[]any{dst, src, dst}, false},
+		{`DELETE FROM catalog_label_relation WHERE label_id = ?`, []any{src}, false},
+		{`UPDATE catalog_label_relation r SET other_label_id = ? WHERE r.other_label_id = ?
+		    AND NOT EXISTS (SELECT 1 FROM catalog_label_relation x
+		                     WHERE x.other_label_id = ? AND x.label_id = r.label_id
+		                       AND x.relation = r.relation AND x.source_id = r.source_id)`,
+			[]any{dst, src, dst}, false},
+		{`DELETE FROM catalog_label_relation WHERE other_label_id = ?`, []any{src}, false},
 	}
 }
 
