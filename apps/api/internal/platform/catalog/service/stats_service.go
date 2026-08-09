@@ -39,7 +39,6 @@ type EntityCountRow struct {
 	Persons     int64 `gorm:"column:persons"`
 	CreditNames int64 `gorm:"column:credit_names"`
 	OrphanNames int64 `gorm:"column:orphan_names"`
-	Orgs        int64 `gorm:"column:orgs"`
 	Labels      int64 `gorm:"column:labels"`
 	Characters  int64 `gorm:"column:characters"`
 }
@@ -81,7 +80,6 @@ func (s *StatsService) Overview(ctx context.Context) (*Overview, error) {
 		(SELECT count(*) FROM catalog_person) AS persons,
 		(SELECT count(*) FROM catalog_credit_name) AS credit_names,
 		(SELECT count(*) FROM catalog_credit_name WHERE person_id IS NULL) AS orphan_names,
-		(SELECT count(*) FROM catalog_org) AS orgs,
 		(SELECT count(*) FROM catalog_label) AS labels,
 		(SELECT count(*) FROM catalog_character) AS characters`).Scan(&o.Entities).Error; err != nil {
 		return nil, err

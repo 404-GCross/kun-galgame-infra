@@ -9,7 +9,7 @@ import "time"
 
 // ResolveRequest asks for the canonical ids of up to 1000 entity ids.
 type ResolveRequest struct {
-	EntityType int16   `json:"entity_type" minimum:"0" maximum:"6" doc:"Entity type constant (0=person 1=credit_name 2=org 3=label 4=character 5=work 6=release)"`
+	EntityType int16   `json:"entity_type" minimum:"0" maximum:"6" doc:"Entity type constant (0=person 1=credit_name 3=label 4=character 5=work 6=release; 2 is retired and unallocated)"`
 	IDs        []int64 `json:"ids" minItems:"1" maxItems:"1000" doc:"Entity ids to resolve"`
 }
 

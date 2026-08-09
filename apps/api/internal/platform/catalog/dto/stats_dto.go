@@ -36,7 +36,6 @@ type EntityCounts struct {
 	Persons           int64 `json:"persons"`
 	CreditNames       int64 `json:"credit_names"`
 	OrphanCreditNames int64 `json:"orphan_credit_names" doc:"credit_name.person_id IS NULL"`
-	Orgs              int64 `json:"orgs"`
 	Labels            int64 `json:"labels"`
 	Characters        int64 `json:"characters"`
 }

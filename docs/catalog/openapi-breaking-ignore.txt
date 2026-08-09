@@ -58,3 +58,14 @@ in API POST /api/v1/catalog/works/{id}/claim-actions/{action} api path removed w
 in API GET /api/v1/catalog/characters/{id}/works removed the required property `data/character/name` from the response with the `200` status
 in API GET /api/v1/catalog/names/{id}/works removed the required property `data/name/name` from the response with the `200` status
 in API GET /api/v1/catalog/names/{id}/works removed the required property `data/name/siblings/items/name` from the response with the `200` status
+
+# Wave 195 (2026-08-08) retires the org entity type. catalog_org and
+# catalog_label.org_id are dropped; entity type 2 stays permanently
+# unallocated. The table never held a row in any database and no label ever
+# carried an org_id, so `entities.orgs` on the admin dashboard has published
+# the constant 0 for its entire life — this removes a field, not a fact. The
+# question it modelled ("which company is this brand under") is answered by
+# catalog_label_relation, whose eight-relation graph a single nullable FK
+# cannot express. Rationale: docs/catalog/01 §1.
+
+in API GET /api/v1/catalog/stats removed the required property `data/entities/orgs` from the response with the `200` status

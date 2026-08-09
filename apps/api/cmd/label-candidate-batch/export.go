@@ -27,7 +27,6 @@ type labelSide struct {
 	Latin     string      `json:"latin,omitempty"`
 	Kind      int16       `json:"kind"`
 	Import    bool        `json:"is_wiki_import"`
-	Org       string      `json:"org,omitempty"`
 	Aliases   []string    `json:"aliases,omitempty"`
 	Refs      []string    `json:"refs,omitempty"`
 	WorkCount int         `json:"work_count"`
@@ -91,11 +90,9 @@ func loadSide(db *gorm.DB, id int64) (labelSide, error) {
 		Latin       *string
 		Kind        int16
 		Note        string
-		OrgName     *string `gorm:"column:org_name"`
 	}
-	if err := db.Raw(`SELECT l.display_name, l.latin, l.kind, l.note, o.display_name AS org_name
-		FROM catalog_label l LEFT JOIN catalog_org o ON o.id = l.org_id
-		WHERE l.id = ?`, id).Scan(&head).Error; err != nil {
+	if err := db.Raw(`SELECT l.display_name, l.latin, l.kind, l.note
+		FROM catalog_label l WHERE l.id = ?`, id).Scan(&head).Error; err != nil {
 		return s, err
 	}
 	s.Name = head.DisplayName
@@ -104,9 +101,6 @@ func loadSide(db *gorm.DB, id int64) (labelSide, error) {
 	}
 	s.Kind = head.Kind
 	s.Import = containsImportMark(head.Note)
-	if head.OrgName != nil {
-		s.Org = *head.OrgName
-	}
 	if err := db.Raw(`SELECT name FROM catalog_label_alias WHERE label_id = ? ORDER BY id LIMIT 20`, id).Scan(&s.Aliases).Error; err != nil {
 		return s, err
 	}

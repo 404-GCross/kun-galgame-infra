@@ -3290,12 +3290,12 @@ paths:
     get:
       operationId: listCatalogRedirectsPublic
       parameters:
-        - description: "Filter to one entity type: person|name|org|label|character|work|release"
+        - description: "Filter to one entity type: person|name|label|character|work|release"
           explode: false
           in: query
           name: entity_type
           schema:
-            description: "Filter to one entity type: person|name|org|label|character|work|release"
+            description: "Filter to one entity type: person|name|label|character|work|release"
             type: string
         - description: Opaque keyset cursor from a prior response's next_cursor; omit for the first page
           explode: false

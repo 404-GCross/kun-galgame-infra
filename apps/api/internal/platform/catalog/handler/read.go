@@ -514,8 +514,8 @@ func (s *S2SServer) getStats(ctx context.Context, _ *struct{}) (*statsOutput, er
 		Works: dto.WorksMatrix{Total: o.WorksTotal},
 		Entities: dto.EntityCounts{
 			Persons: o.Entities.Persons, CreditNames: o.Entities.CreditNames,
-			OrphanCreditNames: o.Entities.OrphanNames, Orgs: o.Entities.Orgs,
-			Labels: o.Entities.Labels, Characters: o.Entities.Characters,
+			OrphanCreditNames: o.Entities.OrphanNames,
+			Labels:            o.Entities.Labels, Characters: o.Entities.Characters,
 		},
 		Queues: dto.QueueLevels{ProbableRefs: o.ProbableRefs, Rejections: o.Rejections},
 	}

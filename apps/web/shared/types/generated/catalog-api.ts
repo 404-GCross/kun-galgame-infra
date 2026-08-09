@@ -1006,8 +1006,6 @@ export interface components {
             credit_names: number;
             /** Format: int64 */
             labels: number;
-            /** Format: int64 */
-            orgs: number;
             /**
              * Format: int64
              * @description credit_name.person_id IS NULL
@@ -1559,7 +1557,7 @@ export interface components {
             readonly $schema?: string;
             /**
              * Format: int32
-             * @description Entity type constant (0=person 1=credit_name 2=org 3=label 4=character 5=work 6=release)
+             * @description Entity type constant (0=person 1=credit_name 3=label 4=character 5=work 6=release; 2 is retired and unallocated)
              */
             entity_type: number;
             /** @description Entity ids to resolve */

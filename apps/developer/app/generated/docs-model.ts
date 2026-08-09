@@ -5493,7 +5493,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Filter to one entity type: person|name|org|label|character|work|release"
+                  "doc": "Filter to one entity type: person|name|label|character|work|release"
                 },
                 {
                   "name": "cursor",

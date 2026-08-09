@@ -59,7 +59,7 @@ type publicResolveOutput struct {
 }
 
 type publicRedirectsInput struct {
-	EntityType string `query:"entity_type" doc:"Filter to one entity type: person|name|org|label|character|work|release"`
+	EntityType string `query:"entity_type" doc:"Filter to one entity type: person|name|label|character|work|release"`
 	Cursor     string `query:"cursor" doc:"Opaque keyset cursor from a prior response's next_cursor; omit for the first page"`
 	Limit      int    `query:"limit" doc:"Items per page 1-500 (default 100)"`
 }

@@ -409,8 +409,6 @@ func entityTypeKey(t int16) string {
 		return "person"
 	case model.EntityTypeCreditName:
 		return "name"
-	case model.EntityTypeOrg:
-		return "org"
 	case model.EntityTypeLabel:
 		return "label"
 	case model.EntityTypeCharacter:
@@ -431,8 +429,6 @@ func entityTypeFromKey(k string) (int16, bool) {
 		return model.EntityTypePerson, true
 	case "name":
 		return model.EntityTypeCreditName, true
-	case "org":
-		return model.EntityTypeOrg, true
 	case "label":
 		return model.EntityTypeLabel, true
 	case "character":
