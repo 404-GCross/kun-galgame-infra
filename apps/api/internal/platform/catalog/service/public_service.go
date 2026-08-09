@@ -340,7 +340,7 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		Created:       w.CreatedAt.UTC().Format(time.RFC3339),
 		Updated:       w.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	s.attachWorkFacets(ctx, &rec, detail, spoilers)
+	s.attachWorkFacets(ctx, &rec, detail, nsfw, spoilers)
 	if rec.Engines, err = s.workEngines(ctx, id); err != nil {
 		return dto.PublicCatalogWork{}, false, err
 	}
@@ -391,7 +391,10 @@ func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool, limit
 // ctx carries the one batched image_service lookup that enriches covers AND
 // screenshots with width/height/thumbhash (A2-1a, extended to screenshots by
 // A2-1b); an unwired lookup or an unknown hash simply omits the three keys.
-func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCatalogWork, detail *WorkDetail, spoilers int16) {
+// nsfw reaches only cover_slots: covers[] publishes every row with its flags
+// and lets the consumer choose, but a SLOT is a rendering decision, so it obeys
+// the same sfw rule the list face applies.
+func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCatalogWork, detail *WorkDetail, nsfw bool, spoilers int16) {
 	rec.Releases = make([]dto.PublicRelease, 0, len(detail.Releases))
 	for _, rd := range detail.Releases {
 		r := rd.Release
@@ -484,6 +487,8 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 		}
 		rec.Covers = append(rec.Covers, pc)
 	}
+	// Same picker, same batch as the list face — one policy, two faces.
+	rec.CoverSlots = s.pickCoverSlots(detail.Covers, imgMeta, nsfw)
 	rec.Screenshots = make([]dto.PublicScreenshot, 0, len(detail.Screenshots))
 	for _, sc := range detail.Screenshots {
 		url := s.imageURL(sc.ImageHash)

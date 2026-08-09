@@ -341,28 +341,53 @@ func (s *PublicService) publicRatings(rows []WorkRatingRow) []dto.PublicRating {
 // "portrait" is the same one the portrait-pinning job applies.
 func isPortraitDims(w, h int) bool { return int64(h)*20 > int64(w)*21 }
 
+// isBannerDims reports whether an image is WIDE enough to be hero art: at
+// least 3:2. "Not portrait" is not the same thing as "banner" — a scan of a
+// disc face or a booklet spread lands within a few pixels of square, clears
+// any not-portrait test, and then outranks the real art because it happens to
+// sort first. A hero slot wants art that is actually wide, so the near-square
+// band belongs to NEITHER slot.
+func isBannerDims(w, h int) bool { return int64(w)*2 >= int64(h)*3 }
+
+// isCoverArt reports whether a cover's kind is the game's ARTWORK rather than
+// a photograph of the physical product. The back of a box, a disc face, a
+// booklet page and a spine are catalogue evidence, never the picture a card or
+// a hero renders — at any resolution, in either slot. Mirrors the tier ladder
+// in internal/jobs/repincovers, which is what picks portrait_pinned.
+func isCoverArt(kind string) bool {
+	switch kind {
+	case "pkgback", "pkgmed", "pkgcontent", "pkgside":
+		return false
+	default:
+		return true
+	}
+}
+
 // pickCoverSlots resolves a work's cover set into the two display slots.
 //
-// Orientation comes from the image's real DIMENSIONS, not from kind: the kind
-// vocabulary in the registry is a sample-image taxonomy (catalog-native rows
-// are all "main"; the wiki bridge adds ""/dig/pkgfront/pkgback/pkgcontent/
-// pkgmed/pkgside), and none of those words says which way up the picture is.
-// So the same image_service batch that fills width/height/thumbhash is what
-// classifies the slots — and with the lookup unwired the banner slot is simply
-// null rather than guessed.
+// Orientation comes from the image's real DIMENSIONS — the kind vocabulary in
+// the registry is a sample-image taxonomy (catalog-native rows are all "main";
+// the wiki bridge adds ""/dig/pkgfront/pkgback/pkgcontent/pkgmed/pkgside), and
+// none of those words says which way up the picture is. So the same
+// image_service batch that fills width/height/thumbhash is what classifies the
+// slots, and with the lookup unwired the banner slot is simply null rather
+// than guessed. Kind still gets a veto: it says what the picture IS, and a
+// photo of the packaging is never the art either slot wants.
 //
-//   - portrait: the portrait_pinned row (the wiki's own EffectivePortrait
-//     rule) → else the first dimension-portrait cover → else the first visible
-//     cover, so a card always has key art when any cover is visible.
-//   - banner: the first dimension-landscape cover; null when none is known to
-//     be landscape.
+//   - portrait: the portrait_pinned row (the editorial pin, honoured whatever
+//     its kind) → else the first portrait-shaped ARTWORK cover → else the
+//     first portrait-shaped cover → else the first visible cover, so a card
+//     always has key art when any cover is visible.
+//   - banner: the first genuinely wide (isBannerDims) ARTWORK cover; null when
+//     the work has none. Null is the honest answer — a consumer with an empty
+//     hero falls back to the portrait, which beats hanging a disc face there.
 //
 // Candidates arrive in the loader's (sort_order, image_hash) order, so "first"
 // IS "lowest sort order". An sfw caller never sees a sexual-flagged cover in
 // either slot (the list face's existing single-cover rule; violence is not
 // gated here either, matching it).
 func (s *PublicService) pickCoverSlots(rows []WorkCoverRow, meta map[string]ImageMeta, nsfw bool) *dto.PublicWorkCoverSlots {
-	var pinned, portrait, landscape, first *WorkCoverRow
+	var pinned, portraitArt, portraitAny, banner, first *WorkCoverRow
 	for i := range rows {
 		c := &rows[i]
 		if !nsfw && c.Sexual != 0 {
@@ -377,13 +402,21 @@ func (s *PublicService) pickCoverSlots(rows []WorkCoverRow, meta map[string]Imag
 		if c.PortraitPinned && pinned == nil {
 			pinned = c
 		}
-		if m, ok := meta[c.ImageHash]; ok && m.Width > 0 && m.Height > 0 {
-			if isPortraitDims(m.Width, m.Height) {
-				if portrait == nil {
-					portrait = c
-				}
-			} else if landscape == nil {
-				landscape = c
+		m, ok := meta[c.ImageHash]
+		if !ok || m.Width <= 0 || m.Height <= 0 {
+			continue
+		}
+		switch {
+		case isPortraitDims(m.Width, m.Height):
+			if portraitAny == nil {
+				portraitAny = c
+			}
+			if isCoverArt(c.Kind) && portraitArt == nil {
+				portraitArt = c
+			}
+		case isBannerDims(m.Width, m.Height) && isCoverArt(c.Kind):
+			if banner == nil {
+				banner = c
 			}
 		}
 	}
@@ -392,14 +425,17 @@ func (s *PublicService) pickCoverSlots(rows []WorkCoverRow, meta map[string]Imag
 	}
 	best := pinned
 	if best == nil {
-		best = portrait
+		best = portraitArt
+	}
+	if best == nil {
+		best = portraitAny
 	}
 	if best == nil {
 		best = first
 	}
 	return &dto.PublicWorkCoverSlots{
 		Portrait: s.coverSlot(best, meta),
-		Banner:   s.coverSlot(landscape, meta),
+		Banner:   s.coverSlot(banner, meta),
 	}
 }
 

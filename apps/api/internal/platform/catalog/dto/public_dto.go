@@ -165,15 +165,22 @@ type PublicCatalogWork struct {
 	// S2S face carries, projected to the public conventions — source keys not
 	// ids, CDN URLs not hashes, string vocabularies not enum ints. Always
 	// present ([] when empty, never null).
-	Releases    []PublicRelease         `json:"releases"`
-	Popularity  []PublicPopularity      `json:"popularity"`
-	Ratings     []PublicRating          `json:"ratings"`
-	Tags        []PublicTag             `json:"tags"`
-	Playtimes   []PublicPlaytime        `json:"playtimes"`
-	Series      []PublicSeries          `json:"series"`
-	Platforms   []PublicPlatform        `json:"platforms"`
-	Intro       []PublicWorkIntro       `json:"intro"`
-	Covers      []PublicCover           `json:"covers"`
+	Releases   []PublicRelease    `json:"releases"`
+	Popularity []PublicPopularity `json:"popularity"`
+	Ratings    []PublicRating     `json:"ratings"`
+	Tags       []PublicTag        `json:"tags"`
+	Playtimes  []PublicPlaytime   `json:"playtimes"`
+	Series     []PublicSeries     `json:"series"`
+	Platforms  []PublicPlatform   `json:"platforms"`
+	Intro      []PublicWorkIntro  `json:"intro"`
+	Covers     []PublicCover      `json:"covers"`
+	// CoverSlots is the SAME two-slot resolution the list face publishes under
+	// `covers` (PublicWorkCoverSlots), carried on the detail record so a hero
+	// page reads the catalog's answer instead of re-deriving one from covers[].
+	// A consumer that re-derives owns a second, drifting copy of the policy —
+	// which is how a disc face ended up as a hero banner. Null only when the
+	// caller may see no cover at all; either slot may be null on its own.
+	CoverSlots  *PublicWorkCoverSlots   `json:"cover_slots"`
 	Screenshots []PublicScreenshot      `json:"screenshots"`
 	Characters  []PublicRosterCharacter `json:"characters"`
 	Labels      []PublicWorkLabel       `json:"labels"`

@@ -600,6 +600,8 @@ components:
           $ref: "#/components/schemas/PublicClaimedBy"
         content_rating:
           type: string
+        cover_slots:
+          $ref: "#/components/schemas/PublicWorkCoverSlots"
         covers:
           items:
             $ref: "#/components/schemas/PublicCover"
@@ -746,6 +748,7 @@ components:
         - platforms
         - intro
         - covers
+        - cover_slots
         - screenshots
         - characters
         - labels
