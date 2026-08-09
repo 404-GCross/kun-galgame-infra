@@ -145,14 +145,30 @@ func main() {
 	application.Fiber.Use(catHandler.UserPrefix,
 		middleware.JWTAuth(tokenVerifier), catHandler.UserGate(clientRepo))
 
-	// Playtime face: a FOURTH disjoint prefix, for the third-party Galgame
-	// managers that report how long their user played. Its own scopes
-	// (playtime:read / playtime:write) rather than catalog:edit — recording a
-	// playtime is not a licence to edit the catalog — and deliberately NO
-	// catalog-site requirement, because a launcher is not a catalog tenant and
-	// demanding one would shut out every caller the face exists for.
+	// Playtime face (/v1/playtime): the open-API door third-party Galgame
+	// managers report through. It sits under /v1 with the rest of the public
+	// product surface — a developer finds it in the portal — but it is the one
+	// /v1 face that does NOT lead with a machine API key: a client-bound access
+	// token already names both the user and the application, so a key beside it
+	// would prove the app twice against two scope registries. One credential,
+	// one scope check, one place to revoke.
+	//
+	// devapi counter/cache store: reuse the shared Redis when reachable, else
+	// fail open. Built HERE, before any route is registered, because Fiber
+	// applies path-scoped middleware in registration order — a gate installed
+	// after its routes never runs. It is handed to setupPublicCatalog below so
+	// the whole process shares one connection and one failure mode.
+	var devCache *cache.RedisCache
+	if rc, err := cache.NewRedisCache(cfg.Redis); err != nil {
+		slog.Warn("devapi: redis unavailable — rate-limit/quota will fail open", "err", err)
+	} else {
+		devCache = rc
+	}
+	devStore := devapi.NewRedisStore(devCache)
+
 	application.Fiber.Use(catHandler.PlaytimePrefix,
-		middleware.JWTAuth(tokenVerifier), catHandler.PlaytimeGate(clientRepo))
+		middleware.JWTAuth(tokenVerifier),
+		catHandler.PlaytimeGate(catHandler.NewPlaytimeLimiter(devStore)))
 
 	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher, statsSvc)
 	claimSvc := service.NewClaimLifecycleService(catalogDB.DB())
@@ -233,6 +249,8 @@ func main() {
 	// nothing else, so it shares no state with the planes above. The public
 	// aggregate it feeds is produced out-of-band by cmd/aggregate-user-playtime,
 	// which is why no user's write can move a published number synchronously.
+	// Registered here; its authorization middleware is installed further down,
+	// once the devapi counter store the limiter shares is built.
 	catHandler.SetupPlaytime(application.Fiber, service.NewUserPlaytimeService(catalogDB.DB()))
 
 	// NextMoe open API: serve the frozen public spec unauthenticated at its face
@@ -262,7 +280,7 @@ func main() {
 	// S2S (/api/v1/catalog) and admin (/api/v1/admin/catalog) faces are untouched
 	// (disjoint prefixes). Probable anchors and r18 works never surface.
 	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher, statsSvc,
-		clientRepo, tokenVerifier)
+		clientRepo, tokenVerifier, devStore, devCache)
 
 	// What is left of the galgame HTTP surface: the /v1/galgame 410 tombstone.
 	//
@@ -342,19 +360,14 @@ func setupPublicCatalog(
 	// client binding cannot be read differently face to face.
 	clientRepo catHandler.OAuthClientLookup,
 	tokenVerifier *oidctoken.Verifier,
+	// store + devCache are built in main (see the playtime middleware there):
+	// Redis stays a soft dependency, and one connection serves both the open
+	// API's rate-limit/quota counters and the playtime face's throttle.
+	store devapi.Store,
+	devCache *cache.RedisCache,
 ) {
 	oauthDB := application.DB.DB() // kun_galgame_infra — the developer-platform tables
 
-	// devapi counter/cache store: reuse the shared Redis when reachable, else
-	// fail open. Built here rather than via app NeedCache so a Redis outage can
-	// NEVER block the catalog service from booting or affect the S2S face.
-	var devCache *cache.RedisCache
-	if rc, err := cache.NewRedisCache(cfg.Redis); err != nil {
-		slog.Warn("devapi: redis unavailable — rate-limit/quota will fail open", "err", err)
-	} else {
-		devCache = rc
-	}
-	store := devapi.NewRedisStore(devCache)
 	repo := devapi.NewRepository(oauthDB)
 	mw := devapi.NewMiddleware(repo, store)
 	usageRec := devapi.NewUsageRecorder(repo, store)

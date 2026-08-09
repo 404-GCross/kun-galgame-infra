@@ -1,26 +1,16 @@
-// user_playtime.go — the playtime report face: the door a third-party Galgame
-// manager knocks on after its user signs in with a NextMoe account.
+// user_playtime.go — the playtime face's operations: what a Galgame manager
+// calls after its user signs in with a NextMoe account.
 //
-// It is a FOURTH face, on its own prefix, and the two differences from
-// /api/v1/user/catalog are both deliberate:
+// The face lives at /v1/playtime, beside the rest of the open API rather than
+// with the catalog's internal write planes, because the audience is a
+// third-party app author who found it in the developer portal. Its
+// authorization chain — a user access token, one scope check, no machine key —
+// is in playtime_gate.go, with the reasoning for why a key alongside the token
+// would have been a second registry holding the same word.
 //
-//  1. Its own scopes (playtime:read / playtime:write) rather than
-//     catalog:edit. A launcher that wants to record how long you played has no
-//     business holding the right to rewrite a work's metadata, and a consent
-//     screen that asks for one while meaning the other teaches users to stop
-//     reading consent screens.
-//
-//  2. NO catalog-site binding requirement. The catalog write planes resolve a
-//     tenant from oauth_clients.catalog_site because every row they write is
-//     attributed to a product site. A playtime report is attributed to a USER
-//     and a CLIENT; demanding a catalog tenant would shut out precisely the
-//     third-party apps this face exists for. The client must still be
-//     registered — a revoked client's token writes nothing.
-//
-// The prefix is disjoint from /api/v1/user/catalog for the same reason that
-// one is disjoint from /api/v1/catalog: Huma registers on the Fiber app, so a
-// path-scoped Use is the only gate, and an overlapping prefix would put the
-// wrong auth chain in front of these routes.
+// Every operation here takes both identities it needs from the verified token:
+// `id` is the person whose playtime this is, `client_id` is the application
+// reporting it. There is no field on the wire to lie in.
 package handler
 
 import (
@@ -33,91 +23,12 @@ import (
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/service"
-	siteModel "api/internal/platform/site/model"
 	"api/pkg/errors"
-	"api/pkg/response"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humafiber"
 	"github.com/gofiber/fiber/v3"
 )
-
-// The playtime scopes. Split read from write because the two callers are
-// different: a Galgame manager needs both (it reports, and it syncs back on a
-// new device), while a site that only wants to show "you played 30h" beside a
-// rating form needs read alone — and should not be able to write.
-const (
-	ScopePlaytimeRead  = "playtime:read"
-	ScopePlaytimeWrite = "playtime:write"
-)
-
-// PlaytimePrefix is the mount point of the playtime face.
-const PlaytimePrefix = "/api/v1/user/playtime"
-
-// playtimeMinePageSize caps one sync page. A 300-game library is four pages;
-// the cap exists so a client cannot ask for the whole table in one query.
-const playtimeMinePageSize = 200
-
-const ctxKeyScope ctxKey = "catalog:token_scope"
-
-// PlaytimeGate is the authorization half of the playtime chain, applied after
-// middleware.JWTAuth. It enforces the three things every op here needs — a
-// user, a registered client, and at least ONE playtime scope — and leaves the
-// read/write distinction to the ops, which know which of the two they are.
-//
-// Requiring "at least one" here rather than nothing keeps a token with no
-// playtime grant at all out of the face entirely, so an op's own check is the
-// second line rather than the only one.
-func PlaytimeGate(clients OAuthClientLookup) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		uid, _ := c.Locals("user_id").(uint)
-		if uid == 0 {
-			return response.UnauthorizedMsg(c, errors.ErrAuthUnauthorized,
-				"the access token carries no user identity")
-		}
-
-		scope, _ := c.Locals("user_scope").(string)
-		if !hasScope(scope, ScopePlaytimeRead) && !hasScope(scope, ScopePlaytimeWrite) {
-			return response.ForbiddenMsg(c, errors.ErrForbidden,
-				"the access token is missing the "+ScopePlaytimeRead+" / "+ScopePlaytimeWrite+" scope")
-		}
-
-		// The client id is the report's third key member, so a token that is
-		// not client-bound cannot report: there would be nothing to attribute
-		// the measurement to, and nothing to exclude if it misbehaved.
-		clientID, _ := c.Locals("token_client_id").(string)
-		if clientID == "" {
-			return response.ForbiddenMsg(c, errors.ErrForbidden,
-				"the access token is not bound to an OAuth client; the playtime face requires a client-bound token")
-		}
-		client, err := clients.FindByClientID(c.Context(), clientID)
-		if err != nil || client == nil {
-			return response.ForbiddenMsg(c, errors.ErrForbidden,
-				"the access token's client is not registered")
-		}
-
-		// Deliberately NOT checked: client.CatalogSite. See the file header.
-		c.Locals(localClient, client)
-		return c.Next()
-	}
-}
-
-// PlaytimeBridge lifts the token's uid, its client and its scope string into
-// the Huma context. The scope rides along because the per-op check needs it
-// and the gate only proved that ONE of the two is present.
-func PlaytimeBridge(ctx huma.Context, next func(huma.Context)) {
-	fc := humafiber.Unwrap(ctx)
-	if id, ok := fc.Locals("user_id").(uint); ok {
-		ctx = huma.WithValue(ctx, ctxKeyUserID, int64(id))
-	}
-	if scope, ok := fc.Locals("user_scope").(string); ok {
-		ctx = huma.WithValue(ctx, ctxKeyScope, scope)
-	}
-	if client, ok := fc.Locals(localClient).(*siteModel.OAuthClient); ok {
-		ctx = huma.WithValue(ctx, ctxKeyClient, client)
-	}
-	next(ctx)
-}
 
 // PlaytimeServer holds the face's single dependency.
 type PlaytimeServer struct{ svc *service.UserPlaytimeService }
@@ -183,35 +94,6 @@ func RegisterPlaytimeOps(api huma.API, svc *service.UserPlaytimeService) {
 	}, s.getMine)
 }
 
-// requireScope is the per-op half of the scope check. The gate proved the
-// token carries one of the two; this proves it carries the RIGHT one.
-func requireScope(ctx context.Context, want string) *houseError {
-	scope, _ := ctx.Value(ctxKeyScope).(string)
-	if !hasScope(scope, want) {
-		return apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
-			"the access token is missing the "+want+" scope")
-	}
-	return nil
-}
-
-// playtimeActor resolves who is reporting and from which application. Unlike
-// the catalog write faces there is no site to demand — an unbound client
-// reports with an empty site string, which is honest provenance rather than a
-// missing value.
-func playtimeActor(ctx context.Context) (uid int64, clientID, site string, he *houseError) {
-	uid = userIDFromCtx(ctx)
-	if uid <= 0 {
-		return 0, "", "", apiErrMsg(http.StatusUnauthorized, errors.ErrAuthUnauthorized,
-			"the access token carries no user identity")
-	}
-	client := clientFromCtx(ctx)
-	if client == nil || client.ID == "" {
-		return 0, "", "", apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
-			"the access token is not bound to a registered OAuth client")
-	}
-	return uid, client.ID, client.CatalogSite, nil
-}
-
 // playtimeErr maps the service refusals onto the house envelope.
 func playtimeErr(err error) error {
 	switch {
@@ -245,11 +127,11 @@ func (s *PlaytimeServer) report(ctx context.Context, in *playtimeReportInput) (*
 	if he := requireScope(ctx, ScopePlaytimeWrite); he != nil {
 		return nil, he
 	}
-	uid, clientID, site, he := playtimeActor(ctx)
+	uid, clientID, he := playtimeActor(ctx)
 	if he != nil {
 		return nil, he
 	}
-	rec, err := s.store(ctx, uid, clientID, site, in.WorkID, in.Body)
+	rec, err := s.store(ctx, uid, clientID, in.WorkID, in.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +148,7 @@ func (s *PlaytimeServer) reportByRef(ctx context.Context, in *playtimeByRefInput
 	if he := requireScope(ctx, ScopePlaytimeWrite); he != nil {
 		return nil, he
 	}
-	uid, clientID, site, he := playtimeActor(ctx)
+	uid, clientID, he := playtimeActor(ctx)
 	if he != nil {
 		return nil, he
 	}
@@ -274,7 +156,7 @@ func (s *PlaytimeServer) reportByRef(ctx context.Context, in *playtimeByRefInput
 	if err != nil {
 		return nil, playtimeErr(err)
 	}
-	rec, err := s.store(ctx, uid, clientID, site, workID, in.Body)
+	rec, err := s.store(ctx, uid, clientID, workID, in.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +166,7 @@ func (s *PlaytimeServer) reportByRef(ctx context.Context, in *playtimeByRefInput
 
 // store is the shared tail of both single-write legs: decode the wire values,
 // hand them to the service, render the stored row.
-func (s *PlaytimeServer) store(ctx context.Context, uid int64, clientID, site string,
+func (s *PlaytimeServer) store(ctx context.Context, uid int64, clientID string,
 	workID int64, body dto.PlaytimeReportBody) (*dto.PlaytimeRecordResponse, error) {
 
 	status, lastPlayed, he := decodeReportBody(body)
@@ -292,7 +174,7 @@ func (s *PlaytimeServer) store(ctx context.Context, uid int64, clientID, site st
 		return nil, he
 	}
 	rec, err := s.svc.Report(ctx, service.PlaytimeReport{
-		ActorUID: uid, WorkID: workID, ClientID: clientID, Site: site,
+		ActorUID: uid, WorkID: workID, ClientID: clientID,
 		Minutes: body.Minutes, Status: status, LastPlayedAt: lastPlayed,
 	})
 	if err != nil {
@@ -339,7 +221,7 @@ func (s *PlaytimeServer) reportBatch(ctx context.Context, in *playtimeBatchInput
 	if he := requireScope(ctx, ScopePlaytimeWrite); he != nil {
 		return nil, he
 	}
-	uid, clientID, site, he := playtimeActor(ctx)
+	uid, clientID, he := playtimeActor(ctx)
 	if he != nil {
 		return nil, he
 	}
@@ -364,7 +246,7 @@ func (s *PlaytimeServer) reportBatch(ctx context.Context, in *playtimeBatchInput
 			continue
 		}
 		if _, err := s.svc.Report(ctx, service.PlaytimeReport{
-			ActorUID: uid, WorkID: workID, ClientID: clientID, Site: site,
+			ActorUID: uid, WorkID: workID, ClientID: clientID,
 			Minutes: item.Minutes, Status: status, LastPlayedAt: lastPlayed,
 		}); err != nil {
 			res.Status, res.Error, res.WorkID = classifyBatchErr(err), err.Error(), workID

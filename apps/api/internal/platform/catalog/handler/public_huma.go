@@ -599,5 +599,14 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	}, func(context.Context, *publicCalendarTBAInput) (*publicCalendarTBAOutput, error) {
 		return &publicCalendarTBAOutput{}, nil
 	})
+
+	// The playtime face rides this document rather than the S2S one: it is a
+	// PRODUCT surface a third-party app author discovers in the developer
+	// portal, and the portal's docs model is projected from this file's output
+	// alone. It is the one face here that authenticates with a user access
+	// token instead of an API key — see its own Summary text and
+	// playtime_gate.go for why a key beside the token would be a second
+	// registry holding the same word.
+	RegisterPlaytimeOps(api, nil)
 	return api
 }

@@ -45,7 +45,10 @@ const FACES = [
 // the series browse lane 1 + wave-174 the release-grain timeline 1 +
 // wave-188 the label relation graph 1). The galgame face's 26 ops left the
 // count at wave 146 when that face was delisted (46 → 20).
-const EXPECTED_OPERATION_COUNT = 25
+// + playtime 5 (report / report-by-ref / batch / mine / one-work): the first
+// open-API face that authenticates with a USER access token rather than an API
+// key, so the portal's own docs now describe two credential shapes.
+const EXPECTED_OPERATION_COUNT = 30
 
 const refName = (ref) => ref.split('/').pop()
 

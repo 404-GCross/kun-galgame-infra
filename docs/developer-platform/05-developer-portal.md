@@ -48,3 +48,27 @@
 - **瞬时刷新失败不清会话**(`useTokenRefresh` 返回 `REFRESH_TRANSIENT`):网络抖动 / IdP 5xx / Nitro 刷新路由的蓄意 503 不再被判成 session 死亡强制登出;仅 4xx(无 cookie / 过期 / 吊销)才清会话跳登录。**重试 UI(2026-07-26 补齐)**:transient 态现有全局呈现——`useRefreshTransient`(useState,记账收敛在单飞 promise 上)驱动 `layout/RefreshBanner` 固定横幅(说明会话仍有效 + 一键重试/忽略;以 `auth_mode` cookie 为「确有会话」门,匿名访客不见横幅);重试成功即落 token、拉 user、`refreshNuxtData()` 重取降级页面的数据,重试发现 session 已死才清态跳 /login。同波修正 `middleware/auth.ts`:原先把 transient 布尔坍缩成「未刷新→弹 /login」,违反本条契约;现改为三态——成功落 token 放行、transient 放行(页面降级渲染 + 横幅接手)、确死才弹登录。
 - **已接受的偏差(有意为之,评审记录在案)**:access_token 为 JS 可读 cookie(沿袭 apps/web 约定;refresh_token httpOnly 兜底持久层);PKCE verifier/state 存 sessionStorage(confidential client 下 PKCE 是纵深防御,主认证在服务端 client_secret)。
 - **client 栅栏(已拍板并实现,2026-07-23 wave 08)**:上面「owner 判定与 token 的 client 归属无关」原是隐患——`middleware.Auth` 只验 signer + uid、不查 token 属哪个 OAuth client,任何第三方 app 的用户 token(仅授 `openid profile email`)都能替用户铸/轮换/吊销 API key(confused-deputy)。已加 **`DevPortalFence`**(`middleware.Auth` 之后):第一方 `/auth/login` session token(`client_id==""`)与 env `KUN_DEV_PORTAL_CLIENT_IDS` 白名单内的 client 放行,其余 403;**空白名单 = fail-closed(仅放行第一方)**。因此门户专属 client 注册后,须把它的 `client_id` 填进 **oauth 服务**的 `KUN_DEV_PORTAL_CLIENT_IDS`,否则门户自己的 SSO 用户会被栅栏 403(密码回退不受影响)。完整契约与 `dev:manage` 升级路径见 [03 §4.4](./03-auth-and-tiers.md)。
+
+### 9.2 应用自助登录能力(`user_login`)
+
+到本节前,自助注册的 app 是**纯 API key 身份**:`grants: []`、`redirect_uris: []`,fail-closed,根本不可能签出用户令牌。当每一张开放 API 面都是匿名读时那是对的默认;当某张面必须知道**是哪个用户**时它就是错的 —— 游戏时长是第一个。替代方案是继续在 OAuth 控制台手工建 client,那等于让人永远卡在每一个第三方集成的中间。
+
+`POST /api/v1/dev/apps` 与 `PATCH /api/v1/dev/apps/:client_id` 接受可选的 `user_login`:
+
+```json
+{ "name": "Kurumi", "user_login": {
+    "redirect_uris": ["http://127.0.0.1:53682/callback"],
+    "scopes": ["playtime:read", "playtime:write"] } }
+```
+
+给出它 → app 置 `is_public=true`、`grants=["authorization_code","refresh_token"]`,scope 并入 `allowed_scopes`(`openid` 自动补)。**不给 → 完全保持原样**,本字段出现前注册的每个 app 行为逐字节不变。`user_login` 是**整体替换**而非 patch:否则删掉一个回调将永远做不到,而废弃的回调正是最该能删的东西。
+
+**四道护栏**(开放自助注册的代价,一个都不能省):
+
+1. **回调白名单**:只收 `https://`(且不是裸 IP)与 `http://` 到 `127.0.0.1` / `[::1]` 环回。拒绝通配、fragment(隐式流的令牌通道)、userinfo(`https://example.com@evil.com/cb` 在人眼里是前者)、以及到任何非环回主机的明文 http —— 授权码就走在这个 URL 里。**`localhost` 也拒**:它过主机名解析,可以被指向别处,`127.0.0.1` 不能。
+2. **强制 PKCE**:桌面应用把二进制发给用户,里面没有秘密。标 `is_public` 即让 OAuth 服务在无 `code_challenge` 时**拒绝**它的授权码。环回回调按 **RFC 8252 §7.3 端口无关**匹配(端口是运行时才选的),scheme/host/path/query 仍精确匹配 —— 非环回 URI 永远走不到这个分支。
+3. **保留名**:同意页把应用名显示在用户账号旁边,「NextMoe 官方助手」就是我们自己托管的钓鱼页。含 nextmoe / 未萌 / kungal / 官方 / official / admin 等片段一律拒。这是地板不是滤网(存心的冒充者会用同形字),配套的是同意页上不靠猜意图的**第三方标记**(`owner_user_id` 非空)。
+4. **同意 scope 白名单**(`selfServiceUserScopes`):`openid` / `profile` / `email` / `playtime:read` / `playtime:write`。**注意不在其中的**:`catalog:edit`、`image:upload`、`artifact:upload` —— 自助注册永远不能向人索取写共享语料或花我们存储的权限。往这张表里加一项是**政策决定**,不是改配置。
+
+它与 API key 的 scope 白名单(`selfServiceScopes` = 两个只读)**故意分开**:两者管的是不同凭证。一个说机器 key 匿名能干什么,另一个说应用**能向人要什么**。合并就等于让只读 key 的白名单去决定同意页的政策。
+

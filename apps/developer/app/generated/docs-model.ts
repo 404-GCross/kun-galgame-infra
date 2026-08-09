@@ -9897,6 +9897,686 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/catalog/works/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             }
           ]
+        },
+        {
+          "tag": "playtime",
+          "title": "Playtime",
+          "operations": [
+            {
+              "id": "reportPlaytimeBatch",
+              "method": "post",
+              "path": "/v1/playtime/batch",
+              "summary": "Report up to 200 works in one call — the first-login library sync. Each item is accepted or rejected on its own and the response reports per-item outcomes; a single bad item never fails the batch. Requires playtime:write",
+              "scope": "catalog:read",
+              "params": [],
+              "requestBody": {
+                "type": "object",
+                "children": [
+                  {
+                    "name": "items",
+                    "required": true,
+                    "nullable": true,
+                    "doc": "Up to 200 reports. Each item is accepted or rejected on its own — a bad item never fails the batch",
+                    "type": "array",
+                    "itemsOf": {
+                      "type": "object",
+                      "children": [
+                        {
+                          "name": "external_id",
+                          "doc": "The id this game carries on that source (e.g. v17, RJ01234)",
+                          "type": "string"
+                        },
+                        {
+                          "name": "last_played_at",
+                          "doc": "When this client last saw the game running (RFC 3339). Optional",
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "name": "minutes",
+                          "required": true,
+                          "doc": "Absolute cumulative playtime in MINUTES (never a delta)",
+                          "format": "int64",
+                          "type": "integer"
+                        },
+                        {
+                          "name": "source",
+                          "doc": "External source key (vndb, dlsite, getchu, bangumi, …). Use WITH external_id when work_id is omitted",
+                          "type": "string"
+                        },
+                        {
+                          "name": "status",
+                          "doc": "Defaults to playing",
+                          "enum": [
+                            "playing",
+                            "finished",
+                            "dropped",
+                            "on_hold"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "name": "work_id",
+                          "doc": "Catalog work id. Omit to address by source/external_id instead",
+                          "format": "int64",
+                          "type": "integer"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "accepted",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "refused",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "results",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "error",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "index",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "status",
+                                  "required": true,
+                                  "enum": [
+                                    "ok",
+                                    "not_found",
+                                    "rejected"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "work_id",
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object"
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl -X POST \"https://api.nextmoe.dev/v1/playtime/batch\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"items\":[{\"minutes\":0}]}'"
+            },
+            {
+              "id": "reportPlaytimeByRef",
+              "method": "put",
+              "path": "/v1/playtime/by-ref/{source}/{externalID}",
+              "summary": "Report playtime addressing the work by an external id the client already holds (vndb/dlsite/getchu/bangumi …) instead of a catalog work id. Only EXACT anchors resolve; the response echoes the resolved work_id, which the client should cache. 404 when nothing is anchored to that id. Requires playtime:write",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "source",
+                  "in": "path",
+                  "required": true,
+                  "type": "string",
+                  "doc": "External source key (vndb, dlsite, getchu, bangumi, …)"
+                },
+                {
+                  "name": "externalID",
+                  "in": "path",
+                  "required": true,
+                  "type": "string",
+                  "doc": "The id this game carries on that source (e.g. v17, RJ01234)"
+                }
+              ],
+              "requestBody": {
+                "type": "object",
+                "children": [
+                  {
+                    "name": "last_played_at",
+                    "doc": "When this client last saw the game running (RFC 3339). Optional",
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "name": "minutes",
+                    "required": true,
+                    "doc": "Absolute cumulative playtime in MINUTES (never a delta). Ceiling 60000 (1000 hours)",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  {
+                    "name": "status",
+                    "doc": "Defaults to playing. ONLY finished reports feed the public aggregate",
+                    "enum": [
+                      "playing",
+                      "finished",
+                      "dropped",
+                      "on_hold"
+                    ],
+                    "type": "string"
+                  }
+                ]
+              },
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "client_id",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "last_played_at",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "minutes",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "resolved_from",
+                            "type": "string"
+                          },
+                          {
+                            "name": "status",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "updated_at",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "work_id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object"
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl -X PUT \"https://api.nextmoe.dev/v1/playtime/by-ref/value/value\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"minutes\":0}'"
+            },
+            {
+              "id": "listOwnPlaytime",
+              "method": "get",
+              "path": "/v1/playtime/mine",
+              "summary": "Page the bearer token's own playtime rows in (updated_at) order — the sync-back leg for a second device. Hand `cursor` back as ?updated_since= to fetch only what changed. Requires playtime:read",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "updated_since",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "RFC 3339 timestamp; returns only rows changed AFTER it. Omit for a full first pull"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Page size"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "cursor",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "client_id",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "last_played_at",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "minutes",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "resolved_from",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "status",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "updated_at",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "work_id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object"
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/playtime/mine\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "getOwnPlaytimeForWork",
+              "method": "get",
+              "path": "/v1/playtime/works/{workID}",
+              "summary": "The bearer token's own playtime on ONE work, folded across their applications (MAX minutes — two apps watching one save file are not two playthroughs). `playtime` is null when the user has never reported here; that is a 200, not a 404. This is the call a rating form makes to offer 'you played 30h — attach it?'. Requires playtime:read",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "workID",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Catalog work id"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "clients",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "last_played_at",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "minutes",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "status",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "work_id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object"
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/playtime/works/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "reportPlaytime",
+              "method": "put",
+              "path": "/v1/playtime/works/{workID}",
+              "summary": "Report the bearer token's own playtime on a work. The body carries the ABSOLUTE cumulative total in minutes, never a delta — re-sending the same number is a no-op, which makes the call safe to retry. Keyed by (user, work, client): a second app of the same user reports alongside, not over. Requires playtime:write",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "workID",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Catalog work id"
+                }
+              ],
+              "requestBody": {
+                "type": "object",
+                "children": [
+                  {
+                    "name": "last_played_at",
+                    "doc": "When this client last saw the game running (RFC 3339). Optional",
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "name": "minutes",
+                    "required": true,
+                    "doc": "Absolute cumulative playtime in MINUTES (never a delta). Ceiling 60000 (1000 hours)",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  {
+                    "name": "status",
+                    "doc": "Defaults to playing. ONLY finished reports feed the public aggregate",
+                    "enum": [
+                      "playing",
+                      "finished",
+                      "dropped",
+                      "on_hold"
+                    ],
+                    "type": "string"
+                  }
+                ]
+              },
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "client_id",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "last_played_at",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "minutes",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "resolved_from",
+                            "type": "string"
+                          },
+                          {
+                            "name": "status",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "updated_at",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "work_id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object"
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl -X PUT \"https://api.nextmoe.dev/v1/playtime/works/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"minutes\":0}'"
+            }
+          ]
         }
       ]
     }

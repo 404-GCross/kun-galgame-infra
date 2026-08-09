@@ -48,11 +48,31 @@ func (h *SelfServiceHandler) Register(r fiber.Router) {
 type createAppRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	// UserLogin is the opt-in declaration that this app signs users in.
+	// Omitted → a key-only app, exactly as before this field existed.
+	UserLogin *userLoginRequest `json:"user_login"`
 }
 
 type updateAppRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
+	Name        *string           `json:"name"`
+	Description *string           `json:"description"`
+	UserLogin   *userLoginRequest `json:"user_login"`
+}
+
+// userLoginRequest is the wire form of UserLoginRequest. `scopes` is what the
+// app will ask a human for on the consent screen; `openid` is added for it.
+type userLoginRequest struct {
+	RedirectURIs []string `json:"redirect_uris"`
+	Scopes       []string `json:"scopes"`
+}
+
+// toUserLogin converts the wire form, preserving "absent" as nil so an update
+// that does not mention user login leaves an app's callbacks untouched.
+func (r *userLoginRequest) toUserLogin() *UserLoginRequest {
+	if r == nil {
+		return nil
+	}
+	return &UserLoginRequest{RedirectURIs: r.RedirectURIs, Scopes: r.Scopes}
 }
 
 type selfMintKeyRequest struct {
@@ -75,6 +95,20 @@ type selfAppView struct {
 	QuotaDaily  int    `json:"quota_daily"`
 	KeyCount    int64  `json:"key_count"`
 	CreatedAt   string `json:"created_at"`
+	// UserLogin echoes the app's consent configuration, null for a key-only
+	// app. A developer debugging a redirect_uri mismatch needs to see what we
+	// actually stored, not what they believe they sent.
+	UserLogin *userLoginView `json:"user_login"`
+}
+
+// userLoginView is the stored consent configuration as the owner sees it.
+type userLoginView struct {
+	RedirectURIs []string `json:"redirect_uris"`
+	Scopes       []string `json:"scopes"`
+	// PKCERequired is always true and is stated rather than implied: a native
+	// app author who does not know they must send a code_challenge will read
+	// this before they read the spec.
+	PKCERequired bool `json:"pkce_required"`
 }
 
 // --- Handlers ---
@@ -89,7 +123,7 @@ func (h *SelfServiceHandler) CreateApp(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, apperr.ErrBadRequest)
 	}
-	app, err := h.svc.CreateApp(c.Context(), ownerID, req.Name, req.Description)
+	app, err := h.svc.CreateApp(c.Context(), ownerID, req.Name, req.Description, req.UserLogin.toUserLogin())
 	if msg, bad := selfServiceBadRequest(err); bad {
 		return response.BadRequestMsg(c, apperr.ErrValidationFailed, msg)
 	}
@@ -142,7 +176,7 @@ func (h *SelfServiceHandler) UpdateApp(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, apperr.ErrBadRequest)
 	}
-	app, err := h.svc.UpdateApp(c.Context(), ownerID, c.Params("client_id"), req.Name, req.Description)
+	app, err := h.svc.UpdateApp(c.Context(), ownerID, c.Params("client_id"), req.Name, req.Description, req.UserLogin.toUserLogin())
 	if goerrors.Is(err, gorm.ErrRecordNotFound) {
 		return response.NotFound(c, apperr.ErrNotFound)
 	}
@@ -344,6 +378,18 @@ func selfServiceBadRequest(err error) (string, bool) {
 		return "name too long (max 100)", true
 	case goerrors.Is(err, ErrDescTooLong):
 		return "description too long (max 100)", true
+	// The user-login declaration's refusals. Each says what would have to
+	// change, because the developer cannot see our policy from the outside.
+	case goerrors.Is(err, ErrRedirectURIRequired):
+		return "user_login needs at least one redirect_uri", true
+	case goerrors.Is(err, ErrTooManyRedirectURIs):
+		return "too many redirect URIs (max 5)", true
+	case goerrors.Is(err, ErrRedirectURIInvalid):
+		return "redirect URI must be https://, or http:// on the 127.0.0.1 / [::1] loopback for a native app (no wildcards, no fragments)", true
+	case goerrors.Is(err, ErrUserScopeNotAllowed):
+		return "scope not permitted for a self-service app (want openid / profile / email / playtime:read / playtime:write)", true
+	case goerrors.Is(err, ErrAppNameReserved):
+		return "application name may not claim to be NextMoe or an official application", true
 	default:
 		return "", false
 	}
@@ -363,6 +409,7 @@ func toSelfAppView(app *siteModel.OAuthClient, keyCount int64) selfAppView {
 		QuotaDaily:  quota,
 		KeyCount:    keyCount,
 		CreatedAt:   app.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UserLogin:   toUserLoginView(app),
 	}
 }
 

@@ -56,13 +56,12 @@ func NewUserPlaytimeService(db *gorm.DB) *UserPlaytimeService {
 }
 
 // PlaytimeReport is one client's statement about one user's time on one work.
-// ActorUID / ClientID / Site are all resolved from the verified token by the
+// ActorUID and ClientID are both resolved from the verified token by the
 // handler; the wire supplies only the three value fields.
 type PlaytimeReport struct {
 	ActorUID     int64
 	WorkID       int64
 	ClientID     string
-	Site         string
 	Minutes      int
 	Status       int16
 	LastPlayedAt *time.Time
@@ -91,7 +90,7 @@ func (s *UserPlaytimeService) Report(ctx context.Context, r PlaytimeReport) (*Pl
 	}
 	row := model.CatalogUserPlaytime{
 		ActorUID: r.ActorUID, WorkID: r.WorkID, ClientID: r.ClientID,
-		Minutes: r.Minutes, Status: r.Status, LastPlayedAt: r.LastPlayedAt, Site: r.Site,
+		Minutes: r.Minutes, Status: r.Status, LastPlayedAt: r.LastPlayedAt,
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := assertReportableWork(tx, r.WorkID); err != nil {
@@ -103,7 +102,6 @@ func (s *UserPlaytimeService) Report(ctx context.Context, r PlaytimeReport) (*Pl
 				"minutes":        r.Minutes,
 				"status":         r.Status,
 				"last_played_at": r.LastPlayedAt,
-				"site":           r.Site,
 				"updated_at":     time.Now(),
 			}),
 		}).Create(&row).Error

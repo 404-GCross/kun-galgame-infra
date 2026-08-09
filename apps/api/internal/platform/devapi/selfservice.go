@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strconv"
@@ -78,9 +79,38 @@ func NewSelfServiceService(repo *Repository, admin *AdminService, store Store) *
 // nsfw / quota are admin-only and stay at their defaults. The per-user app cap
 // is enforced first. A client_secret is generated + hashed (never returned —
 // Phase 1 is pure API-key; the OAuth flow is Phase 2/3).
-func (s *SelfServiceService) CreateApp(ctx context.Context, ownerUserID uint, name, description string) (*siteModel.OAuthClient, error) {
+func (s *SelfServiceService) CreateApp(ctx context.Context, ownerUserID uint, name, description string, login *UserLoginRequest) (*siteModel.OAuthClient, error) {
 	if err := validateAppMeta(name, description, true); err != nil {
 		return nil, err
+	}
+	// The consent screen shows this name beside the user's account; a
+	// self-service registration does not get to claim it is us.
+	if err := validateAppName(name); err != nil {
+		return nil, err
+	}
+	// User login is opt-in at creation. Without it the app keeps the original
+	// fail-closed shape — no grants, no redirect URIs, an API key and nothing
+	// else — so every app registered before this existed behaves identically.
+	redirectURIs, grants, userScopes := "[]", "[]", ""
+	isPublic := false
+	if login != nil {
+		scopes, err := validateUserLogin(*login)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(login.RedirectURIs)
+		if err != nil {
+			return nil, err
+		}
+		redirectURIs = string(encoded)
+		// authorization_code to get a token, refresh_token so a launcher that
+		// runs for months does not send its user back through consent weekly.
+		grants = `["authorization_code","refresh_token"]`
+		userScopes = strings.Join(scopes, " ")
+		// A desktop launcher ships its binary to the user; anything in it is
+		// public. Marking it so is what makes the OAuth service REFUSE its
+		// authorization code unless PKCE was used.
+		isPublic = true
 	}
 	n, err := s.repo.CountAppsByOwner(ctx, ownerUserID)
 	if err != nil {
@@ -105,14 +135,21 @@ func (s *SelfServiceService) CreateApp(ctx context.Context, ownerUserID uint, na
 		Name: name,
 		// Hash only; the plaintext secret is discarded (unused in Phase 1).
 		Secret: siteModel.HashOAuthClientSecret(secret),
-		// NOT NULL jsonb columns — a dev app runs no OAuth flow in Phase 1, so
-		// both are empty (grants empty = fail-closed on /oauth/token, which is
-		// exactly right: an API-key app cannot mint OAuth tokens).
-		RedirectURIs: datatypes.JSON([]byte("[]")),
-		Grants:       datatypes.JSON([]byte("[]")),
-		// The app's own scope allow-list = the two public read scopes, so its
-		// keys' scopes are ⊆ the app by construction.
-		AllowedScopes: datatypes.JSON([]byte(`["catalog:read","galgame:read"]`)),
+		// Both stay empty for a key-only app (grants empty = fail-closed on
+		// /oauth/token: an API-key app cannot mint OAuth tokens). An app that
+		// declared user login carries its callbacks and the two code-flow
+		// grants instead — see the block above.
+		RedirectURIs: datatypes.JSON([]byte(redirectURIs)),
+		Grants:       datatypes.JSON([]byte(grants)),
+		IsPublic:     isPublic,
+		// The app's own scope allow-list holds BOTH credentials' vocabularies:
+		// the two public read scopes its API keys draw from (keys' scopes are
+		// ⊆ the app by construction) plus whatever consent scopes it declared.
+		// The two never collide — one set is asked of a machine, the other of
+		// a human — and the OAuth service filters every authorize request
+		// against this column, so an app cannot request what it did not
+		// register.
+		AllowedScopes: datatypes.JSON(appAllowedScopes(userScopes)),
 		// description is stored in the reused tagline column (no dedicated column
 		// exists; tagline is display-only and invisible unless Listed, which
 		// self-service apps never are).
@@ -166,7 +203,7 @@ func (s *SelfServiceService) GetApp(ctx context.Context, ownerUserID uint, clien
 // UpdateApp patches an owned app's name and/or description (the only
 // self-service-writable fields — tier / nsfw / quota are admin-only). Returns
 // gorm.ErrRecordNotFound (→ 404) for a non-owned app.
-func (s *SelfServiceService) UpdateApp(ctx context.Context, ownerUserID uint, clientID string, name, description *string) (*siteModel.OAuthClient, error) {
+func (s *SelfServiceService) UpdateApp(ctx context.Context, ownerUserID uint, clientID string, name, description *string, login *UserLoginRequest) (*siteModel.OAuthClient, error) {
 	app, err := s.repo.GetAppByOwner(ctx, clientID, ownerUserID)
 	if err != nil {
 		return nil, err
@@ -174,7 +211,30 @@ func (s *SelfServiceService) UpdateApp(ctx context.Context, ownerUserID uint, cl
 	if err := validateAppMetaPtr(name, description); err != nil {
 		return nil, err
 	}
+	if name != nil {
+		if err := validateAppName(*name); err != nil {
+			return nil, err
+		}
+	}
 	fields := map[string]any{}
+	// Declaring (or re-declaring) user login is a full replacement of the
+	// callback set and the consent scopes — a patch that merged them would
+	// make removing a redirect URI impossible, and a stale callback is exactly
+	// the kind of thing an app wants gone the moment it stops using it.
+	if login != nil {
+		scopes, err := validateUserLogin(*login)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(login.RedirectURIs)
+		if err != nil {
+			return nil, err
+		}
+		fields["redirect_uris"] = datatypes.JSON(encoded)
+		fields["grants"] = datatypes.JSON([]byte(`["authorization_code","refresh_token"]`))
+		fields["allowed_scopes"] = datatypes.JSON(appAllowedScopes(strings.Join(scopes, " ")))
+		fields["is_public"] = true
+	}
 	if name != nil {
 		fields["name"] = *name
 	}

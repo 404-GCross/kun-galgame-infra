@@ -1,5 +1,89 @@
 components:
   schemas:
+    EnvelopePlaytimeBatchResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePlaytimeBatchResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PlaytimeBatchResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopePlaytimeMineResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePlaytimeMineResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PlaytimeMineResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopePlaytimeRecordResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePlaytimeRecordResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PlaytimeRecordResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopePlaytimeSelfResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePlaytimeSelfResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PlaytimeSelfResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopePublicCalendarData:
       additionalProperties: false
       properties:
@@ -502,6 +586,205 @@ components:
       required:
         - code
         - message
+      type: object
+    PlaytimeBatchBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/PlaytimeBatchBody.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          description: Up to 200 reports. Each item is accepted or rejected on its own — a bad item never fails the batch
+          items:
+            $ref: "#/components/schemas/PlaytimeBatchItem"
+          maxItems: 200
+          minItems: 1
+          type:
+            - array
+            - "null"
+      required:
+        - items
+      type: object
+    PlaytimeBatchItem:
+      additionalProperties: false
+      properties:
+        external_id:
+          description: The id this game carries on that source (e.g. v17, RJ01234)
+          type: string
+        last_played_at:
+          description: When this client last saw the game running (RFC 3339). Optional
+          format: date-time
+          type: string
+        minutes:
+          description: Absolute cumulative playtime in MINUTES (never a delta)
+          format: int64
+          maximum: 60000
+          minimum: 0
+          type: integer
+        source:
+          description: External source key (vndb, dlsite, getchu, bangumi, …). Use WITH external_id when work_id is omitted
+          type: string
+        status:
+          description: Defaults to playing
+          enum:
+            - playing
+            - finished
+            - dropped
+            - on_hold
+          type: string
+        work_id:
+          description: Catalog work id. Omit to address by source/external_id instead
+          format: int64
+          type: integer
+      required:
+        - minutes
+      type: object
+    PlaytimeBatchResponse:
+      additionalProperties: false
+      properties:
+        accepted:
+          format: int64
+          type: integer
+        refused:
+          format: int64
+          type: integer
+        results:
+          items:
+            $ref: "#/components/schemas/PlaytimeBatchResult"
+          type:
+            - array
+            - "null"
+      required:
+        - accepted
+        - refused
+        - results
+      type: object
+    PlaytimeBatchResult:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        index:
+          format: int64
+          type: integer
+        status:
+          enum:
+            - ok
+            - not_found
+            - rejected
+          type: string
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - index
+        - status
+      type: object
+    PlaytimeMineResponse:
+      additionalProperties: false
+      properties:
+        cursor:
+          type:
+            - string
+            - "null"
+        items:
+          items:
+            $ref: "#/components/schemas/PlaytimeRecordResponse"
+          type:
+            - array
+            - "null"
+      required:
+        - items
+        - cursor
+      type: object
+    PlaytimeRecordResponse:
+      additionalProperties: false
+      properties:
+        client_id:
+          type: string
+        last_played_at:
+          type:
+            - string
+            - "null"
+        minutes:
+          format: int64
+          type: integer
+        resolved_from:
+          type: string
+        status:
+          type: string
+        updated_at:
+          type: string
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - minutes
+        - status
+        - last_played_at
+        - client_id
+        - updated_at
+      type: object
+    PlaytimeReportBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/PlaytimeReportBody.json
+          format: uri
+          readOnly: true
+          type: string
+        last_played_at:
+          description: When this client last saw the game running (RFC 3339). Optional
+          format: date-time
+          type: string
+        minutes:
+          description: Absolute cumulative playtime in MINUTES (never a delta). Ceiling 60000 (1000 hours)
+          format: int64
+          maximum: 60000
+          minimum: 0
+          type: integer
+        status:
+          description: Defaults to playing. ONLY finished reports feed the public aggregate
+          enum:
+            - playing
+            - finished
+            - dropped
+            - on_hold
+          type: string
+      required:
+        - minutes
+      type: object
+    PlaytimeSelfResponse:
+      additionalProperties: false
+      properties:
+        clients:
+          format: int64
+          type: integer
+        last_played_at:
+          type:
+            - string
+            - "null"
+        minutes:
+          format: int64
+          type: integer
+        status:
+          type: string
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - minutes
+        - status
+        - last_played_at
+        - clients
       type: object
     PublicCalendarData:
       additionalProperties: false
@@ -4218,3 +4501,169 @@ paths:
       summary: "Frozen work record: identity + titles + exact cross-source refs + claim pointer; include=relations,credits"
       tags:
         - catalog-public
+  /v1/playtime/batch:
+    post:
+      operationId: reportPlaytimeBatch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaytimeBatchBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePlaytimeBatchResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Report up to 200 works in one call — the first-login library sync. Each item is accepted or rejected on its own and the response reports per-item outcomes; a single bad item never fails the batch. Requires playtime:write
+      tags:
+        - playtime
+  /v1/playtime/by-ref/{source}/{externalID}:
+    put:
+      operationId: reportPlaytimeByRef
+      parameters:
+        - description: External source key (vndb, dlsite, getchu, bangumi, …)
+          in: path
+          name: source
+          required: true
+          schema:
+            description: External source key (vndb, dlsite, getchu, bangumi, …)
+            type: string
+        - description: The id this game carries on that source (e.g. v17, RJ01234)
+          in: path
+          name: externalID
+          required: true
+          schema:
+            description: The id this game carries on that source (e.g. v17, RJ01234)
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaytimeReportBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePlaytimeRecordResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Report playtime addressing the work by an external id the client already holds (vndb/dlsite/getchu/bangumi …) instead of a catalog work id. Only EXACT anchors resolve; the response echoes the resolved work_id, which the client should cache. 404 when nothing is anchored to that id. Requires playtime:write
+      tags:
+        - playtime
+  /v1/playtime/mine:
+    get:
+      operationId: listOwnPlaytime
+      parameters:
+        - description: RFC 3339 timestamp; returns only rows changed AFTER it. Omit for a full first pull
+          explode: false
+          in: query
+          name: updated_since
+          schema:
+            description: RFC 3339 timestamp; returns only rows changed AFTER it. Omit for a full first pull
+            type: string
+        - description: Page size
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 200
+            description: Page size
+            format: int64
+            maximum: 200
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePlaytimeMineResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Page the bearer token's own playtime rows in (updated_at) order — the sync-back leg for a second device. Hand `cursor` back as ?updated_since= to fetch only what changed. Requires playtime:read
+      tags:
+        - playtime
+  /v1/playtime/works/{workID}:
+    get:
+      operationId: getOwnPlaytimeForWork
+      parameters:
+        - description: Catalog work id
+          in: path
+          name: workID
+          required: true
+          schema:
+            description: Catalog work id
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePlaytimeSelfResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: The bearer token's own playtime on ONE work, folded across their applications (MAX minutes — two apps watching one save file are not two playthroughs). `playtime` is null when the user has never reported here; that is a 200, not a 404. This is the call a rating form makes to offer 'you played 30h — attach it?'. Requires playtime:read
+      tags:
+        - playtime
+    put:
+      operationId: reportPlaytime
+      parameters:
+        - description: Catalog work id
+          in: path
+          name: workID
+          required: true
+          schema:
+            description: Catalog work id
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaytimeReportBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePlaytimeRecordResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "Report the bearer token's own playtime on a work. The body carries the ABSOLUTE cumulative total in minutes, never a delta — re-sending the same number is a no-op, which makes the call safe to retry. Keyed by (user, work, client): a second app of the same user reports alongside, not over. Requires playtime:write"
+      tags:
+        - playtime

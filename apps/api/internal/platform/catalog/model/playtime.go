@@ -104,13 +104,13 @@ type CatalogUserPlaytime struct {
 	// the user's data, not an audit column, and updated_at already records
 	// when we heard about it.
 	LastPlayedAt *time.Time `json:"last_played_at"`
-	// Site is the product site of the reporting client when it happens to be
-	// bound to one, and "" when it is not. Provenance only, exactly as on
-	// catalog_cover_vote — and unlike the catalog write faces, a site binding
-	// is NOT required here: a third-party Galgame manager is not a catalog
-	// tenant, and demanding one would shut out every caller this face exists
-	// for.
-	Site string `gorm:"not null;default:''" json:"site"`
+	// There is deliberately NO site column, unlike catalog_cover_vote. A vote
+	// is cast from a product site and the tenant is part of its story; a
+	// playtime is reported by an APPLICATION, and ClientID above already says
+	// which. A site column here would be empty for every third-party launcher
+	// — which is most of them — and an always-empty column is a question the
+	// schema keeps asking and nobody keeps answering.
+	//
 	// CreatedAt/UpdatedAt. UpdatedAt carries the sync index (see ActorUID) —
 	// `GET /playtime/mine?updated_since=` pages on it.
 	CreatedAt time.Time `json:"created_at"`

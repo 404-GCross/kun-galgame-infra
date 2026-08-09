@@ -121,6 +121,17 @@ type ClientPublicInfo struct {
 	// the consent page can show the requesting app's icon instead of an
 	// initial-letter disc. Already public there; empty when unset.
 	LogoURL string `json:"logo_url,omitempty"`
+	// ThirdParty says this client belongs to an outside developer rather than
+	// to us (oauth_clients.owner_user_id is set — every self-service
+	// registration has one, every first-party client does not).
+	//
+	// It exists because self-service app registration exists: the consent
+	// screen now carries a name an unvetted stranger chose, and a name
+	// filter is a floor rather than a defence — a determined impostor picks a
+	// homograph. This flag does not guess at intent from a string; it reports
+	// a fact about who registered the application, which is what the person
+	// deciding whether to approve actually needs to know.
+	ThirdParty bool `json:"third_party"`
 }
 
 // GetClientPublicInfo fetches the public-safe metadata for a client.
@@ -136,6 +147,7 @@ func (s *OAuthService) GetClientPublicInfo(ctx context.Context, clientID string)
 		Name:        client.Name,
 		AutoConsent: client.AutoConsent,
 		LogoURL:     client.LogoURL,
+		ThirdParty:  client.OwnerUserID != nil,
 	}
 	if client.Site != nil {
 		info.SiteDomain = client.Site.Domain

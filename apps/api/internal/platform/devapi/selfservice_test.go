@@ -48,7 +48,7 @@ func TestSelfServiceCreateAndOwnerScope(t *testing.T) {
 	ctx := context.Background()
 	const userA, userB = uint(1), uint(2)
 
-	app, err := svc.CreateApp(ctx, userA, "my app", "a short description")
+	app, err := svc.CreateApp(ctx, userA, "my app", "a short description", nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -85,11 +85,11 @@ func TestSelfServiceAppCap(t *testing.T) {
 	const owner = uint(1)
 
 	for i := 0; i < MaxAppsPerOwner; i++ {
-		if _, err := svc.CreateApp(ctx, owner, fmt.Sprintf("app %d", i), ""); err != nil {
+		if _, err := svc.CreateApp(ctx, owner, fmt.Sprintf("app %d", i), "", nil); err != nil {
 			t.Fatalf("create %d: %v", i, err)
 		}
 	}
-	if _, err := svc.CreateApp(ctx, owner, "over the cap", ""); err != ErrAppLimitReached {
+	if _, err := svc.CreateApp(ctx, owner, "over the cap", "", nil); err != ErrAppLimitReached {
 		t.Fatalf("6th app err = %v, want ErrAppLimitReached", err)
 	}
 }
@@ -101,7 +101,7 @@ func TestSelfServiceKeyCapAndScope(t *testing.T) {
 	ctx := context.Background()
 	const owner = uint(1)
 
-	app, err := svc.CreateApp(ctx, owner, "keyed", "")
+	app, err := svc.CreateApp(ctx, owner, "keyed", "", nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestSelfServiceKeyOwnerGuard(t *testing.T) {
 	ctx := context.Background()
 	const userA, userB = uint(1), uint(2)
 
-	app, _ := svc.CreateApp(ctx, userA, "A app", "")
+	app, _ := svc.CreateApp(ctx, userA, "A app", "", nil)
 	key, plaintext, err := svc.MintKey(ctx, userA, app.ID, MintKeyInput{Name: "k"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
@@ -171,7 +171,7 @@ func TestSelfServiceDeactivateCascade(t *testing.T) {
 	ctx := context.Background()
 	const owner = uint(1)
 
-	app, _ := svc.CreateApp(ctx, owner, "doomed", "")
+	app, _ := svc.CreateApp(ctx, owner, "doomed", "", nil)
 	_, p1, _ := svc.MintKey(ctx, owner, app.ID, MintKeyInput{Name: "k1"})
 	_, p2, _ := svc.MintKey(ctx, owner, app.ID, MintKeyInput{Name: "k2"})
 
@@ -201,7 +201,7 @@ func TestSelfServiceUsageShape(t *testing.T) {
 	ctx := context.Background()
 	const owner = uint(1)
 
-	app, _ := svc.CreateApp(ctx, owner, "used", "")
+	app, _ := svc.CreateApp(ctx, owner, "used", "", nil)
 	// Two keys, two faces, same day — must roll up to two (day, face) rows.
 	rec := NewUsageRecorder(repo, newMemStore())
 	rec.Record(&Credential{KeyID: 11, ClientID: app.ID}, "catalog", 200)
@@ -241,8 +241,8 @@ func TestSelfServiceOwnerUsage(t *testing.T) {
 	ctx := context.Background()
 	const owner = uint(1)
 
-	appA, _ := svc.CreateApp(ctx, owner, "app-a", "")
-	appB, _ := svc.CreateApp(ctx, owner, "app-b", "")
+	appA, _ := svc.CreateApp(ctx, owner, "app-a", "", nil)
+	appB, _ := svc.CreateApp(ctx, owner, "app-b", "", nil)
 
 	rec := NewUsageRecorder(repo, newMemStore())
 	// app-a: 4 requests across two faces/keys — 1 4xx, 1 5xx.
@@ -334,7 +334,7 @@ func TestSelfServiceOwnerUsageLive(t *testing.T) {
 	ctx := context.Background()
 	const owner = uint(1)
 
-	app, err := svc.CreateApp(ctx, owner, "live-app", "")
+	app, err := svc.CreateApp(ctx, owner, "live-app", "", nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestSelfServiceHandlerOwnerGuard404(t *testing.T) {
 	ctx := context.Background()
 	const userA, userB = uint(1), uint(2)
 
-	app, _ := svc.CreateApp(ctx, userA, "A app", "")
+	app, _ := svc.CreateApp(ctx, userA, "A app", "", nil)
 	key, _, err := svc.MintKey(ctx, userA, app.ID, MintKeyInput{Name: "k"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
@@ -469,7 +469,7 @@ func TestSelfServiceMintShowOnce(t *testing.T) {
 	svc, _, _, _ := newSelfService(t)
 	ctx := context.Background()
 	const owner = uint(1)
-	app, _ := svc.CreateApp(ctx, owner, "showonce", "")
+	app, _ := svc.CreateApp(ctx, owner, "showonce", "", nil)
 
 	fiberApp := fiber.New()
 	NewSelfServiceHandler(svc).Register(fiberApp.Group("/dev", fakeAuth(owner)))

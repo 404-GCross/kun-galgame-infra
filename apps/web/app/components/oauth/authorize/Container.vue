@@ -9,6 +9,11 @@ interface ClientPublicInfo {
   // App-directory logo, shown by the handshake header. Optional — clients
   // without one fall back to an initial-letter disc.
   logo_url?: string
+  // True when the app belongs to an outside developer (it was registered
+  // self-service in the developer portal). Drives the warning below: since
+  // anyone can register an app and pick its name, the person approving needs
+  // to be told the name is not a claim we vouched for.
+  third_party: boolean
 }
 
 const route = useRoute()
@@ -501,6 +506,20 @@ const handleDeny = async () => {
         <p class="text-default-500 mt-2 text-sm">
           <span v-if="clientInfo">「{{ clientInfo.name }}」</span>
           正在请求访问你的账户
+        </p>
+      </div>
+
+      <div
+        v-if="clientInfo?.third_party"
+        class="bg-warning-50 border-warning-200 mb-6 flex items-start gap-2 rounded-xl border p-3"
+      >
+        <KunIcon
+          name="lucide:triangle-alert"
+          class="text-warning mt-0.5 size-4 shrink-0"
+        />
+        <p class="text-default-600 text-xs">
+          这是<span class="text-foreground font-medium">第三方应用</span>，由站外开发者注册，不隶属于
+          NextMoe。应用名称与图标由开发者自行填写，请确认你信任它再继续。
         </p>
       </div>
 

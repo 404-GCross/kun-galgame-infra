@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -230,13 +232,48 @@ func (c *OAuthClient) IsActive() bool {
 	return true // All clients are active by default
 }
 
-// HasRedirectURI checks if the given redirect URI is allowed
+// HasRedirectURI checks if the given redirect URI is allowed.
+//
+// Exact string match, with ONE standards-mandated exception: for a loopback
+// callback (http://127.0.0.1/… or http://[::1]/…) the PORT is ignored, because
+// a native application picks an ephemeral port at run time and cannot register
+// it in advance (RFC 8252 §7.3 requires the server to allow this). Everything
+// else about the URI — scheme, host, path — must still match exactly, so the
+// exception widens nothing for a web client: a non-loopback URI never reaches
+// the port-insensitive branch.
 func (c *OAuthClient) HasRedirectURI(uri string) bool {
 	var uris []string
 	if err := json.Unmarshal(c.RedirectURIs, &uris); err != nil {
 		return false
 	}
-	return slices.Contains(uris, uri)
+	if slices.Contains(uris, uri) {
+		return true
+	}
+	got, ok := parseLoopbackRedirect(uri)
+	if !ok {
+		return false
+	}
+	for _, registered := range uris {
+		if want, ok := parseLoopbackRedirect(registered); ok && want == got {
+			return true
+		}
+	}
+	return false
+}
+
+// parseLoopbackRedirect normalizes a loopback callback to everything BUT its
+// port, and reports whether the URI was a loopback callback at all. A URI that
+// is not plain http to a literal loopback address is never comparable this way.
+func parseLoopbackRedirect(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "http" {
+		return "", false
+	}
+	ip := net.ParseIP(u.Hostname())
+	if ip == nil || !ip.IsLoopback() {
+		return "", false
+	}
+	return u.Hostname() + "|" + u.EscapedPath() + "|" + u.RawQuery, true
 }
 
 // AllowedPresets returns the parsed list of image preset names this client
