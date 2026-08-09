@@ -69,3 +69,32 @@ in API GET /api/v1/catalog/names/{id}/works removed the required property `data/
 # cannot express. Rationale: docs/catalog/01 §1.
 
 in API GET /api/v1/catalog/stats removed the required property `data/entities/orgs` from the response with the `200` status
+
+# The playtime face's ten-minute S2S life (2026-08-09). The five operations
+# below were published on the S2S face at 03:45 and moved to the open-API face
+# (/v1/playtime, docs/catalog/public-openapi.yaml) at 03:55 the same morning.
+#
+# The move is the whole point of the feature, not a relocation of convenience.
+# A playtime report is a first-person statement — "I played this for 40 hours" —
+# and the S2S face has no first person: it authenticates a backend, which then
+# names a uid it asserts on someone else's behalf. Wave 185 already closed that
+# plane to human-authored writes for exactly this reason. Putting playtime
+# there would have re-opened it ten minutes after it was shut, and would have
+# required every downstream Galgame manager to hold a machine credential it has
+# no business holding.
+#
+# No deprecation window is owed because there was no window in which anyone
+# could have depended on these. They were never deployed — production catalog
+# is still serving an image built before the first of the two commits — and a
+# sweep of every sibling repository in the workspace found zero references to
+# the word "playtime" outside an unrelated upstream schema note. The successors
+# are live in the same wave: PUT /v1/playtime/works/{workID},
+# PUT /v1/playtime/by-ref/{source}/{externalID}, POST /v1/playtime/batch,
+# GET /v1/playtime/mine, GET /v1/playtime/works/{workID} — same shapes, and a
+# user access token instead of client credentials. Rationale: docs/catalog/01 §4.6.
+
+in API PUT /api/v1/user/playtime/works/{workID} api path removed without deprecation
+in API GET /api/v1/user/playtime/works/{workID} api path removed without deprecation
+in API PUT /api/v1/user/playtime/by-ref/{source}/{externalID} api path removed without deprecation
+in API POST /api/v1/user/playtime/batch api path removed without deprecation
+in API GET /api/v1/user/playtime/mine api path removed without deprecation
