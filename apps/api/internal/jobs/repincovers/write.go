@@ -315,27 +315,28 @@ func (r *runner) purge(ctx context.Context, opts Opts) error {
 		ORDER BY c.work_id`, upscaleSourceKey, badUpscaleKinds).Scan(&rows).Error; err != nil {
 		return fmt.Errorf("load bad upscales: %w", err)
 	}
+	// A row still pinned after the re-pin pass is HELD, not deleted. It means
+	// the ladder found no eligible successor, which in practice means every
+	// named cover on that work is landscape and the only portrait art it owns
+	// is the box back itself. Deleting the enlargement there does not remove
+	// the wrong picture from the card - the read face's own fallback picks the
+	// first portrait-shaped cover whatever its kind, so it would show the SAME
+	// box back at the smaller original size. Losing sharpness while keeping the
+	// error is not a cleanup, so those rows wait for a real cover instead.
 	ids := make([]int64, 0, len(rows))
+	held := 0
 	for _, row := range rows {
 		slog.Info("bad upscale", "cover_id", row.ID, "work", row.WorkID, "kind", row.Kind,
-			"pinned", row.Pinned, "url", r.urlFor(row.Hash))
+			"pinned", row.Pinned, "held", row.Pinned, "url", r.urlFor(row.Hash))
+		if row.Pinned {
+			held++
+			continue
+		}
 		ids = append(ids, row.ID)
 	}
+	r.stats.Skipped = held
 	if len(ids) == 0 || !opts.Apply {
 		return nil
-	}
-	// A pinned row must lose its pin before it is deleted, or the work would
-	// simply have no portrait pin afterwards. Every row here is a bad pick, so
-	// the correct successor comes from the re-pin pass — which is why purge is
-	// meant to run AFTER it, and why a still-pinned row at this point is a
-	// refusal rather than something to paper over.
-	var stillPinned int64
-	if err := r.db.WithContext(ctx).Raw(
-		`SELECT count(*) FROM catalog_work_cover WHERE id IN ? AND portrait_pinned`, ids).Scan(&stillPinned).Error; err != nil {
-		return err
-	}
-	if stillPinned > 0 {
-		return fmt.Errorf("%d of the %d bad upscale rows are still pinned; run the re-pin pass first", stillPinned, len(ids))
 	}
 	res := r.db.WithContext(ctx).Exec(`DELETE FROM catalog_work_cover WHERE id IN ?`, ids)
 	if res.Error != nil {
