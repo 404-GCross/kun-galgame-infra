@@ -24,9 +24,7 @@ import (
 	"api/pkg/logger"
 
 	"github.com/joho/godotenv"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 func openStaging(base config.DatabaseConfig, override, dbName string) (*gorm.DB, error) {
@@ -36,7 +34,7 @@ func openStaging(base config.DatabaseConfig, override, dbName string) (*gorm.DB,
 		cfg.DBName = dbName
 		dsn = cfg.DSN()
 	}
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func main() {

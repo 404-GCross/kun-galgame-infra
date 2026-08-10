@@ -39,13 +39,12 @@ import (
 	"log/slog"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/repository"
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 const defaultTimeout = 60 * time.Second
@@ -231,7 +230,7 @@ func (r *runner) summary(opts Opts, candidates int) map[string]any {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func resolveBaseURL(cfg *config.Config, clientCfg config.ImageClientConfig, override string) string {

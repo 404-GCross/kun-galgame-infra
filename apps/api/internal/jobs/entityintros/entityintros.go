@@ -45,9 +45,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // Lane keys, also the --only vocabulary.
@@ -190,5 +190,5 @@ func logLane(lane string, st *LaneStats, apply bool) {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }

@@ -20,9 +20,6 @@ import (
 	"api/pkg/logger"
 
 	"github.com/joho/godotenv"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -52,7 +49,7 @@ func main() {
 		dlCfg.DBName = "dlsite"
 		dsn = dlCfg.DSN()
 	}
-	dlsiteDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	dlsiteDB, err := database.OpenJob(dsn)
 	if err != nil {
 		slog.Error("dlsite db connect", "error", err)
 		os.Exit(1)

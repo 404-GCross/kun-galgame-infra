@@ -31,12 +31,11 @@ import (
 	"log/slog"
 	"os"
 
+	"api/internal/infrastructure/database"
 	"api/pkg/config"
 	"api/pkg/logger"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -87,9 +86,7 @@ func main() {
 }
 
 func openDB(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
-	})
+	return database.OpenJob(dsn)
 }
 
 func firstNonEmpty(vals ...string) string {

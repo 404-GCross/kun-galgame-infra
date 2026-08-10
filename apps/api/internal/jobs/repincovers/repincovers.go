@@ -43,12 +43,11 @@ import (
 	"slices"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 const defaultTimeout = 60 * time.Second
@@ -330,7 +329,7 @@ func idSet(ids []int64) map[int64]bool {
 }
 
 func open(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeDB(db *gorm.DB) {

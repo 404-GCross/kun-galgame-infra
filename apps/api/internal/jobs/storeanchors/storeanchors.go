@@ -53,12 +53,11 @@ import (
 	"log/slog"
 	"sort"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // maxSamples caps how many per-lane example rows a run collects for logging.
@@ -281,7 +280,7 @@ func unknownLaneError(only string) error {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeGorm(db *gorm.DB) {

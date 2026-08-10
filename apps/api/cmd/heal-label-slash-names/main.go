@@ -17,14 +17,14 @@
 //
 // Per case the tool does three things, all inside one transaction:
 //
-//	1. display_name  → the adjudicated canonical name.
-//	2. the FULL original slash string → catalog_label_alias kind=2
-//	   (AliasKindSearchHint, findability only, never displayed) so a user who
-//	   searches the old blob still lands on the label.
-//	3. every '/'-separated SEGMENT other than the canonical → kind=1
-//	   (AliasKindSpellingVariant): the sibling brands are real names of this
-//	   label's family, and dropping them would lose search reach the monster
-//	   string accidentally provided.
+//  1. display_name  → the adjudicated canonical name.
+//  2. the FULL original slash string → catalog_label_alias kind=2
+//     (AliasKindSearchHint, findability only, never displayed) so a user who
+//     searches the old blob still lands on the label.
+//  3. every '/'-separated SEGMENT other than the canonical → kind=1
+//     (AliasKindSpellingVariant): the sibling brands are real names of this
+//     label's family, and dropping them would lose search reach the monster
+//     string accidentally provided.
 //
 // Nothing is ever marked is_primary_for_locale — the canonical display_name is
 // the primary, and a second primary for one locale is a contradiction.
@@ -53,9 +53,7 @@ import (
 	"log/slog"
 	"os"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
+	"api/internal/infrastructure/database"
 )
 
 // reindexNote is printed at the end of an --apply run. catalog_labels documents
@@ -80,7 +78,7 @@ func main() {
 }
 
 func run(dsn string, apply bool) error {
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(dsn)
 	if err != nil {
 		return fmt.Errorf("connect catalog db: %w", err)
 	}

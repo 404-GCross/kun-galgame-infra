@@ -27,11 +27,10 @@ import (
 	"log/slog"
 	"strings"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/repository"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // maxAliasLen rejects degenerate strings (surveyed: 0 over 500 in the supply).
@@ -338,7 +337,7 @@ func chunkStr(in []string, size int) [][]string {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeGorm(db *gorm.DB) {

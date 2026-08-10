@@ -22,9 +22,9 @@ import (
 	"log/slog"
 	"strings"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // linkBatchSize keeps a multi-row upsert at 4 bind params per row — far under
@@ -59,7 +59,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
 	}
-	db, err := gorm.Open(postgres.Open(opts.DSN), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(opts.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("connect catalog db: %w", err)
 	}

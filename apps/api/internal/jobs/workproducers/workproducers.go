@@ -23,12 +23,11 @@ import (
 	"log/slog"
 	"strings"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // Opts configures a run.
@@ -52,7 +51,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
 	}
-	db, err := gorm.Open(postgres.Open(opts.DSN), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(opts.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("connect catalog db: %w", err)
 	}

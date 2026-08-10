@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // ProposeOpts configures the propose phase (doc 87 P2 --propose): blocking →
@@ -471,7 +471,7 @@ func sortRecords(recs []pairRec) {
 
 // openGorm opens a silent-logger gorm handle (shared by pair/apply phases).
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 // pairKey is the unordered pair identity used by --prior skipping: the same

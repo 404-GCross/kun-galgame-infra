@@ -28,9 +28,7 @@ import (
 	"log/slog"
 	"time"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
+	"api/internal/infrastructure/database"
 )
 
 // maxSamples caps how many example decisions a run collects for the report.
@@ -129,7 +127,7 @@ func Run(ctx context.Context, tr Translator, opts Opts) ([]*LaneStats, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := gorm.Open(postgres.Open(opts.DSN), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(opts.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("connect catalog db: %w", err)
 	}

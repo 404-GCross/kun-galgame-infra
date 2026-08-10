@@ -35,12 +35,10 @@ import (
 	"os"
 	"strings"
 
+	"api/internal/infrastructure/database"
 	"api/internal/jobs/derivedseries"
 
 	"golang.org/x/text/unicode/norm"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 type inputRow struct {
@@ -60,7 +58,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	db, err := gorm.Open(postgres.Open(*dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(*dsn)
 	if err != nil {
 		slog.Error("connect catalog db", "error", err)
 		os.Exit(1)

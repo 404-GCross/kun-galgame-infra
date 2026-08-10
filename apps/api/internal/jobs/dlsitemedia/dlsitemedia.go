@@ -64,13 +64,12 @@ import (
 	"strings"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/repository"
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 const (
@@ -341,7 +340,7 @@ func laneSplit(cands []candidate) (bodyless, claimed int) {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func resolveBaseURL(cfg *config.Config, clientCfg config.ImageClientConfig, override string) string {

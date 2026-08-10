@@ -37,13 +37,12 @@ import (
 	"log/slog"
 	"sort"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 
 	"gorm.io/datatypes"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // Opts configures a run. Apply=false is the dry forecast; DSN is REQUIRED and
@@ -109,7 +108,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.Limit > 0 && opts.Limit < len(rows) {
 		rows = rows[:opts.Limit]
 	}
-	db, err := gorm.Open(postgres.Open(opts.DSN), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(opts.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("connect catalog db: %w", err)
 	}

@@ -44,12 +44,11 @@ import (
 	"sort"
 	"strconv"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // matched_by rule ids (rule:<src>-<what> convention).
@@ -344,7 +343,7 @@ func batchInsert(ctx context.Context, db *gorm.DB, refs []model.CatalogExternalR
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeGorm(db *gorm.DB) {

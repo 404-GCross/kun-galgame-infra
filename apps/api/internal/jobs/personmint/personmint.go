@@ -49,9 +49,9 @@ import (
 	"log/slog"
 	"sort"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // maxSamples caps the minted chains a run collects for logging / assertions.
@@ -326,5 +326,5 @@ func window[T any](out []T, limit, offset int) []T {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }

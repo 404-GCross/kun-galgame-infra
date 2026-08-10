@@ -36,12 +36,11 @@ import (
 	"log/slog"
 	"strconv"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // matched_by rule tags — every graded assertion stays traceable/revocable.
@@ -320,7 +319,7 @@ func logSamples(tier string, samples []Sample) {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func absInt(x int) int {

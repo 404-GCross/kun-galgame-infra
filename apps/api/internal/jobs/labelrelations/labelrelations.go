@@ -35,11 +35,10 @@ import (
 	"fmt"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // vndbSourceKey is the upstream this builder mirrors. The numeric id is never
@@ -93,9 +92,7 @@ func Run(ctx context.Context, opts Opts) (Stats, error) {
 	if opts.DSN == "" {
 		return st, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess the target database")
 	}
-	db, err := gorm.Open(postgres.Open(opts.DSN), &gorm.Config{
-		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
-	})
+	db, err := database.OpenJob(opts.DSN)
 	if err != nil {
 		return st, fmt.Errorf("open catalog pool: %w", err)
 	}

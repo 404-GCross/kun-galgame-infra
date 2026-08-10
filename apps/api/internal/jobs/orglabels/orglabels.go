@@ -30,9 +30,9 @@ import (
 	"regexp"
 	"time"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // Source ids — pinned by the catalog_source seed (registry.go / seed.go). The
@@ -103,9 +103,7 @@ type Opts struct {
 
 // openGorm opens a silent-logger GORM handle (enrich-precedent convention).
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
-	})
+	return database.OpenJob(dsn)
 }
 
 var reDBName = regexp.MustCompile(`dbname=\S+`)

@@ -32,11 +32,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // Stats is one run's outcome.
@@ -87,8 +86,7 @@ func Run(ctx context.Context, o Opts) (*Stats, error) {
 		min = model.PlaytimeMinReporters
 	}
 	if o.DB == nil {
-		db, err := gorm.Open(postgres.Open(o.DSN),
-			&gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+		db, err := database.OpenJob(o.DSN)
 		if err != nil {
 			return nil, fmt.Errorf("open catalog: %w", err)
 		}

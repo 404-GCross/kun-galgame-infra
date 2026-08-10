@@ -66,9 +66,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // LangZhHans is the single language every row of this wave speaks. It is the
@@ -279,5 +279,5 @@ func dropName(names []string, owner string, counter *int) []string {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }

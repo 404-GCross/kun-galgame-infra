@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // defaultBatchSize is the pinned names-per-call batch. Small enough that a
@@ -275,5 +275,5 @@ func resolveSources(ctx context.Context, db *gorm.DB, keys []string) (map[string
 
 // openGorm opens a silent-logger gorm handle (shared by classify/apply).
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }

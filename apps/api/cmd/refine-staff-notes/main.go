@@ -31,9 +31,9 @@ import (
 	"sort"
 	"strings"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/importer"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -49,7 +49,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	db, err := gorm.Open(postgres.Open(*dsn), &gorm.Config{
+	db, err := database.OpenJobWith(*dsn, &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
 	})
 	if err != nil {

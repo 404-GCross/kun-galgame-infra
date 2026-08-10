@@ -53,9 +53,9 @@ import (
 	"log/slog"
 	"sort"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // maxSamples caps how many per-field example rows a run collects for logging /
@@ -239,5 +239,5 @@ func collectFav(dst *[]FavSample, s FavSample) {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }

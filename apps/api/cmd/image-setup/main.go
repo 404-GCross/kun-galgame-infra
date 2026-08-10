@@ -9,15 +9,16 @@
 //  3. 在 oauth 库里 AutoMigrate `oauth_clients`，确保 image_* 列已存在
 //
 // 加 --seed-test-client 还会写入测试用的 OAuth client：
-//   client_id     = kungal-test
-//   client_secret = test-secret-dev
-//   site_key      = kungal
-//   presets       = ["avatar","topic","galgame_banner"]
+//
+//	client_id     = kungal-test
+//	client_secret = test-secret-dev
+//	site_key      = kungal
+//	presets       = ["avatar","topic","galgame_banner"]
 //
 // 用法:
 //
-//   go run ./cmd/image-setup                       # 仅初始化结构
-//   go run ./cmd/image-setup --seed-test-client    # 初始化 + 写测试 client
+//	go run ./cmd/image-setup                       # 仅初始化结构
+//	go run ./cmd/image-setup --seed-test-client    # 初始化 + 写测试 client
 //
 // 跑完后用 `go run ./cmd/image` 启动服务。
 package main
@@ -35,7 +36,6 @@ import (
 	"api/pkg/logger"
 
 	"gorm.io/datatypes"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -108,7 +108,7 @@ func ensureDatabaseExists(cfg config.DatabaseConfig) error {
 	systemCfg := cfg
 	systemCfg.DBName = "template1"
 
-	db, err := gorm.Open(postgres.Open(systemCfg.DSN()), &gorm.Config{})
+	db, err := database.OpenJobWith(systemCfg.DSN(), &gorm.Config{})
 	if err != nil {
 		return err
 	}

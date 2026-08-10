@@ -48,12 +48,12 @@ import (
 	"log/slog"
 	"os"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 	"api/pkg/config"
 	"api/pkg/logger"
 
 	"github.com/joho/godotenv"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -101,7 +101,7 @@ func main() {
 		slog.Error("backfill-alias-source: --dsn is required")
 		os.Exit(1)
 	}
-	db, err := gorm.Open(postgres.Open(*dsn), &gorm.Config{})
+	db, err := database.OpenJobWith(*dsn, &gorm.Config{})
 	if err != nil {
 		slog.Error("backfill-alias-source: open", "error", err)
 		os.Exit(1)

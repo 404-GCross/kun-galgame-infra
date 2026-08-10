@@ -32,13 +32,12 @@ import (
 	"os"
 	"strings"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 const (
@@ -472,5 +471,5 @@ func dedupe(ids []int64) []int64 {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }

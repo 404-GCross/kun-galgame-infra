@@ -45,9 +45,7 @@ import (
 	"api/pkg/logger"
 
 	"github.com/joho/godotenv"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -66,7 +64,7 @@ func main() {
 	var db *gorm.DB
 	switch {
 	case *dsn != "":
-		g, err := gorm.Open(postgres.Open(*dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+		g, err := database.OpenJob(*dsn)
 		if err != nil {
 			slog.Error("catalog db connect (--dsn)", "error", err)
 			os.Exit(1)

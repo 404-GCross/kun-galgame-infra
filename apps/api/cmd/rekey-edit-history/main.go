@@ -39,13 +39,12 @@ import (
 	"os"
 	"sort"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/editing"
 	"api/pkg/logger"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // entityChunk bounds one transaction: how many wiki entities are transformed
@@ -76,7 +75,7 @@ func main() {
 		slog.Error("--dsn is required")
 		os.Exit(2)
 	}
-	db, err := gorm.Open(postgres.Open(*dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(*dsn)
 	if err != nil {
 		slog.Error("db connect", "error", err)
 		os.Exit(1)

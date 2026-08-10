@@ -832,7 +832,7 @@ func (c *Config) ArtifactCleanupS3() S3Config {
 //
 // The defaults are budgeted against the SERVER, not against one service: the
 // fleet runs seven Go services on a single postgres whose max_connections is
-// 300, several of them holding two or three pools, and the forum / patch repos
+// 200, several of them holding two or three pools, and the forum / patch repos
 // bring their own. Ten per pool leaves the server comfortably over-provisioned
 // while making it impossible for one service to eat the whole allowance — the
 // failure this replaces.
@@ -843,6 +843,28 @@ func loadPoolConfig() PoolConfig {
 		// Lifetime bounds how long a connection may outlive the topology it was
 		// opened against — a failover or a restarted pgbouncer leaves the pool
 		// holding sockets to something that is no longer there.
+		MaxLifetime: time.Duration(getEnvInt64("KUN_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second,
+		MaxIdleTime: time.Duration(getEnvInt64("KUN_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second,
+	}
+}
+
+// JobPoolConfig bounds a BATCH JOB's pool. Exported because the jobs and the
+// one-off cmd/ tools open their own handles rather than going through
+// NewPostgresDB, and until they were swept every one of them was the unlimited
+// pool the incident above was about — a backfill running beside the services is
+// not exempt from the server's finite max_connections just because it is
+// short-lived.
+//
+// Higher than a service's ten because a job's shape is the opposite: a service
+// wants a small steady pool serving many short requests, a job wants enough
+// slots for its worker fan-out and then exits. Sixteen clears every --workers /
+// --concurrency default in the tree (the largest is 16), so bounding the pool
+// does not quietly serialize a job that was written to run wide. MaxIdle stays
+// low: a job's connections are busy or the job is over.
+func JobPoolConfig() PoolConfig {
+	return PoolConfig{
+		MaxOpen:     int(getEnvInt64("KUN_PG_JOB_MAX_OPEN_CONNS", 16)),
+		MaxIdle:     int(getEnvInt64("KUN_PG_JOB_MAX_IDLE_CONNS", 4)),
 		MaxLifetime: time.Duration(getEnvInt64("KUN_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second,
 		MaxIdleTime: time.Duration(getEnvInt64("KUN_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second,
 	}

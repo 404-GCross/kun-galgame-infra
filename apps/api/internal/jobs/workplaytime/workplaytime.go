@@ -28,11 +28,10 @@ import (
 	"regexp"
 	"strconv"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/repository"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // capMinutes rejects garbage estimates: 1,000 hours (the EG mirror's
@@ -306,7 +305,7 @@ func chunkInt64(in []int64, size int) [][]int64 {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeGorm(db *gorm.DB) {

@@ -26,9 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
+	"api/internal/infrastructure/database"
 )
 
 // stripRunes are removed everywhere in a value: zero-width formatters, all bidi
@@ -105,7 +103,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	db, err := gorm.Open(postgres.Open(*dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(*dsn)
 	if err != nil {
 		slog.Error("db connect", "error", err)
 		os.Exit(1)

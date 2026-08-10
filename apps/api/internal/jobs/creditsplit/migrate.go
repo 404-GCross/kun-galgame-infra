@@ -39,13 +39,12 @@ import (
 	"sort"
 	"strings"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 
 	"gorm.io/datatypes"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // MigrateRow is one line of the migrate worklist: one anchor that wave 156b
@@ -188,7 +187,7 @@ func RunMigrate(ctx context.Context, opts Opts) (*MigrateStats, error) {
 	if opts.Limit > 0 && opts.Limit < len(rows) {
 		rows = rows[:opts.Limit]
 	}
-	db, err := gorm.Open(postgres.Open(opts.DSN), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(opts.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("connect catalog db: %w", err)
 	}

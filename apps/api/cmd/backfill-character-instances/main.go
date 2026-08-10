@@ -19,9 +19,7 @@ import (
 	"log/slog"
 	"os"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
+	"api/internal/infrastructure/database"
 )
 
 // pairJoin is the resolved (instance, main) projection: both ends carry a live
@@ -44,7 +42,7 @@ func main() {
 		slog.Error("--dsn is required; refusing to guess the target database")
 		os.Exit(1)
 	}
-	db, err := gorm.Open(postgres.Open(*dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(*dsn)
 	if err != nil {
 		slog.Error("connect", "error", err)
 		os.Exit(1)

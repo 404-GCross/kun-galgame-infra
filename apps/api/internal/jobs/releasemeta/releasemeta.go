@@ -70,9 +70,9 @@ import (
 	"log/slog"
 	"time"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // maxSamples caps how many per-lane example rows a run collects.
@@ -299,7 +299,7 @@ func window[T any](in []T, limit, offset int) []T {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeDB(db *gorm.DB) {

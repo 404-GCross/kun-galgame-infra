@@ -48,9 +48,7 @@ import (
 	"os"
 	"strconv"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
+	"api/internal/infrastructure/database"
 )
 
 // row is one affected label with its candidate names. Every candidate column is
@@ -138,7 +136,7 @@ func main() {
 }
 
 func run(dsn, out, pred string) error {
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(dsn)
 	if err != nil {
 		return fmt.Errorf("connect catalog db: %w", err)
 	}

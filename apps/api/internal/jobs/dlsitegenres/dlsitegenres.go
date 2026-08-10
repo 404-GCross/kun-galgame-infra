@@ -40,9 +40,9 @@ import (
 	"log/slog"
 	"sort"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // taxonomyLocale is the locale the tag names are localized to — zh_CN per the
@@ -245,5 +245,5 @@ func collect(dst *[]Sample, s Sample) {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }

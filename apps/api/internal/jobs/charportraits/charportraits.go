@@ -29,12 +29,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 const (
@@ -99,7 +98,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		return nil, fmt.Errorf("catalog image client not configured (set KUN_CATALOG_IMAGE_CLIENT_ID/SECRET); refusing to --apply")
 	}
 
-	db, err := gorm.Open(postgres.Open(opts.DSN), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(opts.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("connect catalog db: %w", err)
 	}

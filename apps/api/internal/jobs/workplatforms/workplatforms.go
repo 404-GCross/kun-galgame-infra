@@ -31,11 +31,10 @@ import (
 	"sort"
 	"strings"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/repository"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // Opts configures a run. Source selects the lane: "dlsite" | "bgm" | "all".
@@ -517,7 +516,7 @@ func chunkStr(in []string, size int) [][]string {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeGorm(db *gorm.DB) {

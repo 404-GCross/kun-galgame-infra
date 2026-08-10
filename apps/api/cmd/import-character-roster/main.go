@@ -27,9 +27,7 @@ import (
 	"api/pkg/logger"
 
 	"github.com/joho/godotenv"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -91,7 +89,7 @@ func openEG(cfg *config.Config, dsn string) *gorm.DB {
 		egCfg.DBName = "erogamespace"
 		dsn = egCfg.DSN()
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(dsn)
 	if err != nil {
 		slog.Error("erogamespace connect", "error", err)
 		os.Exit(1)

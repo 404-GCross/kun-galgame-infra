@@ -31,14 +31,13 @@ import (
 	"log/slog"
 	"strings"
 
+	"api/internal/infrastructure/database"
 	"api/internal/jobs/workpop"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // langJa — Getchu is a Japanese storefront and publishes nothing else, so the
@@ -274,7 +273,7 @@ func logSamples(category string, samples []Sample) {
 }
 
 func open(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeDB(db *gorm.DB) {

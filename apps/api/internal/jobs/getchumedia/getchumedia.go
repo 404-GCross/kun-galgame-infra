@@ -50,13 +50,12 @@ import (
 	"log/slog"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/repository"
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // Opts configures a run.
@@ -212,7 +211,7 @@ func window(c []candidate, limit, offset int) []candidate {
 }
 
 func open(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeDB(db *gorm.DB) {

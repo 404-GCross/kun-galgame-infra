@@ -26,12 +26,11 @@ import (
 	"regexp"
 	"strings"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/importer"
 	"api/pkg/logger"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -95,7 +94,7 @@ func main() {
 }
 
 func openDB(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 var dbNameRe = regexp.MustCompile(`\bdbname=\S+`)

@@ -8,12 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/internal/jobs/charattrs"
 	"api/internal/platform/catalog/model"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 const (
@@ -337,7 +336,7 @@ func mustMarshal(v any) json.RawMessage {
 }
 
 func open(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func closeDB(db *gorm.DB) {

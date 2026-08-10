@@ -45,11 +45,10 @@ import (
 	"os"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/pkg/logger"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -240,7 +239,7 @@ func mode(apply bool) string {
 }
 
 func open(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }
 
 func envOr(key, fallback string) string {

@@ -6,11 +6,10 @@ import (
 	"io"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // sourceKeyVndb is the catalog_source registry key of the VNDB source. The
@@ -66,7 +65,7 @@ type stats struct {
 }
 
 func run(ctx context.Context, dsn string, apply bool, minMirrorRows int64, w io.Writer) error {
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(dsn)
 	if err != nil {
 		return fmt.Errorf("connect catalog db: %w", err)
 	}

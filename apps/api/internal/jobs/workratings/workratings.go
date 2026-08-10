@@ -53,9 +53,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"gorm.io/driver/postgres"
+	"api/internal/infrastructure/database"
+
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // ruleTitleYear is the matched_by tag of the step-56a EXACT Bangumi anchors.
@@ -309,5 +309,5 @@ func logSamples(lane string, samples []Sample) {
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	return database.OpenJob(dsn)
 }

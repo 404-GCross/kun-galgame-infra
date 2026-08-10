@@ -28,14 +28,13 @@ import (
 	"strings"
 	"time"
 
+	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/service"
 	"api/pkg/logger"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 // notePrefix tags every proposal this tool opens, so execute mode (and any
@@ -66,7 +65,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "--dsn and -actor are required")
 		os.Exit(2)
 	}
-	db, err := gorm.Open(postgres.Open(*dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	db, err := database.OpenJob(*dsn)
 	if err != nil {
 		slog.Error("connect", "err", err)
 		os.Exit(1)
