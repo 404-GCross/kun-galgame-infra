@@ -11,7 +11,7 @@
 > Shared baseline across all KUN Galgame repositories. Defaults, not dogma — apply judgment.
 
 1. All commit messages must be written entirely in English.
-2. All code comments must be written entirely in English. (Exemption, ruled 2026-07-24: literal quotes of actual system output — error strings, UI text — may keep their original language when identifying the exact symptom is the point of the comment.)
+2. Comments are governed by the **Comments** section below — the default is none, and what survives is written in English.
 3. Keep each source file under ~500 lines where practical; once a file grows past ~300 lines, consider splitting it (a guideline, not a hard rule).
 4. Write every frontend function as an arrow function; compose/merge class names with `cn` wherever practical.
 5. Deliberately balance elegant modularity against necessary duplication — choose per case instead of always favoring either.
@@ -24,6 +24,26 @@
 12. Reserve the scrollbar gutter globally — `html { scrollbar-gutter: stable }`, with an `overflow-y: scroll` `@supports` fallback — so the document width is constant across routes. Otherwise navigating from a scrolling page to a height-locked one (no scrollbar) removes the classic scrollbar's ~15px and the centered layout shifts sideways: a "teleport" at the tail of the page transition. This is a browser layout fact, not a transition bug. Use single-edge `stable` (`both-edges` is buggy in Chrome); it's a harmless no-op under overlay scrollbars (macOS/iOS).
 13. **One task = one session, and every path has exactly one writer.** Parallel work is allowed only when the user assigns non-overlapping writable paths or system domains. Never rewrite shared Git state a peer may be standing on: on a shared checkout, no branch switch, reset, rebase, merge, cherry-pick, clean, stash or prune. Before editing, record the branch, HEAD, verified `origin/main`, dirty paths and your owned paths, and preserve every foreign change; commit with explicit paths (`git commit -- <paths>`), never `add -A` and never a repository-wide commit. An isolated worktree is the safer default for a long wave — base it explicitly on `origin/main`, not on a local branch that may be holding someone's unpushed work.
 14. **Every DB-backed track gets its own explicitly assigned test database.** Use the track-specific `TEST_DATABASE_DSN` placed in that session's process environment; if it is unset or the database identity is not confirmed unique, stop before DB-backed tests and ask. Never discover or fall back to a DSN from `.env`, and never print the DSN. Give concurrently running services unique ports, and never stop a process whose owner is unknown. Keep `GOMAXPROCS=8` and run DB integration suites with `-count=1 -p 1`. `kun_catalog` is always read-only; `kun_catalog_rehearsal` belongs only to the explicitly assigned rehearsal/aggregation track and is never a general test target.
+
+## Comments
+
+**Default: none.** Code that can be understood by reading it gets no comment. Most code is that code.
+
+**A comment is earned by a mistake that already happened, not by one you predict.** Do not comment while writing — you cannot tell yet which parts are traps. Comment when something went wrong there: an agent or a person got it wrong, a review caught it, a test went red, production broke. The comment records the wrong conclusion that was actually reached, so the next reader does not reach it again. If you cannot name the incident, there is no comment to write.
+
+Three standing exceptions, where the comment is a record rather than a warning:
+
+- **Migrations** — `apps/api/cmd/migrate*/**` and the raw DDL/backfill they carry. A migration is history and cannot be re-read from the current schema. Say what it changes and why, including what was done about existing rows. (This repo's migrations are Go programs plus raw SQL, not a numbered migrations directory; service-startup `AutoMigrate` call sites count when the change is not derivable from the model.)
+- **A constraint that is true but invisible from this file**: a version floor, an upstream bug, a required ordering. `huma/v2 >= v2.39.0` is one; a reader who does not know it will "simplify" the dependency back and break SSE.
+- **A completeness assertion over a hand-maintained list** that a growing schema will silently outgrow — the list is the contract, and the comment says what is deliberately excluded and why. `merge_rehang.go`'s named exclusions are the standing example: without them the next new table is silently missed.
+
+Write the conclusion, not the mechanism. `// splitCommand takes the subcommand off before flag.Parse` is a restatement; `flag.Parse stops at the first non-flag argument, so 'migrate down -steps 1' parsed no flags and rolled back nothing` is the trap. Quote real system output verbatim when reproducing a symptom — such a quote may keep its original language, since identifying the exact symptom is the point.
+
+Never write: restatements of the code, section banners, `TODO` without an owner, or doc comments that only echo the identifier (`// New creates a new X`). Exported Go identifiers get a doc comment only when the name alone is ambiguous — no sibling repo imports this module (`module api`), so there is no godoc obligation. If a comment explains what a name means, rename the thing and delete the comment.
+
+**Not comments, never removed:** machine-semantic directives (`//go:embed`, `//go:build`, `//go:generate`, `//nolint`, `// Code generated … DO NOT EDIT`, `eslint-disable`, `@ts-expect-error`, `prettier-ignore`) and anything inside a generated file — generated files are regenerated, never hand-edited.
+
+English, and short. When in doubt, delete it — a wrong comment costs more than a missing one, and the missing one gets written the day it is needed.
 
 ## Local development (one command)
 
