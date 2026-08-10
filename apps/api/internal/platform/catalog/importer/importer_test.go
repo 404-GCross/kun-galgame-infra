@@ -37,15 +37,12 @@ func TestMain(m *testing.M) {
 			os.Exit(0)
 		}
 	}
-	// EG staging stand-ins.
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS creaters (id int, raw jsonb)`,
 		`CREATE TABLE IF NOT EXISTS characters (id int, raw jsonb)`,
 		`CREATE TABLE IF NOT EXISTS staff (game bigint, creater_id bigint, shubetu int)`,
 		`CREATE TABLE IF NOT EXISTS appearances (game bigint, character_id bigint)`,
 		`CREATE TABLE IF NOT EXISTS appearance_actors (game bigint, character_id bigint, actor_id bigint)`,
-		// EG music-family stand-ins (refs/proj/84): the generated columns modeled
-		// as plain columns, so a --source all / eg-music run has tables to read.
 		`CREATE TABLE IF NOT EXISTS game_music (raw jsonb, music int, game int)`,
 		`CREATE TABLE IF NOT EXISTS singers   (raw jsonb, music int, creater_id int)`,
 		`CREATE TABLE IF NOT EXISTS lyricists (raw jsonb, music int, creater_id int)`,
@@ -84,9 +81,6 @@ func clean(t *testing.T) {
 	}
 }
 
-// seedAnchoredWork creates a claimed work + its bid-exact ref, so the Bangumi
-// gate (step 69: every exact anchor, matched_by unrestricted) resolves
-// bid → work.
 func seedAnchoredWork(t *testing.T, bid int64) int64 {
 	t.Helper()
 	var workID int64
@@ -100,29 +94,21 @@ func seedAnchoredWork(t *testing.T, bid int64) int64 {
 func TestBangumiWave(t *testing.T) {
 	clean(t)
 	anchoredWork := seedAnchoredWork(t, 100)
-	// A suspect bid-audit verdict no longer gates OUT: the exact anchor alone
-	// admits the work (step 69).
 	suspectWork := seedAnchoredWork(t, 200)
 	require.NoError(t, testDB.Exec(`INSERT INTO src_llm.bid_identity_verdict (work_id, galgame_id, bid, layer, input_hash, model, prompt_version)
 		VALUES (?, 200, 200, 'suspect', 'h200', 'm', 'p')`, suspectWork).Error)
-	// A work with only a PROBABLE bangumi ref stays gated out.
 	var probableWork int64
 	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
 		VALUES (1,'galgame_wiki',300,'ja','w',0,0,'{}','{}',false) RETURNING id`).Scan(&probableWork).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (5, ?, 3, '300', 1, 'rule:probable-guess')`, probableWork).Error)
 
-	// persons: 1 individual (writer), 1 company (developer), + a VA.
 	testDB.Exec(`INSERT INTO src_bangumi.person (id, type, name, career, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at)
 		VALUES (10,1,'麻枝准','[]','',' ','',0,0,'v',now()), (20,2,'Key','[]','','','',0,0,'v',now()), (30,1,'VA太郎','[]','','','',0,0,'v',now())`)
-	// subject_person: person 10 as position 1001 on subjects 100 + 200 (both
-	// exact-anchored → both in) and on the probable-only subject 300 (out).
 	testDB.Exec(`INSERT INTO src_bangumi.subject_person (person_id, subject_id, position, appear_eps) VALUES (10,100,1001,''),(20,100,1001,''),(10,200,1001,''),(10,300,1001,'')`)
-	// a character + its VA link.
 	testDB.Exec(`INSERT INTO src_bangumi.character (id, role, name, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at) VALUES (50,1,'渚','','','',0,0,'v',now())`)
 	testDB.Exec(`INSERT INTO src_bangumi.subject_character (character_id, subject_id, type, item_order) VALUES (50,100,1,0)`)
 	testDB.Exec(`INSERT INTO src_bangumi.person_character (person_id, subject_id, character_id, type, summary) VALUES (30,100,50,1,'')`)
-	// map position 1001 → an existing role so credits land.
 	var roleID int64
 	require.NoError(t, testDB.Raw(`SELECT role_id FROM catalog_source_role_map WHERE source_id=3 LIMIT 1`).Scan(&roleID).Error)
 	testDB.Exec(`INSERT INTO catalog_source_role_map (source_id, source_role, role_id, note) VALUES (3, '4:1001', ?, '') ON CONFLICT DO NOTHING`, roleID)
@@ -132,12 +118,8 @@ func TestBangumiWave(t *testing.T) {
 	assert.Equal(t, 3, st.NamesCreated, "3 credit_names: writer, company, VA")
 	assert.Equal(t, 1, st.LabelsCreated, "company → label")
 	assert.Equal(t, 1, st.CharactersCreated)
-	// credits: person10 staff + company20 staff + VA on subject 100, plus
-	// person10 staff on the suspect-verdict subject 200 (widened IN); the
-	// probable-only subject 300 stays out.
 	assert.Equal(t, 4, st.CreditsWritten)
 
-	// Orphan invariant: every credit_name has person_id NULL.
 	var orphaned int64
 	testDB.Raw(`SELECT count(*) FROM catalog_credit_name WHERE person_id IS NOT NULL`).Scan(&orphaned)
 	assert.Zero(t, orphaned, "all names orphan")
@@ -145,18 +127,14 @@ func TestBangumiWave(t *testing.T) {
 	testDB.Table("catalog_person").Count(&persons)
 	assert.Zero(t, persons, "no person rows created")
 
-	// Self exact anchors with the right rule.
 	var anchorRule string
 	require.NoError(t, testDB.Raw(`SELECT matched_by FROM catalog_external_ref WHERE entity_type=1 AND source_id=3 AND external_id='10'`).Scan(&anchorRule).Error)
 	assert.Equal(t, "rule:bangumi-person-import", anchorRule)
 
-	// Company credit carries a label_id; individual does not.
 	var companyLabels int64
 	testDB.Raw(`SELECT count(*) FROM catalog_credit c JOIN catalog_external_ref r ON r.entity_type=1 AND r.entity_id=c.credit_name_id AND r.source_id=3 AND r.external_id='20' WHERE c.label_id IS NOT NULL`).Scan(&companyLabels)
 	assert.Equal(t, int64(1), companyLabels)
 
-	// Widened gate: the suspect-verdict work now HAS its credit; the
-	// probable-only work has none.
 	var suspectCredits, probableCredits int64
 	testDB.Raw(`SELECT count(*) FROM catalog_credit WHERE work_id = ?`, suspectWork).Scan(&suspectCredits)
 	assert.Equal(t, int64(1), suspectCredits, "suspect-verdict work gets credits under the exact-anchor gate")
@@ -166,17 +144,14 @@ func TestBangumiWave(t *testing.T) {
 	testDB.Raw(`SELECT count(*) FROM catalog_credit WHERE work_id = ?`, anchoredWork).Scan(&anchoredCredits)
 	assert.Equal(t, int64(3), anchoredCredits)
 
-	// VA credit has character_id + voice-actor role + the 主角 note.
 	var vaNote string
 	require.NoError(t, testDB.Raw(`SELECT note FROM catalog_credit WHERE role_id=1 AND character_id IS NOT NULL`).Scan(&vaNote).Error)
 	assert.Equal(t, "主角", vaNote)
 
-	// Imported revisions: one per created entity (3 names + 1 label + 1 char = 5).
 	var revs int64
 	testDB.Raw(`SELECT count(*) FROM catalog_revision WHERE action=?`, model.RevisionActionImported).Scan(&revs)
 	assert.Equal(t, int64(5), revs)
 
-	// Idempotency: a second run writes nothing.
 	st2, err := New(testDB, nil, Options{Source: "bangumi"}).Run("bangumi")
 	require.NoError(t, err)
 	assert.Zero(t, st2.NamesCreated)
@@ -185,23 +160,15 @@ func TestBangumiWave(t *testing.T) {
 	assert.Equal(t, 4, st2.Already, "all 4 credits already present")
 }
 
-// TestBangumiChunkedLoad pins the step-79 credits fix: the src_bangumi loads
-// chunk their subject_id IN-lists under Postgres's 65,535 bind-parameter cap.
-// bidChunkSize is shrunk to 1 so three gated subjects span THREE chunks — a
-// broken chunker (loading only the first slice) would miss subjects 200/300.
-// The shared person 10 (credited on subjects 100 AND 300, i.e. in two separate
-// chunks) also proves cross-chunk dedup: one credit_name, two credits.
 func TestBangumiChunkedLoad(t *testing.T) {
 	clean(t)
 	restore := bidChunkSize
-	bidChunkSize = 1 // force a fresh chunk per bid (injected small size — recorded)
+	bidChunkSize = 1
 	defer func() { bidChunkSize = restore }()
 
 	seedAnchoredWork(t, 100)
 	seedAnchoredWork(t, 200)
 	seedAnchoredWork(t, 300)
-	// person 10 credited on subjects 100 and 300 (chunks 1 and 3); person 20 on
-	// subject 200 (chunk 2).
 	testDB.Exec(`INSERT INTO src_bangumi.person (id, type, name, career, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at)
 		VALUES (10,1,'共有作家','[]','','','',0,0,'v',now()), (20,1,'別作家','[]','','','',0,0,'v',now())`)
 	testDB.Exec(`INSERT INTO src_bangumi.subject_person (person_id, subject_id, position, appear_eps) VALUES (10,100,1001,''),(20,200,1001,''),(10,300,1001,'')`)
@@ -223,7 +190,6 @@ func TestUnmappedRoleSkipped(t *testing.T) {
 	clean(t)
 	seedAnchoredWork(t, 100)
 	testDB.Exec(`INSERT INTO src_bangumi.person (id, type, name, career, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at) VALUES (10,1,'X','[]','','','',0,0,'v',now())`)
-	// position 999999 is not in the role map.
 	testDB.Exec(`INSERT INTO src_bangumi.subject_person (person_id, subject_id, position, appear_eps) VALUES (10,100,999999,'')`)
 
 	st, err := New(testDB, nil, Options{Source: "bangumi"}).Run("bangumi")
@@ -235,18 +201,15 @@ func TestUnmappedRoleSkipped(t *testing.T) {
 
 func TestEGWaveAndCandidates(t *testing.T) {
 	clean(t)
-	// gated EG work (rosetta ref) for game 7.
 	var workID int64
 	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
 		VALUES (1,'galgame_wiki',7,'ja','w',0,0,'{}','{}',false) RETURNING id`).Scan(&workID).Error)
 	testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by) VALUES (5,?,5,'7',1,'rule:eg-vndb-rosetta')`, workID)
-	// EG staging: creater 500 (illustrator shubetu 1) + VA 501; character 800.
 	testDB.Exec(`INSERT INTO creaters (id, raw) VALUES (500, '{"name":"絵師","twitter_username":"SharedHandle"}'), (501,'{"name":"声太"}')`)
 	testDB.Exec(`INSERT INTO characters (id, raw) VALUES (800, '{"name":"EGキャラ"}')`)
 	testDB.Exec(`INSERT INTO staff (game, creater_id, shubetu) VALUES (7,500,1)`)
 	testDB.Exec(`INSERT INTO appearance_actors (game, character_id, actor_id) VALUES (7,800,501)`)
 
-	// A Bangumi person sharing the twitter handle (for the candidate).
 	seedAnchoredWork(t, 100)
 	testDB.Exec(`INSERT INTO src_bangumi.person (id, type, name, career, infobox_raw, infobox_parsed, parse_error, summary, comments, collects, parser_version, ingested_at)
 		VALUES (10,1,'絵師B','[]','', '{"Type":"Crt","Fields":[{"Key":"Twitter","Value":"@SharedHandle","Items":null,"Array":false,"Null":false}]}'::jsonb, '','',0,0,'v',now())`)
@@ -259,16 +222,13 @@ func TestEGWaveAndCandidates(t *testing.T) {
 	_, err := im.Run("all")
 	require.NoError(t, err)
 
-	// EG creater illustrator credit written (shubetu 1 → illustration role).
 	var egCredits int64
 	testDB.Raw(`SELECT count(*) FROM catalog_credit WHERE source_id=5`).Scan(&egCredits)
 	assert.Equal(t, int64(2), egCredits, "1 staff + 1 VA")
-	// EG VA credit has voice-actor role + character.
 	var egVA int64
 	testDB.Raw(`SELECT count(*) FROM catalog_credit WHERE source_id=5 AND role_id=1 AND character_id IS NOT NULL`).Scan(&egVA)
 	assert.Equal(t, int64(1), egVA)
 
-	// Candidate: the shared twitter handle links the two credit_names.
 	cs, err := im.RunCandidates()
 	require.NoError(t, err)
 	var cands int64
@@ -279,43 +239,33 @@ func TestEGWaveAndCandidates(t *testing.T) {
 
 func TestDLsiteWave(t *testing.T) {
 	clean(t)
-	// A: r18 voice work with kana + 2 creaters, RG circle.
 	testDB.Exec(`INSERT INTO works (workno, work_name, work_name_kana, maker_id, maker_name, age_category, work_type_string, status, regist_date, product_json)
 		VALUES ('RJ001','作品A','サクヒンエー','RG100','サークルX','3','ボイス・ASMR','fetched','2020-05-10',
 		'{"creaters":{"voice_by":[{"id":"9001","name":"声優花","classification":"voice_by"}],"illust_by":[{"id":"9002","name":"絵師","classification":"illust_by"}]}}'::jsonb)`)
-	// B: all_ages, no kana, BG publisher, no creaters.
 	testDB.Exec(`INSERT INTO works (workno, work_name, work_name_kana, maker_id, maker_name, age_category, work_type_string, status, product_json)
 		VALUES ('RJ002','作品B','','BG200','会社Y','1','ボイス・ASMR','fetched','{"creaters":{}}'::jsonb)`)
-	// non-voice + must be excluded.
 	testDB.Exec(`INSERT INTO works (workno, work_name, work_type_string, status, maker_id, age_category, product_json) VALUES ('RJ003','漫画','マンガ','fetched','RG100','3','{}'::jsonb)`)
 
 	st, err := New(testDB, nil, Options{}).RunDLsite(testDB)
 	require.NoError(t, err)
 	assert.Equal(t, 2, st.WorksCreated)
 	assert.Equal(t, 2, st.ReleasesCreated)
-	assert.Equal(t, 3, st.TitlesCreated) // A official+kana, B official
+	assert.Equal(t, 3, st.TitlesCreated)
 	assert.Equal(t, 2, st.LabelsCreated)
 	assert.Equal(t, 2, st.NamesCreated)
 	assert.Equal(t, 2, st.CreditsWritten)
 	assert.Zero(t, st.Stubs)
 
-	// Unclaimed (site NULL), medium=asmr.
 	assert.Equal(t, int64(2), scalarInt(t, `SELECT count(*) FROM catalog_work WHERE medium_id=5 AND site IS NULL`))
-	// workno anchors the RELEASE (entity_type=6); the work carries NO dlsite anchor.
 	assert.Equal(t, int64(2), scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE entity_type=6 AND source_id=4 AND link_kind=0 AND matched_by='rule:dlsite-work-import'`))
 	assert.Zero(t, scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE entity_type=5 AND source_id=4`))
-	// content_rating direct map: RJ001(age3)→r18=2.
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_work w JOIN catalog_release rel ON rel.work_id=w.id
 		JOIN catalog_external_ref r ON r.entity_type=6 AND r.entity_id=rel.id AND r.external_id='RJ001' WHERE w.content_rating=2`))
-	// kana → search_hint (kind=3).
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_work_title WHERE kind=3 AND title='サクヒンエー'`))
-	// label kinds: RG→doujin_circle(4), BG→publisher(2).
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_label l JOIN catalog_external_ref r ON r.entity_type=3 AND r.entity_id=l.id AND r.external_id='RG100' WHERE l.kind=4`))
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_label l JOIN catalog_external_ref r ON r.entity_type=3 AND r.entity_id=l.id AND r.external_id='BG200' WHERE l.kind=2`))
-	// creater orphan credit_name + tier-0 exact anchor.
 	assert.Equal(t, int64(2), scalarInt(t, `SELECT count(*) FROM catalog_credit_name cn JOIN catalog_external_ref r ON r.entity_type=1 AND r.entity_id=cn.id AND r.source_id=4 AND r.link_kind=0 AND r.matched_by='rule:dlsite-creater-import' WHERE cn.person_id IS NULL`))
 
-	// Idempotency.
 	st2, err := New(testDB, nil, Options{}).RunDLsite(testDB)
 	require.NoError(t, err)
 	assert.Zero(t, st2.WorksCreated)

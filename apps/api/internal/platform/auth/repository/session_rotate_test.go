@@ -13,14 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestRotateRefreshToken_CAS_Integration verifies the compare-and-swap rotation
-// that fixes the concurrent-refresh lost-update bug: a rotation keyed on the
-// CURRENT refresh token wins exactly once; the same call with a now-stale token
-// loses (0 rows) instead of overwriting — which is what makes two overlapping
-// refreshes converge instead of desyncing the cookie vs DB.
-//
-// Skipped unless TEST_PG_DSN points at a kun_galgame_infra DB (the CAS relies on
-// real row-level UPDATE semantics, so it needs Postgres, not a mock).
 func TestRotateRefreshToken_CAS_Integration(t *testing.T) {
 	dsn := os.Getenv("TEST_PG_DSN")
 	if dsn == "" {
@@ -33,7 +25,6 @@ func TestRotateRefreshToken_CAS_Integration(t *testing.T) {
 	repo := NewSessionRepository(db)
 	ctx := context.Background()
 
-	// sessions.user_id is an FK; anchor the test row to any existing user.
 	var uid uint
 	if err := db.Raw("SELECT id FROM users ORDER BY id LIMIT 1").Scan(&uid).Error; err != nil || uid == 0 {
 		t.Skip("no users in DB to anchor a test session")
@@ -55,7 +46,6 @@ func TestRotateRefreshToken_CAS_Integration(t *testing.T) {
 	now := time.Now()
 	newRT := "test-cas-rt-new-" + tag
 
-	// 1) Rotation keyed on the CURRENT token wins and demotes it to prev.
 	won, err := repo.RotateRefreshToken(ctx, s.ID, oldRT, "test-cas-at2-"+tag, newRT, now, now.Add(2*time.Hour))
 	if err != nil {
 		t.Fatalf("rotate (current): %v", err)
@@ -74,10 +64,6 @@ func TestRotateRefreshToken_CAS_Integration(t *testing.T) {
 		t.Fatalf("old token not demoted to prev: got %q want %q", got.PrevRefreshToken, oldRT)
 	}
 
-	// 2) The concurrent-loser case: rotating again with the now-stale old token
-	//    must LOSE (0 rows), not overwrite — this is the lost-update the fix
-	//    prevents. (The loser then converges on the winner's token at the
-	//    service layer.)
 	won2, err := repo.RotateRefreshToken(ctx, s.ID, oldRT, "test-cas-evil-at-"+tag, "test-cas-evil-rt-"+tag, now, now.Add(2*time.Hour))
 	if err != nil {
 		t.Fatalf("rotate (stale): %v", err)

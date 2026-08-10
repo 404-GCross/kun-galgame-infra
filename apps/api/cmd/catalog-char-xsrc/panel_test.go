@@ -13,13 +13,13 @@ import (
 func TestClassifyReview(t *testing.T) {
 	src := func(s ...string) []string { return s }
 	pairs := []pairMeta{
-		{A: 1, B: 2, Tier: 1, ASources: src("vndb"), BSources: src("bangumi")},                 // auto, clean group
-		{A: 3, B: 4, Tier: 3, ASources: src("vndb"), BSources: src("bangumi")},                 // lowconf
-		{A: 5, B: 6, Tier: 2, ASources: src("vndb"), BSources: src("erogamespace")},            // unsure
-		{A: 7, B: 8, Tier: 1, Instance: true, ASources: src("vndb"), BSources: src("bangumi")}, // instance
-		{A: 9, B: 10, Tier: 1, ASources: src("vndb"), BSources: src("bangumi")},                // auto, but…
-		{A: 10, B: 11, Tier: 1, ASources: src("bangumi"), BSources: src("vndb")},               // …chains a dup source
-		{A: 12, B: 13, Tier: 3, ASources: src("vndb"), BSources: src("bangumi")},               // distinct: silent
+		{A: 1, B: 2, Tier: 1, ASources: src("vndb"), BSources: src("bangumi")},
+		{A: 3, B: 4, Tier: 3, ASources: src("vndb"), BSources: src("bangumi")},
+		{A: 5, B: 6, Tier: 2, ASources: src("vndb"), BSources: src("erogamespace")},
+		{A: 7, B: 8, Tier: 1, Instance: true, ASources: src("vndb"), BSources: src("bangumi")},
+		{A: 9, B: 10, Tier: 1, ASources: src("vndb"), BSources: src("bangumi")},
+		{A: 10, B: 11, Tier: 1, ASources: src("bangumi"), BSources: src("vndb")},
+		{A: 12, B: 13, Tier: 3, ASources: src("vndb"), BSources: src("bangumi")},
 	}
 	v := func(a, b int64, verdict string, conf float64) personadj.Verdict {
 		return personadj.Verdict{Key: keyFor(a, b), Verdict: verdict, Confidence: conf}
@@ -73,13 +73,13 @@ func TestRunPanelEmit(t *testing.T) {
 		}
 	}
 	ppairs := []any{
-		pp(1, 2, catLowConf, 0.85, src("vndb"), src("bangumi")),      // 3/3 merge ≥0.90 → accept
-		pp(3, 4, catLowConf, 0.85, src("vndb"), src("bangumi")),      // one distinct+one merge → residual
-		pp(5, 6, catUnsure, 0.50, src("vndb"), src("bangumi")),       // 2 distinct → closed
-		pp(7, 8, catInstance, 0.99, src("vndb"), src("bangumi")),     // 3/3 merge but min 0.92 < 0.95 → closed (default keep)
-		pp(9, 10, catInstance, 0.99, src("vndb"), src("bangumi")),    // 3/3 merge ≥0.95 → accept
-		pp(11, 12, catLowConf, 0.85, src("vndb"), src("bangumi")),    // 3/3 merge, chains with next
-		pp(12, 13, catSameSource, 0.97, src("bangumi"), src("vndb")), // structural edge, conflicts with 11-12 group
+		pp(1, 2, catLowConf, 0.85, src("vndb"), src("bangumi")),
+		pp(3, 4, catLowConf, 0.85, src("vndb"), src("bangumi")),
+		pp(5, 6, catUnsure, 0.50, src("vndb"), src("bangumi")),
+		pp(7, 8, catInstance, 0.99, src("vndb"), src("bangumi")),
+		pp(9, 10, catInstance, 0.99, src("vndb"), src("bangumi")),
+		pp(11, 12, catLowConf, 0.85, src("vndb"), src("bangumi")),
+		pp(12, 13, catSameSource, 0.97, src("bangumi"), src("vndb")),
 	}
 	vv := func(a, b int64, vote int, verdict string, conf float64) any {
 		return personadj.Verdict{Key: panelKey(a, b, vote), Verdict: verdict, Confidence: conf}
@@ -120,10 +120,6 @@ func TestRunPanelEmit(t *testing.T) {
 		}
 		groups[r.Survivor] = r.Sources
 	}
-	// Accepted edges best-first: the structural 12-13 (0.97) beats the vote
-	// pair 11-12 (min vote 0.95), so 12-13 merges and 11-12 then conflicts on
-	// sources and lands in the residual. Survivors follow alias count (only
-	// the A sides carry aliases here).
 	if len(groups) != 3 {
 		t.Fatalf("groups = %v, want 3; stats: %s", groups, out.String())
 	}

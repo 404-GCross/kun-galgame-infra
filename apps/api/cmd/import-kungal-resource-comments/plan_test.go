@@ -9,12 +9,10 @@ func ptr(i int) *int { return &i }
 
 func ts(sec int) time.Time { return time.Date(2024, 1, 1, 0, 0, sec, 0, time.UTC) }
 
-// mkTree builds a website/toolset-shaped (self-referential) comment.
 func mkTree(id, eid, uid int, parent *int, sec int) SrcComment {
 	return SrcComment{ID: id, EntityID: eid, UserID: uid, Content: "c", ParentID: parent, Created: ts(sec)}
 }
 
-// mkFlat builds a rating-shaped (flat) comment carrying a verbatim target.
 func mkFlat(id, eid, uid int, target *int, sec int) SrcComment {
 	var t *int
 	if target != nil {
@@ -46,20 +44,18 @@ func deref64(p *int64) int64 {
 	return *p
 }
 
-// TestTreeOrderingAndNumbering: posts ordered by (created, id), numbered 1..N,
-// a parent always numbered before its children; tie on created broken by id.
 func TestTreeOrderingAndNumbering(t *testing.T) {
 	in := []SrcComment{
 		mkTree(4, 1, 10, ptr(1), 3),
 		mkTree(1, 1, 10, nil, 1),
-		mkTree(3, 1, 11, nil, 2), // same ts as id=2 below
+		mkTree(3, 1, 11, nil, 2),
 		mkTree(2, 1, 12, nil, 2),
 	}
 	p := planEntity(true, 5000, in)
 	if p.PostsCount != 4 || p.HighestPostNumber != 4 || p.VisibleCount != 4 {
 		t.Fatalf("counts: posts=%d highest=%d visible=%d", p.PostsCount, p.HighestPostNumber, p.VisibleCount)
 	}
-	wantOrder := []int{1, 2, 3, 4} // id=2 before id=3 (tie on ts broken by id)
+	wantOrder := []int{1, 2, 3, 4}
 	for i, pp := range p.Posts {
 		if pp.OldID != wantOrder[i] || pp.PostNumber != int32(i+1) {
 			t.Fatalf("post %d: oldID=%d number=%d want %d/%d", i, pp.OldID, pp.PostNumber, wantOrder[i], i+1)
@@ -70,13 +66,11 @@ func TestTreeOrderingAndNumbering(t *testing.T) {
 	}
 }
 
-// TestTreeReplyOfReplyReRoot: reply_to points at the immediate parent, root at
-// the top-level ancestor, target_user_id at the parent post's author.
 func TestTreeReplyOfReplyReRoot(t *testing.T) {
 	in := []SrcComment{
-		mkTree(1, 1, 10, nil, 1),    // top-level
-		mkTree(2, 1, 11, ptr(1), 2), // reply to 1
-		mkTree(3, 1, 12, ptr(2), 3), // reply to 2 (parent is a reply)
+		mkTree(1, 1, 10, nil, 1),
+		mkTree(2, 1, 11, ptr(1), 2),
+		mkTree(3, 1, 12, ptr(2), 3),
 	}
 	p := planEntity(true, 5000, in)
 	byOld := indexByOld(p.Posts)
@@ -92,15 +86,12 @@ func TestTreeReplyOfReplyReRoot(t *testing.T) {
 	}
 }
 
-// TestTreeDeepChainReRoot: a real-data depth-4 chain (website max is 4, toolset
-// 5). Every non-root descendant re-roots to the SAME top ancestor; each reply_to
-// is its immediate parent; each target is the parent's author.
 func TestTreeDeepChainReRoot(t *testing.T) {
 	in := []SrcComment{
-		mkTree(1, 7, 10, nil, 1),    // depth 1 (root)
-		mkTree(2, 7, 11, ptr(1), 2), // depth 2
-		mkTree(3, 7, 12, ptr(2), 3), // depth 3
-		mkTree(4, 7, 13, ptr(3), 4), // depth 4
+		mkTree(1, 7, 10, nil, 1),
+		mkTree(2, 7, 11, ptr(1), 2),
+		mkTree(3, 7, 12, ptr(2), 3),
+		mkTree(4, 7, 13, ptr(3), 4),
 	}
 	p := planEntity(true, 5000, in)
 	byOld := indexByOld(p.Posts)
@@ -117,12 +108,10 @@ func TestTreeDeepChainReRoot(t *testing.T) {
 	}
 }
 
-// TestTreeDanglingDegradesToRoot: a reply whose parent is absent is degraded to
-// a top-level post (content kept, all pointers/target NULL) and counted.
 func TestTreeDanglingDegradesToRoot(t *testing.T) {
 	in := []SrcComment{
 		mkTree(1, 1, 10, nil, 1),
-		mkTree(3, 1, 11, ptr(99), 2), // parent 99 not present
+		mkTree(3, 1, 11, ptr(99), 2),
 	}
 	p := planEntity(true, 5000, in)
 	if p.Dangling != 1 {
@@ -135,13 +124,11 @@ func TestTreeDanglingDegradesToRoot(t *testing.T) {
 	}
 }
 
-// TestFlatTargetVerbatim: rating is flat — no reply/root pointers; target copied
-// verbatim including self-directed rows, which are tallied.
 func TestFlatTargetVerbatim(t *testing.T) {
 	in := []SrcComment{
-		mkFlat(1, 1, 10, ptr(20), 1), // target another user
-		mkFlat(2, 1, 11, ptr(11), 2), // self-target
-		mkFlat(3, 1, 12, nil, 3),     // no target
+		mkFlat(1, 1, 10, ptr(20), 1),
+		mkFlat(2, 1, 11, ptr(11), 2),
+		mkFlat(3, 1, 12, nil, 3),
 	}
 	p := planEntity(false, 1314, in)
 	if p.SelfTargets != 1 {
@@ -158,8 +145,6 @@ func TestFlatTargetVerbatim(t *testing.T) {
 	}
 }
 
-// TestCountersAndOverLen: participants distinct, over-length tally against the
-// section ceiling (content is never truncated).
 func TestCountersAndOverLen(t *testing.T) {
 	long := make([]rune, 1315)
 	for i := range long {
@@ -167,10 +152,10 @@ func TestCountersAndOverLen(t *testing.T) {
 	}
 	in := []SrcComment{
 		mkFlat(1, 1, 10, nil, 1),
-		mkFlat(2, 1, 10, nil, 2), // same author -> participants stays counting distinct
+		mkFlat(2, 1, 10, nil, 2),
 		mkFlat(3, 1, 11, nil, 3),
 	}
-	in[2].Content = string(long) // over the 1314 ceiling
+	in[2].Content = string(long)
 	p := planEntity(false, 1314, in)
 	if p.ParticipantsCount != 2 {
 		t.Fatalf("participants=%d want 2", p.ParticipantsCount)

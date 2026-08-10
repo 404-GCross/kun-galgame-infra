@@ -11,12 +11,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// staleAnchorRow is one rid whose EXACT anchor sits on a release under a work
-// that upstream no longer associates the rid with. Under the wave-202 identity
-// split these no longer block anything (the new row simply takes a probable
-// ref), but "no longer fatal" must not become "invisible": each one is a real
-// disagreement between our anchor and upstream, and only a human can decide
-// whether the anchor moved, upstream re-pointed, or the two works are duplicates.
 type staleAnchorRow struct {
 	rid             string
 	gateWorkID      int64
@@ -26,10 +20,6 @@ type staleAnchorRow struct {
 	holderRetired   bool
 }
 
-// exportStaleAnchors writes the review worklist as TSV with trailing empty
-// decision/notes columns — the egdlsite_ambiguous.go conflict-export convention.
-// The holder's own work vid and the rid's full upstream vid list are resolved
-// here (the set is small) so a reviewer can adjudicate from the file alone.
 func (im *Importer) exportStaleAnchors(rows []staleAnchorRow, path string) error {
 	holderVIDs, err := im.loadWorkVNDBIDs(uniqueWorkIDs(rows))
 	if err != nil {
@@ -70,8 +60,6 @@ func (im *Importer) exportStaleAnchors(rows []staleAnchorRow, path string) error
 	return nil
 }
 
-// loadWorkVNDBIDs maps work id → its (lowest, for determinism) exact vndb work
-// anchor. A work with no vndb anchor simply has no entry.
 func (im *Importer) loadWorkVNDBIDs(workIDs []int64) (map[int64]string, error) {
 	out := map[int64]string{}
 	if len(workIDs) == 0 {
@@ -95,9 +83,6 @@ func (im *Importer) loadWorkVNDBIDs(workIDs []int64) (map[int64]string, error) {
 	return out, nil
 }
 
-// loadReleaseUpstreamVIDs maps r-id → every vid upstream currently associates it
-// with (sorted). One vid means upstream is unambiguous and the disagreement is
-// purely about WHICH work should hold the anchor.
 func (im *Importer) loadReleaseUpstreamVIDs(rids []string) (map[string][]string, error) {
 	out := map[string][]string{}
 	if len(rids) == 0 {

@@ -1,12 +1,10 @@
 package utils
 
-// Pagination holds pagination parameters
 type Pagination struct {
 	Page     int `json:"page" query:"page"`
 	PageSize int `json:"page_size" query:"page_size"`
 }
 
-// PaginatedResult holds paginated query results
 type PaginatedResult[T any] struct {
 	Items    []T   `json:"items"`
 	Total    int64 `json:"total"`
@@ -14,7 +12,6 @@ type PaginatedResult[T any] struct {
 	PageSize int   `json:"page_size"`
 }
 
-// DefaultPagination returns default pagination values
 func DefaultPagination() Pagination {
 	return Pagination{
 		Page:     1,
@@ -22,7 +19,6 @@ func DefaultPagination() Pagination {
 	}
 }
 
-// Normalize ensures pagination values are within valid ranges
 func (p *Pagination) Normalize() {
 	if p.Page < 1 {
 		p.Page = 1
@@ -35,17 +31,14 @@ func (p *Pagination) Normalize() {
 	}
 }
 
-// Offset returns the offset for database queries
 func (p *Pagination) Offset() int {
 	return (p.Page - 1) * p.PageSize
 }
 
-// Limit returns the limit for database queries
 func (p *Pagination) Limit() int {
 	return p.PageSize
 }
 
-// NewPaginatedResult creates a new PaginatedResult
 func NewPaginatedResult[T any](items []T, total int64, page, pageSize int) PaginatedResult[T] {
 	return PaginatedResult[T]{
 		Items:    items,

@@ -1,11 +1,4 @@
 <script setup lang="ts">
-// Identity-handshake header for the OAuth consent page: the requesting client
-// on the left, the 鲲 Galgame account mark on the right, joined by a dashed
-// connector. Purely presentational.
-//
-// GET /oauth/client-info returns the client's logo_url (the same app-directory
-// image /oauth/ecosystem serves); clients without one fall back to an
-// initial-letter disc.
 const props = defineProps<{
   clientName?: string
   clientLogo?: string

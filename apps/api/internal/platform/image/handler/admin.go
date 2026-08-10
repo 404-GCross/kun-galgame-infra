@@ -17,9 +17,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// AdminHandler bundles admin-only image service endpoints.
-// Mounted behind middleware.Auth + the oauth.admin_access permission gate in
-// the OAuth admin service (not cmd/image itself).
 type AdminHandler struct {
 	db        *gorm.DB
 	svc       *service.Service
@@ -31,14 +28,10 @@ func NewAdmin(db *gorm.DB, svc *service.Service, statsRepo *repository.StatsRepo
 	return &AdminHandler{db: db, svc: svc, statsRepo: statsRepo, storage: s}
 }
 
-// ---- GET /admin/image/list ----
-
-// List paginates the images table with optional filters.
 func (h *AdminHandler) List(c fiber.Ctx) error {
 	q := h.db.WithContext(c.Context()).Model(&model.Image{})
 
 	if site := c.Query("site"); site != "" {
-		// Filter hashes that appear in image_site_usage for this site.
 		q = q.Where("hash IN (?)",
 			h.db.Model(&model.ImageSiteUsage{}).Select("hash").Where("site = ?", site))
 	}
@@ -53,8 +46,6 @@ func (h *AdminHandler) List(c fiber.Ctx) error {
 		case "approved":
 			q = q.Where("review_status = ?", model.ReviewApproved)
 		default:
-			// Reject unknown filter values instead of silently returning the
-			// full unfiltered set (which reads as "no matches narrowed").
 			return response.BadRequest(c, errs.ErrImageBadRequest)
 		}
 	}
@@ -112,7 +103,6 @@ func (h *AdminHandler) List(c fiber.Ctx) error {
 	})
 }
 
-// toAdminRow shapes an Image for admin list consumers.
 func (h *AdminHandler) toAdminRow(r *model.Image) map[string]any {
 	variantURLs := make(map[string]string, len(r.VariantList()))
 	for _, v := range r.VariantList() {
@@ -136,14 +126,11 @@ func (h *AdminHandler) toAdminRow(r *model.Image) map[string]any {
 	}
 }
 
-// ---- PATCH /admin/image/:hash/review ----
-
 type reviewRequest struct {
 	Status string `json:"status"`
 	Reason string `json:"reason"`
 }
 
-// Review manually sets review_status on an image.
 func (h *AdminHandler) Review(c fiber.Ctx) error {
 	hash := c.Params("hash")
 	if len(hash) != 64 {
@@ -174,9 +161,6 @@ func (h *AdminHandler) Review(c fiber.Ctx) error {
 		"reviewed_at":   now,
 	}
 	if req.Reason != "" {
-		// Merge manual_reason into the existing labels rather than replacing
-		// the whole column — otherwise an admin reason wipes the automated
-		// moderation labels (nsfw/violence scores) the async worker wrote.
 		updates["review_labels"] = gorm.Expr(
 			"jsonb_set(coalesce(review_labels, '{}'::jsonb), '{manual_reason}', to_jsonb(?::text))",
 			req.Reason)
@@ -196,11 +180,6 @@ func (h *AdminHandler) Review(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"hash": hash, "status": req.Status})
 }
 
-// ---- DELETE /admin/image/:hash ----
-
-// Delete soft-deletes (default) or hard-deletes (with ?force=true) an image.
-// Hard-delete removes S3 objects + row + site_usage rows. Used for the
-// compliance/right-to-be-forgotten path (see docs decision 0).
 func (h *AdminHandler) Delete(c fiber.Ctx) error {
 	hash := c.Params("hash")
 	if len(hash) != 64 {
@@ -221,8 +200,6 @@ func (h *AdminHandler) Delete(c fiber.Ctx) error {
 	}
 
 	if !force {
-		// Soft-delete: set deleted_at and stop here. GC worker will
-		// physically remove after the hard-delete TTL.
 		if err := h.db.WithContext(c.Context()).
 			Model(&model.Image{}).
 			Where("hash = ?", hash).
@@ -232,7 +209,6 @@ func (h *AdminHandler) Delete(c fiber.Ctx) error {
 		return response.Success(c, fiber.Map{"hash": hash, "soft_deleted": true})
 	}
 
-	// Hard delete: S3 objects + row + site_usage.
 	if err := h.storage.Delete(c.Context(), img.StorageKey); err != nil {
 		slog.Warn("hard-delete main s3", "hash", hash, "err", err)
 	}
@@ -252,9 +228,6 @@ func (h *AdminHandler) Delete(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"hash": hash, "hard_deleted": true})
 }
 
-// ---- GET /admin/stats ----
-
-// Stats returns aggregate counters across all sites.
 func (h *AdminHandler) Stats(c fiber.Ctx) error {
 	res, err := h.statsRepo.Stats(c.Context(), repository.ScopeFilter{})
 	if err != nil {

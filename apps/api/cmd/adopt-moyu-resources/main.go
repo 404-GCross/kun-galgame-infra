@@ -1,23 +1,3 @@
-// cmd/adopt-moyu-resources backfills every legacy moyu patch_resource file from
-// the old `kun-galgame-patch` B2 bucket into the artifact service
-// (`kungal-artifact-v1`) under the unified opaque-key + Content-Disposition
-// scheme, then links the resource to its new artifact_uuid.
-//
-// Both buckets live in ONE B2 account, so this is a server-side CopyObject with
-// MetadataDirective=REPLACE (which bakes the original filename as an attachment
-// Content-Disposition) — no file bytes transit this process, no egress.
-//
-// Idempotent + resumable: the artifact UUID is derived deterministically from the
-// resource id (uuidv5), the artifact row is inserted ON CONFLICT DO NOTHING, and
-// already-linked resources are filtered out by the query. Dry-run by default.
-//
-//	go run ./cmd/adopt-moyu-resources --apply
-//	docker run --rm --env-file <env> ghcr.io/kunmoe/infra-tools \
-//	  adopt-moyu-resources --apply --concurrency=12
-//
-// Requires KUN_ARTIFACT_S3_ACCESS_KEY/SECRET_KEY to be an ACCOUNT-WIDE B2 key
-// (read on --src-bucket + write on the artifact bucket); the per-bucket service
-// key cannot read the source.
 package main
 
 import (
@@ -47,9 +27,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// maxSingleCopyBytes is the S3/B2 single CopyObject ceiling; larger objects need
-// a multipart copy, which this one-off intentionally skips + logs (moyu's files
-// are well under it). artifact_max_file_size for moyu is 1 GB.
 const maxSingleCopyBytes = 5 * 1024 * 1024 * 1024
 
 func main() {
@@ -82,8 +59,6 @@ func main() {
 		fatal("s3 client", err)
 	}
 
-	// Two databases on the same PG server: kun_artifacts (artifact rows) and the
-	// moyu schema (patch_resource link).
 	artDB, err := database.NewPostgresDB(cfg.ArtifactsDatabase)
 	if err != nil {
 		fatal("open artifacts db", err)
@@ -126,7 +101,7 @@ func main() {
 		wg.Go(func() {
 			defer func() { <-sem }()
 
-			name := path.Base(r.S3Key) // the real (CJK-preserving) filename
+			name := path.Base(r.S3Key)
 			id := deterministicUUID(r.ID)
 			dstKey := *site + "/" + id + extForKey(name)
 
@@ -217,13 +192,10 @@ func main() {
 	}
 }
 
-// deterministicUUID derives a stable artifact UUID from a resource id so reruns
-// produce the same key/row (idempotent CopyObject + ON CONFLICT DO NOTHING).
 func deterministicUUID(resourceID int64) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "kungal-artifact:moyu:patch_resource:%d", resourceID)).String()
 }
 
-// extForKey mirrors the artifact service: a lowercase, URL-safe extension or "".
 func extForKey(name string) string {
 	ext := strings.ToLower(path.Ext(name))
 	if len(ext) < 2 {

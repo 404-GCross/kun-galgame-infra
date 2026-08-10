@@ -1,30 +1,3 @@
-// Package charattrs backfills the typical-set character attribute columns
-// (birthday month/day, blood type, height/weight, BWH, cup, gender) plus the
-// Bangumi long-tail extra on catalog_character, from the in-DB staging schemas
-// (field PR C2, refs/proj/81). Characters are catalog-NATIVE entities — no
-// claimed/bodyless split, no XOR — so every EXACT-anchored character is a
-// candidate. Two lanes, VNDB first:
-//
-//   - vndb: src_vndb.chars typed columns (birthday mmdd, bloodt, sex, cup_size,
-//     height/weight/s_bust/s_waist/s_hip). Sentinel decode (0/unknown/""→drop);
-//     matched_by unrestricted (link_kind=exact only — the 66/69/71/79 judgement).
-//   - bgm:  src_bangumi.character.infobox_parsed. Promotion keys (生日/血型/身高/
-//     体重/BWH/性别) → typed columns via the parse.go regexes; a year, an
-//     out-of-range number, or an abnormal birthday keeps its raw string in
-//     extra. The long tail (星座/年龄/属性/趣味 …) folds into extra under the
-//     "bgm" namespace; identity/alias/citation/VA keys are excluded (carried by
-//     the alias / credits waves).
-//
-// Survivorship (refs/proj/81): where both sources carry a field, VNDB wins
-// (typed column > regex over free text); Bangumi fills the gap. Every real-column
-// write is recorded in field_provenance (R8 array, latest first). Overwrite
-// rule: an empty column is written; a non-empty column is rewritten only when
-// its latest writer is a pipeline source of equal-or-lower priority (a source
-// re-parsing itself, or vndb overriding bgm) — a human ("user") edit is never
-// touched. The bgm extra namespace is replaced wholesale each run. A second
-// --apply writes zero.
-//
-// --dsn is ALWAYS explicit — a bare run cannot touch a live DB.
 package charattrs
 
 import (
@@ -38,7 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Lane keys (also the --only vocabulary).
 const (
 	LaneVNDB    = "vndb"
 	LaneBangumi = "bgm"
@@ -46,27 +18,22 @@ const (
 
 const maxSamples = 8
 
-// Opts configures a run. Apply=false is a dry-run forecast. DSN is REQUIRED.
 type Opts struct {
 	Apply  bool
 	DSN    string
 	Limit  int
 	Offset int
-	Only   string // "" = both lanes; "vndb" | "bgm"
+	Only   string
 }
 
-// sample is one decided example for dry-run logging / test assertions.
 type sample struct {
 	EntityID int64
 	Cols     []string
 }
 
-// LaneStats reports one lane's outcome. The *Written counters are the DECIDED
-// plan (identical in dry and apply); RowsUpdated counts rows that received (or
-// would receive) an UPDATE.
 type LaneStats struct {
 	Candidates      int
-	NoProposal      int // source decoded to nothing writable (all sentinel/empty)
+	NoProposal      int
 	RowsUpdated     int
 	GenderWritten   int
 	BirthdayWritten int
@@ -77,24 +44,20 @@ type LaneStats struct {
 	WaistWritten    int
 	HipWritten      int
 	CupWritten      int
-	ExtraRows       int // bgm: chars carrying a non-empty long-tail namespace
-	ExtraChanged    int // bgm: chars whose extra namespace was (re)written
-	ExtraKeyHits    int // bgm: total long-tail key occurrences
-	OutOfRange      int // bgm: values dropped for range (raw kept in extra)
-	Truncated       int // bgm: extra values truncated at 2KB
+	ExtraRows       int
+	ExtraChanged    int
+	ExtraKeyHits    int
+	OutOfRange      int
+	Truncated       int
 	Errors          int
 	Samples         []sample
 }
 
-// Stats is the whole run.
 type Stats struct {
 	VNDB    LaneStats
 	Bangumi LaneStats
 }
 
-// Run resolves each lane's candidates and forecasts (dry) or writes (apply) the
-// attribute columns + extra. VNDB runs first so its typed values own their
-// fields before the Bangumi lane fills the gaps.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess — pass the rehearsal copy locally, the live catalog only in the acceptance run")
@@ -187,8 +150,6 @@ func runBGMLane(ctx context.Context, db *gorm.DB, reg registry, opts Opts, now s
 	return nil
 }
 
-// writeChar plans one character's column + extra updates, records the counters,
-// and (in apply mode) flushes the single UPDATE.
 func writeChar(ctx context.Context, db *gorm.DB, source, now string, cs charState, prop attrs, extraBGM map[string]any, stats *LaneStats, apply bool) {
 	hasProposal := prop.any() || len(extraBGM) > 0
 	if !hasProposal {
@@ -250,7 +211,6 @@ func logLane(lane string, s *LaneStats, apply bool) {
 		"out_of_range", s.OutOfRange, "truncated", s.Truncated, "errors", s.Errors)
 }
 
-// any reports whether the proposal has at least one non-nil field.
 func (a attrs) any() bool {
 	return a.month != nil || a.day != nil || a.blood != nil || a.height != nil ||
 		a.weight != nil || a.bust != nil || a.waist != nil || a.hip != nil ||

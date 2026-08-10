@@ -12,11 +12,6 @@ import (
 	"time"
 )
 
-// paceLimiter is a minimal evenly-spaced request pacer. The gateway quota is
-// "inference requests per minute" per account, so an even trickle is strictly
-// better than a burst followed by a stall — and worker count alone cannot pace
-// anything, since short prompts finish fast and N workers then issue far more
-// than N requests a minute (wave 156 measured 24% 429s at 20 unpaced workers).
 type paceLimiter struct {
 	mu   sync.Mutex
 	next time.Time
@@ -30,7 +25,6 @@ func newPaceLimiter(rpm int) *paceLimiter {
 	return &paceLimiter{gap: time.Minute / time.Duration(rpm)}
 }
 
-// wait blocks until this caller's slot is due.
 func (p *paceLimiter) wait(ctx context.Context) error {
 	if p == nil {
 		return nil
@@ -57,23 +51,14 @@ func (p *paceLimiter) wait(ctx context.Context) error {
 	}
 }
 
-// BatchJudge is implemented by judges that can answer several packets in ONE
-// request. Every packet in a chunk shares a bucket (and therefore a prompt).
 type BatchJudge interface {
 	JudgeBatch(ctx context.Context, ps []Packet) ([]Verdict, error)
 }
 
-// Judge is the ONLY seam onto the LLM (mirrors tagcanon.Matcher / intromt.
-// Translator), so the whole batch pipeline — resume, checkpointing, tiering —
-// is provable offline against MockJudge with no gateway credentials anywhere
-// near a test.
 type Judge interface {
 	Judge(ctx context.Context, p Packet) (Verdict, error)
 }
 
-// HTTPJudge speaks the OpenAI-compatible chat-completions wire (the CF Workers
-// AI gateway, doc 87). Config is base URL + token + model, taken from env or
-// flags and NEVER hardcoded or logged.
 type HTTPJudge struct {
 	baseURL   string
 	token     string
@@ -83,9 +68,6 @@ type HTTPJudge struct {
 	limiter   *paceLimiter
 }
 
-// NewHTTPJudge builds the live judge. maxTokens must be generous: glm-5.2 is a
-// thinking model and a short cap truncates the answer mid-reasoning, which
-// shows up as finish_reason=length and is refused below.
 func NewHTTPJudge(baseURL, token, model string, maxTokens, rpm int) *HTTPJudge {
 	if maxTokens <= 0 {
 		maxTokens = 24576
@@ -100,7 +82,6 @@ func NewHTTPJudge(baseURL, token, model string, maxTokens, rpm int) *HTTPJudge {
 	}
 }
 
-// Configured reports whether the gateway is wired.
 func (j *HTTPJudge) Configured() bool { return j.baseURL != "" && j.token != "" }
 
 type chatMessage struct {
@@ -134,14 +115,9 @@ type verdictJSON struct {
 	Reason        string   `json:"reason"`
 }
 
-// retrySchedule paces 429/408/5xx/transport retries (a var so tests shrink it).
-// The gateway's limit is "inference requests per minute" per account, so a
-// burst that exhausts it needs to wait out a WHOLE minute, not milliseconds:
-// the tail of the schedule is deliberately longer than 60s.
 var retrySchedule = []time.Duration{5 * time.Second, 20 * time.Second, 45 * time.Second,
 	70 * time.Second, 90 * time.Second, 120 * time.Second}
 
-// Judge asks the model for one packet's verdict.
 func (j *HTTPJudge) Judge(ctx context.Context, p Packet) (Verdict, error) {
 	content, model, err := j.chat(ctx, SystemPrompt(p.Bucket), p.User)
 	if err != nil {
@@ -150,9 +126,6 @@ func (j *HTTPJudge) Judge(ctx context.Context, p Packet) (Verdict, error) {
 	return parseVerdict(p, content, model)
 }
 
-// parseVerdict turns a completion into a Verdict, refusing anything outside the
-// three-value vocabulary rather than defaulting it to unsure — an unparsed
-// answer must show up in the batch's error count, not as a real judgement.
 func parseVerdict(p Packet, content, model string) (Verdict, error) {
 	var vj verdictJSON
 	if err := json.Unmarshal([]byte(stripFence(content)), &vj); err != nil {
@@ -183,10 +156,6 @@ func parseVerdict(p Packet, content, model string) (Verdict, error) {
 	return out, nil
 }
 
-// JudgeBatch judges several packets of one bucket in a single request. It
-// returns an error for the WHOLE chunk when the reply does not line up with the
-// input — the caller re-judges those packets one at a time rather than risking
-// verdicts landing on the wrong pairs.
 func (j *HTTPJudge) JudgeBatch(ctx context.Context, ps []Packet) ([]Verdict, error) {
 	if len(ps) == 0 {
 		return nil, nil
@@ -209,7 +178,6 @@ func (j *HTTPJudge) JudgeBatch(ctx context.Context, ps []Packet) ([]Verdict, err
 	return parseBatch(ps, content, model)
 }
 
-// parseBatch decodes the array reply and pins it back to the input by id.
 func parseBatch(ps []Packet, content, model string) ([]Verdict, error) {
 	var items []struct {
 		ID int `json:"id"`
@@ -266,8 +234,6 @@ func (j *HTTPJudge) chat(ctx context.Context, system, user string) (string, stri
 	if len(cr.Choices) == 0 {
 		return "", "", fmt.Errorf("gateway returned no choices")
 	}
-	// A thinking model that runs out of budget still returns well-formed-looking
-	// prose; only finish_reason distinguishes it from a finished answer.
 	if fr := cr.Choices[0].FinishReason; fr != "" && fr != "stop" {
 		return "", "", fmt.Errorf("generation finished with finish_reason=%q — refusing partial output", fr)
 	}
@@ -325,17 +291,10 @@ func (j *HTTPJudge) postOnce(ctx context.Context, raw []byte) (body []byte, retr
 	return data, false, nil
 }
 
-// MockJudge is the deterministic offline stand-in. Its rule is a pure function
-// of the packet so the batch pipeline is reproducible in tests; it stamps a
-// "mock:" model prefix so a mock verdict that ever leaked into a real batch is
-// unmistakable.
 type MockJudge struct {
-	// Rule, when set, decides; otherwise every packet is judged unsure, which
-	// is the safe default (nothing automatic ever follows from unsure).
 	Rule func(Packet) (string, float64)
 }
 
-// Judge applies Rule.
 func (m MockJudge) Judge(_ context.Context, p Packet) (Verdict, error) {
 	verdict, conf := VerdictUnsure, 0.5
 	if m.Rule != nil {
@@ -354,8 +313,6 @@ func (m MockJudge) Judge(_ context.Context, p Packet) (Verdict, error) {
 	return v, nil
 }
 
-// stripFence tolerates a model that wraps its JSON in a ``` fence, and pulls
-// the object out of any surrounding prose a thinking model may have leaked.
 func stripFence(s string) string {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "```") {
@@ -375,7 +332,6 @@ func stripFence(s string) string {
 	return s
 }
 
-// stripArrayFence is stripFence for an array reply.
 func stripArrayFence(s string) string {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "```") {

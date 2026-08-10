@@ -1,36 +1,9 @@
 package wikizh
 
-// The system prompts are PINNED here (the wave-87 discipline: a prompt change
-// is a code change, so a verdict file can be attributed and a re-run wave can
-// diff prompt versions).
-//
-// Both prompts lead with the failure modes this wave MEASURED rather than with
-// generic advice:
-//
-//   - the retired wiki's Chinese is not uniformly good. Sampling found entries
-//     whose entire body is a three-character fragment ("深夜、") sitting beside
-//     a complete machine translation of the same work. 1,556 of the 3,807
-//     bucket-A texts are under 250 characters.
-//   - a third of it is not user writing at all but an English-relay machine
-//     translation that reads like Chinese while having lost the information:
-//     Latin names left in place, one character rendered two different ways,
-//     Japanese lines turned into nonsense. The v1 prompt let one of those
-//     through at exactly the auto-apply confidence, which is what v2 targets.
-//   - and it is not uniformly bad either, which is why wave 146's blanket
-//     "claimed zh is a translation, discard it" ruling had to be walked back in
-//     wave 164: plenty are signed original writing by site users.
-//
-// So neither "the human wrote it, keep it" nor "the machine is newer, keep it"
-// is a defensible default, and the judge is asked for a quality comparison
-// rather than a provenance classification.
 const promptVersion = "wiki-zh-quality-v2"
 
-// PromptVersion identifies the pinned prompt set in every verdict batch.
 func PromptVersion() string { return promptVersion }
 
-// usableSystem judges a lone wiki text: is it a usable intro at all?
-// (bucket A — the catalog holds no Chinese, so there is nothing to compare
-// against and the only question is whether this text is worth publishing.)
 const usableSystem = `你是 galgame 资料站的资深编辑。下面给你一部作品的原文简介(日文或英文),以及站内用户早年手写的中文简介。请判断:这段中文是否可以直接作为该作品的中文简介发布?
 
 判定要点(这些是本项目实测出来的高频情况,务必遵守):
@@ -45,8 +18,6 @@ const usableSystem = `你是 galgame 资料站的资深编辑。下面给你一�
 输出要求:只输出一个 JSON 对象,不要代码块围栏、不要多余文字:
 {"key":"<原样回填给你的 key>","verdict":"usable|unusable|unsure","confidence":0.0-1.0,"reason":"一句话中文理由"}`
 
-// compareSystem judges wiki text against the machine translation that occupies
-// the slot today (bucket B).
 const compareSystem = `你是 galgame 资料站的资深编辑。下面给你一部作品的原文简介(日文或英文)、站内用户早年手写的中文简介(A),以及机器翻译生成的中文简介(B)。请判断:作为该作品对外发布的中文简介,A 和 B 哪一个更好?
 
 判定要点(这些是本项目实测出来的高频情况,务必遵守):
@@ -60,15 +31,10 @@ const compareSystem = `你是 galgame 资料站的资深编辑。下面给你一
 输出要求:只输出一个 JSON 对象,不要代码块围栏、不要多余文字:
 {"key":"<原样回填给你的 key>","verdict":"a_better|b_better|equivalent|unsure","confidence":0.0-1.0,"reason":"一句话中文理由"}`
 
-// batchSuffix turns a single-item prompt into a chunked one. Chunking is what
-// makes the pass affordable — wave 156 measured the gateway's ceiling to be per
-// token rather than per worker, so a chunk of 5 moved throughput from ~18 to
-// ~90 judgements a minute.
 const batchSuffix = `
 
 本次会一次给你多条,每条以 "### key: <key>" 开头。请对每一条各输出一个 JSON 对象,每行一个(JSON Lines),顺序与输入一致,不要输出任何其他内容。key 必须原样回填。`
 
-// SystemPrompt returns the pinned prompt for a bucket.
 func SystemPrompt(b Bucket) string {
 	if b == BucketCompare {
 		return compareSystem
@@ -76,5 +42,4 @@ func SystemPrompt(b Bucket) string {
 	return usableSystem
 }
 
-// BatchSystemPrompt returns the pinned prompt for a bucket in chunked mode.
 func BatchSystemPrompt(b Bucket) string { return SystemPrompt(b) + batchSuffix }

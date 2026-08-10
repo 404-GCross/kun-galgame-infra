@@ -1,28 +1,3 @@
-// Package curatedseries is the ONE-TIME seeder that restores the galgame
-// wiki's hand-curated series onto the catalog's curated lane (wave 180).
-//
-// The wiki's galgame_series family was dropped in wave 161; the only surviving
-// copy of its grouping is the pair of frozen TSVs in refs/proj/180-artifacts.
-// This job replays them into catalog_series / catalog_series_member /
-// catalog_series_intro under source `curated` (id 12).
-//
-// INSERT-ONLY, ON PURPOSE. After this run the LONG-TERM AND ONLY writer of the
-// curated lane is the human edit face: editspec's applySeriesIDs full-replaces
-// a work's curated memberships, and taxonomy.go's curatedOnly rule lets a human
-// rename a curated series. A second run of this seeder that UPDATEd anything
-// would silently undo those edits, so every write here is ON CONFLICT DO
-// NOTHING and a second --apply pass writes zero rows — which the package's
-// idempotency test pins.
-//
-// Two more rules the data forced:
-//
-//   - Nothing is ever attached to a source=dlsite series. The dlsite series
-//     importer (internal/jobs/workseries) reconciles membership by "insert
-//     absent, delete stale", so a member this job added there would be reaped on
-//     its next pass. Same reasoning as applySeriesIDs' curated-only restriction.
-//   - A wiki series whose mapped member set is a SUBSET of a single dlsite
-//     series' members is skipped entirely: the grouping already exists upstream
-//     and a curated duplicate would show the same works twice on the read face.
 package curatedseries
 
 import (
@@ -41,21 +16,12 @@ import (
 )
 
 const (
-	// curatedSourceKey is the first-party human lane (catalog_source id 12).
 	curatedSourceKey = "curated"
-	// dlsiteSourceKey owns the upstream series vocabulary this job must not
-	// touch — only read, to decide the coverage skip.
-	dlsiteSourceKey = "dlsite"
-	// externalIDPrefix keeps the wiki's own series id resolvable after the
-	// tables it came from are gone: external_id = "wiki:<original id>".
+	dlsiteSourceKey  = "dlsite"
 	externalIDPrefix = "wiki:"
-	// introLang is the language every wiki description is in.
-	introLang = "zh-Hans"
+	introLang        = "zh-Hans"
 )
 
-// Opts configures a run. Apply=false is a dry-run forecast (the repo default);
-// DSN and ArtifactsDir are REQUIRED. Receipts is optional — a path to a jsonl
-// log, one object per decided series.
 type Opts struct {
 	Apply        bool
 	DSN          string
@@ -63,39 +29,25 @@ type Opts struct {
 	Receipts     string
 }
 
-// Stats reports the run. In a dry run the Seeded / Inserted counters are the
-// FORECAST (what an apply would write) and the Existing counters are what the
-// database already holds; in apply they are the same numbers, measured.
 type Stats struct {
-	// SeriesInFile / SeriesWithMembers describe the artifacts themselves.
-	SeriesInFile      int
-	SeriesWithMembers int
-	// SeriesSkippedCovered counts wiki series whose members are already grouped
-	// by a single dlsite series (expected: 2).
+	SeriesInFile         int
+	SeriesWithMembers    int
 	SeriesSkippedCovered int
-	// SeriesSeeded counts catalog_series rows written; SeriesExisting counts the
-	// ones a previous pass already wrote (the conflict skip).
-	SeriesSeeded   int
-	SeriesExisting int
-	// MembersInserted / MembersExisting split the memberships the same way, and
-	// IntrosInserted / IntrosExisting the descriptions.
-	MembersInserted int
-	MembersExisting int
-	IntrosInserted  int
-	IntrosExisting  int
-	// MembersSkippedNoWork counts mapped works that no longer exist in the
-	// catalog — a member row would violate nothing, but it would point nowhere.
+	SeriesSeeded         int
+	SeriesExisting       int
+	MembersInserted      int
+	MembersExisting      int
+	IntrosInserted       int
+	IntrosExisting       int
 	MembersSkippedNoWork int
-	// TouchedWorks counts works pushed through the changes feed (apply only).
-	TouchedWorks int
+	TouchedWorks         int
 }
 
-// receipt is one series' decision, appended to the jsonl log.
 type receipt struct {
 	WikiSeriesID    int64   `json:"wiki_series_id"`
 	Name            string  `json:"name"`
 	ExternalID      string  `json:"external_id"`
-	Decision        string  `json:"decision"` // seeded | existing | skipped_covered
+	Decision        string  `json:"decision"`
 	CoveredBySeries int64   `json:"covered_by_series_id,omitempty"`
 	SeriesID        int64   `json:"series_id,omitempty"`
 	MembersInserted int     `json:"members_inserted"`
@@ -104,16 +56,12 @@ type receipt struct {
 	IntroInserted   bool    `json:"intro_inserted"`
 }
 
-// plan is one wiki series resolved against the database.
 type plan struct {
-	row     seriesRow
-	workIDs []int64
-	// coveredBy is the dlsite series that already groups these works (0 = none).
+	row       seriesRow
+	workIDs   []int64
 	coveredBy int64
 }
 
-// Run parses the artifacts, decides every series and forecasts (dry) or writes
-// (apply) the curated lane.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess")
@@ -131,7 +79,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return RunWithDB(ctx, db, opts)
 }
 
-// RunWithDB is Run against an already-open pool (the tests' entry point).
 func RunWithDB(ctx context.Context, db *gorm.DB, opts Opts) (*Stats, error) {
 	series, err := parseSeries(opts.ArtifactsDir)
 	if err != nil {
@@ -188,9 +135,6 @@ func RunWithDB(ctx context.Context, db *gorm.DB, opts Opts) (*Stats, error) {
 		}
 	}
 
-	// The changes feed only learns about a work when its own row moves, and a
-	// membership is a side table — so the works whose membership actually
-	// landed, and only those, are bumped once at the end.
 	if opts.Apply && len(touched) > 0 {
 		if err := repository.TouchWorks(ctx, db, touched); err != nil {
 			return nil, fmt.Errorf("touch works: %w", err)
@@ -203,8 +147,6 @@ func RunWithDB(ctx context.Context, db *gorm.DB, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// buildPlans maps the member rows onto their series, drops works the catalog no
-// longer has, and marks the series already covered by a single dlsite series.
 func buildPlans(ctx context.Context, db *gorm.DB, series []seriesRow, members []memberRow,
 	dlsiteSrc int16, st *Stats) ([]plan, error) {
 	byID := make(map[int64][]int64, len(series))
@@ -229,7 +171,7 @@ func buildPlans(ctx context.Context, db *gorm.DB, series []seriesRow, members []
 	for _, row := range series {
 		works := byID[row.ID]
 		if len(works) == 0 {
-			continue // a series nobody maps onto is not a grouping worth having
+			continue
 		}
 		st.SeriesWithMembers++
 		kept := make([]int64, 0, len(works))
@@ -248,7 +190,6 @@ func buildPlans(ctx context.Context, db *gorm.DB, series []seriesRow, members []
 	return plans, nil
 }
 
-// seedOne writes (or forecasts) one curated series with its members and intro.
 func seedOne(ctx context.Context, db *gorm.DB, curatedSrc int16, p plan, apply bool,
 	st *Stats, rec *receipt) error {
 	externalID := externalIDPrefix + fmt.Sprint(p.row.ID)
@@ -265,14 +206,10 @@ func seedOne(ctx context.Context, db *gorm.DB, curatedSrc int16, p plan, apply b
 		st.SeriesSeeded++
 		rec.Decision = "seeded"
 	default:
-		// DO NOTHING, never DO UPDATE: display_name belongs to whoever renamed
-		// it on the edit face after this seed ran.
 		row := model.CatalogSeries{DisplayName: p.row.Name, SourceID: curatedSrc, ExternalID: externalID}
 		if err := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 			return fmt.Errorf("series %d: %w", p.row.ID, err)
 		}
-		// A conflicting insert leaves the model's id at zero, so the id is
-		// re-resolved from the unique key rather than trusted from the write.
 		if seriesID, err = existingSeriesID(ctx, db, curatedSrc, externalID); err != nil {
 			return err
 		}
@@ -374,8 +311,6 @@ func seedIntro(ctx context.Context, db *gorm.DB, seriesID int64, curatedSrc int1
 	return nil
 }
 
-// coveringSeries returns the id of a single dlsite series whose member set
-// contains every one of these works, or 0.
 func coveringSeries(dlsiteMembers map[int64]map[int64]struct{}, works []int64) int64 {
 	for seriesID, have := range dlsiteMembers {
 		covered := true
@@ -392,10 +327,6 @@ func coveringSeries(dlsiteMembers map[int64]map[int64]struct{}, works []int64) i
 	return 0
 }
 
-// dlsiteCoverage loads the dlsite memberships of the works this run cares
-// about, grouped by series. Only these works are loaded: a dlsite series that
-// holds MORE works still covers a wiki series that is a subset of it, and works
-// outside the run never change that answer.
 func dlsiteCoverage(ctx context.Context, db *gorm.DB, workIDs []int64, dlsiteSrc int16) (map[int64]map[int64]struct{}, error) {
 	out := map[int64]map[int64]struct{}{}
 	if len(workIDs) == 0 {

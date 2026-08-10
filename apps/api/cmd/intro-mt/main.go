@@ -1,28 +1,3 @@
-// intro-mt is the work-intro machine-translation driver (doc 75 pilot +
-// claimed refill): →zh-Hans over the popularity-ranked top N of a population
-// lane (--population bodyless|claimed|published), from ja by default or from en
-// as a last resort (--source-lang), filling a MISSING language only, with
-// a machine-provenance flag + source hash + model recorded on every row. The
-// job never overwrites a source/human zh row.
-//
-//	# dry forecast (no LLM, no writes) — counts + samples
-//	go run ./cmd/intro-mt --dsn "$DSN"
-//
-//	# W1-pre zh refill lane: claimed wiki-face works (ja rows from wikirescue q)
-//	go run ./cmd/intro-mt --dsn "$DSN" --population claimed
-//
-//	# quality gate: real-translate the 30 most popular, write them, print pairs
-//	go run ./cmd/intro-mt --dsn "$DSN" --limit 30 --apply \
-//	    --llm-base http://one-api:3000/v1 --llm-token "$TOK" --model deepseek-chat
-//
-//	# rehearsal: full write-path proof with an OFFLINE mock translator
-//	go run ./cmd/intro-mt --dsn "$DSN" --apply --mock
-//
-// --dsn is ALWAYS explicit (a bare run cannot touch a live DB). The LLM gateway
-// base/token/model come from flags or env (KUN_INTRO_MT_LLM_BASE/_TOKEN/_MODEL,
-// falling back to the AI-gateway upstream KUN_AI_UPSTREAM_BASE_URL/_TOKEN/
-// _MODEL) — NEVER hardcoded. An unconfigured gateway is a BLOCKED precondition
-// for a real apply, not a crash.
 package main
 
 import (
@@ -67,8 +42,6 @@ func main() {
 			slog.Warn("MOCK translator active — rehearsal write-path proof only; rows are NOT real translations")
 		} else {
 			ht := intromt.NewHTTPTranslator(*llmBase, *llmToken, *model, *maxTokens)
-			// The prompt must match the lane: the ja prompt opens by calling
-			// its input 日文, which would contradict an English source.
 			ht.SetSourceLang(intromt.SourceLang(*sourceLang))
 			if !ht.Configured() {
 				fmt.Printf("BLOCKED: LLM gateway not configured (need --llm-base + --llm-token, or KUN_INTRO_MT_LLM_* / KUN_AI_UPSTREAM_*).\n" +
@@ -115,8 +88,6 @@ func printReport(st *intromt.Stats, apply bool) {
 	}
 }
 
-// printGlossary shows the terms injected into this candidate's prompt — the
-// quality gate reads a translated name against the rendering it was handed.
 func printGlossary(g intromt.Glossary) {
 	if len(g) == 0 {
 		return

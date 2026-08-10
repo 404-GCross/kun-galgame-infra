@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// NoopProvider approves everything. V1 / V2 default; real providers plug
-// in at V3 deployment time.
 type NoopProvider struct{}
 
 func NewNoop() *NoopProvider { return &NoopProvider{} }

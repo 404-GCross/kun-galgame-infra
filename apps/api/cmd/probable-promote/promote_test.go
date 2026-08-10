@@ -80,9 +80,6 @@ func refState(t *testing.T, work int64, source int16, ext string) (int16, *int64
 	return row.LinkKind, row.VerifiedBy
 }
 
-// The policy circle promotes only the named rules' probable work-refs, via
-// ConfirmRef; other rules and already-exact refs are untouched; dry writes
-// nothing; a re-run is idempotent.
 func TestPromoteCircleAndIdempotency(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no catalog test DB")
@@ -94,11 +91,10 @@ func TestPromoteCircleAndIdempotency(t *testing.T) {
 	seedWork(t, 900010)
 	seedWork(t, 900020)
 	seedWork(t, 900030)
-	seedRef(t, 900010, 5, "eg1", model.LinkKindProbable, ruleRosetta)    // → promote
-	seedRef(t, 900020, 3, "bgm1", model.LinkKindProbable, ruleTitleYear) // → promote
-	seedRef(t, 900030, 2, "v9", model.LinkKindExact, ruleWikiVNDB)       // other rule + exact → untouched
+	seedRef(t, 900010, 5, "eg1", model.LinkKindProbable, ruleRosetta)
+	seedRef(t, 900020, 3, "bgm1", model.LinkKindProbable, ruleTitleYear)
+	seedRef(t, 900030, 2, "v9", model.LinkKindExact, ruleWikiVNDB)
 
-	// Dry writes nothing.
 	st, err := runPromote(ctx, testDB, io.Discard, rules, 7, false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, 2, sumToPromote(st))
@@ -107,7 +103,6 @@ func TestPromoteCircleAndIdempotency(t *testing.T) {
 	k, _ := refState(t, 900010, 5, "eg1")
 	assert.Equal(t, model.LinkKindProbable, k, "dry leaves it probable")
 
-	// Apply.
 	st, err = runPromote(ctx, testDB, io.Discard, rules, 7, true, 0)
 	require.NoError(t, err)
 	assert.Equal(t, 2, st.Promoted)
@@ -121,20 +116,16 @@ func TestPromoteCircleAndIdempotency(t *testing.T) {
 		require.NotNil(t, vb)
 		assert.Equal(t, int64(7), *vb, "verified_by = policy executor")
 	}
-	// The other-rule exact ref is untouched (not counted, not re-written).
 	k, vb := refState(t, 900030, 2, "v9")
 	assert.Equal(t, model.LinkKindExact, k)
 	assert.Nil(t, vb, "out-of-policy ref never confirmed by this tool")
 
-	// Idempotent: the promoted refs are now exact → 0 to promote, counted already.
 	st2, err := runPromote(ctx, testDB, io.Discard, rules, 7, true, 0)
 	require.NoError(t, err)
 	assert.Zero(t, st2.Promoted)
 	assert.Equal(t, 2, st2.Already)
 }
 
-// A probable ref whose exact slot is already held by another entity yields a
-// counted conflict, never a crash (the anti-squatting line).
 func TestPromoteConflict(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no catalog test DB")
@@ -145,8 +136,8 @@ func TestPromoteConflict(t *testing.T) {
 
 	seedWork(t, 900001)
 	seedWork(t, 900002)
-	seedRef(t, 900001, 5, "shared", model.LinkKindExact, ruleRosetta)    // already exact holder
-	seedRef(t, 900002, 5, "shared", model.LinkKindProbable, ruleRosetta) // contends for the same slot
+	seedRef(t, 900001, 5, "shared", model.LinkKindExact, ruleRosetta)
+	seedRef(t, 900002, 5, "shared", model.LinkKindProbable, ruleRosetta)
 
 	st, err := runPromote(ctx, testDB, io.Discard, rules, 7, true, 0)
 	require.NoError(t, err)

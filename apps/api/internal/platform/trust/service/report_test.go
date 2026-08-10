@@ -30,7 +30,6 @@ func submit(t *testing.T, svc *ReportService, reporterID int64, subject string) 
 	return res
 }
 
-// E2: dedup — same (subject, reporter) twice → idempotent, zero new rows.
 func TestDedup(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
@@ -47,20 +46,16 @@ func TestDedup(t *testing.T) {
 	}
 }
 
-// E3: three ordinary reports (1.0×3) reach the threshold; a new-account (0.5)
-// pair does not; a staff single report opens an item immediately.
 func TestAggregationThresholds(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
 	svc := newReportSvc(newWeigher())
 
-	// Two ordinary reports: below threshold, no item yet.
 	submit(t, svc, 1, tSubj)
 	submit(t, svc, 2, tSubj)
 	if n := countOpenItems(t, tSite, tKind, tSubj); n != 0 {
 		t.Fatalf("2×1.0 must not open an item (sum 2.0 < 3.0), got %d", n)
 	}
-	// Third crosses 3.0.
 	third := submit(t, svc, 3, tSubj)
 	if n := countOpenItems(t, tSite, tKind, tSubj); n != 1 {
 		t.Fatalf("3×1.0 must open exactly one item, got %d", n)
@@ -69,7 +64,6 @@ func TestAggregationThresholds(t *testing.T) {
 		t.Fatal("third report should carry the opened review item id")
 	}
 
-	// New-account pair (0.5 each) on a different subject: never crosses.
 	w := newWeigher()
 	w.set(10, ReporterWeight{Weight: 0.5})
 	w.set(11, ReporterWeight{Weight: 0.5})
@@ -80,7 +74,6 @@ func TestAggregationThresholds(t *testing.T) {
 		t.Fatalf("2×0.5 new accounts must not open an item, got %d", n)
 	}
 
-	// Staff single vote opens immediately.
 	ws := newWeigher()
 	ws.set(20, ReporterWeight{Weight: 1.0, Staff: true})
 	svc3 := newReportSvc(ws)
@@ -93,13 +86,10 @@ func TestAggregationThresholds(t *testing.T) {
 	}
 }
 
-// E4: while an item is open, further reports only link (no new item); a
-// concurrency probe proves two simultaneous staff reports never double-open.
 func TestOneOpenItemAndConcurrency(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
 
-	// Open an item via a staff report, then a distinct reporter links to it.
 	ws := newWeigher()
 	ws.set(1, ReporterWeight{Weight: 1.0, Staff: true})
 	svc := newReportSvc(ws)
@@ -112,8 +102,6 @@ func TestOneOpenItemAndConcurrency(t *testing.T) {
 		t.Fatalf("still exactly one open item, got %d", n)
 	}
 
-	// Concurrency probe: two staff reporters submit the same fresh subject at
-	// once → the partial unique backstops a double item.
 	wc := newWeigher()
 	wc.set(101, ReporterWeight{Weight: 1.0, Staff: true})
 	wc.set(102, ReporterWeight{Weight: 1.0, Staff: true})
@@ -143,8 +131,6 @@ func TestOneOpenItemAndConcurrency(t *testing.T) {
 	}
 }
 
-// E5: after a dismissal, a new report within the fold window folds onto the old
-// item and opens no new queue item (invariant 10).
 func TestFoldAfterDismiss(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
@@ -155,14 +141,12 @@ func TestFoldAfterDismiss(t *testing.T) {
 	first := submit(t, svc, 1, tSubj)
 	itemID := *first.ReviewItemID
 
-	// Dismiss the item.
 	if _, err := NewReviewService(testDB).Decide(context.Background(), DecideParams{
 		ID: itemID, DecidedBy: 999, Decision: "dismissed",
 	}); err != nil {
 		t.Fatalf("dismiss: %v", err)
 	}
 
-	// A new report within the window folds.
 	res, err := svc.Submit(context.Background(), ReportParams{
 		Site: tSite, SubjectKind: tKind, SubjectID: tSubj, ReasonKey: "abuse", ReporterID: 2,
 	})
@@ -182,14 +166,11 @@ func TestFoldAfterDismiss(t *testing.T) {
 	}
 }
 
-// E9: tenant fail-loud — an unregistered subject_kind is rejected, and a client
-// bound to site B cannot report a kind registered only for site A.
 func TestTenantFailLoud(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, "siteA", tKind, nil, nil)
 	svc := newReportSvc(newWeigher())
 
-	// Unregistered kind for this site.
 	_, err := svc.Submit(context.Background(), ReportParams{
 		Site: "siteA", SubjectKind: "unknown_kind", SubjectID: "x", ReasonKey: "abuse", ReporterID: 1,
 	})
@@ -197,7 +178,6 @@ func TestTenantFailLoud(t *testing.T) {
 		t.Fatalf("unregistered kind: want ErrSubjectKindNotRegistered, got %v", err)
 	}
 
-	// Kind exists for siteA but the caller is siteB.
 	_, err = svc.Submit(context.Background(), ReportParams{
 		Site: "siteB", SubjectKind: tKind, SubjectID: "x", ReasonKey: "abuse", ReporterID: 1,
 	})
@@ -206,7 +186,6 @@ func TestTenantFailLoud(t *testing.T) {
 	}
 }
 
-// E10: exceeding the per-hour window yields a structured rate-limit error.
 func TestRateLimit(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
@@ -223,9 +202,6 @@ func TestRateLimit(t *testing.T) {
 	}
 }
 
-// TestSubjectURL pins the evidence deep link: a valid http(s) link persists on
-// the report row; a non-http scheme or an overlong value fails loud (422 at the
-// handler) instead of silently dropping the link.
 func TestSubjectURL(t *testing.T) {
 	if testDB == nil {
 		t.Skip("TEST_DATABASE_DSN not set")

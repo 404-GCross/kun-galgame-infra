@@ -1,10 +1,6 @@
 <script setup lang="ts">
 const api = useApi()
 
-// SSR-rendered (kungal-style). Both lists are fetched on the server so the
-// page paints with data; refreshClients() re-fetches after a mutation. Sites
-// are only needed for the create/edit dropdowns and don't change here, so no
-// refresh wiring for them.
 const { data: clientsData, status, refresh: refreshClients, error } =
   await useApiFetch<OAuthClient[]>('/oauth/clients')
 const { data: sitesData } = await useApiFetch<Site[]>('/sites')
@@ -12,9 +8,6 @@ const clients = computed(() => clientsData.value ?? [])
 const sites = computed(() => sitesData.value ?? [])
 const isLoading = computed(() => status.value === 'pending')
 
-// Client-side search over the fully-loaded list. The page fetches every client
-// up front, so filtering here needs no server round-trip (matches name, client
-// id, the associated site name, and any redirect URI).
 const search = ref('')
 const siteNameById = computed(() => {
   const m = new Map<number, string>()

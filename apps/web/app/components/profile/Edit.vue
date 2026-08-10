@@ -1,11 +1,4 @@
 <script setup lang="ts">
-// Self-service profile editor: name / bio / avatar URL via PATCH /auth/me
-// (useAuth.updateProfile). Email & password are intentionally NOT here —
-// they have dedicated verified flows (ProfileEmailChange /
-// ProfilePasswordChange). Avatar is a URL field: the OAuth server has no
-// self upload endpoint (the image_service-backed upload is admin-only,
-// POST /admin/users/:uuid/avatar), so self users set an avatar URL; the
-// server also accepts avatar_image_hash if a hash is ever obtained.
 
 const auth = useAuth()
 const user = auth.user
@@ -17,8 +10,6 @@ const error = ref('')
 const success = ref('')
 const isLoading = ref(false)
 
-// Prefill from the store, and re-sync if the user object changes
-// (e.g. after fetchUser / a successful save elsewhere).
 watchEffect(() => {
   if (!user.value) return
   name.value = user.value.name ?? ''
@@ -55,9 +46,6 @@ const handleSubmit = async () => {
     return
   }
 
-  // Only send changed keys. PATCH /auth/me has pointer semantics: a key
-  // present with "" CLEARS that field — sending an unchanged empty avatar
-  // would wipe it, so we diff against the current user first.
   const payload: { name?: string; bio?: string; avatar?: string } = {}
   if (name.value !== (user.value?.name ?? '')) payload.name = name.value.trim()
   if (bio.value !== (user.value?.bio ?? '')) payload.bio = bio.value

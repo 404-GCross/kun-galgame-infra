@@ -12,9 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestHTTPTranslatorWire pins what actually goes on the wire: temperature 0,
-// the pinned system prompt, and a user message carrying the three
-// disambiguation inputs (name, group, plain-text description).
 func TestHTTPTranslatorWire(t *testing.T) {
 	var got struct {
 		Model       string  `json:"model"`
@@ -52,8 +49,6 @@ func TestHTTPTranslatorWire(t *testing.T) {
 	assert.Contains(t, got.Messages[1].Content, "英文释义: A single strand of hair that sticks up.")
 }
 
-// TestHTTPTranslatorRefusesPartialOutput: a truncated generation is an error,
-// never a half-name silently written into the review sheet.
 func TestHTTPTranslatorRefusesPartialOutput(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"呆"},"finish_reason":"length"}]}`))

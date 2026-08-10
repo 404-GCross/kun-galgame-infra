@@ -7,8 +7,6 @@ import (
 	"api/internal/platform/community/model"
 )
 
-// visibleReply seeds the author as an established TL1 (no holds) and replies, so
-// the post is visible (not sandbox-held) — the usual subject of a flag test.
 func visibleReply(t *testing.T, ps *PostService, threadID, author int64) *model.CommunityPost {
 	t.Helper()
 	seedTrust(t, author, model.TrustLevelBasic, 0)
@@ -38,7 +36,6 @@ func TestFlag_ThresholdHide(t *testing.T) {
 	post := visibleReply(t, ps, th.ID, 200)
 	ctx := context.Background()
 
-	// Three fresh TL0 reporters (weight 1.0 each) → threshold 3.0 on the third.
 	if err := fs.Submit(ctx, post.ID, 300, nil, nil); err != nil {
 		t.Fatalf("flag: %v", err)
 	}
@@ -60,8 +57,6 @@ func TestFlag_ThresholdHide(t *testing.T) {
 		t.Fatalf("expected 1 flag.threshold event, got %d", sink.count(EventFlagThreshold))
 	}
 
-	// A further report on the now-hidden post records the flag but does not
-	// re-enqueue.
 	fs.Submit(ctx, post.ID, 303, nil, nil)
 	var items int64
 	testDB.Model(&model.CommunityReviewItem{}).Where("post_id = ?", post.ID).Count(&items)
@@ -77,7 +72,6 @@ func TestFlag_TL3SingleVoteOnTL0(t *testing.T) {
 	fs := NewFlagService(testDB, &recordingSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
-	// A visible post by a TL0 author (holds spent, so not sandbox-held).
 	seedTrust(t, 400, model.TrustLevelNew, 0)
 	post, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 400, BodyRaw: "x"})
 	if err != nil {
@@ -87,7 +81,6 @@ func TestFlag_TL3SingleVoteOnTL0(t *testing.T) {
 		t.Fatalf("expected visible, got %d", post.Status)
 	}
 
-	// A single TL3 report hides a TL0 author's post immediately.
 	seedTrust(t, 500, model.TrustLevelRegular, 0)
 	fs.Submit(context.Background(), post.ID, 500, nil, nil)
 	if getPost(t, post.ID).Status != model.PostStatusHidden {
@@ -104,8 +97,6 @@ func TestReview_DecisionBackfill(t *testing.T) {
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 	ctx := context.Background()
 
-	// Hide a post via three reports, then REJECT (content removed) → reporters
-	// were right → flags_agreed++.
 	post := visibleReply(t, ps, th.ID, 200)
 	for _, r := range []int64{300, 301, 302} {
 		fs.Submit(ctx, post.ID, r, nil, nil)
@@ -124,8 +115,6 @@ func TestReview_DecisionBackfill(t *testing.T) {
 		t.Fatalf("reporter accuracy not backfilled (agreed): %v", a)
 	}
 
-	// A second post: hide, then APPROVE (content kept) → reporters were wrong →
-	// flags_disagreed++.
 	post2 := visibleReply(t, ps, th.ID, 201)
 	for _, r := range []int64{310, 311, 312} {
 		fs.Submit(ctx, post2.ID, r, nil, nil)
@@ -149,10 +138,6 @@ func TestReview_HoldRelease(t *testing.T) {
 	rs := NewReviewService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
-	// The hold budget is now seeded EXPLICITLY: wave 07 retired the blanket
-	// newcomer hold, so a fresh author carries 0 and would post straight through.
-	// The hold machinery itself is untouched (a site or an operator can still put
-	// a specific user on hold) — that is what this test covers.
 	seedTrust(t, 600, model.TrustLevelNew, 2)
 
 	post, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 600, BodyRaw: "hi"})
@@ -167,7 +152,6 @@ func TestReview_HoldRelease(t *testing.T) {
 		t.Fatalf("held post should enqueue a first_post_hold item: %+v", item)
 	}
 
-	// Approve releases the post; the hold counter is NOT refunded (one-way).
 	if err := rs.Approve(context.Background(), item.ID, 999); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -179,9 +163,6 @@ func TestReview_HoldRelease(t *testing.T) {
 	}
 }
 
-// ListPending projects the subject post's thread + author onto each queue item
-// (docs/proj/21 #1): the consuming site deep-links the thread and resolves the
-// author from the list alone, without a per-item round trip.
 func TestReview_ListPendingJoinsPost(t *testing.T) {
 	cleanTables(t)
 	ts := NewThreadService(testDB, NoopSink{})
@@ -189,8 +170,6 @@ func TestReview_ListPendingJoinsPost(t *testing.T) {
 	rs := NewReviewService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
-	// Explicit hold budget — see TestReview_HoldRelease on why this is no longer
-	// the default for a fresh author.
 	seedTrust(t, 600, model.TrustLevelNew, 2)
 
 	post, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 600, BodyRaw: "hi"})
@@ -222,7 +201,6 @@ func TestReview_ListPendingJoinsPost(t *testing.T) {
 		t.Fatalf("source mismatch: %+v", row)
 	}
 
-	// The source filter still applies on the joined read.
 	none, err := rs.List("letmoe", model.ReviewSourceFlags, 50)
 	if err != nil {
 		t.Fatalf("filtered list: %v", err)

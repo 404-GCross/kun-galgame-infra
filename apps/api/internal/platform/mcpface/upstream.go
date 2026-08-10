@@ -1,12 +1,3 @@
-// Package mcpface is the thin MCP (Model Context Protocol) protocol-adapter over
-// the already-public NextMoe /v1 read faces (served by the catalog service).
-//
-// It owns nothing. Every tool call is a pass-through GET to the public /v1 face,
-// forwarding the caller's API key verbatim, so all authentication, tier / NSFW
-// visibility, rate-limiting, daily quota and usage metering happen UPSTREAM on
-// the same key — indistinguishable from a direct /v1 call in the caller's
-// /dev/usage. This package touches NO database and NO cache: that is the whole
-// point of the design (docs/developer-platform/09-mcp-server.md §1).
 package mcpface
 
 import (
@@ -20,19 +11,13 @@ import (
 	"time"
 )
 
-// upstreamTimeout is the conservative per-request budget for a single upstream
-// GET (design §2). M1 is all read-only, so an idempotent GET is retried once.
 const upstreamTimeout = 30 * time.Second
 
-// Upstream is the pooled pass-through HTTP client to the public /v1 face.
 type Upstream struct {
 	base   string
 	client *http.Client
 }
 
-// NewUpstream builds the client over base (e.g. http://catalog:9281 in prod,
-// http://127.0.0.1:9281 in local dev). The base's own path prefix, if any, is
-// preserved; tool paths already carry the /v1/... segment.
 func NewUpstream(base string) *Upstream {
 	return &Upstream{
 		base: strings.TrimRight(base, "/"),
@@ -52,11 +37,6 @@ func NewUpstream(base string) *Upstream {
 	}
 }
 
-// Get issues an idempotent GET to path (which already includes the /v1 prefix)
-// with the given query, forwarding authorization verbatim as the Authorization
-// header. A single retry is allowed on a transport-level error (never on an HTTP
-// status — a 4xx/5xx body carries an error the caller must see). Returns the
-// upstream status code and raw body; err is non-nil only on a transport failure.
 func (u *Upstream) Get(ctx context.Context, path string, query url.Values, authorization string) (status int, body []byte, err error) {
 	target := u.base + path
 	if enc := query.Encode(); enc != "" {
@@ -69,7 +49,6 @@ func (u *Upstream) Get(ctx context.Context, path string, query url.Values, autho
 		if err == nil {
 			return status, body, nil
 		}
-		// Do not retry once the caller's context is done (timeout/cancel).
 		if ctx.Err() != nil {
 			break
 		}

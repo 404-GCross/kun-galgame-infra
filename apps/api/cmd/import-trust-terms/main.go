@@ -1,32 +1,3 @@
-// cmd/import-trust-terms bulk-loads a Tier0 word list into the kun_trust
-// database's trust_term registry (doc 18 §6; step 08). The admin CRUD face
-// registers terms one at a time — unfit for the tens of thousands of entries a
-// lexicon import needs — so this tool takes plain-text files (one term per
-// line) → norm.Normalize (the SINGLE choke point, reused, never reimplemented)
-// → rune-floor filter → dedup (in-batch + against the DB's active terms) →
-// batched INSERT.
-//
-// Usage:
-//
-//	go run ./cmd/import-trust-terms [flags] <file.txt ...>
-//
-// Flags:
-//
-//	-site       target scope; "" (default) = a GLOBAL term (stored site NULL).
-//	-kind       enforcement intent: 0=suspect (default) / 1=banned (explicit).
-//	-purpose    why the terms are listed: 0=abuse (default) / 1=compliance.
-//	            Compliance terms are exempt from precision-based retirement
-//	            (cmd/trust-term-prune) because the abuse classifier does not
-//	            judge the question they answer — see the model comment.
-//	-note       operator memo; "" (default) = the per-file source filename.
-//	-min-runes  drop terms whose POST-Normalize rune count is below this (3).
-//	-apply      write; default is a dry-run preview (nothing is inserted).
-//
-// The tool is idempotent: a second -apply run of the same files inserts 0 rows
-// (every term is found in the existing-scope set). It never deprecates or
-// updates an existing row — a term already active is simply skipped. It changes
-// no schema and runs no migration; the trust migration must already have
-// provisioned trust_term (cmd/migrate-trust).
 package main
 
 import (
@@ -83,7 +54,6 @@ func main() {
 	}
 	defer trustDB.Close()
 
-	// An empty -site is a global term (site NULL); a non-empty value scopes it.
 	var scope *string
 	if *site != "" {
 		scope = site

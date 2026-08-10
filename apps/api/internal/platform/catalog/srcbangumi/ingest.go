@@ -15,9 +15,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// EnsureSchema creates/updates everything the Silver layer owns: the
-// src_bangumi schema, its tables, and the NFKC name-normalization generated
-// columns (AutoMigrate cannot express STORED generated columns). Idempotent.
 func EnsureSchema(db *gorm.DB) error {
 	if err := db.Exec(`CREATE SCHEMA IF NOT EXISTS src_bangumi`).Error; err != nil {
 		return fmt.Errorf("create schema: %w", err)
@@ -44,33 +41,23 @@ func EnsureSchema(db *gorm.DB) error {
 	return nil
 }
 
-// FileReport is one file's ingestion outcome.
 type FileReport struct {
 	Rows        int64 `json:"rows"`
 	ParseErrors int64 `json:"parse_errors"`
 	DurationMS  int64 `json:"duration_ms"`
 }
 
-// Report aggregates one Run.
 type Report struct {
 	DumpDir  string
 	PerFile  map[string]FileReport
 	Duration time.Duration
 }
 
-// Files lists the seven ingested dump files. episode (huge, not needed by
-// catalog) and person-relations (alias/persona links — human-review
-// sensitive, deferred until the reconciliation surface exists) are
-// deliberately NOT ingested.
 var Files = []string{
 	"subject", "person", "character",
 	"subject-relations", "subject-persons", "subject-characters", "person-characters",
 }
 
-// Run ingests the dump directory into src_bangumi. Deterministic and
-// re-runnable: each file is one transaction that TRUNCATEs its table and
-// reloads it wholesale; a second run over the same dump reproduces identical
-// row counts. only restricts the run to a single file (iteration aid).
 func Run(db *gorm.DB, dumpDir, only string) (*Report, error) {
 	started := time.Now()
 	report := &Report{DumpDir: dumpDir, PerFile: map[string]FileReport{}}
@@ -95,7 +82,6 @@ func Run(db *gorm.DB, dumpDir, only string) (*Report, error) {
 	}
 	report.Duration = time.Since(started)
 
-	// Audit trail. --only runs record just the touched file.
 	counts, _ := json.Marshal(report.PerFile)
 	parseErrs := map[string]int64{}
 	for name, fr := range report.PerFile {
@@ -118,8 +104,6 @@ func Run(db *gorm.DB, dumpDir, only string) (*Report, error) {
 	return report, nil
 }
 
-// ingestFile replaces one table from one jsonlines file inside the caller's
-// transaction.
 func ingestFile(tx *gorm.DB, name, path string) (FileReport, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -169,10 +153,6 @@ func tableFor(name string) string {
 	return ""
 }
 
-// ingester accumulates typed batches and flushes them with the right batch
-// size / conflict policy per table. Batch sizes keep statement parameters
-// well under Postgres's 65535 limit (wide tables ~20 cols → 1000; narrow
-// relation tables → 5000).
 type ingester struct {
 	tx        *gorm.DB
 	now       time.Time
@@ -239,8 +219,6 @@ func (g *ingester) add(name string, line []byte) error {
 		}
 		g.subRels = append(g.subRels, row)
 		if len(g.subRels) >= narrowBatch {
-			// The dump carries one fully identical duplicate row — dedup on
-			// insert keeps the run deterministic (table = wc-1 rows).
 			return g.flushSlice(&g.subRels, true)
 		}
 	case "subject-persons":
@@ -311,7 +289,6 @@ func (g *ingester) flushSlice(batch any, doNothing bool) error {
 	return fmt.Errorf("unknown batch type %T", batch)
 }
 
-// flush drains every pending batch (end of file).
 func (g *ingester) flush() error {
 	if err := flushTyped(g, &g.subjects, false); err != nil {
 		return err
@@ -334,8 +311,6 @@ func (g *ingester) flush() error {
 	return flushTyped(g, &g.perChars, false)
 }
 
-// parseInfobox runs the deterministic transform: raw wiki text → parsed JSON
-// or (NULL, error text). Never half-parsed.
 func parseInfobox(raw string) (datatypes.JSON, string) {
 	box, err := bangumiwiki.Parse(raw)
 	if err != nil {
@@ -348,7 +323,6 @@ func parseInfobox(raw string) (datatypes.JSON, string) {
 	return datatypes.JSON(b), ""
 }
 
-// jsonOrNull keeps raw dump sub-documents verbatim ('null'/absent → NULL).
 func jsonOrNull(raw json.RawMessage) datatypes.JSON {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil

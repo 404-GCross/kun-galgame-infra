@@ -1,6 +1,5 @@
 import type { JobStatus, JobTrigger } from '~~/shared/types/jobs'
 
-// Display label + KunChip color for a job run status.
 export const JOB_STATUS_MAP: Record<
   JobStatus,
   { label: string; color: 'info' | 'success' | 'danger' | 'default' }

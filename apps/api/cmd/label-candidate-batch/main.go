@@ -1,33 +1,3 @@
-// label-candidate-batch clears the label name-collision review backlog left
-// by the wiki officials registration (step 35): every pending entity_type=3
-// candidate pairs an existing catalog label with a freshly-imported wiki
-// official label whose display name norm-collides with it.
-//
-// Four modes, all driving the SAME service path as an admin click
-// (DecideCandidate → ProposeMerge → ApproveMerge → ExecuteMerge):
-//
-//	-mode mechanical   pairs sharing ≥1 catalog work are the same brand by
-//	                   construction (both labels are attached to the same
-//	                   work) → accept + approve. Dry-run by default.
-//	-mode export       dossier JSONL for the non-mechanical remainder (both
-//	                   sides' aliases, refs, org, work samples) — the input
-//	                   for LLM/human adjudication.
-//	-mode receipts     apply an adjudicated dossier (verdict merge/keep/
-//	                   unsure) — merge accepts+approves, keep rejects,
-//	                   unsure stays pending.
-//	-mode execute      execute this batch's approved proposals once the 48h
-//	                   cooling window has passed. -limit 1 first (canary).
-//
-// Merge direction is FIXED policy, not a per-pair judgment: the wiki-import
-// label (note rule:galgame-official-import) is absorbed into the pre-existing
-// label, so ids referenced by live consumers stay stable and the import's
-// edges/refs rehang onto the survivor.
-//
-//	go run ./cmd/label-candidate-batch -actor 1                      # dry
-//	go run ./cmd/label-candidate-batch -actor 1 -run                 # accept+approve
-//	go run ./cmd/label-candidate-batch -actor 1 -mode export -out d.jsonl
-//	go run ./cmd/label-candidate-batch -actor 1 -mode receipts -receipts r.tsv -run
-//	go run ./cmd/label-candidate-batch -actor 1 -mode execute -limit 1 -run
 package main
 
 import (
@@ -47,8 +17,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// noteTag marks every proposal/decision this batch writes, so -mode execute
-// (and any later audit) can address exactly this wave and nothing else.
 const noteTag = "rule:label-official-collision step-44"
 
 func main() {
@@ -65,7 +33,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -110,8 +78,6 @@ func main() {
 	}
 }
 
-// services builds the review-queue + merge services exactly as cmd/catalog
-// does, so every action is byte-identical to an admin UI click.
 func services(db *gorm.DB) (*service.AdminQueueService, *service.MergeService) {
 	resolve := service.NewResolveService(repository.NewRedirectRepository(db))
 	merge := service.NewMergeService(db, resolve,

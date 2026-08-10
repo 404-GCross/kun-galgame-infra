@@ -1,35 +1,3 @@
-// backfill-entity-intros projects character and person descriptions from the
-// staging mirrors into catalog_character_intro / catalog_person_intro (field PR
-// C1, refs/proj/65 + refs/proj/120). Four lanes: character × bangumi summaries
-// (kana-detected ja / zh-Hans), character × vndb descriptions (en, spoiler
-// spans removed entirely, light markup unwrapped), character × erogamespace
-// appearance write-ups (ja, spoiler rows excluded, longest text per character),
-// person × bangumi summaries (person anchors are empty today — the lane
-// auto-expands when identity resolution lands them). src_bangumi / src_vndb are
-// schemas INSIDE the catalog DB, so ONE --dsn covers those three lanes;
-// erogamespace is a separate DATABASE and enters via --eg-dsn.
-//
-// Fill-missing-language discipline (step 57): a text is written in its
-// language ONLY when the entity has no intro row in that language yet (any
-// source). No upsert — intros are non-volatile (contrast: the step-62
-// popularity counters change on every mirror refresh and need
-// ON CONFLICT DO UPDATE); a dump refresh is handled by re-running
-// fill-missing. Logic lives in internal/jobs/entityintros. Idempotent: a
-// second --apply writes zero.
-//
-// Dry-run is the DEFAULT (repo convention); pass --apply to write. --dsn is
-// REQUIRED and never defaulted — the rehearsal copy locally
-// (kun_catalog_rehearsal), the live catalog only in the acceptance run.
-// --eg-dsn defaults to the catalog server with dbname=erogamespace (the
-// cmd/enrich-eg-scores form); it is only consulted when the char-eg lane runs.
-//
-//	# dry-run: per-lane counters + samples
-//	go run ./cmd/backfill-entity-intros \
-//	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable"
-//
-//	# apply one lane, chunked
-//	go run ./cmd/backfill-entity-intros --apply --only char-vndb --limit 1000 \
-//	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable"
 package main
 
 import (
@@ -54,10 +22,8 @@ func main() {
 	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: erogamespace db on the catalog server)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
-	// config drives logging and the char-eg default DSN; the catalog DB itself
-	// is reached exclusively via --dsn.
 	cfg, cfgErr := config.Load()
 	if cfgErr == nil {
 		logger.Init(cfg.Server.Env)

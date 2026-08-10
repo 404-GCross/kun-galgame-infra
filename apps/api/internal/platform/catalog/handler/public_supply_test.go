@@ -1,11 +1,3 @@
-// public_supply_test.go — A2-1e wire-level cases (refs/proj/135): the tag
-// SAFETY AXIS (R8) end to end on a claimed work, the calendar navigation meta
-// (R10), and the conjunctive tag_id parameter's 400 posture.
-//
-// The safety axis used to read the wiki-side galgame_tag / galgame_tag_relation
-// layer through a bridge, then through the wave-140 mirror. Wave 161 retired
-// both: catalog_work_tag now carries the axis natively and the fixture writes
-// that table directly.
 package handler
 
 import (
@@ -21,8 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// supplyApp mounts the routes this file exercises (bare, like publicApp — the
-// devapi chain is a separate concern).
 func supplyApp(db *gorm.DB) *fiber.App {
 	resolveSvc := service.NewResolveService(repository.NewRedirectRepository(db))
 	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
@@ -36,23 +26,6 @@ func supplyApp(db *gorm.DB) *fiber.App {
 	return app
 }
 
-// TestWorkDetailTagSafetyAxis is R8's case. It pins four things at once:
-//
-//	① the DEFAULT response carries no spoiler-flagged tag (the wire is
-//	   byte-compatible with the pre-wave contract for anyone who ignores the
-//	   new parameter);
-//	② ?spoilers=1 / =2 widen the set monotonically;
-//	③ every surfaced row carries the axis, with `sexual` true exactly for the
-//	   tags the wiki classifies as the sexual category;
-//	④ a catalog-native (bangumi) row — a source with NO spoiler or category
-//	   concept — reads 0 / false rather than being dropped or guessed at.
-//
-// The four vndb-attributed rows below ARE the wave-140 mirror's output for the
-// original wiki fixture (four galgame_tag definitions, categories content /
-// sexual / content / sexual, joined to spoiler levels 0 / 0 / 1 / 2 through
-// vndb-sourced relations): count=0 because the wiki tag layer had no vote field,
-// sexual = (category == 'sexual'). Wave 161 retired that layer and its mirror, so
-// the rows are written natively and every response assertion is unchanged.
 func TestWorkDetailTagSafetyAxis(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
@@ -71,9 +44,6 @@ func TestWorkDetailTagSafetyAxis(t *testing.T) {
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9001),
 	}
 	require.NoError(t, db.Create(&claimed).Error)
-	// One safe content tag, one safe SEXUAL-category tag, one minor-spoiler and
-	// one severe-spoiler tag — plus a catalog-native bangumi row with no axis
-	// upstream.
 	for _, row := range []model.CatalogWorkTag{
 		{WorkID: claimed.ID, Name: "恋愛(a2-1e)", SourceID: srcVNDB, Spoiler: 0, Sexual: false},
 		{WorkID: claimed.ID, Name: "エロ(a2-1e)", SourceID: srcVNDB, Spoiler: 0, Sexual: true},
@@ -85,7 +55,6 @@ func TestWorkDetailTagSafetyAxis(t *testing.T) {
 	}
 
 	app := supplyApp(db)
-	// tagsAt returns name → (spoiler, sexual) for one spoilers= setting.
 	tagsAt := func(query string) map[string][2]any {
 		t.Helper()
 		code, body := getJSON(t, app, "/v1/catalog/works/"+itoa(claimed.ID)+query)
@@ -94,8 +63,6 @@ func TestWorkDetailTagSafetyAxis(t *testing.T) {
 		out := make(map[string][2]any, len(rows))
 		for _, r := range rows {
 			m := r.(map[string]any)
-			// Both keys must be PRESENT on every row — an omitted key would
-			// make a consumer's `tag.sexual === undefined` check silently pass.
 			require.Contains(t, m, "spoiler", "every tag row carries spoiler")
 			require.Contains(t, m, "sexual", "every tag row carries sexual")
 			out[m["name"].(string)] = [2]any{m["spoiler"], m["sexual"]}
@@ -103,21 +70,17 @@ func TestWorkDetailTagSafetyAxis(t *testing.T) {
 		return out
 	}
 
-	// ① default: only the two spoiler-0 wiki tags plus the native row.
 	def := tagsAt("")
 	assert.Len(t, def, 3, "default response carries no spoiler-flagged tag")
 	assert.NotContains(t, def, "軽ネタバレ(a2-1e)")
 	assert.NotContains(t, def, "重ネタバレ(a2-1e)")
 	assert.EqualValues(t, 0, def["恋愛(a2-1e)"][0])
 	assert.Equal(t, false, def["恋愛(a2-1e)"][1])
-	// ③ sexual-category tag is flagged even though it is spoiler-free.
 	assert.EqualValues(t, 0, def["エロ(a2-1e)"][0])
 	assert.Equal(t, true, def["エロ(a2-1e)"][1], "sexual category surfaces independently of spoiler")
-	// ④ the bangumi row has neither axis upstream → 0 / false, never dropped.
 	assert.EqualValues(t, 0, def["百合"][0])
 	assert.Equal(t, false, def["百合"][1])
 
-	// ② monotonic widening.
 	lvl1 := tagsAt("?spoilers=1")
 	assert.Len(t, lvl1, 4)
 	assert.EqualValues(t, 1, lvl1["軽ネタバレ(a2-1e)"][0])
@@ -129,14 +92,9 @@ func TestWorkDetailTagSafetyAxis(t *testing.T) {
 	assert.EqualValues(t, 2, lvl2["重ネタバレ(a2-1e)"][0])
 	assert.Equal(t, true, lvl2["重ネタバレ(a2-1e)"][1])
 
-	// An out-of-vocabulary spoilers value degrades to the safe default rather
-	// than 400 (spoilersQuery's existing posture, shared with characters/{id}).
 	assert.Len(t, tagsAt("?spoilers=9"), 3)
 }
 
-// TestCalendarMetaNavigationFrame covers R10 on the wire: `today` on all three
-// buckets, month bounds + prev/next on the month bucket only, and bounds that
-// move with the caller's population gates.
 func TestCalendarMetaNavigationFrame(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"catalog_release", "catalog_work"} {
@@ -170,7 +128,6 @@ func TestCalendarMetaNavigationFrame(t *testing.T) {
 		return body["data"].(map[string]any)["meta"].(map[string]any)
 	}
 
-	// Month bucket in the middle of the range: both arrows live.
 	mid := meta("/v1/catalog/calendar?month=2022-06")
 	assert.Len(t, mid["today"], 10, "today is a YYYY-MM-DD JST civil date")
 	assert.Equal(t, "2020-03", mid["min_month"])
@@ -178,7 +135,6 @@ func TestCalendarMetaNavigationFrame(t *testing.T) {
 	assert.Equal(t, true, mid["has_prev"])
 	assert.Equal(t, true, mid["has_next"])
 
-	// The two ends.
 	first := meta("/v1/catalog/calendar?month=2020-03")
 	assert.Equal(t, false, first["has_prev"])
 	assert.Equal(t, true, first["has_next"])
@@ -186,19 +142,16 @@ func TestCalendarMetaNavigationFrame(t *testing.T) {
 	assert.Equal(t, true, last["has_prev"])
 	assert.Equal(t, false, last["has_next"], "the newest non-empty month ends the walk")
 
-	// The gates move the frame: nsfw reveals the 2026 work, so has_next flips.
 	nsfw := meta("/v1/catalog/calendar?month=2024-08&nsfw=1")
 	assert.Equal(t, "2026-05", nsfw["max_month"])
 	assert.Equal(t, true, nsfw["has_next"])
 
-	// An empty population publishes no bounds and disables both arrows.
 	empty := meta("/v1/catalog/calendar?month=2022-06&olang=xx-nonexistent")
 	assert.NotContains(t, empty, "min_month")
 	assert.NotContains(t, empty, "max_month")
 	assert.Equal(t, false, empty["has_prev"])
 	assert.Equal(t, false, empty["has_next"])
 
-	// pending / tba are not month-addressed: `today` only.
 	for _, url := range []string{"/v1/catalog/calendar/pending?year=2024", "/v1/catalog/calendar/tba"} {
 		m := meta(url)
 		assert.Len(t, m["today"], 10, url)
@@ -208,9 +161,6 @@ func TestCalendarMetaNavigationFrame(t *testing.T) {
 	}
 }
 
-// TestWorksListTagIDMultiValueWire pins the parameter's wire posture: a list is
-// accepted and ANDed, a single value is unchanged, and every malformed form is
-// a 400 rather than a silently dropped filter.
 func TestWorksListTagIDMultiValueWire(t *testing.T) {
 	db := openCatalogTestDB(t)
 	app := supplyApp(db)
@@ -226,7 +176,6 @@ func TestWorksListTagIDMultiValueWire(t *testing.T) {
 		assert.Equal(t, tc.msg, body["message"], tc.url)
 	}
 
-	// Exactly at the cap, and the single-value form, are both accepted.
 	for _, url := range []string{
 		"/v1/catalog/works?tag_id=1,2,3,4,5,6,7,8,9,10",
 		"/v1/catalog/works?tag_id=7",

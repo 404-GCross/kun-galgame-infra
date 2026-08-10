@@ -48,8 +48,6 @@ func TestTermCJKKeepsSubstringSemantics(t *testing.T) {
 	}
 }
 
-// A term whose ends are non-alphanumeric demands nothing on those sides, but a
-// term ending in a letter still does: ".cn" must not fire inside ".cnn".
 func TestTermMixedEndsBoundary(t *testing.T) {
 	cleanTables(t)
 	svc := NewTermService(testDB, nil)
@@ -63,8 +61,6 @@ func TestTermMixedEndsBoundary(t *testing.T) {
 	}
 }
 
-// The automaton reports a term once however often it occurs, so the boundary
-// re-check must scan every occurrence: a bad one first must not mask a good one.
 func TestTermBoundaryScansAllOccurrences(t *testing.T) {
 	cleanTables(t)
 	svc := NewTermService(testDB, nil)

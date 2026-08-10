@@ -16,17 +16,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// renOnlyScopes are the sensitive OAuth scopes only the ren（莲）role may grant
-// to a client. Granting `artifact:upload` turns on the entire artifact
-// capability for that client (large-file upload/download), and `image:upload`
-// the image service — both are default-off and ordinary admins cannot add
-// them, like enabling auto_consent. Keep in sync with the frontend
-// REN_ONLY_SCOPES (apps/web shared/types/oauth-client.ts). See the ren-gate in
-// CreateClient / UpdateClient (oauth.clients.privileged_config / storage_config).
 var renOnlyScopes = []string{"image:upload", "artifact:upload"}
 
-// addsRenOnlyScope reports whether the requested scope set contains any
-// ren-only scope (used by the create-time gate).
 func addsRenOnlyScope(scopes []string) bool {
 	for _, s := range scopes {
 		if slices.Contains(renOnlyScopes, s) {
@@ -36,9 +27,6 @@ func addsRenOnlyScope(scopes []string) bool {
 	return false
 }
 
-// addsNewRenOnlyScope reports whether the requested scope set ADDS a ren-only
-// scope that the current client doesn't already have (used by the update-time
-// no-escalation gate — keeping or removing an existing one is fine).
 func addsNewRenOnlyScope(reqScopes, curScopes []string) bool {
 	for _, s := range reqScopes {
 		if slices.Contains(renOnlyScopes, s) && !slices.Contains(curScopes, s) {
@@ -48,45 +36,30 @@ func addsNewRenOnlyScope(reqScopes, curScopes []string) bool {
 	return false
 }
 
-// renSensitiveFieldMsg is the 403 message when a non-ren caller tries to grant
-// a ren-only scope (image:upload / artifact:upload) or enable auto_consent.
 const renSensitiveFieldMsg = "仅 ren（莲）可授予 image:upload / artifact:upload scope 或开启自动同意"
 
-// SiteHandler handles site requests
 type SiteHandler struct {
 	siteService *service.SiteService
 }
 
-// NewSiteHandler creates a new SiteHandler
 func NewSiteHandler(siteService *service.SiteService) *SiteHandler {
 	return &SiteHandler{siteService: siteService}
 }
 
-// callerRoles returns the authenticated caller's OAuth roles from the Fiber
-// locals populated by middleware.Auth — the input to the client-config
-// permission checks below.
 func callerRoles(c fiber.Ctx) []string {
 	roles, _ := c.Locals("user_roles").([]string)
 	return roles
 }
 
-// callerUserID returns the authenticated caller's numeric user id (0 when the
-// JWT middleware did not populate one, which never happens on these routes).
 func callerUserID(c fiber.Ctx) uint {
 	id, _ := c.Locals("user_id").(uint)
 	return id
 }
 
-// managesAll reports whether the caller sees the whole console (ren) rather
-// than just the sites/clients they created.
 func (h *SiteHandler) managesAll(c fiber.Ctx) bool {
 	return perm.Resolver.Can(callerRoles(c), perm.SitesManageAll)
 }
 
-// mayManage is the ownership rule behind every per-row gate below: a manage_all
-// caller reaches everything; anyone else reaches only rows they created. A NULL
-// creator (pre-ownership rows, developer-portal apps) belongs to nobody and is
-// therefore manage_all-only. Kept a pure function so it is unit-testable.
 func mayManage(managesAll bool, callerID uint, createdBy *uint) bool {
 	if managesAll {
 		return true
@@ -94,14 +67,8 @@ func mayManage(managesAll bool, callerID uint, createdBy *uint) bool {
 	return callerID != 0 && createdBy != nil && *createdBy == callerID
 }
 
-// notOwnerMsg is what a non-ren admin sees when they address someone else's row
-// (or a pre-ownership one). Deliberately a 403 rather than a 404: the console's
-// admins are trusted, and "you don't own this" is far more actionable than a
-// phantom "not found".
 const notOwnerMsg = "只能查看和管理自己创建的站点 / 客户端"
 
-// List lists the sites the caller may manage: all of them for ren, only their
-// own for an ordinary admin.
 func (h *SiteHandler) List(c fiber.Ctx) error {
 	var sites []siteModel.Site
 	var err error
@@ -114,7 +81,6 @@ func (h *SiteHandler) List(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	// Convert to response DTOs
 	result := make([]dto.SiteResponse, len(sites))
 	for i, s := range sites {
 		result[i] = dto.SiteResponse{
@@ -129,7 +95,6 @@ func (h *SiteHandler) List(c fiber.Ctx) error {
 	return response.Success(c, result)
 }
 
-// Get gets a site by ID
 func (h *SiteHandler) Get(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -154,7 +119,6 @@ func (h *SiteHandler) Get(c fiber.Ctx) error {
 	})
 }
 
-// Create creates a new site
 func (h *SiteHandler) Create(c fiber.Ctx) error {
 	var req dto.CreateSiteRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -165,12 +129,10 @@ func (h *SiteHandler) Create(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	// Check domain uniqueness
 	if h.siteService.DomainExists(c.Context(), req.Domain) {
 		return response.BadRequest(c, errors.ErrSiteAlreadyExists)
 	}
 
-	// Stamp the creator: this is what scopes the console for non-ren admins.
 	site := &siteModel.Site{
 		Name:        req.Name,
 		Domain:      req.Domain,
@@ -193,7 +155,6 @@ func (h *SiteHandler) Create(c fiber.Ctx) error {
 	})
 }
 
-// Update updates a site
 func (h *SiteHandler) Update(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -238,7 +199,6 @@ func (h *SiteHandler) Update(c fiber.Ctx) error {
 	})
 }
 
-// Delete deletes a site
 func (h *SiteHandler) Delete(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -254,10 +214,6 @@ func (h *SiteHandler) Delete(c fiber.Ctx) error {
 		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
 	}
 
-	// Precheck attached OAuth clients: the FK (sites ← oauth_clients) is
-	// NO ACTION, so deleting a site that still has clients raises an opaque
-	// FK-violation 500. Surface an actionable message instead. We must NOT
-	// cascade — that would silently delete live SSO integrations.
 	clients, err := h.siteService.GetOAuthClientsBySiteID(c.Context(), uint(id))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
@@ -273,8 +229,6 @@ func (h *SiteHandler) Delete(c fiber.Ctx) error {
 	return response.Success(c, nil)
 }
 
-// ListClients lists the OAuth clients the caller may manage: all of them for
-// ren, only their own for an ordinary admin.
 func (h *SiteHandler) ListClients(c fiber.Ctx) error {
 	var clients []siteModel.OAuthClient
 	var err error
@@ -295,7 +249,6 @@ func (h *SiteHandler) ListClients(c fiber.Ctx) error {
 	return response.Success(c, result)
 }
 
-// GetSiteClients lists OAuth clients for a specific site
 func (h *SiteHandler) GetSiteClients(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -303,8 +256,6 @@ func (h *SiteHandler) GetSiteClients(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	// The site itself must be visible before its clients are, and the client
-	// list is then narrowed by the same ownership rule.
 	site, err := h.siteService.GetByID(c.Context(), uint(id))
 	if err != nil {
 		return response.NotFound(c, errors.ErrSiteNotFound)
@@ -332,7 +283,6 @@ func (h *SiteHandler) GetSiteClients(c fiber.Ctx) error {
 	return response.Success(c, result)
 }
 
-// CreateClient creates an OAuth client
 func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 	var req dto.CreateOAuthClientRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -343,29 +293,16 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	// privileged-config gate (ren): only ren（莲）may grant a ren-only scope
-	// (image:upload / artifact:upload) or enable auto_consent. All are
-	// default-off, so an ordinary admin simply creates a normal login client; a
-	// caller without the permission who explicitly asks for any is refused.
-	// (Backstops the frontend, which hides these controls for non-ren.)
 	roles := callerRoles(c)
 	if !perm.Resolver.Can(roles, perm.ClientsPrivilegedConfig) &&
 		(addsRenOnlyScope(req.AllowedScopes) || req.AutoConsent) {
 		return response.ForbiddenMsg(c, errors.ErrForbidden, renSensitiveFieldMsg)
 	}
 
-	// display_order is ren-only: it controls the cross-site ordering of the
-	// public app directory (a central decision), unlike the per-client display
-	// fields (listed/logo/tagline) any admin may set. Silently pin the value to
-	// the default for a caller without the permission so their save still
-	// succeeds (the frontend hides it).
 	if !perm.Resolver.Can(roles, perm.ClientsPrivilegedConfig) {
 		req.DisplayOrder = 0
 	}
 
-	// Verify site exists — and that the caller may manage it. Without the
-	// ownership check an admin could attach a client to someone else's site by
-	// guessing its id, which the filtered site list would never show them.
 	site, err := h.siteService.GetByID(c.Context(), req.SiteID)
 	if err != nil {
 		return response.NotFound(c, errors.ErrSiteNotFound)
@@ -415,7 +352,6 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 	})
 }
 
-// UpdateClient updates an OAuth client
 func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 	clientID := c.Params("id")
 	if clientID == "" {
@@ -451,12 +387,6 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
 	}
 
-	// privileged-config gate (no-escalation): a caller without
-	// oauth.clients.privileged_config may edit a client, but may not ADD a
-	// ren-only scope (image:upload / artifact:upload) or turn ON auto_consent.
-	// Leaving a ren-provisioned client's existing sensitive fields untouched
-	// (the form re-submits them) and de-escalating are both fine — only
-	// escalation is blocked, compared against the current row.
 	if !perm.Resolver.Can(callerRoles(c), perm.ClientsPrivilegedConfig) {
 		var curScopes []string
 		_ = json.Unmarshal(cur.AllowedScopes, &curScopes)
@@ -465,7 +395,6 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		if addsScope || enablesAutoConsent {
 			return response.ForbiddenMsg(c, errors.ErrForbidden, renSensitiveFieldMsg)
 		}
-		// display_order is ren-only — leave it unchanged on a non-ren edit.
 		req.DisplayOrder = nil
 	}
 
@@ -490,9 +419,6 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 	return response.Success(c, toOAuthClientResponse(client))
 }
 
-// UpdateClientStorage sets a client's object-storage capability config (the
-// artifact_*/image_* columns). Admin-only; a non-ren admin may not ENABLE a
-// capability that is currently off (mirrors the upload-scope ren-gate).
 func (h *SiteHandler) UpdateClientStorage(c fiber.Ctx) error {
 	clientID := c.Params("id")
 	if clientID == "" {
@@ -542,7 +468,6 @@ func (h *SiteHandler) UpdateClientStorage(c fiber.Ctx) error {
 	return response.Success(c, toOAuthClientResponse(client))
 }
 
-// DeleteClient deletes an OAuth client
 func (h *SiteHandler) DeleteClient(c fiber.Ctx) error {
 	clientID := c.Params("id")
 	if clientID == "" {
@@ -564,7 +489,6 @@ func (h *SiteHandler) DeleteClient(c fiber.Ctx) error {
 	return response.Success(c, nil)
 }
 
-// toOAuthClientResponse converts model to response DTO
 func toOAuthClientResponse(cl *siteModel.OAuthClient) dto.OAuthClientResponse {
 	var redirectURIs []string
 	_ = json.Unmarshal(cl.RedirectURIs, &redirectURIs)

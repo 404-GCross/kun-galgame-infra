@@ -11,14 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// T8-⑤: ClaimWork — anchor-based claim of an existing unclaimed row,
-// idempotency, conflict, and anchorless creation.
 func TestClaimWork(t *testing.T) {
 	cleanTables(t)
 	ctx := t.Context()
 
-	// An unclaimed registry row with a bangumi exact anchor (an imported
-	// subject whose product does not exist yet).
 	unclaimed := createWork(t, "先に登録された作品")
 	require.NoError(t, testDB.Exec(`UPDATE catalog_work SET status = ? WHERE id = ?`, model.WorkStatusStub, unclaimed.ID).Error)
 	addExternalRef(t, model.EntityTypeWork, unclaimed.ID, 3, "subj-42", model.LinkKindExact)
@@ -41,20 +37,17 @@ func TestClaimWork(t *testing.T) {
 	assert.Equal(t, int64(4242), *claimed.ProductWorkID)
 	assert.Equal(t, model.WorkStatusLive, claimed.Status, "claiming graduates a stub to live")
 
-	// Idempotency: the same product work returns the same id.
 	again, againCreated, err := testWork.ClaimWork(ctx, params)
 	require.NoError(t, err)
 	assert.Equal(t, id, again)
 	assert.False(t, againCreated)
 
-	// Conflict: a different product work claiming the same anchor.
 	conflicting := params
 	conflicting.Site = "letmoe"
 	conflicting.ProductWorkID = 7
 	_, _, err = testWork.ClaimWork(ctx, conflicting)
 	require.ErrorIs(t, err, ErrClaimConflict)
 
-	// Anchorless claim creates a new work with refs + created revision.
 	fresh := ClaimWorkParams{
 		MediumID: 1, Site: "galgame_wiki", ProductWorkID: 5000,
 		DisplayName: "新規作品",
@@ -74,10 +67,6 @@ func TestClaimWork(t *testing.T) {
 		Count(&revCount)
 	assert.Equal(t, int64(1), revCount)
 
-	// Merging the claimed work into an unclaimed survivor TRANSFERS the
-	// claim (survivorship claim unit) and moves the anchor; the same
-	// product work re-claiming lands on the survivor, a different product
-	// work conflicts.
 	survivor := createWork(t, "存続側")
 	pm, err := testMerge.ProposeMerge(ctx, model.EntityTypeWork, freshID, survivor.ID, 7, "dup")
 	require.NoError(t, err)
@@ -89,7 +78,7 @@ func TestClaimWork(t *testing.T) {
 	require.NotNil(t, afterMerge.Site)
 	assert.Equal(t, int64(5000), *afterMerge.ProductWorkID, "the claim followed the merge onto the survivor")
 
-	reclaimedID, _, err := testWork.ClaimWork(ctx, fresh) // same product work (5000)
+	reclaimedID, _, err := testWork.ClaimWork(ctx, fresh)
 	require.NoError(t, err)
 	assert.Equal(t, survivor.ID, reclaimedID, "the claiming product resolves to the canonical work after the merge")
 
@@ -99,18 +88,11 @@ func TestClaimWork(t *testing.T) {
 	require.ErrorIs(t, err, ErrClaimConflict, "a different product work cannot steal the transferred claim")
 }
 
-// TestClaimWork_ReleaseAnchor covers the doujin claim path: a DLsite workno is
-// a RELEASE-level anchor (R3/R5), so claiming by workno must (1) adopt the
-// owning work through its release, inheriting its assets, (2) conflict with the
-// structured owner when the work is already claimed, and (3) on a fresh mint
-// hang the anchor on a new release — never the work.
 func TestClaimWork_ReleaseAnchor(t *testing.T) {
 	cleanTables(t)
 	ctx := t.Context()
 	const dlsite int16 = 4
 
-	// (1) ADOPT — an unclaimed rosetta-style work: a release carries the exact
-	// DLsite anchor, plus a label asset that must survive the claim.
 	unclaimed := createWork(t, "同人音声")
 	require.NoError(t, testDB.Exec(`UPDATE catalog_work SET status = ? WHERE id = ?`, model.WorkStatusStub, unclaimed.ID).Error)
 	rel := &model.CatalogRelease{WorkID: unclaimed.ID, Kind: model.ReleaseKindDigital}
@@ -139,13 +121,10 @@ func TestClaimWork_ReleaseAnchor(t *testing.T) {
 	testDB.Model(&model.CatalogWorkLabel{}).Where("work_id = ?", id).Count(&labelCount)
 	assert.Equal(t, int64(1), labelCount, "the work's existing assets are inherited by the claim")
 
-	// Idempotency on the release-anchor path: same product work → same id.
 	again, _, err := testWork.ClaimWork(ctx, adoptParams)
 	require.NoError(t, err)
 	assert.Equal(t, id, again)
 
-	// (2) CONFLICT — a different product work claiming the same anchor gets the
-	// structured owner (site + product work id), not just a sentinel.
 	conflicting := adoptParams
 	conflicting.ProductWorkID = 8002
 	_, _, err = testWork.ClaimWork(ctx, conflicting)
@@ -157,9 +136,6 @@ func TestClaimWork_ReleaseAnchor(t *testing.T) {
 	require.NotNil(t, ce.OwningProductWorkID)
 	assert.Equal(t, int64(8001), *ce.OwningProductWorkID)
 
-	// (3) MINT — a workno with no existing anchor mints a new work whose DLsite
-	// anchor lands on a fresh RELEASE, not the work (collision-safe with a later
-	// release-keyed import).
 	mintParams := ClaimWorkParams{
 		MediumID: 1, Site: "letmoe", ProductWorkID: 8003, DisplayName: "新規同人音声", OLang: "ja",
 		Anchors: []ExternalAnchor{{SourceID: dlsite, ExternalID: "RJMINT", MatchedBy: "import:test", EntityType: model.EntityTypeRelease}},
@@ -184,10 +160,9 @@ func TestClaimWork_ReleaseAnchor(t *testing.T) {
 		Count(&releaseLevelRefs)
 	assert.Equal(t, int64(1), releaseLevelRefs, "the SKU anchor is an exact ref on the new release")
 
-	// A work-natured anchor on a fresh mint stays on the work (no stray release).
 	workAnchorParams := ClaimWorkParams{
 		MediumID: 1, Site: "letmoe", ProductWorkID: 8004, DisplayName: "作品アンカー", OLang: "ja",
-		Anchors: []ExternalAnchor{{SourceID: 3, ExternalID: "subj-77", MatchedBy: "import:test"}}, // no EntityType → work-level
+		Anchors: []ExternalAnchor{{SourceID: 3, ExternalID: "subj-77", MatchedBy: "import:test"}},
 	}
 	waID, _, err := testWork.ClaimWork(ctx, workAnchorParams)
 	require.NoError(t, err)
@@ -201,7 +176,6 @@ func TestClaimWork_ReleaseAnchor(t *testing.T) {
 	assert.Equal(t, int64(1), waWorkRef, "the work-natured anchor stays on the work")
 }
 
-// T8-⑦: the usage delete-guard (doc 10 invariant 8).
 func TestUsageGuard(t *testing.T) {
 	cleanTables(t)
 	ctx := t.Context()
@@ -214,14 +188,12 @@ func TestUsageGuard(t *testing.T) {
 	require.NoError(t, testGuard.AssertDeletable(ctx, model.EntityTypePerson, free.ID))
 }
 
-// T8-⑧: the COALESCE expression unique on credits — NULL character_id
-// collides, distinct characters coexist.
 func TestCreditUniqueExpressionIndex(t *testing.T) {
 	cleanTables(t)
 
 	role := seededRoleID(t)
 	w := createWork(t, "w")
-	n := createCreditName(t, nil, "orphan name") // orphan credit names are legal
+	n := createCreditName(t, nil, "orphan name")
 	createCredit(t, w.ID, n.ID, role, nil)
 
 	dup := &model.CatalogCredit{WorkID: w.ID, CreditNameID: n.ID, RoleID: role, Spoiler: model.SpoilerNone}

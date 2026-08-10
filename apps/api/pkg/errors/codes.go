@@ -1,41 +1,19 @@
 package errors
 
-// 错误码按模块分段
-// 1-999: 通用错误
-// 10000-19999: Auth
-// 15000-15999: OAuth
-// 20000-29999: Game
-// 30000-39999: Content
-// 40000-49999: Comment
-// 50000-59999: Artifact
-// 60000-69999: Moderation
-// 70000-79999: Site
-// 80000-80999: Image service
-
 const (
-	// 通用错误 (1-999)
-	ErrBadRequest       = 1  // 请求格式错误
-	ErrInvalidID        = 2  // 无效的 ID
-	ErrInternalServer   = 3  // 服务器内部错误
-	ErrNotFound         = 4  // 资源不存在
-	ErrForbidden        = 5  // 访问被拒绝
-	ErrTooManyRequests  = 6  // 请求过于频繁
-	ErrValidationFailed = 7  // 参数验证失败
-	ErrMissingParam     = 8  // 缺少必要参数
-	ErrInvalidParam     = 9  // 参数格式错误
-	ErrOperationFailed  = 10 // 操作失败
-	// ErrGone: the endpoint itself was retired — distinct from ErrNotFound (4),
-	// which means "this resource does not exist on a live endpoint". Paired with
-	// HTTP 410 so a caller can tell a decommissioned face from a typo'd path.
-	ErrGone = 11 // 接口已下线
-	// ErrMoved: the RESOURCE moved — its id was merged away and the identity now
-	// lives on a survivor. Distinct from ErrNotFound (4, "never existed / is
-	// gone for good") and from ErrGone (11, which is about the endpoint, not the
-	// row). Paired with HTTP 301 + Location, and the envelope's data carries
-	// current_id so a caller can redirect in a single hop.
-	ErrMoved = 12 // 资源已合并
+	ErrBadRequest       = 1
+	ErrInvalidID        = 2
+	ErrInternalServer   = 3
+	ErrNotFound         = 4
+	ErrForbidden        = 5
+	ErrTooManyRequests  = 6
+	ErrValidationFailed = 7
+	ErrMissingParam     = 8
+	ErrInvalidParam     = 9
+	ErrOperationFailed  = 10
+	ErrGone             = 11
+	ErrMoved            = 12
 
-	// Auth (10000-19999)
 	ErrAuthUnauthorized           = 10001
 	ErrAuthInvalidToken           = 10002
 	ErrAuthTokenExpired           = 10003
@@ -53,48 +31,39 @@ const (
 	ErrAuthEmailDomainNotAllowed  = 10015
 	ErrAuthStepUpRequired         = 10016
 
-	// OAuth (15000-15999)
-	ErrOAuthInvalidClient       = 15001
-	ErrOAuthInvalidRedirectURI  = 15002
-	ErrOAuthInvalidCode         = 15003
-	ErrOAuthInvalidCodeVerifier = 15004
-	ErrOAuthInvalidGrant        = 15005
-	ErrOAuthInvalidScope        = 15006
-	ErrOAuthAccessDenied        = 15007
-	ErrOAuthInvalidClientSecret = 15008
-	ErrOAuthPKCERequired        = 15009
-	ErrOAuthConsentRequired     = 15010
-	// ErrOAuthUnsupportedGrantType: the grant_type value itself is not
-	// implemented (RFC 6749 unsupported_grant_type). Distinct from
-	// ErrOAuthInvalidGrant (15005) = "this client is not allowed this grant"
-	// (RFC 6749 unauthorized_client), which RPs classify as refresh-dead.
+	ErrOAuthInvalidClient        = 15001
+	ErrOAuthInvalidRedirectURI   = 15002
+	ErrOAuthInvalidCode          = 15003
+	ErrOAuthInvalidCodeVerifier  = 15004
+	ErrOAuthInvalidGrant         = 15005
+	ErrOAuthInvalidScope         = 15006
+	ErrOAuthAccessDenied         = 15007
+	ErrOAuthInvalidClientSecret  = 15008
+	ErrOAuthPKCERequired         = 15009
+	ErrOAuthConsentRequired      = 15010
 	ErrOAuthUnsupportedGrantType = 15011
 
-	// Moemoepoint (16000-16999)
 	ErrMoemoepointInvalidDelta  = 16002
 	ErrMoemoepointInvalidReason = 16003
 	ErrMoemoepointIdemConflict  = 16004
 	ErrMoemoepointNotAwarder    = 16005
 
-	// Creator application (17000-17999)
-	ErrCreatorAlreadyHas    = 17001 // user already holds the creator role
-	ErrCreatorAppPending    = 17002 // a pending application already exists
-	ErrCreatorAppCooldown   = 17003 // re-apply cooldown not elapsed
-	ErrCreatorAppNotFound   = 17004 // application not found
-	ErrCreatorAppNotPending = 17005 // application already reviewed
+	ErrCreatorAlreadyHas    = 17001
+	ErrCreatorAppPending    = 17002
+	ErrCreatorAppCooldown   = 17003
+	ErrCreatorAppNotFound   = 17004
+	ErrCreatorAppNotPending = 17005
 
-	// Galgame (20000-29999)
 	ErrGalgameNotFound           = 20001
 	ErrGalgameAlreadyExists      = 20002
 	ErrGalgameInvalidVNDB        = 20003
 	ErrGalgameVNDBExists         = 20004
 	ErrGalgameForbidden          = 20005
-	ErrGalgameClaimNotDraft      = 20006 // claim 时目标 status ≠ 2
-	ErrGalgameSubmitterOnly      = 20007 // PATCH/DELETE 时不是提交者本人
-	ErrGalgameDraftStatusInvalid = 20008 // 草稿端点：status ∉ {3,4}
-	ErrGalgameQuotaExceeded      = 20009 // 今日投稿配额已用尽
+	ErrGalgameClaimNotDraft      = 20006
+	ErrGalgameSubmitterOnly      = 20007
+	ErrGalgameDraftStatusInvalid = 20008
+	ErrGalgameQuotaExceeded      = 20009
 
-	// Artifact (50000-59999)
 	ErrArtifactNotFound         = 50001
 	ErrArtifactInvalid          = 50002
 	ErrArtifactVirusFound       = 50003
@@ -113,17 +82,12 @@ const (
 	ErrArtifactForbidden        = 50016
 	ErrArtifactMIMEDenied       = 50017
 
-	// Moderation (60000-69999). Pending/Rejected are the image content-moderation
-	// pair (still used by internal/platform/image). ErrModerationNotFound was
-	// retired with the moderation skeleton service (doc 18 P0).
 	ErrModerationPending  = 60001
 	ErrModerationRejected = 60002
 
-	// Site (70000-79999)
 	ErrSiteNotFound      = 70001
 	ErrSiteAlreadyExists = 70002
 
-	// Image service (80000-80999)
 	ErrImageUnauthorized     = 80001
 	ErrImageBadClient        = 80002
 	ErrImageBadSecret        = 80003
@@ -141,9 +105,7 @@ const (
 	ErrImageUploadDisabled   = 80015
 )
 
-// 错误码到消息的映射
 var codeMessages = map[int]string{
-	// 通用错误
 	ErrBadRequest:       "请求格式错误",
 	ErrInvalidID:        "无效的 ID",
 	ErrInternalServer:   "服务器内部错误",
@@ -157,7 +119,6 @@ var codeMessages = map[int]string{
 	ErrGone:             "接口已下线",
 	ErrMoved:            "资源已合并",
 
-	// Auth
 	ErrAuthUnauthorized:           "未授权，请先登录",
 	ErrAuthInvalidToken:           "无效的令牌",
 	ErrAuthTokenExpired:           "令牌已过期，请重新登录",
@@ -193,7 +154,6 @@ var codeMessages = map[int]string{
 	ErrOAuthConsentRequired:      "需要用户授权同意",
 	ErrOAuthUnsupportedGrantType: "不支持的授权类型",
 
-	// Moemoepoint
 	ErrMoemoepointInvalidDelta:  "萌萌点变动值不能为 0",
 	ErrMoemoepointInvalidReason: "未知的萌萌点变动原因",
 	ErrMoemoepointIdemConflict:  "幂等键已存在但请求内容不一致",
@@ -233,7 +193,6 @@ var codeMessages = map[int]string{
 	ErrSiteNotFound:      "站点不存在",
 	ErrSiteAlreadyExists: "站点已存在",
 
-	// Image service
 	ErrImageUnauthorized:     "未授权访问图片服务",
 	ErrImageBadClient:        "无效的客户端 ID",
 	ErrImageBadSecret:        "客户端密钥错误",
@@ -251,7 +210,6 @@ var codeMessages = map[int]string{
 	ErrImageUploadDisabled:   "图片上传功能暂未开放，敬请期待",
 }
 
-// GetMessage returns the message for an error code
 func GetMessage(code int) string {
 	if msg, ok := codeMessages[code]; ok {
 		return msg

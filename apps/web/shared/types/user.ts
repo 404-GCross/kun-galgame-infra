@@ -1,6 +1,4 @@
 export interface User {
-  // Numeric user id. Present only on admin-surfaced users (the API omits it on
-  // self-facing /me + login payloads). uid is public in-ecosystem.
   id?: number
   uuid: string
   name: string
@@ -11,17 +9,11 @@ export interface User {
   moemoepoint: number
   status: number
   is_anonymized?: boolean // PII irreversibly scrubbed (terminal); shows 已注销
-  // Pre-anonymize email, preserved for 备查. The API returns it ONLY to ren
-  // admins (PII) and only for anonymized users — so its mere presence means
-  // "ren is viewing an anonymized account". Absent otherwise.
   original_email?: string
   roles: string[]
   created_at: string
 }
 
-// Rich admin detail (GET /admin/users/:uuid) — extends the list User with the
-// non-list fields: last IP, active session count, linked OAuth account count,
-// and per-site data / role grants.
 export interface UserSiteData {
   site_id: number
   site_name: string
@@ -53,9 +45,6 @@ export interface RefreshResponse {
   access_token: string
 }
 
-// One account in the browser's session "bag" (multi-account support).
-// Returned by GET /auth/sessions. `sub` is the user uuid; `active:true`
-// marks the currently-active account. See docs/integration/oauth/09.
 export interface BagSession {
   sub: string
   name: string

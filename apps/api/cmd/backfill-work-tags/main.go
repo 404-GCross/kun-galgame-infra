@@ -1,28 +1,3 @@
-// backfill-work-tags fills catalog_work_tag rows for galgame works from the
-// Bangumi folksonomy (refs/proj/58b; T2 = refs/proj/70 §3/§8, 88): EXACT bgm
-// work anchors (matched_by unrestricted) × src_bangumi.subject.tags ([{name,
-// count}] jsonb) → one row per tag, VERBATIM — no vocabulary mapping, no
-// threshold (count=1 rows are stored too; consumers filter when rendering).
-// Content tags NEVER touch catalog_label (the attribution-vocabulary red line).
-// src_bangumi is a schema INSIDE the catalog DB, so ONE --dsn covers the whole
-// run.
-//
-// T2: CLAIMED works are admitted (bgm is a catalog-native SOURCE lane per the
-// (facet, source) XOR — the read face merges it with the wiki bridge). No claim
-// filter, no write-time guard.
-//
-// Logic lives in internal/jobs/worktags. Dry-run is the DEFAULT (repo
-// convention); pass --apply to write. The DSN is REQUIRED and never defaulted
-// — the rehearsal copy locally, the live catalog only in the acceptance run.
-// Idempotent: ON CONFLICT (work_id, name, source_id) DO NOTHING — a second
-// --apply writes zero.
-//
-//	# dry-run: counters + top-frequency tag names + samples
-//	go run ./cmd/backfill-work-tags \
-//	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable"
-//
-//	# apply: write the tag rows
-//	go run ./cmd/backfill-work-tags --apply --dsn "..."
 package main
 
 import (
@@ -45,9 +20,8 @@ func main() {
 	offset := flag.Int("offset", 0, "skip this many candidate works (for chunking)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
-	// config drives only logging here; the DB is reached exclusively via --dsn.
 	if cfg, err := config.Load(); err == nil {
 		logger.Init(cfg.Server.Env)
 	}

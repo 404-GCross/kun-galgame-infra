@@ -9,12 +9,6 @@ import (
 	"testing"
 )
 
-// TestEngineImportsNoFamilyPackages pins the engine's zero-family-dependency
-// rule (charter ruling 1): field knowledge only ever arrives by injection,
-// so this package must never import an entity family. The repo-wide archtest
-// already forbids galgame for every platform package; this test additionally
-// forbids catalog (and any future family) for the engine specifically —
-// non-test files only, since the tests here fake a family on purpose.
 func TestEngineImportsNoFamilyPackages(t *testing.T) {
 	forbidden := []string{
 		"api/internal/platform/galgame",

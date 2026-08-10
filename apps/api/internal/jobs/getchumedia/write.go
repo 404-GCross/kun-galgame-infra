@@ -17,15 +17,8 @@ import (
 )
 
 const (
-	// shotPreset is the image-service preset for catalog screenshots
-	// (configs/image_presets.yaml). The catalog image client's
-	// image_allowed_presets MUST contain it or every upload is 403'd.
-	shotPreset = "catalog_screenshot"
-	// uploaderSub stamps a machine identity on first_uploader_sub — there is no
-	// human uploader behind a batch backfill, and the audit trail should say so.
-	uploaderSub = "system:getchu-media-backfill"
-	// uploadRetries rides out an image-container recreation mid-run (~30-90s
-	// unreachable). Quota and moderation are terminal and never retried.
+	shotPreset     = "catalog_screenshot"
+	uploaderSub    = "system:getchu-media-backfill"
 	uploadRetries  = 6
 	defaultTimeout = 60 * time.Second
 )
@@ -34,7 +27,7 @@ type runner struct {
 	db         *gorm.DB
 	cli        *imageclient.Client
 	source     int16
-	have       map[int64]map[string]bool // work → image hashes already present
+	have       map[int64]map[string]bool
 	gap        time.Duration
 	maxPerWork int
 	stats      *Stats
@@ -42,15 +35,11 @@ type runner struct {
 	pingHashes []string
 }
 
-// workResult is one work's outcome. fill returns it instead of mutating the
-// runner, which is what lets works run CONCURRENTLY: every field here is
-// private to one work, so the pool merges results serially and nothing is
-// shared while the uploads are in flight.
 type workResult struct {
 	dedup, missing, planned, uploaded, errors, rejected int
 	noStaged, quota                                     bool
-	hashes                                              []string // fresh uploads, for the reference ping
-	touched                                             bool     // the work gained at least one row
+	hashes                                              []string
+	touched                                             bool
 }
 
 func (s *Stats) merge(r workResult) {
@@ -68,37 +57,12 @@ func (s *Stats) merge(r workResult) {
 	}
 }
 
-// fill uploads one work's Getchu sample CG and writes its screenshot rows.
-//
-// A work can carry several Getchu releases (a regular edition, a DL edition);
-// their sample sets are concatenated in anchor order, and sort_order is the
-// running position across the whole gallery rather than each release's own
-// index — two releases both starting at 0 would otherwise interleave into
-// nonsense. That is also why the pool parallelises across WORKS and never
-// within one: sort_order is assigned by this loop's position, so two goroutines
-// inside one gallery would scramble it.
-//
-// `present` is passed IN rather than read from runner.have. That is not style:
-// runner.have is one shared Go map, and a worker ranging over it while the
-// driver assigns a key is `concurrent map read and map write` — fatal, and
-// indifferent to the fact that the two touch different works. This crashed a
-// production run at 8,077 uploads. Handing the worker its own set means no
-// worker touches a shared map at all, which is a property of the signature
-// rather than a rule someone has to keep remembering.
 func (r *runner) fill(ctx context.Context, dir string, c candidate, present map[string]bool, staged map[string][]stagedImage, apply bool) workResult {
 	var out workResult
 	var images []stagedImage
 	seenBytes := map[string]bool{}
 	for _, gid := range c.GetchuIDs {
 		for _, im := range staged[gid] {
-			// A work's Getchu editions (regular / DL) publish the SAME CG set, so
-			// concatenating their samples offers the same bytes twice. The
-			// (work_id, image_hash) key would collapse them anyway — but only
-			// AFTER paying ~2s to upload each duplicate, and across the backfill
-			// that is 2,556 of 16,199 uploads spent to learn nothing. The mirror
-			// already recorded each file's sha256, so the duplicate is knowable
-			// here for free. Files with no recorded hash fall through and are
-			// uploaded, where the unique key still catches them.
 			if im.SHA256 != "" {
 				if seenBytes[im.SHA256] {
 					out.dedup++
@@ -149,11 +113,6 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, present map[
 			DoNothing: true,
 		}).Create(&model.CatalogWorkScreenshot{
 			WorkID: c.WorkID, ImageHash: res.Hash, SortOrder: sort, Caption: "",
-			// The rating comes from the WORK, not from the image or the store
-			// page: catalog_work.content_rating is the value the read face
-			// already gates on, and both scales are the same 0/1/2. Deriving a
-			// per-image guess here would let a gallery disagree with the work
-			// it hangs on.
 			Sexual: c.ContentRating, Violence: 0, SourceID: r.source,
 		})
 		if tx.Error != nil {
@@ -161,8 +120,6 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, present map[
 			slog.Warn("write screenshot row", "work", c.WorkID, "getchu", im.GetchuID, "err", tx.Error)
 			continue
 		}
-		// Ping regardless of whether the row was new: the bytes are in the
-		// image service either way and sit at TTL from upload time.
 		out.hashes = append(out.hashes, res.Hash)
 		if tx.RowsAffected == 0 {
 			out.dedup++
@@ -176,8 +133,6 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, present map[
 	return out
 }
 
-// upload reads a mirrored image and uploads it. Bytes only ever come from the
-// local mirror — this never dials getchu.com.
 func (r *runner) upload(ctx context.Context, path, filename string) (*imageclient.UploadResult, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -191,7 +146,6 @@ func (r *runner) upload(ctx context.Context, path, filename string) (*imageclien
 		if r.gap > 0 {
 			time.Sleep(r.gap)
 		}
-		// A fresh reader per attempt — the previous one is consumed.
 		res, err := r.cli.UploadWithSub(ctx, bytes.NewReader(body), filename, shotPreset, uploaderSub)
 		if err == nil {
 			return res, nil
@@ -210,8 +164,6 @@ func (r *runner) upload(ctx context.Context, path, filename string) (*imageclien
 	return nil, lastErr
 }
 
-// classify maps an upload error to a counter. Only quota exhaustion stops the
-// run — a moderation rejection is that one image's verdict, not the batch's.
 func (r *runner) classify(err error, workID int64, im stagedImage, out *workResult) (quota bool) {
 	switch {
 	case stderrors.Is(err, imageclient.ErrQuotaExceeded):
@@ -228,9 +180,6 @@ func (r *runner) classify(err error, workID int64, im stagedImage, out *workResu
 	}
 }
 
-// ping keeps freshly-uploaded bytes alive immediately. An image sits at TTL
-// from upload time, so waiting for the nightly refping is a real risk of
-// uploading bytes and then losing them.
 func (r *runner) ping(ctx context.Context) error {
 	if r.cli == nil || len(r.pingHashes) == 0 {
 		return nil
@@ -249,20 +198,6 @@ func fileExists(path string) bool {
 	return err == nil && !fi.IsDir() && fi.Size() > 0
 }
 
-// run walks the candidates through a fixed pool of workers.
-//
-// The pool is across WORKS, never inside one: sort_order is assigned by fill's
-// own loop position, so two goroutines in one gallery would scramble it, and
-// the bytes-already-sent check is per-work state. One work per worker keeps
-// both correct without a lock on either.
-//
-// Concurrency is worth having because the bottleneck is not ours: at one upload
-// at a time the image service answered in ~2s while sitting at 5% CPU — the
-// time is the object store round trip, so the fix is to have several in flight,
-// not to make each faster. A serial pass over this backfill is ~7.5 hours.
-//
-// Results merge on the caller's goroutine as they arrive, so Stats, touched and
-// pingHashes are still single-writer and need no mutex.
 func (r *runner) run(ctx context.Context, opts Opts, cands []candidate, staged map[string][]stagedImage) {
 	workers := opts.Workers
 	if workers < 1 {
@@ -271,9 +206,6 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate, staged m
 	if workers > len(cands) {
 		workers = len(cands)
 	}
-	// Each work's already-present hashes are snapshotted HERE, on one
-	// goroutine, and handed to the worker by value — runner.have is never
-	// reached from a worker. See fill.
 	snapshot := func(workID int64) map[string]bool {
 		present := make(map[string]bool, len(r.have[workID]))
 		for h := range r.have[workID] {
@@ -292,13 +224,9 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate, staged m
 		return
 	}
 
-	// Quota exhaustion is terminal for the whole run, so it cancels the shared
-	// context and every in-flight worker stops at its next image.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// The feeder pairs each candidate with its snapshot, so the snapshot is
-	// taken on the feeder goroutine and read only by the worker that receives it.
 	type task struct {
 		c       candidate
 		present map[string]bool
@@ -345,13 +273,6 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate, staged m
 	}
 }
 
-// absorb folds one work's result into the run-level state. Single-writer by
-// construction — only the driver goroutine calls it.
-//
-// It deliberately does NOT write the fresh hashes back into runner.have. Each
-// work is dispatched exactly once, so nothing would ever read them again, and
-// the write was what turned runner.have into a map being mutated while workers
-// ranged over it.
 func (r *runner) absorb(workID int64, res workResult) {
 	r.stats.merge(res)
 	r.pingHashes = append(r.pingHashes, res.hashes...)

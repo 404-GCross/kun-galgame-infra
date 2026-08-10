@@ -27,8 +27,6 @@ func toThreadView(t *model.CommunityThread) dto.ThreadView {
 	}
 }
 
-// headerImageHashes is the read-side inverse of hashesJSON: nil / malformed
-// stored JSON projects as an absent list rather than an error (display data).
 func headerImageHashes(raw datatypes.JSON) []string {
 	if len(raw) == 0 {
 		return nil
@@ -66,10 +64,6 @@ func toThreadViews(threads []model.CommunityThread) []dto.ThreadView {
 	return out
 }
 
-// toThreadViewsWithOpening builds the per-site thread-list views and projects
-// each thread's opening-post status + author (from metas) so an embed can hide
-// a held/deleted opening post (see dto.ThreadView.OpeningStatus). A thread
-// absent from metas (an empty comments thread) leaves the fields nil.
 func toThreadViewsWithOpening(threads []model.CommunityThread, metas map[int64]repository.OpeningPostMeta) []dto.ThreadView {
 	out := make([]dto.ThreadView, len(threads))
 	for i := range threads {
@@ -113,10 +107,6 @@ func toReviewItemViews(items []repository.ReviewItemRow) []dto.ReviewItemView {
 	return out
 }
 
-// --- thread-list keyset cursor (opaque base64 of the sort tuple) -----------
-// Wire format: base64("<lastPostedUnixNano | 'n'>:<id>"); 'n' marks the NULL
-// activity tail. Produced and parsed only here.
-
 func encodeThreadCursor(t *model.CommunityThread) string {
 	head := "n"
 	if t.LastPostedAt != nil {
@@ -151,8 +141,6 @@ func decodeThreadCursor(s string) (repository.ThreadCursor, error) {
 	return repository.ThreadCursor{LastPosted: time.Unix(0, nano), ID: id}, nil
 }
 
-// postsPageCursor returns the "after post_number" cursor for the next page, or
-// "" when the page was not full (last page). The post_number IS the cursor.
 func postsPageCursor(posts []dto.PostView, limit int) string {
 	if len(posts) < limit || len(posts) == 0 {
 		return ""
@@ -160,7 +148,6 @@ func postsPageCursor(posts []dto.PostView, limit int) string {
 	return fmt.Sprintf("%d", posts[len(posts)-1].PostNumber)
 }
 
-// threadsPageCursor returns the opaque cursor for the next thread page, or "".
 func threadsPageCursor(threads []model.CommunityThread, limit int) string {
 	if len(threads) < limit || len(threads) == 0 {
 		return ""

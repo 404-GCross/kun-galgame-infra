@@ -2,10 +2,6 @@
 import { DEV_MINTABLE_SCOPES } from '~/constants/devapi'
 import type { DevKeyMinted } from '~~/shared/types/devapi'
 
-// Mint a new API key for an app. Phase 1 offers only the two public-read
-// scopes (裁定 5, default all selected); galgame:nsfw is never surfaced. The
-// minted plaintext is handed straight to the parent (which reveals it once and
-// clears it) — this modal never persists it.
 const props = defineProps<{ clientId: string }>()
 const emit = defineEmits<{ minted: [DevKeyMinted] }>()
 
@@ -18,7 +14,6 @@ const scopes = ref<string[]>([...DEV_MINTABLE_SCOPES])
 const error = ref('')
 const isLoading = ref(false)
 
-// Kept mounted (v-model), so reset the form each time it opens.
 watch(open, (v) => {
   if (!v) return
   name.value = ''
@@ -45,7 +40,6 @@ const handleSubmit = async () => {
   }
   isLoading.value = true
   try {
-    // Wire body mirrors handler.go mintKeyRequest (field-for-field).
     const body: Record<string, unknown> = {
       name: name.value.trim(),
       test: test.value,

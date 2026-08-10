@@ -7,7 +7,6 @@ import (
 	"api/internal/platform/trust/model"
 )
 
-// getKind reloads a subject-kind row by its tenant identity (site, key).
 func getKind(t *testing.T, site, key string) *model.TrustSubjectKind {
 	t.Helper()
 	var k model.TrustSubjectKind
@@ -17,7 +16,6 @@ func getKind(t *testing.T, site, key string) *model.TrustSubjectKind {
 	return &k
 }
 
-// outcomes flattens results into a comparable slice.
 func outcomes(rs []EnsureSubjectKindResult) []EnsureOutcome {
 	out := make([]EnsureOutcome, len(rs))
 	for i, r := range rs {
@@ -42,10 +40,6 @@ func assertOutcomes(t *testing.T, got []EnsureSubjectKindResult, want ...EnsureO
 	}
 }
 
-// TestEnsureSubjectKindsConvergence pins the whole per-kind convergence matrix
-// (step 06 契约裁决 2): create / per-field update / unchanged / deprecated_skipped,
-// a fully-idempotent second run, request-order results, and — critically — that a
-// declaration never revives a deprecated kind.
 func TestEnsureSubjectKindsConvergence(t *testing.T) {
 	if testDB == nil {
 		t.Skip("TEST_DATABASE_DSN not set")
@@ -59,7 +53,6 @@ func TestEnsureSubjectKindsConvergence(t *testing.T) {
 	sec1, sec2 := "secret-1", "secret-2"
 	yes, no := true, false
 
-	// Round 1 — create: one bare kind, one fully specified. In request order.
 	decl := []EnsureSubjectKindItem{
 		{Key: "forum_topic"},
 		{Key: "forum_reply", CallbackURL: &cb1, CallbackSecret: &sec1, NotifyOnDismiss: &yes},
@@ -72,7 +65,6 @@ func TestEnsureSubjectKindsConvergence(t *testing.T) {
 	if res[0].Key != "forum_topic" || res[1].Key != "forum_reply" {
 		t.Fatalf("round1 results out of request order: %+v", res)
 	}
-	// Create defaults: bare kind has no callback and notify=false.
 	if k := getKind(t, site, "forum_topic"); k.CallbackURL != nil || k.NotifyOnDismiss {
 		t.Fatalf("bare create should default: %+v", k)
 	}
@@ -80,41 +72,33 @@ func TestEnsureSubjectKindsConvergence(t *testing.T) {
 		t.Fatalf("full create not stored: %+v", k)
 	}
 
-	// Round 2 — idempotent: the identical declaration is now all unchanged.
 	res, err = svc.EnsureSubjectKinds(ctx, nil, site, decl)
 	if err != nil {
 		t.Fatalf("round2 ensure: %v", err)
 	}
 	assertOutcomes(t, res, EnsureUnchanged, EnsureUnchanged)
 
-	// Round 3 — per-field update (callback_url only, sparse): the other fields are
-	// omitted and must stay put.
 	res, _ = svc.EnsureSubjectKinds(ctx, nil, site, []EnsureSubjectKindItem{{Key: "forum_reply", CallbackURL: &cb2}})
 	assertOutcomes(t, res, EnsureUpdated)
 	if k := getKind(t, site, "forum_reply"); derefStr(k.CallbackURL) != cb2 || derefStr(k.CallbackSecret) != sec1 || !k.NotifyOnDismiss {
 		t.Fatalf("url-only update clobbered siblings: %+v", k)
 	}
 
-	// Round 4 — per-field update (notify_on_dismiss only).
 	res, _ = svc.EnsureSubjectKinds(ctx, nil, site, []EnsureSubjectKindItem{{Key: "forum_reply", NotifyOnDismiss: &no}})
 	assertOutcomes(t, res, EnsureUpdated)
 	if k := getKind(t, site, "forum_reply"); k.NotifyOnDismiss || derefStr(k.CallbackURL) != cb2 {
 		t.Fatalf("notify-only update clobbered siblings: %+v", k)
 	}
 
-	// Round 5 — per-field update (callback_secret only).
 	res, _ = svc.EnsureSubjectKinds(ctx, nil, site, []EnsureSubjectKindItem{{Key: "forum_reply", CallbackSecret: &sec2}})
 	assertOutcomes(t, res, EnsureUpdated)
 	if k := getKind(t, site, "forum_reply"); derefStr(k.CallbackSecret) != sec2 {
 		t.Fatalf("secret-only update not applied: %+v", k)
 	}
 
-	// Round 6 — sparse unchanged: a provided field that already matches → no-op.
 	res, _ = svc.EnsureSubjectKinds(ctx, nil, site, []EnsureSubjectKindItem{{Key: "forum_reply", CallbackURL: &cb2}})
 	assertOutcomes(t, res, EnsureUnchanged)
 
-	// Round 7 — deprecated_skipped: retire forum_topic, then re-declare it with a
-	// callback. It must NOT revive and must NOT take the new config.
 	dep := getKind(t, site, "forum_topic")
 	deprecated := true
 	if _, err := svc.PatchSubjectKind(ctx, 1, dep.ID, SubjectKindPatch{IsDeprecated: &deprecated}); err != nil {
@@ -126,7 +110,6 @@ func TestEnsureSubjectKindsConvergence(t *testing.T) {
 		t.Fatalf("deprecated kind was revived/mutated: %+v", k)
 	}
 
-	// Round 8 — mixed batch in request order: deprecated / unchanged / created.
 	res, _ = svc.EnsureSubjectKinds(ctx, nil, site, []EnsureSubjectKindItem{
 		{Key: "forum_topic"},
 		{Key: "forum_reply", CallbackURL: &cb2},
@@ -137,16 +120,12 @@ func TestEnsureSubjectKindsConvergence(t *testing.T) {
 		t.Fatalf("mixed batch out of order: %+v", res)
 	}
 
-	// Empty declaration → empty result (no error).
 	empty, err := svc.EnsureSubjectKinds(ctx, nil, site, nil)
 	if err != nil || len(empty) != 0 {
 		t.Fatalf("empty ensure: results=%v err=%v", empty, err)
 	}
 }
 
-// TestEnsureSubjectKindsSelfSiteIsolation pins step 06 契约裁决 1/2: a kind is
-// always created under the caller's site; the same key in another site is a
-// distinct row, and one site's ensure never sees or mutates another site's rows.
 func TestEnsureSubjectKindsSelfSiteIsolation(t *testing.T) {
 	if testDB == nil {
 		t.Skip("TEST_DATABASE_DSN not set")
@@ -157,15 +136,12 @@ func TestEnsureSubjectKindsSelfSiteIsolation(t *testing.T) {
 
 	cbA, cbB := "https://a.example/cb", "https://b.example/cb"
 
-	// site-a declares shared_kind with its own callback.
 	res, err := svc.EnsureSubjectKinds(ctx, nil, "site-a", []EnsureSubjectKindItem{{Key: "shared_kind", CallbackURL: &cbA}})
 	if err != nil {
 		t.Fatalf("site-a ensure: %v", err)
 	}
 	assertOutcomes(t, res, EnsureCreated)
 
-	// site-b declares the SAME key: a separate row is created (not "unchanged"),
-	// carrying site-b's callback — proving keys are tenant-scoped.
 	res, err = svc.EnsureSubjectKinds(ctx, nil, "site-b", []EnsureSubjectKindItem{{Key: "shared_kind", CallbackURL: &cbB}})
 	if err != nil {
 		t.Fatalf("site-b ensure: %v", err)
@@ -179,7 +155,6 @@ func TestEnsureSubjectKindsSelfSiteIsolation(t *testing.T) {
 		t.Fatalf("site-b callback drifted: %+v", kb)
 	}
 
-	// Exactly one row per site for the shared key.
 	var n int64
 	if err := testDB.Model(&model.TrustSubjectKind{}).Where("key = ?", "shared_kind").Count(&n).Error; err != nil {
 		t.Fatalf("count shared_kind: %v", err)
@@ -188,7 +163,6 @@ func TestEnsureSubjectKindsSelfSiteIsolation(t *testing.T) {
 		t.Fatalf("shared_kind rows = %d, want 2 (one per site)", n)
 	}
 
-	// site-a re-ensures: its own row is unchanged; site-b's is untouched.
 	res, _ = svc.EnsureSubjectKinds(ctx, nil, "site-a", []EnsureSubjectKindItem{{Key: "shared_kind", CallbackURL: &cbA}})
 	assertOutcomes(t, res, EnsureUnchanged)
 	if kb := getKind(t, "site-b", "shared_kind"); derefStr(kb.CallbackURL) != cbB {

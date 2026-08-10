@@ -44,10 +44,6 @@ var retiredCatalogTables = []string{
 	"galgame_stats",
 }
 
-// TestP0ARuntimeSQLDoesNotReferenceRetiredCatalogTables prevents the native
-// recovery readers from regaining a dependency on the retired wiki table
-// family. It inspects string literals rather than source text so comments,
-// source labels, medium keys, and tombstone copy are not false positives.
 func TestP0ARuntimeSQLDoesNotReferenceRetiredCatalogTables(t *testing.T) {
 	root := moduleRoot(t)
 	tablePattern := retiredTableReferencePattern()
@@ -57,11 +53,6 @@ func TestP0ARuntimeSQLDoesNotReferenceRetiredCatalogTables(t *testing.T) {
 	}
 
 	var violations []string
-	// The WHOLE module, since wave 149 dropped the family: any runtime
-	// reference is now a query against a table that does not exist. The
-	// original three-path list was a holding pattern for the years the tables
-	// were still there and only the native recovery readers had to stay off
-	// them.
 	for _, rel := range []string{"cmd", "internal", "pkg"} {
 		path := filepath.Join(root, filepath.FromSlash(rel))
 		found, err := findRetiredTableReferences(path, root, tablePattern, retired)

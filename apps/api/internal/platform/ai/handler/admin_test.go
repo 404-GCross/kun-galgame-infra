@@ -20,16 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This file exercises the admin usage dashboard end-to-end against the shared
-// kun_ai_test database (TestMain in handler_test.go migrates it): the JWT +
-// ai.usage_view Fiber gate (admin/ren pass, moderator 403, anonymous 401), the
-// site×route×channel summary aggregates, and the budget upsert / NULL-clear.
-
 const adminTestSecret = "ai-admin-test-secret"
 
-// TestSetupAdmin_RegistersOperations is the spec smoke: SetupAdmin with nil deps
-// (the gen-openapi -ai-admin path) registers all four operations. GET+PUT
-// /budgets share one path entry.
 func TestSetupAdmin_RegistersOperations(t *testing.T) {
 	api := SetupAdmin(fiber.New(), nil, nil)
 	paths := api.OpenAPI().Paths
@@ -42,11 +34,9 @@ func TestSetupAdmin_RegistersOperations(t *testing.T) {
 	}
 }
 
-// buildAdminApp wires the real admin gate (JWTAuth + ai.usage_view) over
-// testDB-backed services, exactly like cmd/ai.
 func buildAdminApp() *fiber.App {
 	app := fiber.New()
-	verifier := oidctoken.NewVerifier(adminTestSecret, nil) // HS256-only (no JWKS)
+	verifier := oidctoken.NewVerifier(adminTestSecret, nil)
 	app.Use("/api/v1/admin/ai",
 		middleware.JWTAuth(verifier),
 		middleware.RequirePermission(aiPerm.Resolver, aiPerm.UsageView))
@@ -61,8 +51,6 @@ func adminToken(t *testing.T, roles ...string) string {
 	return tok
 }
 
-// TestAdminGate pins the permission-first gate: anonymous → 401, a content
-// moderator → 403 (usage cost is ops, not moderation), admin & ren → 200.
 func TestAdminGate(t *testing.T) {
 	truncateUsage(t)
 	app := buildAdminApp()
@@ -89,9 +77,6 @@ func truncateUsage(t *testing.T) {
 	require.NoError(t, testDB.Exec("TRUNCATE ai_usage RESTART IDENTITY").Error)
 }
 
-// seedUsage inserts one metered row. CreatedAt is left zero so the DB default
-// now() lands it inside every window; Status 0 (ok) is written explicitly (the
-// column is NOT NULL with no default — the meaningful zero).
 func seedUsage(t *testing.T, site, channel string, status int16, prompt, comp int, cost int64) {
 	t.Helper()
 	row := aiModel.AIUsage{
@@ -101,22 +86,17 @@ func seedUsage(t *testing.T, site, channel string, status int16, prompt, comp in
 	require.NoError(t, testDB.Create(&row).Error)
 }
 
-// TestSummaryAggregates seeds a known ledger and asserts the site×route×channel
-// grouping, the status distribution, and the totalled overview + error rate.
 func TestSummaryAggregates(t *testing.T) {
 	truncateUsage(t)
-	// letmoe served twice OK on a real channel, once degraded.
 	seedUsage(t, "letmoe", "deepseek-chat", aiModel.StatusOK, 10, 20, 100)
 	seedUsage(t, "letmoe", "deepseek-chat", aiModel.StatusOK, 10, 20, 100)
 	seedUsage(t, "letmoe", "", aiModel.StatusDegraded, 0, 0, 0)
-	// kungal hit one upstream error.
 	seedUsage(t, "kungal", "", aiModel.StatusUpstreamError, 0, 0, 0)
 
 	sum, err := service.NewStatsService(testDB).Summary(context.Background(), "30d")
 	require.NoError(t, err)
 
 	require.Len(t, sum.Rows, 3, "three (site,route,channel) groups")
-	// The busiest group leads (ORDER BY calls DESC).
 	top := sum.Rows[0]
 	assert.Equal(t, "letmoe", top.Site)
 	assert.Equal(t, aiModel.RouteModerateText, top.Route)
@@ -138,7 +118,6 @@ func TestSummaryAggregates(t *testing.T) {
 	assert.Equal(t, "30d", sum.Window)
 }
 
-// TestDailySeries asserts the day×route trend rolls up the seeded rows.
 func TestDailySeries(t *testing.T) {
 	truncateUsage(t)
 	seedUsage(t, "letmoe", "deepseek-chat", aiModel.StatusOK, 5, 5, 100)
@@ -154,8 +133,6 @@ func TestDailySeries(t *testing.T) {
 	assert.Equal(t, int64(200), p.CostMicro)
 }
 
-// TestBudgetUpsertAndClear covers set → clear (NULL) → list, plus the
-// unknown-route guard.
 func TestBudgetUpsertAndClear(t *testing.T) {
 	require.NoError(t, testDB.Exec("TRUNCATE ai_route_budget").Error)
 	bs := service.NewBudgetService(testDB)
@@ -167,7 +144,6 @@ func TestBudgetUpsertAndClear(t *testing.T) {
 	require.NotNil(t, set.DailyCostCapMicro)
 	assert.Equal(t, int64(50000), *set.DailyCostCapMicro)
 
-	// Re-upsert the SAME (route,site) with nil clears the cap to NULL (row kept).
 	cleared, err := bs.Upsert(ctx, aiModel.RouteModerateText, "letmoe", nil)
 	require.NoError(t, err)
 	assert.Nil(t, cleared.DailyCostCapMicro, "nil cap clears to NULL")
@@ -181,8 +157,6 @@ func TestBudgetUpsertAndClear(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrUnknownRoute, "unknown route rejected")
 }
 
-// TestBudgetUpsertOverHTTP proves the write path end-to-end through the gated
-// admin face with an admin token and the house envelope.
 func TestBudgetUpsertOverHTTP(t *testing.T) {
 	require.NoError(t, testDB.Exec("TRUNCATE ai_route_budget").Error)
 	app := buildAdminApp()

@@ -1,8 +1,3 @@
-// public_calendar_test.go — A2-1c: the three release-calendar buckets. The
-// wave's load-bearing invariant is the CLASSIFICATION ANCHOR — a work's bucket
-// is decided by the same earliest-dated-release ordinal the works list prints
-// as release_date — so most of this file is precision × window coverage.
-// Integration against kun_catalog_test (service_test.go TestMain).
 package service
 
 import (
@@ -11,7 +6,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// setOLang overrides a work's original language (createWorkX always writes ja).
 func setOLang(t *testing.T, workID int64, olang string) {
 	t.Helper()
 	if err := testDB.Exec(`UPDATE catalog_work SET olang = ? WHERE id = ?`, olang, workID).Error; err != nil {
@@ -19,7 +13,6 @@ func setOLang(t *testing.T, workID int64, olang string) {
 	}
 }
 
-// calIDs collects the ids of a bucket page, in order.
 func calIDs(t *testing.T, svc *PublicService, b CalendarBucket, f CalendarFilter) []int64 {
 	t.Helper()
 	page, err := svc.CalendarPage(t.Context(), b, f, "", 100)
@@ -37,9 +30,6 @@ func june2024() CalendarBucket {
 	return CalendarBucket{Kind: CalendarMonthBucket, Year: 2024, Month: 6}
 }
 
-// TestCalendarPrecisionToBucket is the wave's core case: every release
-// precision lands in exactly one bucket, and a work with no release row at all
-// lands in none.
 func TestCalendarPrecisionToBucket(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -51,31 +41,24 @@ func TestCalendarPrecisionToBucket(t *testing.T) {
 	year := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "YearPrecision")
 	createRelease(t, year.ID, 2024, 0, 0)
 	tba := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "TBA")
-	createRelease(t, tba.ID, 0, 0, 0) // a release row with no year at all
+	createRelease(t, tba.ID, 0, 0, 0)
 	unknown := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "NoRelease")
 
-	// Month bucket: day + month precision, month-precision first (ordinal
-	// 20240600 < 20240614 — it is NOT pinned to the 1st).
 	got := calIDs(t, svc, june2024(), CalendarFilter{})
 	if len(got) != 2 || got[0] != month.ID || got[1] != day.ID {
 		t.Fatalf("june bucket = %v, want [%d(month-precision) %d(day-precision)]", got, month.ID, day.ID)
 	}
 
-	// Pending bucket: the year-precision work only.
 	got = calIDs(t, svc, CalendarBucket{Kind: CalendarPendingBucket, Year: 2024}, CalendarFilter{})
 	if len(got) != 1 || got[0] != year.ID {
 		t.Fatalf("2024 pending = %v, want [%d]", got, year.ID)
 	}
 
-	// TBA bucket: the release-but-no-year work only. The work with NO release
-	// row is "unknown" and must not appear here (absence of a release is not an
-	// announced-without-a-date).
 	got = calIDs(t, svc, CalendarBucket{Kind: CalendarTBABucket}, CalendarFilter{})
 	if len(got) != 1 || got[0] != tba.ID {
 		t.Fatalf("tba bucket = %v, want only [%d] (unknown work %d must stay out)", got, tba.ID, unknown.ID)
 	}
 
-	// The year-precision work is in NO month of its year.
 	for m := 1; m <= 12; m++ {
 		for _, id := range calIDs(t, svc, CalendarBucket{Kind: CalendarMonthBucket, Year: 2024, Month: m}, CalendarFilter{}) {
 			if id == year.ID {
@@ -83,7 +66,6 @@ func TestCalendarPrecisionToBucket(t *testing.T) {
 			}
 		}
 	}
-	// ...and neither the tba nor the unknown work is in any dated bucket.
 	for _, b := range []CalendarBucket{june2024(), {Kind: CalendarPendingBucket, Year: 2024}} {
 		for _, id := range calIDs(t, svc, b, CalendarFilter{}) {
 			if id == tba.ID || id == unknown.ID {
@@ -93,9 +75,6 @@ func TestCalendarPrecisionToBucket(t *testing.T) {
 	}
 }
 
-// TestCalendarMonthBoundaries pins the window arithmetic: the 1st and the 31st
-// are inside, the neighbouring months' edges are not, and a work is filed by
-// its EARLIEST release even when a later one sits in the queried month.
 func TestCalendarMonthBoundaries(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -108,9 +87,6 @@ func TestCalendarMonthBoundaries(t *testing.T) {
 	createRelease(t, prevMonth.ID, 2024, 5, 31)
 	nextMonth := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "July1")
 	createRelease(t, nextMonth.ID, 2024, 7, 1)
-	// Ported: first shipped in May 2024, re-released in June. Its bucket is MAY
-	// — the anchor is the earliest release, which is also the date the works
-	// list prints, so bucket and printed date always agree.
 	ported := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Ported")
 	createRelease(t, ported.ID, 2024, 6, 20)
 	createRelease(t, ported.ID, 2024, 5, 2)
@@ -124,7 +100,6 @@ func TestCalendarMonthBoundaries(t *testing.T) {
 	if len(may) != 2 || may[0] != ported.ID || may[1] != prevMonth.ID {
 		t.Fatalf("may = %v, want [%d(2024-05-02) %d(2024-05-31)]", may, ported.ID, prevMonth.ID)
 	}
-	// The list release_date and the bucket must be the same fact.
 	page, err := svc.WorksList(t.Context(), WorksListFilter{Sort: "id", IDs: []int64{ported.ID}}, "", 10)
 	if err != nil {
 		t.Fatalf("WorksList: %v", err)
@@ -133,8 +108,6 @@ func TestCalendarMonthBoundaries(t *testing.T) {
 		t.Fatalf("ported release_date = %v, want 2024-05-02 (the bucket anchor)", page.Items[0].ReleaseDate)
 	}
 
-	// A soft-deleted release does not classify: delete the May row and the port
-	// moves to June, where its only surviving release is.
 	if err := testDB.Exec(`UPDATE catalog_release SET deleted_at = now() WHERE work_id = ? AND released_m = 5`, ported.ID).Error; err != nil {
 		t.Fatalf("soft delete release: %v", err)
 	}
@@ -144,9 +117,6 @@ func TestCalendarMonthBoundaries(t *testing.T) {
 	}
 }
 
-// TestCalendarPopulationGates pins the population predicate: it is the works
-// list's verbatim (LIVE galgame, not soft-deleted, r18 behind nsfw) plus the
-// A2-1c olang gate.
 func TestCalendarPopulationGates(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -169,25 +139,21 @@ func TestCalendarPopulationGates(t *testing.T) {
 	asmr := createWorkX(t, 5, model.ContentRatingAllAges, model.WorkStatusLive, "AsmrWork")
 	createRelease(t, asmr.ID, 2024, 6, 11)
 
-	// Default: the ja + zh family, sfw. en / r18 / stub / asmr all out.
 	got := calIDs(t, svc, june2024(), CalendarFilter{})
 	if len(got) != 3 || got[0] != ja.ID || got[1] != zhHans.ID || got[2] != zhHant.ID {
 		t.Fatalf("default population = %v, want [ja %d, zh-Hans %d, zh-Hant %d]", got, ja.ID, zhHans.ID, zhHant.ID)
 	}
 
-	// nsfw=1 adds the r18 work (still ja, so still inside the language gate).
 	got = calIDs(t, svc, june2024(), CalendarFilter{NSFW: true})
 	if len(got) != 4 || got[3] != r18.ID {
 		t.Fatalf("nsfw population = %v, want the r18 work %d to join", got, r18.ID)
 	}
 
-	// olang=all opens the language gate (but not the r18 one).
 	got = calIDs(t, svc, june2024(), CalendarFilter{OLang: PublicOLang{All: true}})
 	if len(got) != 4 || got[3] != en.ID {
 		t.Fatalf("olang=all = %v, want the en work %d to join and r18 to stay out", got, en.ID)
 	}
 
-	// An explicit set is exactly that set.
 	got = calIDs(t, svc, june2024(), CalendarFilter{OLang: PublicOLang{Values: []string{"en"}}})
 	if len(got) != 1 || got[0] != en.ID {
 		t.Fatalf("olang=en = %v, want only %d", got, en.ID)
@@ -196,13 +162,10 @@ func TestCalendarPopulationGates(t *testing.T) {
 	if len(got) != 2 || got[0] != ja.ID || got[1] != en.ID {
 		t.Fatalf("olang=ja,en = %v, want [%d %d]", got, ja.ID, en.ID)
 	}
-	// An olang nobody uses is an empty bucket, never an error — olang is an
-	// OPEN vocabulary, unlike our own closed filter词表.
 	if got = calIDs(t, svc, june2024(), CalendarFilter{OLang: PublicOLang{Values: []string{"nope"}}}); len(got) != 0 {
 		t.Fatalf("unknown olang = %v, want an empty bucket", got)
 	}
 
-	// A soft-deleted work leaves every bucket.
 	if err := testDB.Exec(`UPDATE catalog_work SET deleted_at = now() WHERE id = ?`, ja.ID).Error; err != nil {
 		t.Fatalf("soft delete work: %v", err)
 	}
@@ -213,8 +176,6 @@ func TestCalendarPopulationGates(t *testing.T) {
 	}
 }
 
-// TestCalendarKeysetAndCursorLanes walks all three buckets by keyset and pins
-// that a cursor never replays across buckets or onto the other browse lanes.
 func TestCalendarKeysetAndCursorLanes(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -222,7 +183,7 @@ func TestCalendarKeysetAndCursorLanes(t *testing.T) {
 	a := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "CalA")
 	createRelease(t, a.ID, 2024, 6, 3)
 	b := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "CalB")
-	createRelease(t, b.ID, 2024, 6, 3) // same date → id breaks the tie
+	createRelease(t, b.ID, 2024, 6, 3)
 	c := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "CalC")
 	createRelease(t, c.ID, 2024, 6, 20)
 	pendA := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "PendA")
@@ -234,7 +195,6 @@ func TestCalendarKeysetAndCursorLanes(t *testing.T) {
 	tbaB := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "TbaB")
 	createRelease(t, tbaB.ID, 0, 0, 0)
 
-	// Month lane: one row per page, in (date, id) order, terminal on the short page.
 	var walked []int64
 	cursor := ""
 	for range 4 {
@@ -254,8 +214,6 @@ func TestCalendarKeysetAndCursorLanes(t *testing.T) {
 		t.Fatalf("month keyset walk = %v, want [%d %d %d]", walked, a.ID, b.ID, c.ID)
 	}
 
-	// A month cursor carries the ordinal, so the same-date tie is resumed by id
-	// rather than restarted.
 	p1, err := svc.CalendarPage(t.Context(), june2024(), CalendarFilter{}, "", 1)
 	if err != nil || p1.NextCursor == nil {
 		t.Fatalf("month p1: cursor=%v err=%v", p1.NextCursor, err)
@@ -274,11 +232,9 @@ func TestCalendarKeysetAndCursorLanes(t *testing.T) {
 		t.Fatalf("tba p1: cursor=%v err=%v", tbaPage.NextCursor, err)
 	}
 
-	// Malformed cursor → ErrBadCursor, never a 500.
 	if _, err := svc.CalendarPage(t.Context(), june2024(), CalendarFilter{}, "!!!not-base64!!!", 20); err != ErrBadCursor {
 		t.Fatalf("malformed calendar cursor = %v, want ErrBadCursor", err)
 	}
-	// Cross-bucket and cross-lane replay is refused in both directions.
 	cross := []struct {
 		name   string
 		bucket CalendarBucket
@@ -309,9 +265,6 @@ func TestCalendarKeysetAndCursorLanes(t *testing.T) {
 	}
 }
 
-// TestCalendarMetaTracksTheBucket pins the ETag basis: the meta pair counts the
-// WHOLE filtered bucket (not the page), follows the population gates, and moves
-// when the bucket's contents change.
 func TestCalendarMetaTracksTheBucket(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -339,7 +292,6 @@ func TestCalendarMetaTracksTheBucket(t *testing.T) {
 		t.Fatalf("nsfw meta count = %d, want 2", nsfwCount)
 	}
 
-	// The count is the bucket, not the page: a limit-1 page still reports 2.
 	page, err := svc.CalendarPage(t.Context(), june2024(), CalendarFilter{NSFW: true}, "", 1)
 	if err != nil {
 		t.Fatalf("CalendarPage: %v", err)
@@ -348,7 +300,6 @@ func TestCalendarMetaTracksTheBucket(t *testing.T) {
 		t.Fatalf("page = %d items, want 1", len(page.Items))
 	}
 
-	// An empty bucket is a well-formed meta pair, not an error.
 	emptyCount, emptyMax, err := svc.CalendarMeta(t.Context(), CalendarBucket{Kind: CalendarMonthBucket, Year: 1990, Month: 1}, CalendarFilter{})
 	if err != nil {
 		t.Fatalf("CalendarMeta empty: %v", err)
@@ -357,7 +308,6 @@ func TestCalendarMetaTracksTheBucket(t *testing.T) {
 		t.Fatalf("empty bucket meta = (%d, %v), want (0, epoch)", emptyCount, emptyMax)
 	}
 
-	// Touching a member work moves max_updated → the validator changes.
 	before := CalendarETag("month-2024-06", CalendarFilter{}.PopulationKey(), count, maxUpdated)
 	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = now() + interval '1 hour' WHERE id = ?`, w1.ID).Error; err != nil {
 		t.Fatalf("touch work: %v", err)
@@ -371,8 +321,6 @@ func TestCalendarMetaTracksTheBucket(t *testing.T) {
 	}
 }
 
-// TestCalendarItemsAreWorksListItems pins that the buckets reuse the works-list
-// projection wholesale — same base keys, and the full include= vocabulary.
 func TestCalendarItemsAreWorksListItems(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -387,7 +335,6 @@ func TestCalendarItemsAreWorksListItems(t *testing.T) {
 	addWorkRating(t, w.ID, srcVNDB, 8.1, 300)
 	addWorkLabel(t, w.ID, "CalBrand", model.LabelKindGameBrand, model.WorkLabelKindBrand)
 
-	// Base item: the works-list shape, release_date included.
 	page, err := svc.CalendarPage(t.Context(), june2024(), CalendarFilter{}, "", 20)
 	if err != nil {
 		t.Fatalf("CalendarPage: %v", err)
@@ -409,7 +356,6 @@ func TestCalendarItemsAreWorksListItems(t *testing.T) {
 		t.Fatalf("no include= must mean no blocks: %+v", item)
 	}
 
-	// include=: every works-list block lights up on the calendar too.
 	inc := ParseWorksListInclude("names,intros,labels,ratings,covers")
 	page, err = svc.CalendarPage(t.Context(), june2024(), CalendarFilter{Include: inc}, "", 20)
 	if err != nil {

@@ -17,11 +17,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// The revision feed's wave-180 enrichment: forum replays this log to build its
-// contributor table, and it keys its rows by ITS OWN work id — so the item must
-// carry product_work_id, and the site filter must let one tenant replay only
-// what belongs to it.
-
 type revisionFeedBody struct {
 	Data struct {
 		Items []struct {
@@ -61,8 +56,6 @@ func TestRevisionFeedProjectsProductWorkID(t *testing.T) {
 
 	mkRevision(t, db, editspec.TypeWork, claimed.ID, "kungal", 1)
 	mkRevision(t, db, editspec.TypeWork, unclaimed.ID, "kungal", 1)
-	// The same work, a revision recorded under ANOTHER tenant: the claim is
-	// kungal's, so this must resolve to nothing rather than leak 777.
 	mkRevision(t, db, editspec.TypeWork, claimed.ID, "moyu", 2)
 	mkRevision(t, db, "catalog.label", claimed.ID, "kungal", 1)
 
@@ -89,7 +82,6 @@ func TestRevisionFeedProjectsProductWorkID(t *testing.T) {
 	assert.Nil(t, feed.Data.Items[3].ProductWorkID, "only catalog.work is projected")
 	assert.Equal(t, feed.Data.Items[3].ID, feed.Data.NextSince)
 
-	// site filter: moyu sees only its own row.
 	status, raw = editGet(t, app, "/api/v1/catalog/edit-revisions/feed?since=0&site=moyu")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var moyu revisionFeedBody
@@ -97,8 +89,6 @@ func TestRevisionFeedProjectsProductWorkID(t *testing.T) {
 	require.Len(t, moyu.Data.Items, 1)
 	assert.Equal(t, "moyu", moyu.Data.Items[0].Site)
 
-	// entity_type filter + the cursor: page one row at a time from 0, the way a
-	// full replay does, and never see the same row twice.
 	status, raw = editGet(t, app,
 		"/api/v1/catalog/edit-revisions/feed?since=0&limit=1&entity_type=catalog.work&site=kungal")
 	require.Equal(t, fiber.StatusOK, status, string(raw))

@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// The T&S registries page: two never-delete registries side by side. Rows are
-// only ever created, edited, or deprecated (PATCH is_deprecated) — deletion is
-// deliberately absent from both the UI and the backend contract.
 </script>
 
 <template>

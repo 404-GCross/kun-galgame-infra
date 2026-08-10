@@ -1,30 +1,3 @@
-// public_works_search.go — the works PRODUCT search face
-// (GET /v1/catalog/works/search, A2-1d / refs/proj/126 D5).
-//
-// This is a second, deliberately separate door from GET /v1/catalog/search: that
-// one is the four-family entity autocomplete (20 hits, index projection, wire
-// frozen) and stays untouched. This one is the product search a galgame site
-// renders a results page with — page/limit pagination, the full works filter
-// set, an opt-in facet distribution, five sort lanes.
-//
-// ── the three rules that shape everything below ─────────────────────────────
-//
-//  1. ONE GATE. Every filter is compiled into the Meilisearch expression, so
-//     `total`, the facet distribution and `items` are three views of the SAME
-//     candidate set. The deprecated face left content_limit out of its Meili
-//     filter and applied it in SQL instead — its `total` counted rows the caller
-//     could never receive, and sfw pagination lost rows silently. This face is
-//     written to make that shape unrepresentable.
-//
-//  2. IDS FROM MEILI, BYTES FROM POSTGRES. Meilisearch supplies ranked ids and
-//     counts, nothing else; every item is re-hydrated through the works list's
-//     own enrichWorkListItems, so a search row is byte-identical to a browse row
-//     (include= blocks and all) and no Meilisearch document field can leak onto
-//     the wire (裁定 4).
-//
-//  3. PUBLIC TOKENS ONLY. The facet vocabulary is the FILTER PARAMETER names
-//     (tag_id, content_rating, …), not the index attribute names, and the
-//     content_rating distribution is re-keyed to the public string vocabulary.
 package service
 
 import (
@@ -39,65 +12,35 @@ import (
 	catsearch "api/internal/platform/catalog/search"
 )
 
-// ErrSearchUnavailable is returned when the face is reached without a search
-// indexer wired (a deployment misconfiguration, not caller error).
 var ErrSearchUnavailable = stderrors.New("catalog: works search indexer not configured")
 
-// WithWorksSearch wires the Meilisearch indexer the product search runs on.
-// Returns the service for fluent chaining, matching WithImageMeta. nil leaves
-// the face unavailable rather than silently degrading to an unfiltered list —
-// a search endpoint that quietly stops searching is the failure class this
-// whole wave exists to avoid.
 func (s *PublicService) WithWorksSearch(idx *catsearch.Indexer) *PublicService {
 	s.worksSearch = idx
 	return s
 }
 
-// WorksSearchFilter is the product search's request shape. Every filter field
-// is the works LIST field of the same name, with the same meaning — a consumer
-// moves a query between the two faces by changing the path only.
 type WorksSearchFilter struct {
-	Q             string // free text; empty = a filter-only browse
-	ContentRating *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
-	Claimed       *bool  // true = claimed only; false = bodyless only; nil = both
-	// ClaimStates narrows to a set of PUBLIC claim states (none|live|draft|
-	// hidden, A2-R1 区 C) — the values claimed_by.state renders. Empty = no gate
-	// at all, so every pre-existing caller's wire stays byte-identical.
-	//
-	// It is a different axis from Claimed, not a finer spelling of it: `claimed`
-	// answers "does a product own this row", this answers "may it be shown".
-	// A product site searching the registry for its own catalogue passes
-	// claim_state=live — without it there is no server-side way to keep DRAFT
-	// (unpublished) and unclaimed rows out of a results page, which is exactly
-	// how they reached production.
-	ClaimStates []string
-	// DisplayLimits narrows to a set of EDITORIAL DISPLAY limits (sfw|nsfw,
-	// A2-R5) — the works list parameter of the same name, word for word. Empty =
-	// no gate at all, so every pre-existing caller's wire stays byte-identical.
-	DisplayLimits []string
-	LabelID       int64
-	// TagIDs are canonical tag ids ANDed together (A2-1e) — the works list's
-	// tag_id semantics verbatim.
+	Q              string
+	ContentRating  *int16
+	Claimed        *bool
+	ClaimStates    []string
+	DisplayLimits  []string
+	LabelID        int64
 	TagIDs         []int64
 	EngineID       int64
 	SeriesID       int64
-	ReleasedAfter  int64 // composed ordinal (y*10000+m*100+d), inclusive; 0 = unbounded
+	ReleasedAfter  int64
 	ReleasedBefore int64
 	OLang          PublicOLang
 	NSFW           bool
-	Sort           string   // relevance (default) | released_desc | released_asc | updated | popularity
-	Facets         []string // public filter-parameter tokens; empty = no distribution
-	Page           int      // 1-based
+	Sort           string
+	Facets         []string
+	Page           int
 	Limit          int
 	Include        WorksListInclude
-	// SearchIntro widens free-text matching from titles to synopses (A2-1f).
-	// Default false = the A2-1d behavior byte for byte.
-	SearchIntro bool
+	SearchIntro    bool
 }
 
-// worksSearchFacetAttr maps a public facet token — which is the FILTER
-// PARAMETER's own name — to the works index attribute it distributes over. This
-// map IS the closed vocabulary: a token outside it is a 400 at the handler.
 var worksSearchFacetAttr = map[string]string{
 	"content_rating": "content_rating",
 	"olang":          "olang",
@@ -109,31 +52,15 @@ var worksSearchFacetAttr = map[string]string{
 	"source":         "source_keys",
 }
 
-// WorksSearchFacetTokens lists the legal facets= tokens in a stable order (the
-// handler quotes it in its 400 message, the spec documents it).
-//
-// The numeric scalars (released_ord, updated_ts, popularity) are deliberately
-// absent: a distribution over 20240614-style ordinals or over Unix seconds is
-// one bucket per value, which is a listing, not a facet.
 var WorksSearchFacetTokens = []string{
 	"content_rating", "olang", "claimed", "tag_id", "label_id", "engine_id", "series_id", "source",
 }
 
-// IsWorksSearchFacet reports whether a token is in the closed facet vocabulary.
 func IsWorksSearchFacet(tok string) bool {
 	_, ok := worksSearchFacetAttr[tok]
 	return ok
 }
 
-// WorksSearchSortRule maps a public sort token to its Meilisearch sort
-// expression. ok=false for a token outside the closed vocabulary; "" with
-// ok=true means relevance (no sort — the ranking rules decide).
-//
-// `popularity` replaces the deprecated face's `view` lane: that was the wiki's
-// own page-view counter, which the catalog registry has no counterpart for.
-// popularity is the cross-population signal the works index has carried since
-// wave 105 — log1p(max(bangumi collect shelf, DLsite download count)) — so this
-// lane promotes the tiebreaker that already decides ties into the primary key.
 var worksSearchSortRules = map[string]string{
 	"":              "",
 	"relevance":     "",
@@ -143,23 +70,14 @@ var worksSearchSortRules = map[string]string{
 	"popularity":    "popularity:desc",
 }
 
-// WorksSearchSortTokens lists the legal sort= tokens in a stable order.
 var WorksSearchSortTokens = []string{"relevance", "released_desc", "released_asc", "updated", "popularity"}
 
-// WorksSearchClaimStateTokens is the CLOSED claim_state= vocabulary (A2-R1 区 C),
-// in the order the handler quotes it and the spec documents it. It is the public
-// claim vocabulary verbatim — model.ClaimStateKey's whole range — so a caller
-// filters on the same six words a work record renders.
 var WorksSearchClaimStateTokens = []string{
 	model.ClaimStateKeyNone, model.ClaimStateKeyLive,
 	model.ClaimStateKeyDraft, model.ClaimStateKeyPending,
 	model.ClaimStateKeyDeclined, model.ClaimStateKeyHidden,
 }
 
-// IsWorksSearchClaimState reports whether a token is in that vocabulary. A
-// token outside it is a LOUD 400 at the handler, never a silently-ignored
-// filter: a caller asking for `claim_state=liev` and getting a 200 full of
-// drafts is precisely the incident this parameter was added to end.
 func IsWorksSearchClaimState(tok string) bool {
 	for _, v := range WorksSearchClaimStateTokens {
 		if tok == v {
@@ -169,13 +87,11 @@ func IsWorksSearchClaimState(tok string) bool {
 	return false
 }
 
-// WorksSearchSortRule resolves a sort token; ok=false = outside the vocabulary.
 func WorksSearchSortRule(sort string) (rule string, ok bool) {
 	rule, ok = worksSearchSortRules[strings.TrimSpace(sort)]
 	return rule, ok
 }
 
-// WorksSearch serves one page of the product search.
 func (s *PublicService) WorksSearch(ctx context.Context, f WorksSearchFilter) (dto.PublicWorksSearchData, error) {
 	if s.worksSearch == nil {
 		return dto.PublicWorksSearchData{}, ErrSearchUnavailable
@@ -188,22 +104,11 @@ func (s *PublicService) WorksSearch(ctx context.Context, f WorksSearchFilter) (d
 
 	text := f.Q
 	docID := ""
-	// The v\d+ short-circuit (裁定 5): a query that IS a VNDB work id means the
-	// caller wants that one work, not a full-text guess — full-text would
-	// prefix-bleed (v1965 also matches v19650). Resolving it through the exact
-	// anchor registry and then pinning the document keeps ONE code path: the
-	// caller's filters, the facet distribution and the envelope are unchanged,
-	// the candidate set is simply at most one work. An unresolvable id is an
-	// empty result, never a 404 — this is a search face, not a lookup face.
 	if vid := normalizeVNDBID(f.Q); vid != "" {
 		workID, err := s.lookupEntityID(ctx, "vndb", vid, model.EntityTypeWork)
 		if err != nil {
 			return dto.PublicWorksSearchData{}, err
 		}
-		// An unresolvable id still goes through the normal query, pinned to a
-		// document id no work can have (ids are positive). That keeps ONE code
-		// path, so the miss comes back as a fully-formed envelope — total 0,
-		// empty facet buckets — instead of a special-cased shape.
 		text, docID = "", catsearch.WorkDocID(workID)
 	}
 
@@ -231,13 +136,6 @@ func (s *PublicService) WorksSearch(ctx context.Context, f WorksSearchFilter) (d
 	}, nil
 }
 
-// meiliFilter compiles the whole filter set into one Meilisearch expression.
-// Fixed operators, values bound as numbers or escaped strings — no caller text
-// ever reaches the expression unquoted.
-//
-// The index population (LIVE, non-deleted, galgame medium) is baked into the
-// index itself by cmd/reindex-catalog, so it needs no clause here; the gates
-// that vary per caller are all below.
 func (f WorksSearchFilter) meiliFilter(docID string) string {
 	var clauses []string
 	if docID != "" {
@@ -253,11 +151,6 @@ func (f WorksSearchFilter) meiliFilter(docID string) string {
 		clauses = append(clauses, "claimed = "+strconv.FormatBool(*f.Claimed))
 	}
 	if len(f.ClaimStates) > 0 {
-		// One parenthesized OR group — an IN over the closed vocabulary — so it
-		// ANDs with every other clause and rides the SAME single expression the
-		// total, the facets and the page all share (rule 1 of this file). The
-		// values come from a server-side vocabulary, but they still go through
-		// the escaper: every string that reaches a filter does.
 		or := make([]string, 0, len(f.ClaimStates))
 		for _, st := range f.ClaimStates {
 			or = append(or, "claim_state = '"+catsearch.EscapeFilterValue(st)+"'")
@@ -265,10 +158,6 @@ func (f WorksSearchFilter) meiliFilter(docID string) string {
 		clauses = append(clauses, "("+strings.Join(or, " OR ")+")")
 	}
 	if len(f.DisplayLimits) > 0 {
-		// The editorial display axis (A2-R5). Same one-group shape as claim_state
-		// above, for the same reason: it must AND with the nsfw age gate rather
-		// than replace it, and it must ride the SAME expression total, facets and
-		// items share.
 		or := make([]string, 0, len(f.DisplayLimits))
 		for _, lim := range f.DisplayLimits {
 			or = append(or, "content_limit = '"+catsearch.EscapeFilterValue(lim)+"'")
@@ -276,9 +165,6 @@ func (f WorksSearchFilter) meiliFilter(docID string) string {
 		clauses = append(clauses, "("+strings.Join(or, " OR ")+")")
 	}
 	for _, tagID := range f.TagIDs {
-		// One clause per tag, ANDed: `array = value` is Meilisearch's "contains"
-		// on a multi-valued attribute, so repeating it is exactly the works
-		// list's chain of EXISTS sub-selects.
 		clauses = append(clauses, "tag_ids = "+strconv.FormatInt(tagID, 10))
 	}
 	for _, e := range []struct {
@@ -303,9 +189,6 @@ func (f WorksSearchFilter) meiliFilter(docID string) string {
 	return strings.Join(clauses, " AND ")
 }
 
-// worksSearchMeiliFacets translates the requested public tokens to index
-// attributes, preserving caller order and dropping duplicates. Unknown tokens
-// cannot arrive (the handler 400s them) and are ignored defensively.
 func worksSearchMeiliFacets(tokens []string) []string {
 	if len(tokens) == 0 {
 		return nil
@@ -323,11 +206,6 @@ func worksSearchMeiliFacets(tokens []string) []string {
 	return out
 }
 
-// projectWorksSearchFacets re-keys Meilisearch's distribution back onto the
-// public vocabulary: the outer key becomes the FILTER PARAMETER name the
-// consumer would pass back, and content_rating's inner keys become the public
-// strings (all_ages | sensitive | r18) instead of the enum ints — the same rule
-// every other content_rating on this face follows.
 func projectWorksSearchFacets(tokens []string, dist map[string]map[string]int64) map[string]map[string]int64 {
 	if len(tokens) == 0 || len(dist) == 0 {
 		return nil
@@ -362,11 +240,6 @@ func projectWorksSearchFacets(tokens []string, dist map[string]map[string]int64)
 	return out
 }
 
-// normalizeVNDBID returns the lowercased VNDB id when q is EXACTLY a VNDB work
-// id ("v" followed by one or more digits, case-insensitive), else "". Semantics
-// carried over from the deprecated galgame search — the wire form is different
-// (that face matched a vndb_id column on its own documents; this one resolves
-// the exact anchor registry), the detection rule is the same.
 func normalizeVNDBID(q string) string {
 	q = strings.TrimSpace(q)
 	if len(q) < 2 || (q[0] != 'v' && q[0] != 'V') {
@@ -380,17 +253,6 @@ func normalizeVNDBID(q string) string {
 	return strings.ToLower(q)
 }
 
-// hydrateWorkIDs turns Meilisearch's ranked ids into wire items, preserving the
-// ranked order (a single WHERE id IN (…) plus a Go-side reorder — never one
-// query per hit).
-//
-// The population predicate and the nsfw gate are re-applied here as a STALENESS
-// GUARD, not as a second gate: both already ran inside Meilisearch, which is
-// also what `total` counted. If the index is momentarily ahead of the registry
-// (a work delisted or re-rated since the last reindex) the page comes back one
-// row short rather than serving a row this caller must not see. That is the
-// opposite of the deprecated face's trap, where the SQL filter applied a rule
-// the Meilisearch filter deliberately never had.
 func (s *PublicService) hydrateWorkIDs(ctx context.Context, ids []int64, nsfw bool, inc WorksListInclude) ([]dto.PublicWorkListItem, error) {
 	if len(ids) == 0 {
 		return []dto.PublicWorkListItem{}, nil

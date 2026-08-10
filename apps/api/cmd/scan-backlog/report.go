@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-// writeSummary prints the run counters, the score histogram (10 buckets), the
-// flagged count, and the top categories to stdout.
 func writeSummary(w io.Writer, res runResult) {
 	fmt.Fprintln(w, "scan-backlog summary")
 	fmt.Fprintf(w, "  input read (valid)  %8d\n", res.input.valid)
@@ -52,8 +50,6 @@ func writeSummary(w io.Writer, res runResult) {
 	}
 }
 
-// histogram buckets every scored row's score into the 10 fixed buckets (a nil
-// score = 0.0) and counts the flagged rows.
 func histogram(rows []scoredRow) ([histogramBuckets]int, int) {
 	var h [histogramBuckets]int
 	flagged := 0
@@ -66,8 +62,6 @@ func histogram(rows []scoredRow) ([histogramBuckets]int, int) {
 	return h, flagged
 }
 
-// bucketOf maps a score in [0,1] to its histogram bucket; 1.0 falls in the last
-// (inclusive) bucket, out-of-range values are clamped.
 func bucketOf(s float64) int {
 	if s <= 0 {
 		return 0
@@ -87,8 +81,6 @@ type catCount struct {
 	count int
 }
 
-// topCategories tallies category occurrences across the scored rows and returns
-// the n most frequent (ties broken by name).
 func topCategories(rows []scoredRow, n int) []catCount {
 	counts := map[string]int{}
 	for _, r := range rows {
@@ -116,9 +108,6 @@ func topCategories(rows []scoredRow, n int) []catCount {
 	return out
 }
 
-// writeWorklist writes the top-N highest-scoring rows to path as JSONL
-// (id/site/score/categories + the first 200 runes of text), sorted by score
-// descending. topN <= 0 writes every scored row.
 func writeWorklist(path string, rows []scoredRow, textByID map[string]string, topN int) error {
 	sorted := make([]scoredRow, len(rows))
 	copy(sorted, rows)
@@ -158,7 +147,6 @@ func writeWorklist(path string, rows []scoredRow, textByID map[string]string, to
 	return nil
 }
 
-// scoreVal is a row's score as a float64 (a nil score = 0.0).
 func scoreVal(r scoredRow) float64 {
 	if r.Score == nil {
 		return 0
@@ -166,7 +154,6 @@ func scoreVal(r scoredRow) float64 {
 	return float64(*r.Score)
 }
 
-// firstRunes returns the first n runes of s (rune-safe truncation).
 func firstRunes(s string, n int) string {
 	if n <= 0 {
 		return ""
@@ -181,7 +168,6 @@ func firstRunes(s string, n int) string {
 	return s
 }
 
-// worklistPathFor derives the worklist path next to -out: foo.jsonl → foo.top.jsonl.
 func worklistPathFor(outPath string) string {
 	if strings.HasSuffix(outPath, ".jsonl") {
 		return strings.TrimSuffix(outPath, ".jsonl") + ".top.jsonl"

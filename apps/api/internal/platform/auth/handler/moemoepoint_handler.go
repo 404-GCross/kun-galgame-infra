@@ -12,20 +12,13 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// MoemoepointHandler exposes the unified moemoepoint balance: a service-to-
-// service adjust/read surface for downstream apps (OAuth Client Basic Auth,
-// by numeric user id) and an admin grant/deduct + log surface (admin JWT, by
-// uuid). All changes flow through MoemoepointService.Adjust (idempotent).
 type MoemoepointHandler struct {
 	svc *service.MoemoepointService
 }
 
-// NewMoemoepointHandler creates a MoemoepointHandler.
 func NewMoemoepointHandler(svc *service.MoemoepointService) *MoemoepointHandler {
 	return &MoemoepointHandler{svc: svc}
 }
-
-// ── service-to-service (Basic Auth, /users/:id/moemoepoint) ──────────────
 
 type adjustRequest struct {
 	Delta          int    `json:"delta"`
@@ -36,8 +29,6 @@ type adjustRequest struct {
 	Note           string `json:"note"`
 }
 
-// Adjust handles POST /users/:id/moemoepoint. source_app is derived from the
-// authenticated OAuth client (never trusted from the body).
 func (h *MoemoepointHandler) Adjust(c fiber.Ctx) error {
 	userID, err := parseUintParam(c, "id")
 	if err != nil {
@@ -47,13 +38,6 @@ func (h *MoemoepointHandler) Adjust(c fiber.Ctx) error {
 	if client == nil {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
-	// Minting into the shared moemoepoint wallet is allow-listed: only clients
-	// flagged MoemoepointAwarder may award. Reading the balance (GetBalance)
-	// stays open to any registered client, and admin grants go through the
-	// admin-JWT path — neither hits this gate. Fail-closed by default so a
-	// new client (e.g. a content site that only seeds a local economy from
-	// the balance) can't write to the shared ledger. See
-	// docs/integration/oauth/06-moemoepoint.md §awarder allow-list.
 	if !client.MoemoepointAwarder {
 		return response.Forbidden(c, errors.ErrMoemoepointNotAwarder)
 	}
@@ -63,10 +47,6 @@ func (h *MoemoepointHandler) Adjust(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
-	// admin_grant / admin_deduct / migration are OAuth-internal — a
-	// downstream client must not self-label points with them (audit clarity;
-	// can't fake a manual/admin grant). Downstream awards use the
-	// content_/daily_checkin/liked reasons.
 	switch req.Reason {
 	case model.MoemoepointReasonAdminGrant, model.MoemoepointReasonAdminDeduct,
 		model.MoemoepointReasonMigration, model.MoemoepointReasonRegisterGift:
@@ -91,7 +71,6 @@ func (h *MoemoepointHandler) Adjust(c fiber.Ctx) error {
 	})
 }
 
-// GetBalance handles GET /users/:id/moemoepoint.
 func (h *MoemoepointHandler) GetBalance(c fiber.Ctx) error {
 	userID, err := parseUintParam(c, "id")
 	if err != nil {
@@ -104,9 +83,6 @@ func (h *MoemoepointHandler) GetBalance(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"user_id": userID, "balance": balance})
 }
 
-// GetLog handles GET /users/:id/moemoepoint/log (service-to-service). Returns
-// the REDUCED view (no note / actor) — downstream may render this to end
-// users, so admin notes (e.g. moderation reasons) must not leak.
 func (h *MoemoepointHandler) GetLog(c fiber.Ctx) error {
 	userID, err := parseUintParam(c, "id")
 	if err != nil {
@@ -115,13 +91,6 @@ func (h *MoemoepointHandler) GetLog(c fiber.Ctx) error {
 	return h.respondLog(c, userID, false)
 }
 
-// ── self-service (user JWT, /auth/me/moemoepoint/log) ────────────────────
-
-// MyLog handles GET /api/v1/auth/me/moemoepoint/log — the authenticated user
-// reading their OWN ledger. Returns the REDUCED view (no note / actor): a user
-// must not see admin notes (e.g. moderation reasons) attached to their rows —
-// only the admin full-view endpoint exposes those. The user id comes from the
-// JWT, never a path param, so one user can't read another's log.
 func (h *MoemoepointHandler) MyLog(c fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(uint)
 	if userID == 0 {
@@ -130,17 +99,12 @@ func (h *MoemoepointHandler) MyLog(c fiber.Ctx) error {
 	return h.respondLog(c, userID, false)
 }
 
-// ── admin (JWT, /admin/users/:uuid/moemoepoint) ──────────────────────────
-
 type adminAdjustRequest struct {
-	// Delta is signed: positive = grant, negative = deduct. The reason is
-	// derived from the sign so the admin UI only sends a number + note.
 	Delta          int    `json:"delta"`
 	Note           string `json:"note"`
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
-// AdminAdjust handles POST /admin/users/:uuid/moemoepoint (admin grant/deduct).
 func (h *MoemoepointHandler) AdminAdjust(c fiber.Ctx) error {
 	userID, err := h.svc.UserIDByUUID(c.Context(), c.Params("uuid"))
 	if err != nil {
@@ -176,8 +140,6 @@ func (h *MoemoepointHandler) AdminAdjust(c fiber.Ctx) error {
 	})
 }
 
-// AdminGetLog handles GET /admin/users/:uuid/moemoepoint/log (admin). Returns
-// the FULL view including note + actor (admins are trusted with it).
 func (h *MoemoepointHandler) AdminGetLog(c fiber.Ctx) error {
 	userID, err := h.svc.UserIDByUUID(c.Context(), c.Params("uuid"))
 	if err != nil {
@@ -186,11 +148,6 @@ func (h *MoemoepointHandler) AdminGetLog(c fiber.Ctx) error {
 	return h.respondLog(c, userID, true)
 }
 
-// ── shared ───────────────────────────────────────────────────────────────
-
-// respondLog renders a user's ledger. full=true (admin) includes note +
-// actor_user_id; full=false (service-to-service / end-user facing) omits them
-// so moderation notes never leak downstream.
 func (h *MoemoepointHandler) respondLog(c fiber.Ctx, userID uint, full bool) error {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	beforeID, _ := strconv.ParseInt(c.Query("before_id"), 10, 64)
@@ -198,8 +155,6 @@ func (h *MoemoepointHandler) respondLog(c fiber.Ctx, userID uint, full bool) err
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-	// Enrich each row with the awarding site's friendly name (source_app is an
-	// opaque OAuth client id; source_name resolves it to the client's name).
 	apps := make([]string, len(rows))
 	for i, r := range rows {
 		apps[i] = r.SourceApp
@@ -212,8 +167,6 @@ func (h *MoemoepointHandler) respondLog(c fiber.Ctx, userID uint, full bool) err
 			"source_app": r.SourceApp, "source_name": names[r.SourceApp],
 			"ref": r.Ref, "created_at": r.CreatedAt,
 		}
-		// full (admin) view adds note + actor_user_id; the reduced (s2s /
-		// end-user) view omits them so moderation notes never leak downstream.
 		if full {
 			m["note"] = r.Note
 			m["actor_user_id"] = r.ActorUserID

@@ -2,19 +2,15 @@ package norm
 
 import "testing"
 
-// Invisible / special code points, built from rune values so no literal
-// zero-width byte (nor a BOM, illegal anywhere but byte 0) sits in the source.
 var (
-	zwsp = string(rune(0x200B)) // ZERO WIDTH SPACE (Cf)
-	zwnj = string(rune(0x200C)) // ZERO WIDTH NON-JOINER (Cf)
-	zwj  = string(rune(0x200D)) // ZERO WIDTH JOINER (Cf)
-	bom  = string(rune(0xFEFF)) // ZERO WIDTH NO-BREAK SPACE / BOM (Cf)
-	nbsp = string(rune(0x00A0)) // NO-BREAK SPACE (NFKC -> ASCII space)
-	ideo = string(rune(0x3000)) // IDEOGRAPHIC SPACE (NFKC -> ASCII space)
+	zwsp = string(rune(0x200B))
+	zwnj = string(rune(0x200C))
+	zwj  = string(rune(0x200D))
+	bom  = string(rune(0xFEFF))
+	nbsp = string(rune(0x00A0))
+	ideo = string(rune(0x3000))
 )
 
-// TestNormalize is the table-driven fold contract: NFKC (fullwidth -> half),
-// case-folding, zero-width/format-char stripping, and whitespace collapse.
 func TestNormalize(t *testing.T) {
 	cases := []struct {
 		name string
@@ -48,9 +44,6 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
-// TestNormalizeIdempotent pins Normalize(Normalize(x)) == Normalize(x) — the
-// invariant that lets terms be stored pre-normalized and matched without
-// re-normalizing the stored side.
 func TestNormalizeIdempotent(t *testing.T) {
 	for _, in := range []string{
 		"", "BAD", "ＢＡＤ", "坏" + zwsp + "词", "  bad   WORD  ", "傻逼" + ideo + "ＸＹＺ", "a" + zwnj + "b c",

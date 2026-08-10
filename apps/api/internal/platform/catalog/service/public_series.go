@@ -1,12 +1,3 @@
-// public_series.go — the series detail endpoint (GET /v1/catalog/series/{id},
-// wave 149c) over the step-94 grouping entity (catalog_series +
-// catalog_series_member) and the intro facet the data-layer-retirement wave
-// rescued into catalog_series_intro.
-//
-// It closes the aggregation track's last read gap: series membership was
-// already a works-list FILTER (works?series_id=) and an inline block on the
-// work record, but the series itself had no address — so a consumer holding a
-// series id could not render its name, its intro or (in one call) its members.
 package service
 
 import (
@@ -16,17 +7,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// SeriesDetail projects one series. found=false → 404 on an unknown id.
-//
-// Series carry NO merge/soft-delete machinery (no catalog_redirect entity type,
-// no deleted_at column): the importer mirrors the source, inserting and
-// deleting membership rows, so a miss here is a plain miss — deliberately NOT
-// routed through the redirect helper, which would answer 301 for an id that was
-// never merged anywhere.
-//
-// include=works attaches the member works (LIVE galgame fetchable set, offset
-// paging, r18 briefs dropped unless nsfw) — the labels/{id} and tags/{id}
-// works convention verbatim.
 func (s *PublicService) SeriesDetail(ctx context.Context, id int64, withWorks, nsfw bool, limit, offset int) (dto.PublicSeriesDetail, bool, error) {
 	var head struct {
 		ID          int64  `gorm:"column:id"`
@@ -40,22 +20,15 @@ func (s *PublicService) SeriesDetail(ctx context.Context, id int64, withWorks, n
 		return dto.PublicSeriesDetail{}, false, err
 	}
 	if head.ID == 0 {
-		return dto.PublicSeriesDetail{}, false, nil // identity PK starts at 1 → 0 = miss
+		return dto.PublicSeriesDetail{}, false, nil
 	}
 	rec := dto.PublicSeriesDetail{ID: head.ID, DisplayName: head.DisplayName}
-	// A series anchors in its source IN-ROW (the unique (source_id, external_id)
-	// key) rather than through catalog_external_ref, so refs[] is built from
-	// that key — same {source, external_id} shape the other identity faces
-	// publish, and exact by construction (a source series id is the source's own
-	// identifier, never a guess).
 	rec.Refs = []dto.PublicCatalogRef{{Source: s.sourceKey(head.SourceID), ExternalID: head.ExternalID}}
 	intros, err := s.seriesIntros(ctx, id)
 	if err != nil {
 		return dto.PublicSeriesDetail{}, false, err
 	}
 	rec.Intros = intros
-	// Unconditional, not include-gated: the caller needs to know the series
-	// leads to adult works BEFORE deciding whether to ask for them.
 	_, nsfwWorks, err := s.workCountsWithNSFW(ctx, seriesWorkEdge, []int64{id}, nsfw)
 	if err != nil {
 		return dto.PublicSeriesDetail{}, false, err
@@ -67,10 +40,6 @@ func (s *PublicService) SeriesDetail(ctx context.Context, id int64, withWorks, n
 			Position int16 `gorm:"column:position"`
 			Kind     int16 `gorm:"column:kind"`
 		}
-		// Reading order first (wave 184): position is 1-based, and 0 is the "not
-		// ordered yet" sentinel — those rows sort LAST rather than first, so a
-		// half-backfilled series shows what it does know before what it does not.
-		// work_id still breaks every tie, so the page boundary stays stable.
 		if err := s.db.WithContext(ctx).Raw(`
 			SELECT m.work_id, m.position, m.kind FROM catalog_series_member m
 			JOIN catalog_work w ON w.id = m.work_id AND w.deleted_at IS NULL AND w.status = ? AND w.medium_id = ?
@@ -89,11 +58,6 @@ func (s *PublicService) SeriesDetail(ctx context.Context, id int64, withWorks, n
 			return dto.PublicSeriesDetail{}, false, err
 		}
 		rec.Works = make([]dto.PublicWorkBrief, 0, len(ids))
-		// members[] runs PARALLEL to works[]: same rows, same order, same r18
-		// drop — element i of one describes element i of the other. It is a
-		// separate array rather than two more fields on PublicWorkBrief because
-		// the brief is shared by every works-list face in this projection, and
-		// position/kind are facts about a MEMBERSHIP, not about the work.
 		rec.Members = make([]dto.PublicSeriesMember, 0, len(ids))
 		for _, r := range wrows {
 			b := briefs[r.WorkID]
@@ -110,10 +74,6 @@ func (s *PublicService) SeriesDetail(ctx context.Context, id int64, withWorks, n
 	return rec, true, nil
 }
 
-// seriesMemberKindKey renders catalog_series_member.kind as the public face's
-// string key — the same "never publish a numeric enum id" rule content_rating
-// and source follow. An id this projection does not know renders as unknown
-// rather than leaking the raw number.
 func seriesMemberKindKey(kind int16) string {
 	switch kind {
 	case model.SeriesMemberKindMain:
@@ -129,15 +89,6 @@ func seriesMemberKindKey(kind int16) string {
 	}
 }
 
-// seriesIntros loads a series' descriptions, ordered (lang, source_id). source
-// goes through sourceKey so the wire carries the PUBLIC source spelling — the
-// label / tag / character intro convention.
-//
-// Unlike those, this list is NOT collapsed to one row per language: a series
-// intro is hand-written user content the retirement wave rescued with no
-// upstream to regenerate it from, so a second source's body for the same
-// language is a second body, not a worse copy of the first — dropping it would
-// silently hide content that exists nowhere else. Empty → [].
 func (s *PublicService) seriesIntros(ctx context.Context, seriesID int64) ([]dto.PublicSeriesIntro, error) {
 	var rows []struct {
 		Lang     string `gorm:"column:lang"`
@@ -156,16 +107,6 @@ func (s *PublicService) seriesIntros(ctx context.Context, seriesID int64) ([]dto
 	return out, nil
 }
 
-// SeriesList serves the keyset series browse lane (id ASC), the fourth member
-// of the labels / tags / engines family and shaped identically to them.
-//
-// It exists because a series id had an ADDRESS but no way to be discovered: a
-// picker or an index had to already know the id to render a name. Search is the
-// wrong tool here — the facet is ~600 curated rows with no Meilisearch index of
-// its own, and giving it one would mean a new index plus a reindex lane for a
-// population two keyset pages cover.
-//
-// A malformed cursor is ErrBadCursor (the handler maps it to 400).
 func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor, source string, limit int) (dto.PublicSeriesListData, error) {
 	cur, err := decodePublicCursor(cursor, taxonomyLaneSeries)
 	if err != nil {
@@ -173,19 +114,11 @@ func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor, sourc
 	}
 	limit = clampBrowseLimit(limit)
 
-	// source= selects lanes by the SAME key the rows print (curated / derived /
-	// dlsite today). An OPEN vocabulary, like works/search's olang: which
-	// sources produce series is registry data, not a code-level enum, so an
-	// unknown token yields an empty page rather than a 400 — a closed list
-	// would have to be edited every time an importer starts filing series.
 	sourceIDs, filterSource := s.resolveSourceIDs(source)
 	if filterSource && len(sourceIDs) == 0 {
 		return dto.PublicSeriesListData{Items: []dto.PublicSeriesListItem{}}, nil
 	}
 
-	// No deleted_at predicate, unlike the other three lanes: catalog_series
-	// carries no soft-delete column at all (see SeriesDetail — the importer
-	// mirrors the source by inserting and deleting rows outright).
 	var where []string
 	var args []any
 	if cur.ID > 0 {
@@ -227,11 +160,6 @@ func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor, sourc
 			WorkCount: counts[r.ID], HasNSFW: nsfwWorks[r.ID] > 0,
 		}
 	}
-	// total counts the SAME filtered population as the page (the works/search
-	// rule), so a source-filtered lane never reports the whole catalogue's
-	// count. The cursor is deliberately NOT part of it — total is the size of
-	// the lane, not of what is left to walk. No alias here: taxonomyTotal
-	// queries the bare table.
 	var totalWhere []string
 	var totalArgs []any
 	if filterSource {

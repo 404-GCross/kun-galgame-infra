@@ -1,20 +1,3 @@
-// public_works_search.go — GET /v1/catalog/works/search, the works PRODUCT
-// search face (A2-1d, refs/proj/126 D5).
-//
-// Parameter posture, and why it differs per axis:
-//
-//   - The filters are the works LIST parameters verbatim — same names, same
-//     types, same rejection messages — so moving a query from the browse lane
-//     to the search lane is a path change and nothing else.
-//   - Our OWN closed vocabularies (sort, facets, content_rating, claimed) 400 on
-//     an unknown token: a plausible-looking 200 whose ranking or distribution is
-//     not what the caller asked for is the worst failure class.
-//   - olang stays an OPEN vocabulary (upstream BCP-47 tags) and yields an empty
-//     result rather than a 400 — the calendar's posture, verbatim. Its DEFAULT
-//     is the one thing that differs: omitting olang here means NO gate, where
-//     the calendar's curated buckets fall back to the ja+zh family (144). See
-//     worksSearchOLang for the ruling.
-//   - include= ignores unknown tokens (§3.5 clause 2), like every other lane.
 package handler
 
 import (
@@ -36,9 +19,6 @@ const (
 	msgBadSearchFacet = "facets must be a comma-separated subset of content_rating, olang, claimed, tag_id, label_id, engine_id, series_id, source"
 )
 
-// WorksSearch serves GET /v1/catalog/works/search — free-text + conjunctive
-// filters over the LIVE galgame registry, page-paginated, items re-hydrated to
-// works-list rows.
 func (h *PublicHandler) WorksSearch(c fiber.Ctx) error {
 	f := service.WorksSearchFilter{
 		SearchIntro: boolQueryPub(c.Query("search_intro")),
@@ -84,17 +64,9 @@ func (h *PublicHandler) WorksSearch(c fiber.Ctx) error {
 		}
 	}
 	var ok bool
-	// claim_state: our OWN closed vocabulary, so an unknown token is a LOUD 400
-	// (A2-R1 区 C). Silently ignoring it would hand a caller that asked to hide
-	// unpublished works a 200 full of them — the incident this parameter ends.
-	// Parsed by the SAME helper the works LIST face uses (A2-R4), so the two
-	// spellings of the parameter cannot drift.
 	if f.ClaimStates, ok = claimStatesPub(c.Query("claim_state")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadClaimState)
 	}
-	// content_limit: the EDITORIAL DISPLAY axis (A2-R5), another of our own
-	// closed vocabularies — parsed by the SAME helper the works LIST and the
-	// calendar use, so the three spellings cannot drift.
 	if f.DisplayLimits, ok = displayLimitsPub(c.Query("content_limit")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadDisplayLimit)
 	}
@@ -126,8 +98,6 @@ func (h *PublicHandler) WorksSearch(c fiber.Ctx) error {
 	data, err := h.svc.WorksSearch(c.Context(), f)
 	if err != nil {
 		if stderrors.Is(err, service.ErrSearchUnavailable) {
-			// A deployment that never wired the indexer. Loud 500 rather than an
-			// empty 200 that reads as "nothing matched".
 			return response.InternalError(c, errors.ErrInternalServer)
 		}
 		return response.InternalError(c, errors.ErrInternalServer)
@@ -136,11 +106,6 @@ func (h *PublicHandler) WorksSearch(c fiber.Ctx) error {
 	return response.Success(c, data)
 }
 
-// pageNumPub reads a 1-based `page` param: absent/empty → 1; anything that is
-// not a positive integer is rejected (ok=false → 400) rather than silently
-// falling back to page 1, which would serve the first page while the caller
-// believes it is deep in the result set. There is no upper clamp — a page past
-// the end is an honest empty page.
 func pageNumPub(raw string) (int, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

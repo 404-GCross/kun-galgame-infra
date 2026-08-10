@@ -1,32 +1,3 @@
-// cmd/scan-backlog is a purely LOCAL offline batch scorer for the existing UGC
-// backlog (spec 10; owner ruling 2026-07-16 — "local LLM pre-filter + prod omni
-// re-check"). It is the pre-filter half: a JSONL file goes IN, an OpenAI-
-// compatible chat endpoint (a local vLLM, kungal-llm-infra) scores each row with
-// the SAME instruction production moderate-text uses, and files go OUT. It makes
-// ZERO database access and ZERO production contact — it changes no schema and
-// runs no migration.
-//
-// Usage:
-//
-//	go run ./cmd/scan-backlog -base-url URL -model ID -out FILE [flags] <input.jsonl>
-//
-// Flags:
-//
-//	-base-url  OpenAI-compatible base URL (required, e.g. http://127.0.0.1:8000/v1).
-//	-token     bearer token (optional — a local vLLM usually needs none).
-//	-model     model id to score with (required).
-//	-workers   concurrent scoring workers (default 4).
-//	-limit     score only the first N valid records (default 0 = all) — smoke sampling.
-//	-out       scored JSONL output path (append-mode, resumable) (required).
-//	-top       worklist size: the N highest-scoring items (default 100).
-//
-// Input is one JSON object per line: {"id","site","kind","text"}. Bad lines and
-// non-UTF-8 lines are counted and skipped. Output is append-mode and resumable:
-// re-running with the same -out preloads the already-succeeded ids and skips
-// them (error rows are retried), so a crashed run resumes idempotently. Three
-// artifacts are produced: the -out full scored JSONL, an stdout summary
-// (totals/histogram/flagged/top categories), and a top-N worklist file next to
-// -out.
 package main
 
 import (
@@ -79,9 +50,6 @@ func main() {
 		outPath: *out,
 		topN:    *topN,
 	}
-	// The production upstream client is reused verbatim, so the request shape is
-	// identical to moderate-text. An empty token is fine here: ChatJSON dials
-	// regardless (only the higher-level service gates on Configured()).
 	client := upstream.NewClient(cfg.baseURL, cfg.token, cfg.model)
 
 	if _, err := run(context.Background(), cfg, client, inFile, os.Stdout); err != nil {

@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// TestPortraitFilter pins the whole point of the wave: keep vertical (h > w),
-// skip landscape/square, and never treat a zero/negative dimension as portrait.
 func TestPortraitFilter(t *testing.T) {
 	cases := []struct {
 		name string
@@ -29,9 +27,6 @@ func TestPortraitFilter(t *testing.T) {
 	}
 }
 
-// TestLoadDims parses a JSONL manifest keyed by subject-id string, tolerates
-// blank lines, and surfaces the portrait/landscape split the process loop keys
-// on.
 func TestLoadDims(t *testing.T) {
 	dir := t.TempDir()
 	manifest := `{"subject_id":100,"w":800,"h":1200,"file":"100/cover.jpg"}
@@ -60,8 +55,6 @@ func TestLoadDims(t *testing.T) {
 	}
 }
 
-// TestLoadDimsErrors: a malformed line fails loud (never silently skipped), and
-// a missing manifest is an error (the mirror is required).
 func TestLoadDimsErrors(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, dimsFileName), []byte(`{"subject_id":1,"w":1,"h":2}
@@ -78,8 +71,6 @@ not json
 	}
 }
 
-// TestCoverPath prefers the manifest's file field and falls back to the
-// documented <subject_id>/cover.jpg layout when it is absent.
 func TestCoverPath(t *testing.T) {
 	root := "/m"
 	if got, want := coverPath(root, "100", dimsEntry{File: "100/cover.jpg"}), filepath.Join(root, "100", "cover.jpg"); got != want {
@@ -90,7 +81,6 @@ func TestCoverPath(t *testing.T) {
 	}
 }
 
-// TestIsBodyless pins the XOR-guard predicate the write path re-asserts.
 func TestIsBodyless(t *testing.T) {
 	empty := ""
 	claimed := "galgame_wiki"

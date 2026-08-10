@@ -1,18 +1,3 @@
-// Package workseries imports dlsite work series into the catalog_series /
-// catalog_series_member entity pair (step 94, refs/proj/94 option B):
-//
-//   - anchors: game-domain dlsite RELEASE anchors (entity_type=6, source_id=
-//     dlsite, link_kind=0) on galgame-medium works — workno → work_id.
-//   - mirror: works.product_json series_id/series_name (--dlsite-dsn, the
-//     separate mirror DB, the workplaytime/workratings second-pool precedent).
-//   - materialization gate: only series with >=2 DISTINCT anchored works land
-//     (a single-member series has no read value; it stays in the mirror).
-//
-// Refresh discipline (the step-93 edge rule — the mirror is the truth):
-// series rows upsert with change detection (renames land in place); member
-// rows insert-if-absent + stale delete; a series whose anchored membership
-// drops below 2 is deleted entirely (members cascade via explicit delete).
-// Dry-run default; single catalog DSN + mirror DSN, both explicit.
 package workseries
 
 import (
@@ -30,39 +15,32 @@ import (
 	"gorm.io/gorm"
 )
 
-// seriesInfo accumulates one source series: its display name and the set of
-// anchored catalog works that are members.
 type seriesInfo struct {
 	name    string
 	members map[int64]struct{}
 }
 
-// Opts configures a run.
 type Opts struct {
 	Apply     bool
-	DSN       string // catalog DB — REQUIRED
-	DlsiteDSN string // dlsite mirror DB — REQUIRED
+	DSN       string
+	DlsiteDSN string
 }
 
-// Stats reports a run. Planned counters are identical in dry and apply.
 type Stats struct {
-	AnchoredWorks  int // distinct galgame works carrying a dlsite release anchor
-	SeriesEligible int // series with >=2 distinct anchored works
-	MembersWanted  int // memberships in eligible series
+	AnchoredWorks  int
+	SeriesEligible int
+	MembersWanted  int
 
 	SeriesCreated int
 	SeriesRenamed int
-	SeriesDeleted int // dropped below the gate / vanished from the mirror
+	SeriesDeleted int
 	MembersAdded  int
-	MembersStale  int // deleted
-	// OrderChanged counts membership rows whose position/kind really moved this
-	// pass (wave 184). A steady-state re-run reports 0.
-	OrderChanged int
+	MembersStale  int
+	OrderChanged  int
 
 	Errors int
 }
 
-// Run executes the import.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" || opts.DlsiteDSN == "" {
 		return nil, fmt.Errorf("both --dsn and --dlsite-dsn are required")
@@ -86,7 +64,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		return nil, fmt.Errorf("registry not seeded (dlsite source missing)")
 	}
 
-	// ── anchors: workno → work_id (release-level, galgame medium) ───────────
 	var anchors []struct {
 		ExternalID string `gorm:"column:external_id"`
 		WorkID     int64  `gorm:"column:work_id"`
@@ -109,13 +86,12 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 	st := &Stats{AnchoredWorks: len(distinctWorks)}
 
-	// ── mirror: series per anchored workno ──────────────────────────────────
 	worknos := make([]string, 0, len(workByWorkno))
 	for wn := range workByWorkno {
 		worknos = append(worknos, wn)
 	}
 	sort.Strings(worknos)
-	series := map[string]*seriesInfo{} // external series id → info
+	series := map[string]*seriesInfo{}
 	for _, chunk := range chunkStr(worknos, 10000) {
 		var rows []struct {
 			Workno     string `gorm:"column:workno"`
@@ -143,12 +119,11 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		}
 	}
 
-	// Materialization gate: >=2 distinct anchored works.
 	want := map[string]*seriesInfo{}
 	for sid, si := range series {
 		if len(si.members) >= 2 {
 			if si.name == "" {
-				si.name = sid // no name in the mirror — the external id is the fallback
+				si.name = sid
 			}
 			want[sid] = si
 			st.MembersWanted += len(si.members)
@@ -156,7 +131,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 	st.SeriesEligible = len(want)
 
-	// ── existing state ───────────────────────────────────────────────────────
 	var existing []struct {
 		ID          int64  `gorm:"column:id"`
 		ExternalID  string `gorm:"column:external_id"`
@@ -177,7 +151,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		}{e.ID, e.DisplayName}
 	}
 
-	// Plan series create/rename/delete.
 	for sid, si := range want {
 		e, ok := existingByExt[sid]
 		switch {
@@ -194,13 +167,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 
 	if !opts.Apply {
-		// Member add/stale planning needs series ids; for dry we approximate
-		// via the existing rows only (new series contribute all members as
-		// adds).
 		planMembers(ctx, db, want, existingByExt, st)
-		// Order forecast covers the series that already exist; a series this
-		// pass would create has no rows to compare against yet, and its members
-		// land ordered by the apply path's own reconcile.
 		dryIDs := make(map[string]int64, len(existingByExt))
 		for sid, e := range existingByExt {
 			dryIDs[sid] = e.id
@@ -212,14 +179,8 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		return st, nil
 	}
 
-	// touched collects works whose series facet really moved — membership gained
-	// or lost, or the series they belong to renamed. The public changes feed
-	// reads catalog_work.updated_at, so without this a re-serialised series is
-	// invisible downstream. A steady-state re-run changes nothing and therefore
-	// touches nothing.
 	var touched []int64
 
-	// ── apply: series rows ───────────────────────────────────────────────────
 	idByExt := make(map[string]int64, len(want))
 	for sid, si := range want {
 		e, ok := existingByExt[sid]
@@ -242,12 +203,11 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 				slog.Warn("series rename", "ext", sid, "err", err)
 				continue
 			}
-			for w := range si.members { // the members render the new name
+			for w := range si.members {
 				touched = append(touched, w)
 			}
 		}
 	}
-	// Delete series that fell out of the want set (members first).
 	for sid, e := range existingByExt {
 		if _, ok := want[sid]; ok {
 			continue
@@ -266,11 +226,10 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		}
 	}
 
-	// ── apply: membership (insert-if-absent + stale delete per series) ──────
 	for sid, si := range want {
 		seriesID, ok := idByExt[sid]
 		if !ok {
-			continue // insert failed above; counted
+			continue
 		}
 		var existingMembers []int64
 		if err := db.WithContext(ctx).Raw(`SELECT work_id FROM catalog_series_member
@@ -314,12 +273,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		}
 	}
 
-	// ── ordering facets (wave 184) ───────────────────────────────────────────
-	// position/kind are a pure function of the members' release dates and the
-	// relation edges among them, so they are recomputed every pass rather than
-	// only when membership moved: a release date corrected upstream changes the
-	// order of a series whose membership never budged. Only rows that really
-	// move are UPDATEd, so a steady-state re-run stays a zero-write.
 	orderTouched, err := reconcileOrder(ctx, db, want, idByExt, st, true)
 	if err != nil {
 		return nil, err
@@ -333,11 +286,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// reconcileOrder recomputes catalog_series_member.position/.kind for the series
-// this pass wants, via the ordering helper the three series lanes share. The
-// dlsite lane passes SeriesMemberKindUnknown as the fallback: dlsite groups
-// works without saying how they relate, so a member no relation edge touches
-// stays honestly unclassified.
 func reconcileOrder(ctx context.Context, db *gorm.DB, want map[string]*seriesInfo,
 	idByExt map[string]int64, st *Stats, apply bool) ([]int64, error) {
 	var allWorks []int64
@@ -379,10 +327,6 @@ func reconcileOrder(ctx context.Context, db *gorm.DB, want map[string]*seriesInf
 	return touched, nil
 }
 
-// planMembers computes the dry-run member add/stale counts against the current
-// DB state: a NEW series contributes all its members as adds; an existing one
-// diffs against its current member rows (stale members of series that fell out
-// of the want set are covered by SeriesDeleted, same as the apply path).
 func planMembers(ctx context.Context, db *gorm.DB, want map[string]*seriesInfo, existingByExt map[string]struct {
 	id   int64
 	name string

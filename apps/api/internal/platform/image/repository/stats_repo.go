@@ -9,8 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// StatsRepository runs aggregation queries over images + image_site_usage
-// for the /stats and /admin/stats endpoints.
 type StatsRepository struct {
 	db *gorm.DB
 }
@@ -19,32 +17,27 @@ func NewStatsRepository(db *gorm.DB) *StatsRepository {
 	return &StatsRepository{db: db}
 }
 
-// StatsResult is the aggregate shape served by GET /stats.
 type StatsResult struct {
-	UploadCount        int64           `json:"upload_count"`        // total site-scoped uploads (sum of upload_count)
-	UniqueImages       int64           `json:"unique_images"`       // distinct hashes the site has used
-	DeduplicatedCount  int64           `json:"deduplicated_count"`  // upload_count - unique_images
-	TotalBytes         int64           `json:"total_bytes"`         // sum of referenced images' size_bytes
+	UploadCount        int64           `json:"upload_count"`
+	UniqueImages       int64           `json:"unique_images"`
+	DeduplicatedCount  int64           `json:"deduplicated_count"`
+	TotalBytes         int64           `json:"total_bytes"`
 	BySite             map[string]SiteStats `json:"by_site,omitempty"`
 	ReviewPending      int64           `json:"review_pending"`
 	ReviewRejected     int64           `json:"review_rejected"`
 }
 
-// SiteStats is the per-site breakdown used by admin view.
 type SiteStats struct {
-	Count  int64 `json:"count"`  // upload_count sum
-	Unique int64 `json:"unique"` // distinct hashes
+	Count  int64 `json:"count"`
+	Unique int64 `json:"unique"`
 }
 
-// ScopeFilter narrows stats queries to a single site or a time range.
 type ScopeFilter struct {
-	Site string    // if empty, not filtered
-	From time.Time // zero → no lower bound
-	To   time.Time // zero → no upper bound
+	Site string
+	From time.Time
+	To   time.Time
 }
 
-// Stats aggregates across site_usage + images tables.
-// If f.Site is "", aggregates across all sites (admin mode).
 func (r *StatsRepository) Stats(ctx context.Context, f ScopeFilter) (*StatsResult, error) {
 	out := &StatsResult{BySite: map[string]SiteStats{}}
 
@@ -59,14 +52,9 @@ func (r *StatsRepository) Stats(ctx context.Context, f ScopeFilter) (*StatsResul
 		usageQ = usageQ.Where("first_uploaded_at <= ?", f.To)
 	}
 
-	// Exclude soft-deleted hashes so upload_count / unique_images stay
-	// consistent with total_bytes (which already filters deleted_at IS NULL).
-	// image_site_usage rows only disappear on HARD delete, so without this a
-	// soft-deleted hash still inflates these counts.
 	usageQ = usageQ.Where("hash IN (?)",
 		r.db.Model(&model.Image{}).Select("hash").Where("deleted_at IS NULL"))
 
-	// SELECT SUM(upload_count), COUNT(*) [as unique]
 	type usageAgg struct {
 		TotalCount  int64
 		UniqueCount int64
@@ -81,8 +69,6 @@ func (r *StatsRepository) Stats(ctx context.Context, f ScopeFilter) (*StatsResul
 	out.UniqueImages = agg.UniqueCount
 	out.DeduplicatedCount = agg.TotalCount - agg.UniqueCount
 
-	// Total storage bytes — sum over the DISTINCT hashes referenced by
-	// this site (avoids double-counting the same hash used by many sites).
 	bytesRow := r.db.WithContext(ctx).
 		Model(&model.Image{}).
 		Where("deleted_at IS NULL")
@@ -94,7 +80,6 @@ func (r *StatsRepository) Stats(ctx context.Context, f ScopeFilter) (*StatsResul
 		return nil, err
 	}
 
-	// Review status counts (unfiltered by site — review is global per hash).
 	if f.Site == "" {
 		if err := r.db.WithContext(ctx).Model(&model.Image{}).
 			Where("review_status = ? AND deleted_at IS NULL", model.ReviewPending).
@@ -107,7 +92,6 @@ func (r *StatsRepository) Stats(ctx context.Context, f ScopeFilter) (*StatsResul
 			return nil, err
 		}
 
-		// By-site breakdown only in admin (all-sites) mode.
 		type row struct {
 			Site   string
 			Count  int64

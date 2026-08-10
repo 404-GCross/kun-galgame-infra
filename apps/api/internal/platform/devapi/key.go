@@ -9,17 +9,7 @@ import (
 	"strings"
 )
 
-// Key format (docs/developer-platform/03-auth-and-tiers.md §4.1):
-//
-//	nm_live_<base62(24B)> / nm_test_<base62(24B)>
-//
-// The `nm` brand + environment prefix lets secret-leak scanners recognise the
-// key; base62 keeps it copy-paste and URL clean. 24 random bytes = 192 bits of
-// entropy. At rest only sha256(key) is stored ("sha256:<hex>"); the plaintext
-// is returned to the admin once at mint and never persisted (mirrors
-// site/model HashOAuthClientSecret / VerifySecret).
 const (
-	// LivePrefix / TestPrefix are the environment prefixes.
 	LivePrefix = "nm_live_"
 	TestPrefix = "nm_test_"
 
@@ -29,9 +19,6 @@ const (
 
 const base62Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-// GenerateKey mints a new plaintext API key with the given environment prefix
-// (LivePrefix or TestPrefix). The returned string is the only time the key
-// appears in plaintext.
 func GenerateKey(prefix string) (string, error) {
 	b := make([]byte, keyRandomBytes)
 	if _, err := rand.Read(b); err != nil {
@@ -40,23 +27,15 @@ func GenerateKey(prefix string) (string, error) {
 	return prefix + base62Encode(b), nil
 }
 
-// HashKey returns the at-rest form of a key: "sha256:<hex(sha256(key))>". Keys
-// are high-entropy random, so a fast cryptographic hash is sufficient (as with
-// OAuth client secrets) and keeps per-request auth cheap.
 func HashKey(plaintext string) string {
 	return keyHashPrefix + hashHex(plaintext)
 }
 
-// hashHex returns the bare hex of sha256(plaintext) — the credential cache key
-// body (`devkey:<hashHex>`), never the key itself.
 func hashHex(plaintext string) string {
 	sum := sha256.Sum256([]byte(plaintext))
 	return hex.EncodeToString(sum[:])
 }
 
-// VerifyKeyHash constant-time compares a presented plaintext key against a
-// stored "sha256:<hex>" value. Belt-and-suspenders over the indexed hash lookup
-// (defence in depth, mirroring VerifySecret's constant-time compare).
 func VerifyKeyHash(presented, storedHash string) bool {
 	h, ok := strings.CutPrefix(storedHash, keyHashPrefix)
 	if !ok {
@@ -65,9 +44,6 @@ func VerifyKeyHash(presented, storedHash string) bool {
 	return subtle.ConstantTimeCompare([]byte(hashHex(presented)), []byte(h)) == 1
 }
 
-// KeyMetadata derives the non-secret identifiers stored alongside the hash: the
-// prefix (env prefix + first 4 body chars, e.g. "nm_live_a1b2") and the last 4
-// chars, both used by the portal to identify a key without revealing it.
 func KeyMetadata(plaintext string) (prefix, last4 string) {
 	env, body := "", plaintext
 	switch {
@@ -89,14 +65,10 @@ func KeyMetadata(plaintext string) (prefix, last4 string) {
 	return prefix, last4
 }
 
-// HasKeyPrefix reports whether raw looks like one of our API keys (nm_live_ /
-// nm_test_). A non-matching bearer value (e.g. a JWT) is not our credential.
 func HasKeyPrefix(raw string) bool {
 	return strings.HasPrefix(raw, LivePrefix) || strings.HasPrefix(raw, TestPrefix)
 }
 
-// base62Encode renders bytes as a big-endian base62 string. Leading zero bytes
-// collapse (opaque token — full 192-bit entropy is preserved in the value).
 func base62Encode(b []byte) string {
 	n := new(big.Int).SetBytes(b)
 	if n.Sign() == 0 {

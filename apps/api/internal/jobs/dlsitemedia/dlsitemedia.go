@@ -1,60 +1,3 @@
-// Package dlsitemedia backfills catalog-native media rows for galgame works from
-// DLsite (media-aggregation wave, refs/proj/55 + refs/proj/125). Steps 52/53/54
-// built the three native tables (catalog_work_intro / catalog_work_cover /
-// catalog_work_screenshot), their read-face nativeWork* branches, and the catalog
-// image refping — but bodyless read faces returned [] because the BYTES were
-// deferred to this wave. 55 fills them.
-//
-// For each galgame work reachable via an EXACT DLsite workno release anchor it
-// writes, all attributed to source_id = dlsite (4):
-//
-//   - intro: dlsite.works.page_json.parts → catalog_work_intro (lang 'ja'). Pure
-//     DB, no bytes, no image service, no quota — landed first for immediate value.
-//   - cover: image_main → imageclient.UploadWithSub(catalog_cover) →
-//     catalog_work_cover (kind 'main', portrait_pinned=false — DLsite covers are
-//     landscape).
-//   - screenshot: each image_samples[i] → UploadWithSub(catalog_screenshot) →
-//     catalog_work_screenshot (sort_order=i, caption=”).
-//
-// TWO CANDIDATE LANES (the write side of the (facet, source) XOR):
-//   - BODYLESS (site=”/NULL) — every kind.
-//   - CLAIMED — SCREENSHOT (refs/proj/125) and, since refs/proj/166, INTRO.
-//     The intro lane was bodyless-only because a claimed work BRIDGED its intro
-//     off its product body at read time; W1-pre (refs/proj/140) mirrored those
-//     bodies into catalog_work_intro and deleted the bridge, so the table is now
-//     the only intro storage and the gate had become the reason published works
-//     read English-only. COVER keeps the claimed refusal — wave 164 flipped
-//     covers onto the native table with the wiki rows already mirrored in, so a
-//     claimed work's cover slot is occupied, not empty.
-//
-// The two claimed lanes target differently, and deliberately so:
-//   - INTRO stays whole-facet fill-missing — no ja intro from ANY source
-//     (loadClaimedIntroCandidates). Two same-language intros on one read face is
-//     noise, so a second one is never worth writing.
-//   - SCREENSHOT is PER-SOURCE fill-missing since wave 188 (the user's
-//     2026-08-07 ruling, overturning refs/proj/125's fallback-only doctrine): no
-//     DLSITE screenshot row (loadClaimedScreenshotCandidates). DLsite sample CG
-//     is official promotional art, semantically distinct from a VNDB game
-//     screenshot, and the read face renders per-source blocks — so it supplements
-//     rather than dilutes. Identical bytes still collapse on (work_id, image_hash).
-//
-// dlsite is a catalog-native source, so its rows live in the catalog tables for
-// claimed and bodyless alike.
-//
-// Discipline, modeled on internal/jobs/charportraits:
-//   - Bytes ONLY ever come from a LOCAL mirror (--mirror-dir), produced by
-//     kun-dlsite-api's `mirror` command (<root>/<workno>/<filename>). This job
-//     NEVER dials DLsite.
-//   - Idempotent: a preloaded existing row is skipped before any byte read;
-//     writes are ON CONFLICT DO NOTHING, so a second run writes zero.
-//   - --dsn (catalog) and --dlsite-dsn (staging) are ALWAYS explicit — a bare run
-//     cannot touch a live DB.
-//   - Freshly-uploaded hashes are reference-pinged immediately (an image sits at
-//     TTL from upload time; don't wait for the nightly refping). catalog-image-refping
-//     takes catalog_work_screenshot in FULL, so the claimed lane's bytes are kept
-//     alive by the same nightly sweep as the bodyless ones.
-//   - Only works that actually GAINED a row are touched (catalog_work.updated_at),
-//     so a second --apply moves no watermark on the public changes feed.
 package dlsitemedia
 
 import (
@@ -74,21 +17,15 @@ import (
 
 const (
 	defaultTimeout = 60 * time.Second
-	// metaChunk bounds how many worknos' staging JSON are held in memory at once
-	// (page_json/parts can be large); the catalog writes stream per chunk.
-	metaChunk = 500
+	metaChunk      = 500
 )
 
-// Kinds selects which media the run backfills. The zero value is "none"; the CLI
-// defaults it to all three.
 type Kinds struct{ Intro, Cover, Screenshot bool }
 
 func (k Kinds) needsMirror() bool { return k.Cover || k.Screenshot }
 func (k Kinds) needsImage() bool  { return k.Cover || k.Screenshot }
 func (k Kinds) any() bool         { return k.Intro || k.Cover || k.Screenshot }
 
-// ParseKinds turns a comma-separated flag ("all" / "intro,cover" / "screenshot")
-// into a Kinds set.
 func ParseKinds(s string) (Kinds, error) {
 	s = strings.TrimSpace(strings.ToLower(s))
 	if s == "" || s == "all" {
@@ -114,21 +51,18 @@ func ParseKinds(s string) (Kinds, error) {
 	return k, nil
 }
 
-// Opts configures a run.
 type Opts struct {
-	Apply        bool          // false = dry-run forecast (no uploads, no writes)
-	Kinds        Kinds         // which media to backfill
-	Limit        int           // max candidate works (0 = all)
-	Offset       int           // skip this many candidate works (chunking)
-	DSN          string        // catalog DSN — REQUIRED (rehearsal locally; live only in prod run)
-	DlsiteDSN    string        // dlsite staging DSN — REQUIRED (reads product_json/page_json)
-	MirrorDir    string        // local mirror root <root>/<workno>/<filename> (required for cover/screenshot)
-	ImageBaseURL string        // image_service base override (point at the LOCAL dev service)
-	UploadGap    time.Duration // min delay between uploads (0 = none; raise for the prod sweep)
+	Apply        bool
+	Kinds        Kinds
+	Limit        int
+	Offset       int
+	DSN          string
+	DlsiteDSN    string
+	MirrorDir    string
+	ImageBaseURL string
+	UploadGap    time.Duration
 }
 
-// counters tallies per-kind outcomes. In a dry run the *Would fields carry the
-// forecast; in apply the *Written/*Uploaded fields carry the real writes.
 type counters struct {
 	introWritten, introWould, introExists, introNoText int
 
@@ -139,7 +73,6 @@ type counters struct {
 	errors int
 }
 
-// runner carries per-run dependencies + counters (serial, plain ints).
 type runner struct {
 	db         *gorm.DB
 	cli        *imageclient.Client
@@ -148,16 +81,9 @@ type runner struct {
 	exist      *existing
 	c          counters
 	pingHashes []string
-	// touched collects works that actually gained an intro / cover / screenshot
-	// row, so the run bumps their catalog_work.updated_at once at the end and the
-	// public changes feed learns the work is worth re-pulling. Dedup hits and
-	// dry-runs contribute nothing, so a second --apply moves no watermark.
-	touched []int64
+	touched    []int64
 }
 
-// Run resolves the candidate set, forecasts (dry) or backfills (apply) the
-// selected media, and reference-pings freshly-uploaded hashes. Returns a
-// loggable summary.
 func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess — pass the rehearsal copy locally, the live catalog only in the production run")
@@ -255,9 +181,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	return sum, nil
 }
 
-// process walks the candidates in chunks, loading each chunk's dlsite metadata in
-// one query, and dispatches the enabled kinds. Returns quota=true if the image
-// quota was hit (the run aborts).
 func (r *runner) process(ctx context.Context, opts Opts, cands []candidate, dldb *gorm.DB) (quota bool) {
 	for _, batch := range chunk(cands, metaChunk) {
 		if err := ctx.Err(); err != nil {
@@ -326,8 +249,6 @@ func (r *runner) summary(opts Opts, candidates int) map[string]any {
 	return s
 }
 
-// laneSplit counts the two candidate lanes so a run reports how much of its work
-// is the bodyless backlog vs. the claimed screenshot lane (refs/proj/125).
 func laneSplit(cands []candidate) (bodyless, claimed int) {
 	for _, c := range cands {
 		if isBodyless(c.Site) {

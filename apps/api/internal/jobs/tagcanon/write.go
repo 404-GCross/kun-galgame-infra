@@ -10,24 +10,18 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// writer applies decided groups: one catalog_tag row + one catalog_tag_source_map
-// row per member. Both writes are ON CONFLICT DO NOTHING, so a second full pass
-// writes zero (counted as conflicts) — the idempotence guarantee (doc 74 §5).
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
 }
 
-// writeGroup ensures the canonical tag and its per-source map rows. In dry mode
-// it decides everything but writes nothing. Errors are counted, never fatal —
-// one bad group must not abort the run.
 func (w *writer) writeGroup(ctx context.Context, g group, apply bool) {
 	if !apply {
 		return
 	}
 	tagID, ok := w.ensureTag(ctx, g)
 	if !ok {
-		return // error already counted
+		return
 	}
 	for _, m := range g.Members {
 		res := w.db.WithContext(ctx).Clauses(clause.OnConflict{
@@ -47,11 +41,6 @@ func (w *writer) writeGroup(ctx context.Context, g group, apply bool) {
 	}
 }
 
-// ensureTag inserts the canonical tag (ON CONFLICT (name) DO NOTHING) and
-// returns its id. On a fresh insert GORM fills the id via RETURNING; on a
-// conflict (second pass) it fetches the existing id. tier/kind are set ONLY on
-// insert — a re-run never rewrites them (zero-write idempotence; a later 70b
-// tier retitling is a separate, deliberate write path).
 func (w *writer) ensureTag(ctx context.Context, g group) (int64, bool) {
 	tag := model.CatalogTag{Name: g.CanonicalName, Tier: g.Tier, Kind: g.Kind}
 	res := w.db.WithContext(ctx).Clauses(clause.OnConflict{
@@ -67,7 +56,6 @@ func (w *writer) ensureTag(ctx context.Context, g group) (int64, bool) {
 		w.stats.TagsCreated++
 		return tag.ID, true
 	}
-	// Conflict: the row already existed — fetch its id for the map writes.
 	w.stats.TagsConflict++
 	var id int64
 	if err := w.db.WithContext(ctx).Raw(`SELECT id FROM catalog_tag WHERE name = ?`, g.CanonicalName).Scan(&id).Error; err != nil || id == 0 {

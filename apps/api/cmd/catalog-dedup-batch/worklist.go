@@ -8,37 +8,12 @@ import (
 	"sort"
 )
 
-// A worklist lets a wave that computes its own candidates OUTSIDE this binary
-// drive the merge machinery here without a second merger existing. Wave 154
-// (refs/proj/154-p3-character-residual.md) is the first user: its cross-source
-// character residual rules (alias-expanded name equality under same_work, and
-// the CV-person review lane) need evidence this package's SQL detectors do not
-// carry, but the execution path — ProposeMerge -> ApproveMerge -> 48h cooling
-// -> ExecuteMerge, with the same survivor already chosen — must stay the one
-// path an admin click takes.
-//
-// Format: one JSON object per line, blank lines ignored.
-//
-//	{"class":"character","survivor":112961,"sources":[14292]}
-//
-// Any further keys (evidence, names, provenance) are ignored here on purpose:
-// the worklist file doubles as the wave's durable artefact, so it carries more
-// than this binary needs.
 type worklistEntry struct {
 	Class    string  `json:"class"`
 	Survivor int64   `json:"survivor"`
 	Sources  []int64 `json:"sources"`
 }
 
-// loadWorklist reads and validates a worklist into merge groups.
-//
-// The validation is the whole point of the lane: a worklist is only safe to
-// execute if it is a PARTITION of the entities it touches. An id appearing in
-// two groups (or as both a survivor and a source) would make the outcome depend
-// on execution order, which is exactly the chain hazard runExecute already has
-// to clean up after; refusing the file is far better than discovering it after
-// the cooling window. Groups are returned in survivor order so a -limit canary
-// selects a stable prefix.
 func loadWorklist(path string) ([]mergeGroup, error) {
 	fh, err := os.Open(path)
 	if err != nil {
@@ -47,7 +22,7 @@ func loadWorklist(path string) ([]mergeGroup, error) {
 	defer fh.Close()
 
 	var groups []mergeGroup
-	owner := map[int64]int{} // entity id -> line number that already claimed it
+	owner := map[int64]int{}
 	sc := bufio.NewScanner(fh)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for line := 1; sc.Scan(); line++ {

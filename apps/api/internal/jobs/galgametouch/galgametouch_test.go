@@ -18,9 +18,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the whole point of this package is
-// one mapping SELECT against catalog_work, so there is nothing worth asserting
-// without a live table.
 var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
@@ -47,8 +44,6 @@ func TestMain(m *testing.M) {
 
 var backdated = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
-// claim inserts a work claimed by the given wiki galgame id and backdates its
-// updated_at, so any bump is unambiguous.
 func claim(t *testing.T, galgameID int) int64 {
 	t.Helper()
 	site := siteGalgameWiki
@@ -70,8 +65,6 @@ func updatedAt(t *testing.T, workID int64) time.Time {
 	return ts
 }
 
-// nextGalgameID hands out product_work_id values that cannot collide with rows
-// another package left behind (the claim unique key is global).
 var nextGalgameID = 700_000 + os.Getpid()%50_000
 
 func galgameID() int {
@@ -79,10 +72,6 @@ func galgameID() int {
 	return nextGalgameID
 }
 
-// TestTouchClaimedOnly is the mapping contract the four sync-vndb writers lean
-// on: a claimed galgame's work is bumped, and a galgame the catalog has never
-// claimed is silently absent — no touch, no error. The unclaimed case is the
-// steady state for the 2,000 sync-vndb drafts that were never registered.
 func TestTouchClaimedOnly(t *testing.T) {
 	ctx := context.Background()
 	tou := New(testDB)
@@ -94,14 +83,10 @@ func TestTouchClaimedOnly(t *testing.T) {
 	assert.True(t, updatedAt(t, work).After(backdated), "the claimed work is stamped")
 	assert.Equal(t, 1, tou.Count(), "only the mapped work counts as touched")
 
-	// A galgame with no claim on its own is a plain no-op.
 	require.NoError(t, tou.Touch(ctx, []int{unclaimed}))
 	assert.Equal(t, 1, tou.Count(), "an unmapped galgame adds nothing")
 }
 
-// TestTouchIgnoresOtherSites guards the tenant key: only site='galgame_wiki'
-// claims map. A work claimed by another product that happens to carry the same
-// product_work_id must never be stamped by a wiki job.
 func TestTouchIgnoresOtherSites(t *testing.T) {
 	ctx := context.Background()
 	tou := New(testDB)
@@ -120,8 +105,6 @@ func TestTouchIgnoresOtherSites(t *testing.T) {
 	assert.True(t, updatedAt(t, foreign.ID).Equal(backdated), "another tenant's work is never stamped")
 }
 
-// TestTouchSkipsSoftDeleted mirrors the changes feed's own universe: it serves
-// `deleted_at IS NULL` only, so bumping a soft-deleted work would be pure noise.
 func TestTouchSkipsSoftDeleted(t *testing.T) {
 	ctx := context.Background()
 	tou := New(testDB)
@@ -136,8 +119,6 @@ func TestTouchSkipsSoftDeleted(t *testing.T) {
 	assert.Zero(t, tou.Count())
 }
 
-// TestTouchDedupsAndIgnoresEmpty covers the cheap edges: repeats collapse to one
-// work, and empty / zero input never reaches the database.
 func TestTouchDedupsAndIgnoresEmpty(t *testing.T) {
 	ctx := context.Background()
 	tou := New(testDB)
@@ -155,8 +136,6 @@ func TestTouchDedupsAndIgnoresEmpty(t *testing.T) {
 	assert.Equal(t, 1, tou.Count(), "duplicates collapse to one work")
 }
 
-// TestNilToucherIsNoop is what makes "dry run stamps nothing" structural: the
-// jobs simply never open a Toucher unless applying, and every call still works.
 func TestNilToucherIsNoop(t *testing.T) {
 	ctx := context.Background()
 	gid := galgameID()

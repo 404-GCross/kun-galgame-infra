@@ -96,9 +96,6 @@ func derivedSeries(t *testing.T) []model.CatalogSeries {
 	return out
 }
 
-// TestBuildDryApplyIdempotent is the acceptance shape: a dry run forecasts what
-// the apply writes, the apply produces the named+ordered series, and a second
-// apply is a zero-write zero-touch.
 func TestBuildDryApplyIdempotent(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -149,9 +146,6 @@ func TestBuildDryApplyIdempotent(t *testing.T) {
 	require.Zero(t, second.TouchedWorks, "a steady-state re-run must touch nothing")
 }
 
-// TestOverlapWithOwnedLaneIsRefused pins the rule that keeps the machine off
-// human and upstream groupings: one shared work is enough to refuse the whole
-// component, and the refusal names the series it collided with.
 func TestOverlapWithOwnedLaneIsRefused(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -174,14 +168,10 @@ func TestOverlapWithOwnedLaneIsRefused(t *testing.T) {
 	require.Contains(t, string(body), fmt.Sprintf(`"hit_series_ids":[%d]`, ownedID))
 }
 
-// TestGiantComponentSplitsOnStrongEdges pins §3: a blob welded together by
-// side-story edges is re-clustered on sequel/same_series alone, the parent is
-// reported to the worklist, and only the sub-lines are built.
 func TestGiantComponentSplitsOnStrongEdges(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 
-	// Two sequel chains of 16, joined by a single side_story edge → 32 works.
 	var lineA, lineB []int64
 	for i := range 16 {
 		lineA = append(lineA, mkWork(t, fmt.Sprintf("Alpha Chronicle %d", i), int16(2000+i)))
@@ -213,9 +203,6 @@ func TestGiantComponentSplitsOnStrongEdges(t *testing.T) {
 	require.Contains(t, string(body), `"size":32`)
 }
 
-// TestFallbackNameIsTheEarliestMemberVerbatim pins §5's second half: when the
-// titles share no usable prefix the earliest-released member's own title is the
-// name, with nothing appended.
 func TestFallbackNameIsTheEarliestMemberVerbatim(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -233,9 +220,6 @@ func TestFallbackNameIsTheEarliestMemberVerbatim(t *testing.T) {
 	require.Equal(t, "月姫", got[0].DisplayName)
 }
 
-// TestComponentsMergingMovesTheIdentity pins the reaper's evolution case: when
-// a new edge welds two components together, the smaller-id one absorbs the
-// other and the stale series is deleted whole rather than left behind.
 func TestComponentsMergingMovesTheIdentity(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -283,9 +267,6 @@ func TestCommonPrefixTrimsTrailingJunk(t *testing.T) {
 	}
 }
 
-// TestShortPrefixFallsBackToTheEarliestTitle pins the 3-rune gate: one or two
-// shared characters is coincidence in Japanese, so the name comes off the
-// earliest member instead.
 func TestShortPrefixFallsBackToTheEarliestTitle(t *testing.T) {
 	name, byPrefix := nameComponent([]string{"恋する乙女", "恋わずらい"}, "恋する乙女")
 	require.False(t, byPrefix)

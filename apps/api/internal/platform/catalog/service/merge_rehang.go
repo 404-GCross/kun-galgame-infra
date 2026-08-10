@@ -9,10 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// mergeStmt is one statement of a rehang batch. collectWorks marks the ones
-// whose RETURNING clause hands back the ids of the works whose read face the
-// statement just changed — ExecuteMerge touches those works before it commits,
-// otherwise the changes feed never learns that the merge rewrote them.
 type mergeStmt struct {
 	sql          string
 	args         []any
@@ -55,12 +51,8 @@ type mergeStmt struct {
 func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error) {
 	switch entityType {
 	case model.EntityTypePerson:
-		// The whole point of the name layer: person merge = repoint names.
-		// person_id lives on the name face only — no work changes.
 		stmts := []mergeStmt{
 			{`UPDATE catalog_credit_name SET person_id = ? WHERE person_id = ?`, []any{dst, src}, false},
-			// Intros, deduped against uq_catalog_person_intro
-			// (person_id, lang, source_id) — the character-intro idiom.
 			{`UPDATE catalog_person_intro i SET person_id = ? WHERE i.person_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_person_intro x
 			                     WHERE x.person_id = ? AND x.lang = i.lang AND x.source_id = i.source_id)`,
@@ -71,9 +63,6 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 
 	case model.EntityTypeCreditName:
 		stmts := []mergeStmt{
-			// credits, deduped against uq_catalog_credit. Both statements
-			// change what the host work lists under credits[] — the repoint
-			// swaps the credited name, the dedup delete drops a row.
 			{`UPDATE catalog_credit c SET credit_name_id = ? WHERE c.credit_name_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
 			                     WHERE d.work_id = c.work_id AND d.credit_name_id = ?
@@ -81,33 +70,26 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			                       AND COALESCE(d.character_id, 0) = COALESCE(c.character_id, 0))
 			  RETURNING c.work_id`, []any{dst, src, dst}, true},
 			{`DELETE FROM catalog_credit WHERE credit_name_id = ? RETURNING work_id`, []any{src}, true},
-			// aliases, deduped against UNIQUE(owner, name, lang) — name face.
 			{`UPDATE catalog_name_alias a SET credit_name_id = ? WHERE a.credit_name_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_name_alias b
 			                     WHERE b.credit_name_id = ? AND b.name = a.name AND b.lang = a.lang)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_name_alias WHERE credit_name_id = ?`, []any{src}, false},
-			// primary-name references
 			{`UPDATE catalog_person SET primary_credit_name_id = ? WHERE primary_credit_name_id = ?`, []any{dst, src}, false},
 		}
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeLabel:
 		stmts := []mergeStmt{
-			// label_id is not part of the credit unique key — plain repoint.
 			{`UPDATE catalog_credit SET label_id = ? WHERE label_id = ? RETURNING work_id`, []any{dst, src}, true},
 			{`UPDATE catalog_label_alias a SET label_id = ? WHERE a.label_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_label_alias b
 			                     WHERE b.label_id = ? AND b.name = a.name AND b.lang = a.lang)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_label_alias WHERE label_id = ?`, []any{src}, false},
-			// Intros, deduped against uq_catalog_label_intro
-			// (label_id, lang, source_id). A work renders label ids, not the
-			// label's body — no work id to collect.
 			{`UPDATE catalog_label_intro i SET label_id = ? WHERE i.label_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_label_intro x
 			                     WHERE x.label_id = ? AND x.lang = i.lang AND x.source_id = i.source_id)`,
 				[]any{dst, src, dst}, false},
 			{`DELETE FROM catalog_label_intro WHERE label_id = ?`, []any{src}, false},
-			// brand edges, deduped against the (work, label, kind) PK
 			{`UPDATE catalog_work_label e SET label_id = ? WHERE e.label_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_work_label x
 			                     WHERE x.work_id = e.work_id AND x.label_id = ? AND x.kind = e.kind)
@@ -119,7 +101,6 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 
 	case model.EntityTypeCharacter:
 		stmts := []mergeStmt{
-			// voice credits: character_id participates in uq_catalog_credit
 			{`UPDATE catalog_credit c SET character_id = ? WHERE c.character_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
 			                     WHERE d.work_id = c.work_id AND d.credit_name_id = c.credit_name_id
@@ -130,20 +111,6 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			    AND NOT EXISTS (SELECT 1 FROM catalog_character_alias b
 			                     WHERE b.character_id = ? AND b.name = a.name AND b.lang = a.lang)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_character_alias WHERE character_id = ?`, []any{src}, false},
-			// roster edges (catalog_work_character, step 45 — added AFTER the
-			// original hook list; step 49 regression fix). When both sides carry
-			// an edge on the same work, the surviving edge folds in the loser's
-			// stronger signal before the loser row is dropped: kind upgrades from
-			// unknown (0) to the loser's typed value (doc 10 §6.2 — the more
-			// specific value wins; two typed values keep the survivor's,
-			// first-source-wins per step 45), and spoiler takes the higher of the
-			// two so a source that flags a severe spoiler is never silently
-			// downgraded. Then non-conflicting loser edges move, deduped against
-			// uq_catalog_work_character (work_id, character_id), and the rest drop.
-			//
-			// The fold needs no RETURNING: it only fires on works that carry an
-			// edge from BOTH sides, and every one of those loses the source's
-			// edge to the dedup DELETE below, which collects them.
 			{`UPDATE catalog_work_character d
 			    SET kind = CASE WHEN d.kind = 0 THEN s.kind ELSE d.kind END,
 			        spoiler = GREATEST(d.spoiler, s.spoiler),
@@ -155,20 +122,6 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			                     WHERE x.work_id = e.work_id AND x.character_id = ?)
 			  RETURNING e.work_id`, []any{dst, src, dst}, true},
 			{`DELETE FROM catalog_work_character WHERE character_id = ? RETURNING work_id`, []any{src}, true},
-			// Descriptions (step 107) and vndb trait links (step 93) were added
-			// to the character face AFTER this hook list was written, and were
-			// never re-hung: a merge stranded them on the retired row, where
-			// nothing reads them (770 such intro rows exist in the 2026-07-30
-			// production snapshot, from the step-97/98 waves). Both are
-			// character-face tables, so like instance_of above they collect no
-			// work id — the work read face does not render them.
-			//
-			// Dedup targets are the tables' own unique keys:
-			// uq_catalog_character_intro (character_id, lang, source_id) and
-			// uq_catalog_character_trait_link (character_id, trait_id). On a
-			// collision the survivor's row stands and the source's is dropped
-			// (doc 10 §6.2 first-source-wins); no field fold is needed, since
-			// both facets carry a single source's assertion per key.
 			{`UPDATE catalog_character_intro i SET character_id = ? WHERE i.character_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_character_intro x
 			                     WHERE x.character_id = ? AND x.lang = i.lang AND x.source_id = i.source_id)`,
@@ -179,45 +132,31 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			                     WHERE x.character_id = ? AND x.trait_id = t.trait_id)`,
 				[]any{dst, src, dst}, false},
 			{`DELETE FROM catalog_character_trait_link WHERE character_id = ?`, []any{src}, false},
-			// variant pointers follow the base character — character face only.
 			{`UPDATE catalog_character SET instance_of = ? WHERE instance_of = ?`, []any{dst, src}, false},
 		}
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeWork:
-		// Everything below repoints a facet from source to target, so the
-		// TARGET's own face changes (ExecuteMerge touches it unconditionally).
-		// Relations are the exception that needs RETURNING: repointing an edge
-		// rewrites the relations[] of the work at the OTHER end, which takes
-		// no part in this merge.
 		stmts := []mergeStmt{
-			// edges between the pair would become self-edges (a<>b CHECK) —
-			// drop them. Both endpoints are the merge pair itself, so there is
-			// no third work to collect here.
 			{`DELETE FROM catalog_work_relation
 			   WHERE (a_work_id = ? AND b_work_id = ?) OR (a_work_id = ? AND b_work_id = ?)`, []any{src, dst, dst, src}, false},
-			// a-side, deduped against the (a, b, type) PK
 			{`UPDATE catalog_work_relation r SET a_work_id = ? WHERE r.a_work_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_work_relation x
 			                     WHERE x.a_work_id = ? AND x.b_work_id = r.b_work_id
 			                       AND x.relation_type_id = r.relation_type_id)
 			  RETURNING r.b_work_id`, []any{dst, src, dst}, true},
 			{`DELETE FROM catalog_work_relation WHERE a_work_id = ? RETURNING b_work_id`, []any{src}, true},
-			// b-side
 			{`UPDATE catalog_work_relation r SET b_work_id = ? WHERE r.b_work_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_work_relation x
 			                     WHERE x.b_work_id = ? AND x.a_work_id = r.a_work_id
 			                       AND x.relation_type_id = r.relation_type_id)
 			  RETURNING r.a_work_id`, []any{dst, src, dst}, true},
 			{`DELETE FROM catalog_work_relation WHERE b_work_id = ? RETURNING a_work_id`, []any{src}, true},
-			// titles, deduped against UNIQUE(work, lang, title, kind)
 			{`UPDATE catalog_work_title t SET work_id = ? WHERE t.work_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_work_title u
 			                     WHERE u.work_id = ? AND u.lang = t.lang AND u.title = t.title AND u.kind = t.kind)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_work_title WHERE work_id = ?`, []any{src}, false},
-			// releases carry no unique on work_id — plain repoint
 			{`UPDATE catalog_release SET work_id = ? WHERE work_id = ?`, []any{dst, src}, false},
-			// credits, deduped against uq_catalog_credit
 			{`UPDATE catalog_credit c SET work_id = ? WHERE c.work_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
 			                     WHERE d.work_id = ? AND d.credit_name_id = c.credit_name_id
@@ -230,39 +169,14 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 	return nil, fmt.Errorf("catalog merge: unsupported entity type %d", entityType)
 }
 
-// workFacetStmts is the wave-170b closure of the work batch: every table that
-// hangs off a work by work_id alone and joined the schema AFTER the original
-// doc 10 §6.2-2 list was written. A work merge used to leave all of them on the
-// retired id — catalog_work_cover is the one production caught (12 rows moved
-// by hand), and it was never alone.
-//
-// None of these statements collects a work id. They are keyed by work_id only,
-// so the sole faces they change belong to the merge pair itself: ExecuteMerge
-// touches the target unconditionally, and the source is deliberately never
-// touched (its merge signal is the redirects face).
-//
-// Dedup keys are each table's own UNIQUE index, read off the model tags. Where
-// a key collides the survivor's row stands and the source's is dropped
-// (doc 10 §6.2 first-source-wins) — the sole exception is the roster edge,
-// which folds the loser's stronger signal in first, exactly as the character
-// batch does.
 func workFacetStmts(src, dst int64) []mergeStmt {
 	stmts := []mergeStmt{
-		// Roster edges: fold kind/spoiler into the surviving edge before the
-		// loser drops (the character batch's rule, seen from the work side).
 		{`UPDATE catalog_work_character d
 		    SET kind = CASE WHEN d.kind = 0 THEN s.kind ELSE d.kind END,
 		        spoiler = GREATEST(d.spoiler, s.spoiler),
 		        updated_at = now()
 		    FROM catalog_work_character s
 		    WHERE d.work_id = ? AND s.work_id = ? AND s.character_id = d.character_id`, []any{dst, src}, false},
-		// Playtime reports: the second exception to first-source-wins, for the
-		// same reason as the roster edge — the loser's row carries a signal
-		// worth keeping. If one user's one client reported on both ids, they
-		// were measuring one story told twice, so the survivor keeps the
-		// LARGER total (never the sum: it is a single playthrough of a single
-		// work) and the more recent sighting. The generic move below then
-		// carries across every report the target had no row for.
 		{`UPDATE catalog_user_playtime d
 		    SET minutes = GREATEST(d.minutes, s.minutes),
 		        status = CASE WHEN s.status = 1 THEN 1 ELSE d.status END,
@@ -272,7 +186,6 @@ func workFacetStmts(src, dst int64) []mergeStmt {
 		    WHERE d.work_id = ? AND s.work_id = ?
 		      AND s.actor_uid = d.actor_uid AND s.client_id = d.client_id`, []any{dst, src}, false},
 	}
-	// (table, the unique-key columns BESIDES work_id)
 	for _, f := range []struct {
 		table string
 		key   []string
@@ -296,14 +209,6 @@ func workFacetStmts(src, dst int64) []mergeStmt {
 	return stmts
 }
 
-// workFacetRehang builds the two-statement move for one work facet table:
-// rows whose unique key is still free on the target move, and the remainder —
-// a row the target already carries under the same key — drops. keyCols are the
-// unique-key columns other than work_id.
-//
-// The table and column names are compile-time constants from workFacetStmts,
-// never input, so interpolating them is the readable way to keep twelve
-// identical statements identical.
 func workFacetRehang(table string, keyCols []string, src, dst int64) []mergeStmt {
 	match := make([]string, 0, len(keyCols))
 	for _, c := range keyCols {
@@ -319,20 +224,6 @@ func workFacetRehang(table string, keyCols []string, src, dst int64) []mergeStmt
 	}
 }
 
-// labelRelationStmts moves the DERIVED corporate-graph edges (wave 186), the
-// table catalog_label_relation, which import-label-relations rebuilds wholesale
-// per source. Rehanging a derived table looks redundant — the next import puts
-// the edge on the survivor anyway, because the merge moved the source anchor
-// with it — but "the next import" can be weeks away, and until it runs the read
-// face carries edges pointing at a retired label. So this is not inventing a
-// derived fact: it is applying early exactly what the rebuild will conclude.
-//
-// Both endpoints move because storage is mirrored (an imprint edge is stored
-// alongside its imprint_of twin), and repointing only one side would leave the
-// pair contradicting itself. The edges BETWEEN src and dst drop first: they
-// would become self-edges, which the graph reader would render as a company
-// owning itself. Dedup is against the full composite PK, source_id included —
-// two sources may legitimately assert the same edge.
 func labelRelationStmts(src, dst int64) []mergeStmt {
 	return []mergeStmt{
 		{`DELETE FROM catalog_label_relation
@@ -353,17 +244,6 @@ func labelRelationStmts(src, dst int64) []mergeStmt {
 	}
 }
 
-// entityRelationStmts moves the polymorphic entity↔entity edges (label
-// imprint / renamed-from / subsidiary, person membership, …) of a non-work
-// merge. The table addresses its endpoints by (entity_type, id), so one
-// statement set serves every entity type; the shape mirrors the
-// catalog_work_relation block — the edges BETWEEN the pair would become
-// self-edges the chk_catalog_entity_relation_distinct CHECK forbids, so they
-// drop first, then each side moves deduped against the
-// (entity_type, a_id, b_id, relation_type_id) primary key.
-//
-// No work id is ever collected: the other endpoint of an entity edge is an
-// entity, never a work.
 func entityRelationStmts(entityType int16, src, dst int64) []mergeStmt {
 	return []mergeStmt{
 		{`DELETE FROM catalog_entity_relation
@@ -384,9 +264,6 @@ func entityRelationStmts(entityType int16, src, dst int64) []mergeStmt {
 	}
 }
 
-// execAll runs a rehang batch in order and gathers the work ids returned by
-// the statements flagged collectWorks. Those statements are queries (they carry
-// a RETURNING clause), so they go through Raw().Scan rather than Exec.
 func execAll(tx *gorm.DB, stmts []mergeStmt) ([]int64, error) {
 	var touched []int64
 	for _, s := range stmts {

@@ -1,21 +1,3 @@
-// catalog-wiki-zh adjudicates the retired wiki's hand-written Chinese intros
-// against what the catalog holds today, and restores the ones that are better
-// (refs/proj/168). Quality is the criterion, not who wrote it.
-//
-// Two phases, deliberately separate files on disk between them so a judgement
-// can be inspected — and a human can overrule it — before anything is written:
-//
-//	# 1. judge: read src_wiki.intro_snapshot, write JSONL verdicts. Resumable.
-//	catalog-wiki-zh judge --bucket usable  --out verdicts-usable.jsonl  --limit 30
-//	catalog-wiki-zh judge --bucket compare --out verdicts-compare.jsonl --limit 30
-//
-//	# 2. apply: fold N independent rounds and consume the consensus. Dry by
-//	#    default. Auto-apply needs EVERY round to agree and clear the gate.
-//	catalog-wiki-zh apply --in r1.jsonl,r2.jsonl,r3.jsonl
-//	catalog-wiki-zh apply --in r1.jsonl,r2.jsonl,r3.jsonl --apply
-//
-// A restore INSERTs a provenance=0 row; the machine row is never touched, so a
-// rollback is a DELETE of the ids the apply pass reports.
 package main
 
 import (
@@ -99,9 +81,6 @@ func main() {
 			slog.Error("read existing verdicts", "error", err)
 			os.Exit(1)
 		}
-		// --only restricts the pass to a work-id list. The adversarial round
-		// re-judges exactly the works the ordinary rounds contested, and
-		// re-judging all 3,829 to reach 291 of them would be 13x the cost.
 		only, err := readWorkIDs(*onlyFile)
 		if err != nil {
 			slog.Error("read --only list", "error", err)
@@ -149,14 +128,10 @@ func main() {
 		defer f.Close()
 		enc := json.NewEncoder(f)
 
-		// Chunks run concurrently: a reasoning model spends ~15s on a chunk of
-		// five, so a serial loop leaves 89% of the rpm budget unused and turns
-		// a three-round pass into half a day. The shared pace limiter inside
-		// the judge remains the politeness ceiling regardless of worker count.
 		type chunkJob struct{ from, to int }
 		jobs := make(chan chunkJob)
 		var wg sync.WaitGroup
-		var mu sync.Mutex // guards the encoder and the counters
+		var mu sync.Mutex
 		var judged, failed int
 
 		for w := 0; w < max(*workers, 1); w++ {
@@ -167,8 +142,6 @@ func main() {
 					vs, err := judge.JudgeBatch(ctx, b, pending[j.from:j.to])
 					mu.Lock()
 					if err != nil {
-						// One failed chunk is not a failed pass — the file is
-						// the resume point, so a re-run picks these up.
 						failed += j.to - j.from
 						slog.Warn("chunk failed", "from", j.from, "to", j.to, "err", err)
 					} else {
@@ -231,9 +204,6 @@ func main() {
 			vs, ts = wikizh.Tiebreak(vs, tb)
 			slog.Info("tiebreak", "file", *tiebreak, "verdicts", len(tb), "result", ts.String())
 		}
-		// --limit on apply is a REHEARSAL lever: write a handful, read the rows
-		// back, then run the rest. It cuts after the consensus so the sample is
-		// drawn from the same verdicts the full pass would use.
 		if *limit > 0 && len(vs) > *limit {
 			vs = vs[:*limit]
 			slog.Warn("limited apply — a rehearsal, not the pass", "verdicts", len(vs))
@@ -243,9 +213,6 @@ func main() {
 		if st != nil {
 			slog.Info("wiki-zh apply done", "apply", *apply, "result", st.String())
 			if *apply && len(st.ReceiptIDs) > 0 {
-				// Derived from the FIRST round's path, not the whole --in list:
-				// a comma-joined name is not a path, and the write failed with
-				// "no such file or directory" after a 1,781-row pass.
 				name := fmt.Sprintf("%s.receipts.%d.json", strings.TrimSpace(files[0]), time.Now().Unix())
 				if *receipts != "" {
 					name = *receipts
@@ -287,9 +254,6 @@ func envOr(k, def string) string {
 	return def
 }
 
-// readWorkIDs reads a work-id list, one per line, blanks and #comments ignored.
-// Returns nil (not an empty map) when no file was given, so "no filter" and
-// "an empty filter" cannot be confused — the latter would judge nothing.
 func readWorkIDs(path string) (map[int64]bool, error) {
 	if path == "" {
 		return nil, nil

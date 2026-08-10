@@ -15,20 +15,11 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Admin face: the AI usage dashboard (doc 20 §5). Read aggregates over ai_usage
-// plus the budget-fuse config. Auth is applied by the caller as path-scoped
-// Fiber middleware (middleware.JWTAuth + ai.usage_view) on the /api/v1/admin/ai
-// prefix BEFORE this — the surface is platform-ops only (admin/ren; NOT
-// moderator), so there is no per-site scoping: usage is cross-site by nature.
-
-// AdminServer holds the admin dashboard dependencies.
 type AdminServer struct {
 	stats   *service.StatsService
 	budgets *service.BudgetService
 }
 
-// SetupAdmin builds the AI admin Huma API over the Fiber app. Callable with nil
-// deps for spec export (handlers are never invoked then).
 func SetupAdmin(app *fiber.App, stats *service.StatsService, budgets *service.BudgetService) huma.API {
 	InstallErrorEnvelope()
 
@@ -57,8 +48,6 @@ func (s *AdminServer) register(api huma.API) {
 		Summary: "Set or clear a per-route (optionally per-site) daily cost cap (null cap = clear)", Tags: tags}, s.upsertBudget)
 }
 
-// ---- usage summary ----
-
 type usageSummaryInput struct {
 	Window string `query:"window" enum:"24h,7d,30d" default:"24h" doc:"aggregation window"`
 }
@@ -74,8 +63,6 @@ func (s *AdminServer) usageSummary(ctx context.Context, in *usageSummaryInput) (
 	return &usageSummaryOutput{Body: okEnvelope(summary)}, nil
 }
 
-// ---- usage daily ----
-
 type usageDailyInput struct {
 	Days int `query:"days" default:"14" minimum:"1" maximum:"90" doc:"number of calendar days (inclusive of today)"`
 }
@@ -90,8 +77,6 @@ func (s *AdminServer) usageDaily(ctx context.Context, in *usageDailyInput) (*usa
 	}
 	return &usageDailyOutput{Body: okEnvelope(series)}, nil
 }
-
-// ---- budgets ----
 
 type listBudgetsInput struct{}
 type listBudgetsOutput struct {
@@ -120,8 +105,6 @@ func (s *AdminServer) upsertBudget(ctx context.Context, in *upsertBudgetInput) (
 	}
 	return &upsertBudgetOutput{Body: okEnvelope(view)}, nil
 }
-
-// ---- helpers ----
 
 func mapAdminErr(op string, err error) *houseError {
 	switch {

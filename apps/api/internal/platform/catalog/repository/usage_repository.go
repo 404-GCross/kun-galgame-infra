@@ -6,8 +6,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// HasUsage reports whether any site still references the entity — the
-// delete-protection duty of catalog_entity_usage (doc 10 invariant 8).
 func HasUsage(db *gorm.DB, entityType int16, entityID int64) (bool, error) {
 	var count int64
 	err := db.Model(&model.CatalogEntityUsage{}).
@@ -16,9 +14,6 @@ func HasUsage(db *gorm.DB, entityType int16, entityID int64) (bool, error) {
 	return count > 0, err
 }
 
-// MergeUsage folds the source entity's usage rows into the target: same-site
-// rows merge (earliest first_used_at, latest last_confirmed_at), the rest
-// repoint, and the source ends with zero rows.
 func MergeUsage(tx *gorm.DB, entityType int16, sourceID, targetID int64) error {
 	if err := tx.Exec(`
 		UPDATE catalog_entity_usage t

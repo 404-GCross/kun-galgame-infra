@@ -7,9 +7,6 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/cors"
 )
 
-// CORS middleware handles Cross-Origin Resource Sharing.
-// frontendOrigin accepts a comma-separated list of origins, e.g.
-// "http://127.0.0.1:9420,http://127.0.0.1:9421".
 func CORS(frontendOrigin string) fiber.Handler {
 	origins := []string{
 		"https://kungal.com",

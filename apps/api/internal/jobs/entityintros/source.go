@@ -9,9 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// registry holds the catalog source ids this backfill needs, resolved BY KEY
-// (never hardcoded) so a rehearsal / prod DB with different auto-increment
-// seeds still works — the bgmsummaries / dlsitemedia discipline.
 type registry struct {
 	vndbSource    int16
 	bangumiSource int16
@@ -36,23 +33,12 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one live entity joined to its anchored staging row. Text is
-// verbatim from staging ('' when the source has none — counted as no_text,
-// not filtered, so the run reports it honestly).
 type candidate struct {
 	EntityID   int64  `gorm:"column:entity_id"`
 	ExternalID string `gorm:"column:external_id"`
 	Text       string `gorm:"column:text"`
 }
 
-// loadCandidates resolves one lane's candidates: live entities carrying an
-// EXACT anchor (link_kind=0) for the lane's source, joined to the staging text.
-// Unlike bgmsummaries no matched_by pin is needed — every character/person
-// anchor tier under exact link_kind is an import/attach rule (the vndb
-// probable tier, rule:same-work-character-name kind=1, is excluded by the
-// link_kind filter alone). DISTINCT ON keeps ONE anchor per entity (lowest
-// external_id, numerically for bangumi's all-numeric ids and lexically for
-// vndb's "c<N>" ids — deterministic either way).
 func loadCandidates(ctx context.Context, db *gorm.DB, lane string, reg registry, limit, offset int) ([]candidate, error) {
 	var query string
 	var args []any
@@ -91,8 +77,6 @@ func loadCandidates(ctx context.Context, db *gorm.DB, lane string, reg registry,
 	if err := db.WithContext(ctx).Raw(query, args...).Scan(&out).Error; err != nil {
 		return nil, fmt.Errorf("load %s candidates: %w", lane, err)
 	}
-	// Window in Go after DISTINCT ON so offset/limit apply to distinct entities
-	// (the dlsitemedia chunking discipline — slicing keeps it obviously correct).
 	if offset > 0 {
 		if offset >= len(out) {
 			return nil, nil
@@ -105,20 +89,8 @@ func loadCandidates(ctx context.Context, db *gorm.DB, lane string, reg registry,
 	return out, nil
 }
 
-// preloadChunk keeps each preload IN-list under the wire protocol's 65,535
-// parameter cap (the candidate sets here are ~150k characters — the first
-// intro job big enough to hit it).
 const preloadChunk = 10000
 
-// preloadExistingLangs loads every (entity_id → set of intro langs) pair
-// already present for the candidate entities — across ALL sources, because the
-// fill-missing-language rule asks "does the entity have this language at
-// all?", not "did this source already write it?". SOURCE rows only
-// (provenance=0): a machine translation must never block a genuine upstream
-// text in the same language from landing (the read face prefers the source row
-// anyway). This preload is the primary skip; the (entity_id,lang,source_id)
-// ON CONFLICT is only the backstop. table is catalog_character_intro or
-// catalog_person_intro with its matching id column.
 func preloadExistingLangs(ctx context.Context, db *gorm.DB, table, idCol string, ids []int64) (map[int64]map[string]bool, error) {
 	out := map[int64]map[string]bool{}
 	for start := 0; start < len(ids); start += preloadChunk {
@@ -144,13 +116,6 @@ func preloadExistingLangs(ctx context.Context, db *gorm.DB, table, idCol string,
 	return out, nil
 }
 
-// preloadHostWorks maps each candidate character to the live works that list it
-// on their roster. Those works are what a new character intro changes for a
-// reader, so they are the set the character lanes bump through the public
-// changes feed (repository.TouchWorks, wired in step 117). Soft-deleted works
-// are dropped here rather than at touch time — a deleted work has no read face
-// to refresh. Introduced for char-eg in step 120 and shared by all three
-// character lanes since 122, so it sits here with the other shared preload.
 func preloadHostWorks(ctx context.Context, db *gorm.DB, ids []int64) (map[int64][]int64, error) {
 	out := map[int64][]int64{}
 	for start := 0; start < len(ids); start += preloadChunk {

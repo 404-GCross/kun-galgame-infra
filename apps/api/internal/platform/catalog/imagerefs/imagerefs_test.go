@@ -18,11 +18,6 @@ import (
 	glogger "gorm.io/gorm/logger"
 )
 
-// TestKindsCoversEveryImageColumn is the tripwire for the failure this package
-// exists to prevent: a seventh image column added to the schema without an
-// entry here is invisible to the keep-alive sweep, and the loss arrives a year
-// later. If this test fails because a kind was added, add the column
-// everywhere (registry, this list) — never just relax the assertion.
 func TestKindsCoversEveryImageColumn(t *testing.T) {
 	assert.Equal(t, []string{
 		KindWorkCover, KindWorkScreenshot, KindCharacterBust,
@@ -30,23 +25,17 @@ func TestKindsCoversEveryImageColumn(t *testing.T) {
 	}, Kinds())
 }
 
-// TestDetachSetMatchesColumnNullability pins the half of the spec a schema
-// change breaks silently: writing NULL into a NOT NULL column errors loudly,
-// but writing '' into a nullable one leaves a row that no longer references an
-// image yet still passes the "hash present" filter nowhere — it just reads as
-// an empty-string hash forever.
 func TestDetachSetMatchesColumnNullability(t *testing.T) {
 	want := map[string]string{
-		KindWorkCover: "", KindWorkScreenshot: "", // the row IS the reference
-		KindCharacterBust: "NULL", KindCharacterFigure: "NULL", // *string columns
-		KindLabelLogo: "''", KindPersonPhoto: "''", // NOT NULL DEFAULT ''
+		KindWorkCover: "", KindWorkScreenshot: "",
+		KindCharacterBust: "NULL", KindCharacterFigure: "NULL",
+		KindLabelLogo: "''", KindPersonPhoto: "''",
 	}
 	for _, s := range specs {
 		assert.Equalf(t, want[s.Kind], s.DetachSet, "detach value for %s", s.Kind)
 	}
 }
 
-// --- DB-backed ---
 
 var (
 	testOnce sync.Once
@@ -88,9 +77,6 @@ const (
 	hashDead   = "3333333333333333333333333333333333333333333333333333333333333333"
 )
 
-// fixture writes one row of every kind pointing at hashShared, plus decoys:
-// a second work cover on another hash, and a SOFT-DELETED character/label/person
-// whose images must not count as references.
 func fixture(t *testing.T, db *gorm.DB) (workID, charID, labelID, personID int64) {
 	t.Helper()
 	for _, tbl := range []string{
@@ -114,7 +100,6 @@ func fixture(t *testing.T, db *gorm.DB) (workID, charID, labelID, personID int64
 	person := &model.CatalogPerson{DisplayName: "人物", PhotoHash: hashShared}
 	require.NoError(t, db.Create(person).Error)
 
-	// Soft-deleted decoys: a live row is the only thing that holds a reference.
 	deadChar := &model.CatalogCharacter{DisplayName: "亡角色", ImageHash: &shared}
 	require.NoError(t, db.Create(deadChar).Error)
 	require.NoError(t, db.Delete(deadChar).Error)
@@ -136,8 +121,6 @@ func kindCounts(refs []Ref) map[string]int {
 	return out
 }
 
-// TestCollectSeesEveryKindAndSkipsSoftDeleted: the full sweep reads all six
-// columns, and the soft-deleted decoys contribute nothing.
 func TestCollectSeesEveryKindAndSkipsSoftDeleted(t *testing.T) {
 	db := openTestDB(t)
 	fixture(t, db)
@@ -153,9 +136,6 @@ func TestCollectSeesEveryKindAndSkipsSoftDeleted(t *testing.T) {
 	}
 }
 
-// TestCollectByHashCarriesLabels: the console's answer names the entity a
-// human would recognize, and a work's cover is labelled by its work, not by
-// the cover row.
 func TestCollectByHashCarriesLabels(t *testing.T) {
 	db := openTestDB(t)
 	workID, charID, labelID, personID := fixture(t, db)
@@ -184,8 +164,6 @@ func TestCollectByHashCarriesLabels(t *testing.T) {
 	assert.Empty(t, none, "an unreferenced hash answers with an empty list, not an error")
 }
 
-// TestDistinctHashesDedupesAndSorts: refping's contract — one entry per hash,
-// stable order, no empty strings from the NOT NULL DEFAULT '' columns.
 func TestDistinctHashesDedupesAndSorts(t *testing.T) {
 	db := openTestDB(t)
 	fixture(t, db)
@@ -195,9 +173,6 @@ func TestDistinctHashesDedupesAndSorts(t *testing.T) {
 	assert.Equal(t, []string{hashShared, hashOther}, hashes)
 }
 
-// TestDetachReleasesEveryKind: detach empties the reference set for one hash
-// and leaves every other hash untouched — the covers/screenshots by deleting
-// their rows, the single-slot columns by writing their own "no image" value.
 func TestDetachReleasesEveryKind(t *testing.T) {
 	db := openTestDB(t)
 	_, charID, labelID, personID := fixture(t, db)
@@ -214,12 +189,10 @@ func TestDetachReleasesEveryKind(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, refs, "nothing references the hash after a detach")
 
-	// The other cover survived: detach is hash-scoped, not work-scoped.
 	hashes, err := DistinctHashes(ctx, db)
 	require.NoError(t, err)
 	assert.Equal(t, []string{hashOther}, hashes)
 
-	// The entities themselves survive — only the image slot was released.
 	var char model.CatalogCharacter
 	require.NoError(t, db.First(&char, charID).Error)
 	assert.Nil(t, char.ImageHash)
@@ -231,7 +204,6 @@ func TestDetachReleasesEveryKind(t *testing.T) {
 	require.NoError(t, db.First(&person, personID).Error)
 	assert.Equal(t, "", person.PhotoHash)
 
-	// Detaching an unreferenced hash is a no-op, not an error.
 	again, err := Detach(ctx, db, hashShared)
 	require.NoError(t, err)
 	for kind, n := range again {

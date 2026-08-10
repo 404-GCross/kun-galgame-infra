@@ -1,10 +1,3 @@
-// import-work-series materializes dlsite work series into catalog_series /
-// catalog_series_member (step 94, refs/proj/94 option B). Only series with
-// >=2 anchored galgame works land. Dry-run by default; refresh-runnable
-// (series rename in place, member insert-if-absent + stale delete, sub-gate
-// series deleted — the mirror is the truth).
-//
-//	go run ./cmd/import-work-series --dsn "$CATALOG" --dlsite-dsn "$DLSITE" [--apply]
 package main
 
 import (

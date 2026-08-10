@@ -11,9 +11,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// registerTerms wires the Tier0 word-list admin surface. Every op is gated on
-// trust.term_manage (admin/ren only) in-handler — the /api/v1/admin/trust prefix
-// gate (trust.queue_access) admits moderators, so they must be rejected here.
 func (s *AdminServer) registerTerms(api huma.API) {
 	tags := []string{"trust-admin"}
 	const note = "Requires trust.term_manage (admin/ren); a moderator is rejected 403. Terms are never hard-deleted — deprecate retires them."
@@ -91,7 +88,6 @@ func (s *AdminServer) deprecateTerm(ctx context.Context, in *deprecateTermInput)
 	return &termOutput{Body: okEnvelope(toTermView(*term))}, nil
 }
 
-// toTermView projects a term model to its wire view.
 func toTermView(t model.TrustTerm) dto.TermView {
 	return dto.TermView{
 		ID: t.ID, Site: t.Site, TermNorm: t.TermNorm, Kind: t.Kind, Purpose: t.Purpose,

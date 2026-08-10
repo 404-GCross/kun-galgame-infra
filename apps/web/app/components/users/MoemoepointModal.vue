@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Admin moemoepoint panel: shows balance, grants/deducts via the unified
-// ledger endpoint (POST /admin/users/:uuid/moemoepoint), and lists recent
-// audit rows. Every change is idempotent + audited server-side.
 import {
   moemoepointReasonLabel,
   moemoepointSourceLabel
@@ -54,7 +51,6 @@ const loadLog = async () => {
   }
 }
 
-// Reset + load whenever the modal opens for a user.
 watch(
   () => props.open,
   (open) => {
@@ -70,7 +66,6 @@ watch(
 
 const close = () => emit('update:open', false)
 
-// sign: +1 grant / -1 deduct. The backend derives reason from the delta sign.
 const adjust = async (sign: 1 | -1) => {
   if (!props.user || submitting.value) return
   const amt = Number(amount.value)
@@ -117,7 +112,6 @@ const adjust = async (sign: 1 | -1) => {
         <span class="text-primary text-2xl font-bold">{{ balance }}</span>
       </div>
 
-      <!-- Grant / deduct -->
       <div class="space-y-2">
         <KunInput
           v-model="amount"
@@ -155,7 +149,6 @@ const adjust = async (sign: 1 | -1) => {
         </div>
       </div>
 
-      <!-- Recent ledger -->
       <div>
         <h3 class="text-default-500 mb-2 text-sm font-medium">最近变动</h3>
         <div v-if="logLoading" class="text-default-400 py-4 text-center text-sm">

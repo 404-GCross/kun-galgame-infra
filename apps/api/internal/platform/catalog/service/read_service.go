@@ -14,16 +14,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// charAttrColumns are the typed attribute columns whose source attribution is
-// surfaced (step 81): AttrSources maps each populated one to its latest
-// field_provenance writer.
 var charAttrColumns = []string{
 	"birthday_month", "birthday_day", "blood_type", "height_cm", "weight_kg",
 	"bust_cm", "waist_cm", "hip_cm", "cup", "gender",
 }
 
-// decodeCharExtra unmarshals the character extra jsonb into a generic map for
-// the read face; an empty/absent object yields nil (serializes as absent).
 func decodeCharExtra(raw datatypes.JSON) map[string]any {
 	if len(raw) == 0 {
 		return nil
@@ -35,9 +30,6 @@ func decodeCharExtra(raw datatypes.JSON) map[string]any {
 	return m
 }
 
-// attrSources reads field_provenance (R8 array, latest first) and returns the
-// {column → latest source key} map for the populated attribute columns; nil
-// when none carry provenance.
 func attrSources(raw datatypes.JSON) map[string]string {
 	if len(raw) == 0 {
 		return nil
@@ -60,13 +52,8 @@ func attrSources(raw datatypes.JSON) map[string]string {
 	return out
 }
 
-// sourceKeyDlsite is the catalog_source registry key for DLsite anchors (the
-// product side keys its doujin rows on the DLsite workno).
 const sourceKeyDlsite = "dlsite"
 
-// sourceKeyCurated is the catalog_source key of the first-party human lane
-// (source id 12). Wave 161 renamed it from `galgame_wiki` — the wiki product it
-// was named after no longer exists — while the id stayed put.
 const sourceKeyCurated = "curated"
 
 // curatedSourceKeys is that source's key resolved DUAL-READ: both spellings,
@@ -84,9 +71,6 @@ const sourceKeyCurated = "curated"
 // nothing by itself, so keeping it costs one array element.
 var curatedSourceKeys = []string{sourceKeyCurated, "galgame_wiki"}
 
-// curatedSourceID picks whichever of the two spellings the registry answered
-// with. Zero when the source is absent entirely, which is the same "unknown
-// source" case every caller already handles.
 func curatedSourceID(byKey map[string]int16) int16 {
 	for _, k := range curatedSourceKeys {
 		if id, ok := byKey[k]; ok {
@@ -96,111 +80,36 @@ func curatedSourceID(byKey map[string]int16) int16 {
 	return 0
 }
 
-// sourceKeyErogamespace is the catalog_source key the ratings bridge (step 58a)
-// attributes a galgame_eg_meta row to — the EG (ErogameScape) rating source.
 const sourceKeyErogamespace = "erogamespace"
 
-// siteGalgameWiki is the catalog_work.site of a wiki-claimed work. The read face
-// no longer branches on it — every facet reads its native catalog table since the
-// cover/screenshot flip (wave 164) closed the last bridge — but it is still the
-// live claim key a claimed row carries, and the display-limit projection is keyed
-// on it.
 const siteGalgameWiki = "galgame_wiki"
 
-// ReadService backs the S2S read face (step 18, D-01): anchor read-through and
-// credits-by-work. Pure reads over the catalog DB; transport-agnostic (the
-// handler maps these to DTOs).
 type ReadService struct{ db *gorm.DB }
 
 func NewReadService(db *gorm.DB) *ReadService { return &ReadService{db: db} }
 
-// ErrWorkNotFound is returned when an anchor resolves to no work.
 var ErrWorkNotFound = stderrors.New("catalog: no work for anchor")
 
-// WorkDetail is the anchor read-through result.
 type WorkDetail struct {
-	Work model.CatalogWork
-	// Titles is the merged title set (A2-R1): for a CLAIMED work, bridged from
-	// the wiki body (galgame's four name columns + galgame_alias); for a
-	// BODYLESS work, its catalog_work_title rows verbatim, every kind included
-	// (search hints have always ridden the internal record). Same strict XOR as
-	// Intros — see read_titles.go.
-	Titles   []WorkTitleRow
-	Releases []ReleaseDetail
-	Labels   []LabelAttribution
-	// Refs is the flat exact-only external-ref projection (work- and
-	// release-level in one list) — the cross-source identity chain.
-	Refs []RefDetail
-	// Characters is the merged roster (step 46): roster edges UNIONed with
-	// voice-credited characters. Loaded by loadWorkDetail so the by-anchor /
-	// by-id read-through bundles it.
-	Characters []WorkCharacterRow
-	// Intros is the merged multilingual intro (step 52 media-aggregation pilot):
-	// for a CLAIMED work, bridged from galgame.intro_* (column→row pivot); for a
-	// BODYLESS work, its catalog_work_intro rows (one element per language).
-	// Strict XOR (§8.D): a claimed work reads ONLY the bridge — no fallback to
-	// native rows — so galgame intros all-empty means an empty slice.
-	Intros []WorkIntroRow
-	// Covers is the work's cover set: its catalog_work_cover rows, for every work
-	// alike (wave 164 flipped the claimed lane off the galgame_cover bridge — the
-	// native rows are the only rows). The PORTRAIT covers (portrait_pinned=true)
-	// are the value kungal/moyu read for the portrait-first UI.
-	Covers []WorkCoverRow
-	// Screenshots is the work's screenshot set: its catalog_work_screenshot rows,
-	// for every work alike (wave 164 collapsed the claimed work's bridge ∪ native
-	// union onto the native lane). Source stays on each row, so the dlsite,
-	// getchu and rescued-wiki lanes remain attributable — and since wave 188 the
-	// rows arrive in per-source contiguous blocks, ordered (source_id,
-	// sort_order, image_hash), for consumers that group the gallery by source.
-	Screenshots []WorkScreenshotRow
-	// Ratings is the merged rating set (step 58a media-aggregation ratings
-	// facet): for a CLAIMED work, bridged from galgame_bangumi_meta ∪
-	// galgame_eg_meta (source-native scales — see read_ratings.go for the
-	// column mapping); for a BODYLESS work, its catalog_work_rating rows. Same
-	// strict XOR as Screenshots.
-	Ratings []WorkRatingRow
-	// Tags is the merged tag set (step 58b media-aggregation tags facet): for a
-	// CLAIMED work, bridged from galgame_tag_relation ⋈ galgame_tag (non-spoiler
-	// only, localized display names — see read_tags.go for the mapping); for a
-	// BODYLESS work, its catalog_work_tag rows (verbatim Bangumi folksonomy).
-	// Same strict XOR as Ratings.
-	Tags []WorkTagRow
-	// Popularity is the merged per-metric popularity counter set (step 62):
-	// for a CLAIMED work, bridged from galgame_dlsite_meta (the three counter
-	// columns pivot to metric rows — see read_popularity.go); for a BODYLESS
-	// work, its catalog_work_popularity rows. Same strict XOR as Ratings.
-	Popularity []WorkPopularityRow
-	// Playtimes is the per-source playtime estimate set (step 91): EVERY work
-	// (claimed and bodyless alike) reads its catalog_work_playtime rows — this
-	// facet has no claimed bridge lane (the wiki family carries no playtime
-	// field), so there is no XOR split.
-	Playtimes []WorkPlaytimeRow
-	// Series is the work's series memberships (step 94): catalog-native
-	// (catalog_series_member → catalog_series), no claimed bridge — the wiki
-	// family's galgame_series vocabulary lives on its own face.
-	Series []WorkSeriesRow
-	// Platforms is the work's explicit work-level platform rows (step 96):
-	// the bgm lane's grain (subject-level platforms, mostly release-less
-	// bodyless works). Release-level platforms ride on Releases[].platform;
-	// consumers union the two grains. Catalog-native — no claimed bridge.
-	Platforms []WorkPlatformRow
-	// Relations is the work's cross-media relation edge set (wave 104): both
-	// directions rendered from this work's perspective, other-end identity
-	// riding along. Internal face carries r18 ends verbatim.
-	Relations []WorkRelationRow
-	// SeriesSiblings is the transitive-closure series membership derived from
-	// the same_series (type 7) relation (wave 113): every OTHER live work in
-	// the viewed work's series component. vndb has no first-class series entity
-	// — its series IS the pairwise same_series edge — so a leaf work needs the
-	// closure to see its whole family. Complementary to Series (catalog_series
-	// first-class entities, dlsite lane); the two never overlap by source.
+	Work           model.CatalogWork
+	Titles         []WorkTitleRow
+	Releases       []ReleaseDetail
+	Labels         []LabelAttribution
+	Refs           []RefDetail
+	Characters     []WorkCharacterRow
+	Intros         []WorkIntroRow
+	Covers         []WorkCoverRow
+	Screenshots    []WorkScreenshotRow
+	Ratings        []WorkRatingRow
+	Tags           []WorkTagRow
+	Popularity     []WorkPopularityRow
+	Playtimes      []WorkPlaytimeRow
+	Series         []WorkSeriesRow
+	Platforms      []WorkPlatformRow
+	Relations      []WorkRelationRow
 	SeriesSiblings []SeriesSiblingRow
 }
 
-// WorkIntroRow is one language's intro on a work's read face, carrying its
-// provenance (source_id, §8.C). Machine flags an LLM machine-translated row
-// (step 75): true only when the surfaced row is a machine translation, i.e. the
-// language has no source row (a source row always wins the per-language merge).
 type WorkIntroRow struct {
 	Lang     string
 	Intro    string
@@ -208,12 +117,7 @@ type WorkIntroRow struct {
 	Machine  bool
 }
 
-// WorkCoverRow is one cover on a work's read face, projected from
-// catalog_work_cover. PortraitPinned flags the vertical portrait pin; SourceID
-// is the provenance (§8.C).
 type WorkCoverRow struct {
-	// ID is the catalog_work_cover row id — the address a best-cover vote
-	// (wave 175) names, and the key its tally comes back on.
 	ID             int64
 	ImageHash      string
 	Kind           string
@@ -224,11 +128,6 @@ type WorkCoverRow struct {
 	SourceID       int16
 }
 
-// WorkScreenshotRow is one screenshot on a work's read face, projected from
-// catalog_work_screenshot. Unlike WorkCoverRow it carries a Caption and has no
-// kind / portrait_pinned. SourceID is the provenance (§8.C) — what keeps the
-// rescued wiki rows and the dlsite store samples (refs/proj/125) attributable
-// now that they share one table.
 type WorkScreenshotRow struct {
 	ImageHash string
 	Caption   string
@@ -238,44 +137,35 @@ type WorkScreenshotRow struct {
 	SourceID  int16
 }
 
-// WorkCharacterRow is one character on a work's roster, merging the roster edge
-// (kind) with the voice credits that name it (va).
 type WorkCharacterRow struct {
 	CharacterID int64
 	DisplayName string
 	Latin       *string
 	Gender      *int16
 	Kind        int16
-	Spoiler     int16 // per-edge spoiler level (0 for a credit-only character with no roster edge)
+	Spoiler     int16
 	ImageHash   *string
 	FigureHash  *string
 	Va          []WorkCharacterVARow
 }
 
-// WorkCharacterVARow is one credited name that voiced a character on a work.
 type WorkCharacterVARow struct {
 	CreditNameID int64
 	Name         string
 }
 
-// RefDetail is one exact external anchor of a work, with its level. ReleaseID
-// is set (non-zero) only for release-level refs.
 type RefDetail struct {
 	Source     string
 	ExternalID string
-	EntityType int16 // model.EntityTypeWork or model.EntityTypeRelease
+	EntityType int16
 	ReleaseID  int64
 }
 
-// ReleaseDetail is a release plus its anchors.
 type ReleaseDetail struct {
 	Release model.CatalogRelease
 	Anchors []AnchorDetail
 }
 
-// AnchorDetail is one external anchor with the source key resolved. MatchedBy
-// is the rule string that asserted it — the provenance the internal browser
-// surfaces verbatim.
 type AnchorDetail struct {
 	Source     string
 	ExternalID string
@@ -283,36 +173,21 @@ type AnchorDetail struct {
 	MatchedBy  string
 }
 
-// anchorKey identifies one release-level anchor inside a single work detail
-// load. It exists so upstream-liveness can be carried from the anchor query to
-// the Refs projection WITHOUT putting a dead_at field on AnchorDetail, which
-// is a serialized wire struct.
 type anchorKey struct {
 	EntityID   int64
 	Source     string
 	ExternalID string
 }
 
-// LabelAttribution is one work↔label edge with the label denormalized.
 type LabelAttribution struct {
 	LabelID     int64
 	DisplayName string
 	LabelKind   int16
-	Kind        int16 // attribution edge kind
-	// Lang is the label display name's own BCP-47 tag ("" when unrecorded).
-	// Loaded for the public face's labels[].lang (A2-1e); the S2S face maps its
-	// DTO field by field and is unaffected.
-	Lang string
-	// LogoHash is the label's brand logo in the image service (wave 170) —
-	// the same content-hash currency as a work cover's image_hash. "" = the
-	// label has no logo. Loaded for the public face's labels[].logo_hash.
-	LogoHash string
+	Kind        int16
+	Lang        string
+	LogoHash    string
 }
 
-// WorkByAnchor resolves a work via any of its external anchors (work- or
-// release-level) and loads its titles, releases (with anchors) and label
-// attributions. A release anchor traces back to its work; a lower link_kind
-// (exact before probable) and a work-level anchor win ties.
 func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID string) (*WorkDetail, error) {
 	db := s.db.WithContext(ctx)
 
@@ -321,7 +196,7 @@ func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID st
 		return nil, err
 	}
 	if srcID == 0 {
-		return nil, ErrWorkNotFound // unknown source key == no such anchor
+		return nil, ErrWorkNotFound
 	}
 
 	var ref struct {
@@ -344,20 +219,13 @@ func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID st
 			return nil, err
 		}
 	}
-	// The S2S anchor face keeps the historical spoiler-free tag set.
 	return s.loadWorkDetail(ctx, workID, 0)
 }
 
-// WorkByID loads the same bundle as WorkByAnchor, addressed by catalog work id
-// (the internal browser's drill-down entry). 404 semantics identical.
-// spoilers is the tag spoiler ceiling (0-2); the S2S face passes 0, which is
-// the historical behavior (no spoiler-flagged tag is loaded at all).
 func (s *ReadService) WorkByID(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
 	return s.loadWorkDetail(ctx, workID, spoilers)
 }
 
-// loadWorkDetail assembles a work's titles, releases (with anchors) and label
-// attributions. Returns ErrWorkNotFound if the work does not exist.
 func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
 	db := s.db.WithContext(ctx)
 	var work model.CatalogWork
@@ -369,8 +237,6 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	}
 
 	detail := &WorkDetail{Work: work}
-	// The claim subject drives every bridged facet on this record — titles first,
-	// then the media/aggregation facets further down.
 	subj := claimSubject{WorkID: work.ID}
 	titles, err := s.loadWorkDetailTitles(ctx, []claimSubject{subj})
 	if err != nil {
@@ -406,10 +272,6 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 		for _, a := range arows {
 			anchorsByRelease[a.EntityID] = append(anchorsByRelease[a.EntityID],
 				AnchorDetail{Source: a.Source, ExternalID: a.ExternalID, LinkKind: a.LinkKind, MatchedBy: a.MatchedBy})
-			// Anchors[] is the full assertion record and keeps every row,
-			// dead ones included — it is what the matching lane reads. Only
-			// the Refs projection below drops them, so the dead keys are
-			// remembered here rather than filtered out of the query.
 			if a.DeadAt != nil {
 				deadAnchors[anchorKey{a.EntityID, a.Source, a.ExternalID}] = struct{}{}
 			}
@@ -419,24 +281,12 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 		detail.Releases = append(detail.Releases, ReleaseDetail{Release: r, Anchors: anchorsByRelease[r.ID]})
 	}
 
-	// The DETAIL grain of the attribution query — loadWorkLabels is the same
-	// query at page grain, including the l.deleted_at gate (see its comment for
-	// why a surviving edge is not proof of a surviving label).
 	if err := db.Raw(`SELECT wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind, l.lang, l.logo_hash
 		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id AND l.deleted_at IS NULL
 		WHERE wl.work_id = ? ORDER BY wl.kind, l.display_name`, workID).Scan(&detail.Labels).Error; err != nil {
 		return nil, err
 	}
 
-	// Refs block: EXACT-only cross-source identity, work-level + release-level
-	// flattened into one list. Work-level refs come from a dedicated query;
-	// release-level refs are the exact subset of the anchors already loaded
-	// above (no second scan of the ref table).
-	//
-	// Refs is the rendered-identity projection (a consumer turns each entry
-	// into an upstream link), so it also drops anchors whose upstream entry is
-	// gone — dead_at IS NULL here, and the deadAnchors set for the
-	// release-level half. Anchors[] above deliberately keeps them.
 	var workRefs []struct {
 		Source     string
 		ExternalID string
@@ -470,10 +320,6 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	}
 	detail.Characters = chars
 
-	// All facet loaders are batched by construction (one query per facet for the
-	// whole subject set) so this same path serves a future multi-work list read
-	// with no N+1. Every facet reads its own catalog-native table: the W1-pre flip
-	// took the first five, wave 164 took the last two (covers/screenshots).
 	intros, err := s.loadWorkIntros(ctx, []claimSubject{subj})
 	if err != nil {
 		return nil, err
@@ -542,25 +388,10 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	return detail, nil
 }
 
-// claimSubject identifies a work on the read face. It used to carry the claim
-// (site + product_work_id) that decided which source a facet read from; with the
-// last two bridges gone (wave 164) every facet reads catalog-native rows by work
-// id, so the subject is the work id alone. The type survives the partition it
-// once fed because every facet loader takes a subject set.
 type claimSubject struct {
 	WorkID int64
 }
 
-// loadWorkIntros assembles the multilingual intro for a set of works from
-// catalog_work_intro — one native lane for every work since the W1-pre
-// nativization (refs/proj/140) mirrored the claimed wiki pivot into the table
-// (wikirescue step q: ja/en verbatim under source_id=galgame_wiki; the wiki's
-// zh columns were discarded by the 2026-07-29 ruling ①, their replacement being
-// the intromt machine lane) and deleted the read-time bridge.
-//
-// Batched (§9.1): one catalog_work_intro query for the whole set — never
-// per-work. Returns a map keyed by work id; a work with no intro is simply
-// absent (the caller renders []).
 func (s *ReadService) loadWorkIntros(ctx context.Context, subjects []claimSubject) (map[int64][]WorkIntroRow, error) {
 	out := make(map[int64][]WorkIntroRow, len(subjects))
 	if len(subjects) == 0 {
@@ -573,8 +404,6 @@ func (s *ReadService) loadWorkIntros(ctx context.Context, subjects []claimSubjec
 	return out, s.nativeWorkIntros(ctx, workIDs, out)
 }
 
-// nativeWorkIntros reads the works' catalog_work_intro rows in ONE query and
-// merges to one element per language (lowest source_id wins).
 func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out map[int64][]WorkIntroRow) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {
@@ -584,11 +413,6 @@ func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out
 		SourceID   int16  `gorm:"column:source_id"`
 		Provenance int16  `gorm:"column:provenance"`
 	}
-	// Ordered by (work, lang, provenance, source_id) so the FIRST row seen per
-	// (work, lang) is the winning one: provenance ASC puts SOURCE rows (0) ahead
-	// of MACHINE rows (1) — a machine translation NEVER masquerades as source
-	// data and loses the merge whenever any source row for that language exists
-	// (step 75) — then source_id ASC is the usual priority (user(1) > vndb(2) > …).
 	if err := db.Raw(`SELECT work_id, lang, intro, source_id, provenance FROM catalog_work_intro
 		WHERE work_id IN ? ORDER BY work_id, lang, provenance, source_id`, workIDs).Scan(&rows).Error; err != nil {
 		return err
@@ -601,7 +425,7 @@ func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out
 			seen[r.WorkID] = langs
 		}
 		if langs[r.Lang] {
-			continue // a higher-priority row already claimed this language
+			continue
 		}
 		langs[r.Lang] = true
 		out[r.WorkID] = append(out[r.WorkID], WorkIntroRow{
@@ -614,25 +438,10 @@ func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out
 	return nil
 }
 
-// sortIntros orders intro elements by language for a deterministic read face.
 func sortIntros(intros []WorkIntroRow) {
 	sort.Slice(intros, func(i, j int) bool { return intros[i].Lang < intros[j].Lang })
 }
 
-// loadWorkCovers assembles the cover set for a set of works from
-// catalog_work_cover — one native lane for every work, claimed and bodyless
-// alike, since wave 164 deleted the galgame_cover bridge.
-//
-// The bridge was the last whole-facet XOR (refs/proj/51 step 53): a claimed work
-// read galgame_cover and never its own native rows. W1-pre step m mirrored the
-// wiki covers into catalog_work_cover (fill-missing, keeping kind /
-// portrait_pinned / sexual / violence / source verbatim), so the native table is
-// what survives the wiki tables being dropped, and the shadow rows the XOR used
-// to hide are the same rows.
-//
-// Batched (§9.1): one catalog_work_cover query for the whole set — never
-// per-work. Each work's covers are ordered by (sort_order, image_hash). Returns
-// a map keyed by work id; a work with no cover is absent (the caller renders []).
 func (s *ReadService) loadWorkCovers(ctx context.Context, subjects []claimSubject) (map[int64][]WorkCoverRow, error) {
 	out := make(map[int64][]WorkCoverRow, len(subjects))
 	if len(subjects) == 0 {
@@ -648,8 +457,6 @@ func (s *ReadService) loadWorkCovers(ctx context.Context, subjects []claimSubjec
 	return out, nil
 }
 
-// nativeWorkCovers reads the works' catalog_work_cover rows in ONE query,
-// ordered so each work's covers are (sort_order, image_hash)-sorted.
 func (s *ReadService) nativeWorkCovers(ctx context.Context, workIDs []int64, out map[int64][]WorkCoverRow) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {
@@ -677,29 +484,6 @@ func (s *ReadService) nativeWorkCovers(ctx context.Context, workIDs []int64, out
 	return nil
 }
 
-// loadWorkScreenshots assembles the screenshot set for a set of works from
-// catalog_work_screenshot — one native lane for every work, claimed and bodyless
-// alike, since wave 164 collapsed the bridge ∪ native union onto the native side.
-//
-// The union (refs/proj/51 step 54, refs/proj/125, refs/proj/128) existed because
-// two writers put screenshots in two places: the wiki body in galgame_screenshot,
-// the dlsite store samples in catalog_work_screenshot. The wiki-retirement rescue
-// (wikirescue step n) materialized the wiki rows into catalog_work_screenshot
-// under source_id=galgame_wiki so they survive the galgame tables being dropped,
-// which is what makes the bridge lane redundant rather than lost — and with the
-// bridge gone the (work_id, image_hash) dedup goes with it: there is only one
-// lane left to be a duplicate of.
-//
-// No source filter, deliberately: the rescued wiki rows, the dlsite samples and
-// (since wave 188) the getchu samples share the table and all belong on the read
-// face; source_id is what keeps them attributable — and what the consumer groups
-// by, because the lanes are semantically different images (a vndb row is a game
-// screenshot, a dlsite/getchu row is official sample CG).
-//
-// Batched (§9.1): one catalog_work_screenshot query for the whole set — never
-// per-work. Each work's screenshots come back in PER-SOURCE CONTIGUOUS BLOCKS,
-// ordered by (source_id, sort_order, image_hash). Returns a map keyed by work id;
-// a work with no screenshot is absent (the caller renders []).
 func (s *ReadService) loadWorkScreenshots(ctx context.Context, subjects []claimSubject) (map[int64][]WorkScreenshotRow, error) {
 	out := make(map[int64][]WorkScreenshotRow, len(subjects))
 	if len(subjects) == 0 {
@@ -715,15 +499,6 @@ func (s *ReadService) loadWorkScreenshots(ctx context.Context, subjects []claimS
 	return out, nil
 }
 
-// nativeWorkScreenshots reads the works' catalog_work_screenshot rows in ONE
-// query, ordered (source_id, sort_order, image_hash) within each work.
-//
-// source_id LEADS the key, since wave 188 opened the table to several sources per
-// work. sort_order is only meaningful WITHIN a source — each backfill numbers its
-// own gallery from 0 — so ordering across sources by it would interleave two
-// unrelated sequences and fabricate an ordering nobody authored. Sorting by
-// source first yields per-source contiguous blocks, which is exactly the shape
-// the per-source gallery UI groups on.
 func (s *ReadService) nativeWorkScreenshots(ctx context.Context, workIDs []int64, out map[int64][]WorkScreenshotRow) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {
@@ -749,19 +524,9 @@ func (s *ReadService) nativeWorkScreenshots(ctx context.Context, workIDs []int64
 	return nil
 }
 
-// loadWorkCharacters assembles a work's roster (step 46) as the UNION of the
-// roster edge table (catalog_work_character, which carries the appearance kind)
-// and the voice credits (catalog_credit.character_id, which carry the voicing
-// name). A character with a roster edge takes its kind from the edge; a
-// credit-only character (voiced but with no edge — e.g. VNDB-only VA credits)
-// still surfaces with kind=0 (unknown appearance strength). The two tables are
-// deliberately independent (step 45): this read is the one place they merge.
-// Only the credit NAME is exposed per va entry — no person expansion (the
-// link-visibility doctrine gates person aggregation, never the nominal).
 func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]WorkCharacterRow, error) {
 	db := s.db.WithContext(ctx)
 
-	// Roster edges: the appearance fact + its kind.
 	var edges []struct {
 		CharacterID int64   `gorm:"column:character_id"`
 		DisplayName string  `gorm:"column:display_name"`
@@ -778,8 +543,6 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		return nil, err
 	}
 
-	// Voice credits: who voiced whom. DISTINCT collapses per-release duplicate
-	// credit rows to one (name, character) pair.
 	var creds []struct {
 		CharacterID  int64   `gorm:"column:character_id"`
 		DisplayName  string  `gorm:"column:display_name"`
@@ -831,10 +594,6 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		})
 		out = append(out, *r)
 	}
-	// Sort main-first (task §1: "kind 升序(main 先)"): the meaningful kinds
-	// 1/2/3 lead in order, then unknown(0) last — a credit-only / EG-unclassified
-	// character sorts after the classified cast rather than jumping to the top of
-	// the roster. Ties broken by display name, then character id (determinism).
 	sort.Slice(out, func(i, j int) bool {
 		ri, rj := kindRank(out[i].Kind), kindRank(out[j].Kind)
 		if ri != rj {
@@ -848,9 +607,6 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 	return out, nil
 }
 
-// kindRank orders roster kinds for display: main(1) → secondary(2) → appears(3)
-// → unknown(0). Unknown is a meaningful value (EG has no main/supporting split;
-// credit-only characters have no edge) but belongs after the classified cast.
 func kindRank(k int16) int16 {
 	if k == model.WorkCharacterKindUnknown {
 		return 99
@@ -858,42 +614,23 @@ func kindRank(k int16) int16 {
 	return k
 }
 
-// LabelWork is one work attributed to a label (circle→works reverse lookup).
 type LabelWork struct {
 	WorkID        int64  `gorm:"column:work_id"`
 	DisplayName   string `gorm:"column:display_name"`
 	MediumID      int16  `gorm:"column:medium_id"`
 	ContentRating int16  `gorm:"column:content_rating"`
 	Status        int16  `gorm:"column:status"`
-	Kind          int16  `gorm:"column:kind"` // attribution edge kind
+	Kind          int16  `gorm:"column:kind"`
 }
 
-// LabelHead is a label's own identity (returned alongside its works so the
-// reverse-lookup page is self-sufficient on direct navigation).
 type LabelHead struct {
 	ID          int64  `gorm:"column:id"`
 	DisplayName string `gorm:"column:display_name"`
 	Kind        int16  `gorm:"column:kind"`
-	// Lang is the display name's own BCP-47 tag ("" when unrecorded), loaded
-	// for the public face's labels/{id}.lang (A2-1e). The S2S face maps its DTO
-	// field by field and is unaffected.
-	Lang string `gorm:"column:lang"`
-	// LogoHash is the label's brand logo in the image service (wave 170),
-	// the same content-hash currency as a work cover's image_hash: the
-	// consumer builds the CDN URL from it. "" = this label has no logo.
-	LogoHash string `gorm:"column:logo_hash"`
+	Lang        string `gorm:"column:lang"`
+	LogoHash    string `gorm:"column:logo_hash"`
 }
 
-// LabelWorks returns a label's own identity plus the works attributed to it
-// (via the attribution edge), offset-paginated. head is nil if the label does
-// not exist OR was merged away; total is the full count for the label.
-//
-// Raw SQL bypasses GORM soft-delete, so deleted_at is filtered explicitly —
-// the browse lane's posture (see public_taxonomy.go's head-row note), which the
-// detail lanes had missed: a merged label kept answering 200 with its old name
-// and an empty member list, i.e. a ghost page under a dead id. head == nil is
-// the single miss signal both callers key on, and the public handler turns it
-// into a 301 when a catalog_redirect exists for the id.
 func (s *ReadService) LabelWorks(ctx context.Context, labelID int64, limit, offset int) (head *LabelHead, items []LabelWork, total int64, err error) {
 	db := s.db.WithContext(ctx)
 	var h LabelHead
@@ -913,33 +650,16 @@ func (s *ReadService) LabelWorks(ctx context.Context, labelID int64, limit, offs
 	return head, items, total, err
 }
 
-// WorkSearchHit is one title-search hit: work identity + claim state + its
-// first DLsite anchor (empty when it has none).
 type WorkSearchHit struct {
 	WorkID        int64  `gorm:"column:work_id"`
 	DisplayName   string `gorm:"column:display_name"`
 	MediumID      int16  `gorm:"column:medium_id"`
 	ContentRating int16  `gorm:"column:content_rating"`
 	Status        int16  `gorm:"column:status"`
-	Site          string `gorm:"column:site"` // "" = unclaimed (COALESCEd)
-	DlsiteID      string `gorm:"-"`           // filled by a second query, not the title scan
+	Site          string `gorm:"column:site"`
+	DlsiteID      string `gorm:"-"`
 }
 
-// SearchWorks finds works by a case/width-insensitive title SUBSTRING match,
-// optionally filtered to one medium, for the product-side upstream-first create
-// picker (step 18). The match reuses catalog_work_title.title_norm — the STORED
-// generated column lower(normalize(title, NFKC)) — so the fold is byte-identical
-// to the importer's, and folds the query the same way in-query. mediumID <= 0
-// means no medium filter. v1 has NO trigram index: this is a plain ILIKE over
-// ~190k title rows, acceptable for a low-frequency staff picker; add a pg_trgm
-// index on title_norm if the call volume grows (docs/proj/18). Each hit is
-// annotated with its first DLsite anchor (work- or release-level, exact first).
-//
-// site (wave 162, 161 §6.P3-verdict STOP-5) restricts the hits to ONE claiming
-// tenant — the sibling of the parameter PendingClaims already takes. Empty
-// means no gate, so every pre-existing caller is byte-identical. It is a live
-// SQL predicate, not an indexed facet: a claim that moved tenant is reflected
-// on the next call, with no reindex in between.
 func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16, limit int, claimStates []string, site string) ([]WorkSearchHit, error) {
 	q = strings.TrimSpace(q)
 	if q == "" {
@@ -950,26 +670,15 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 	}
 	db := s.db.WithContext(ctx)
 
-	// The optional claim gate (wave 155 W4) compiles through the SAME
-	// claimStateWhere the public list and search faces use, so "B bucket" means
-	// one thing on every face — the 03 定案 §8-1 supply that must exist before a
-	// consumer is switched onto it. Absent = no gate, i.e. every pre-existing
-	// caller's wire stays byte-identical.
 	claimGate, claimArgs := claimStateWhere(claimStates)
 	if claimGate != "" {
 		claimGate = " AND " + claimGate
 	}
-	// The tenant gate is ANDed into the SAME predicate, so it narrows the hits
-	// the caller pages through rather than being applied after the LIMIT (which
-	// is how a filtered list quietly starts returning short pages).
 	siteGate, siteArgs := "", []any(nil)
 	if site != "" {
 		siteGate, siteArgs = " AND w.site = ?", []any{site}
 	}
 
-	// EXISTS keeps one row per work even when several of its titles match. The
-	// merged tombstones (status=2) never surface — their identity lives on a
-	// survivor. The bind param is NFKC-folded in-query to match title_norm.
 	var hits []WorkSearchHit
 	args := []any{model.WorkStatusMerged, mediumID, mediumID}
 	args = append(args, claimArgs...)
@@ -995,9 +704,6 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 		return hits, nil
 	}
 
-	// Annotate each hit with its first DLsite anchor in one batched query over
-	// the matched work ids (work-level refs, plus release-level refs traced back
-	// to their work). Lowest link_kind first → exact wins the "first" slot.
 	workIDs := make([]int64, len(hits))
 	for i := range hits {
 		workIDs[i] = hits[i].WorkID
@@ -1033,21 +739,15 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 	return hits, nil
 }
 
-// WorkBriefRow is the lightweight work projection shared by the entity
-// reverse-lookups (name→works, character→works): identity + claim state.
 type WorkBriefRow struct {
 	WorkID        int64  `gorm:"column:work_id"`
 	DisplayName   string `gorm:"column:display_name"`
 	MediumID      int16  `gorm:"column:medium_id"`
 	ContentRating int16  `gorm:"column:content_rating"`
 	Status        int16  `gorm:"column:status"`
-	Site          string `gorm:"column:site"` // "" = unclaimed (COALESCEd)
+	Site          string `gorm:"column:site"`
 }
 
-// workBriefs loads the brief for a set of work ids, keyed by id. Raw SQL
-// bypasses GORM's soft-delete scope, so deleted_at is filtered explicitly (a
-// merged work is soft-deleted and its credits repointed to the survivor, so it
-// never reaches here in practice — this is belt-and-suspenders).
 func (s *ReadService) workBriefs(ctx context.Context, ids []int64) (map[int64]WorkBriefRow, error) {
 	var rows []WorkBriefRow
 	if err := s.db.WithContext(ctx).Raw(`
@@ -1062,11 +762,6 @@ func (s *ReadService) workBriefs(ctx context.Context, ids []int64) (map[int64]Wo
 	return m, nil
 }
 
-// --- name → works (step 19: what a credited name worked on) ---
-
-// NameHeadRow is a credit name's own identity plus its (visibility-gated)
-// person link. LinkVisibility is used internally to gate exposure and is not
-// carried to the wire.
 type NameHeadRow struct {
 	ID             int64  `gorm:"column:id"`
 	Name           string `gorm:"column:name"`
@@ -1074,22 +769,13 @@ type NameHeadRow struct {
 	Latin          *string
 	PersonID       *int64 `gorm:"column:person_id"`
 	LinkVisibility int16  `gorm:"column:link_visibility"`
-	// The person block (wave 172), joined from catalog_person and carried on
-	// EXACTLY the same gate as PersonID: a hidden credit_name→person link
-	// withholds all of it, because a photograph and a birthday are person facts
-	// and publishing them under a hidden link is the same disclosure the link
-	// itself is being withheld to prevent.
-	//
-	// PhotoHash is the person's photo in the image service, the same
-	// content-hash currency as a work cover's image_hash; "" = no photo.
-	PhotoHash string `gorm:"column:photo_hash"`
-	Gender    *int16 `gorm:"column:gender"`
-	BirthY    *int16 `gorm:"column:birth_y"`
-	BirthM    *int16 `gorm:"column:birth_m"`
-	BirthD    *int16 `gorm:"column:birth_d"`
+	PhotoHash      string `gorm:"column:photo_hash"`
+	Gender         *int16 `gorm:"column:gender"`
+	BirthY         *int16 `gorm:"column:birth_y"`
+	BirthM         *int16 `gorm:"column:birth_m"`
+	BirthD         *int16 `gorm:"column:birth_d"`
 }
 
-// SiblingNameRow is another credit name of the same person.
 type SiblingNameRow struct {
 	ID    int64  `gorm:"column:id"`
 	Name  string `gorm:"column:name"`
@@ -1097,8 +783,6 @@ type SiblingNameRow struct {
 	Latin *string
 }
 
-// NameWorkRoleRow is one role a name holds on a work, with the voiced character
-// (set only for voice credits).
 type NameWorkRoleRow struct {
 	WorkID      int64   `gorm:"column:work_id"`
 	RoleID      int64   `gorm:"column:role_id"`
@@ -1109,13 +793,11 @@ type NameWorkRoleRow struct {
 	CharacterNM *string `gorm:"column:character_nm"`
 }
 
-// NameWorkDetail is one work a name is credited on, with every role it holds.
 type NameWorkDetail struct {
 	Brief WorkBriefRow
 	Roles []NameWorkRoleRow
 }
 
-// NameWorksResult is the assembled name→works read.
 type NameWorksResult struct {
 	Head     *NameHeadRow
 	Siblings []SiblingNameRow
@@ -1123,25 +805,10 @@ type NameWorksResult struct {
 	Total    int64
 }
 
-// NameWorks loads a credit name's self-description (with its person's other
-// PUBLIC-linked names) plus the works it is credited on, offset-paginated by
-// work. Head is nil when the name does not exist. The reverse lookup rides
-// idx_catalog_credit_credit_name_id (no new index needed).
-//
-// Link-visibility doctrine (model.LinkVisibility, and the note in
-// search/doc.go that defers this filter to "person-page assembly"): a hidden
-// credit_name→person link never surfaces in same-person grouping. So when the
-// queried name's own link is hidden, its person id and siblings are withheld —
-// the name reads as an independent identity — and siblings are always filtered
-// to public-linked names.
 func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset int) (*NameWorksResult, error) {
 	db := s.db.WithContext(ctx)
 
 	var head NameHeadRow
-	// The person columns (wave 172) ride a LEFT JOIN so an orphan name — and a
-	// name whose person was soft-deleted — still returns its own row rather than
-	// none. COALESCE keeps photo_hash a plain "" in both cases, matching the
-	// column's own NOT NULL DEFAULT '' semantics.
 	if err := db.Raw(`SELECT cn.id, cn.name, cn.lang, cn.latin, cn.person_id, cn.link_visibility,
 		COALESCE(p.photo_hash, '') AS photo_hash, p.gender, p.birth_y, p.birth_m, p.birth_d
 		FROM catalog_credit_name cn
@@ -1150,13 +817,11 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 		return nil, err
 	}
 	if head.ID == 0 {
-		return &NameWorksResult{}, nil // caller maps head==nil to 404
+		return &NameWorksResult{}, nil
 	}
 	res := &NameWorksResult{Head: &head}
 
 	if head.LinkVisibility != model.LinkVisibilityPublic {
-		// Hidden link: appear as an independent identity. The person block goes
-		// with the id — it is the same disclosure.
 		head.PersonID = nil
 		head.PhotoHash = ""
 		head.Gender, head.BirthY, head.BirthM, head.BirthD = nil, nil, nil, nil
@@ -1202,16 +867,13 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 	for _, wid := range workIDs {
 		b, ok := briefs[wid]
 		if !ok {
-			continue // soft-deleted work (see workBriefs) — keep total honest, drop the row
+			continue
 		}
 		res.Works = append(res.Works, NameWorkDetail{Brief: b, Roles: rolesByWork[wid]})
 	}
 	return res, nil
 }
 
-// --- character → works (step 19: what a character appears in, and who voiced it) ---
-
-// CharacterHeadRow is a character's own identity.
 type CharacterHeadRow struct {
 	ID          int64  `gorm:"column:id"`
 	DisplayName string `gorm:"column:display_name"`
@@ -1219,7 +881,6 @@ type CharacterHeadRow struct {
 	Latin       *string
 }
 
-// VoiceNameRow is one credited name that voiced a character on a work.
 type VoiceNameRow struct {
 	CreditNameID int64  `gorm:"column:credit_name_id"`
 	Name         string `gorm:"column:name"`
@@ -1227,31 +888,20 @@ type VoiceNameRow struct {
 	Latin        *string
 }
 
-// CharacterWorkDetail is one work a character appears in (roster edge or voice
-// credit, step 46), with the roster kind, whether it was voiced, and its voice
-// names.
 type CharacterWorkDetail struct {
 	Brief   WorkBriefRow
-	Kind    int16 // roster edge appearance strength; 0 when reached only via a credit
-	Spoiler int16 // roster edge spoiler level; 0 when reached only via a credit
-	Voiced  bool  // a voice credit names the character on this work
+	Kind    int16
+	Spoiler int16
+	Voiced  bool
 	Voices  []VoiceNameRow
 }
 
-// CharacterWorksResult is the assembled character→works read.
 type CharacterWorksResult struct {
 	Head  *CharacterHeadRow
 	Works []CharacterWorkDetail
 	Total int64
 }
 
-// CharacterWorks loads a character's self-description plus the works it appears
-// in — the UNION (step 46) of the roster edge table (catalog_work_character,
-// the appearance fact + kind) and the voice credits (catalog_credit.character_id,
-// who voiced it). Each work carries its roster kind (0 when reached only via a
-// credit), a voiced flag, and the voicing name(s). Offset-paginated by work.
-// Head is nil when the character does not exist. Rides
-// uq_catalog_work_character (character_id member) + idx_catalog_credit_character_id.
 func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, limit, offset int) (*CharacterWorksResult, error) {
 	db := s.db.WithContext(ctx)
 
@@ -1261,11 +911,10 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 		return nil, err
 	}
 	if head.ID == 0 {
-		return &CharacterWorksResult{}, nil // caller maps head==nil to 404
+		return &CharacterWorksResult{}, nil
 	}
 	res := &CharacterWorksResult{Head: &head}
 
-	// The work set is the union of roster-edge works and voice-credit works.
 	const unionWorks = `SELECT work_id FROM catalog_work_character WHERE character_id = ?
 		UNION SELECT work_id FROM catalog_credit WHERE character_id = ?`
 	if err := db.Raw(`SELECT count(*) FROM (`+unionWorks+`) u`,
@@ -1285,7 +934,6 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 		return nil, err
 	}
 
-	// Roster kind + spoiler per work (edge present only for the roster subset).
 	var kindRows []struct {
 		WorkID  int64 `gorm:"column:work_id"`
 		Kind    int16 `gorm:"column:kind"`
@@ -1302,8 +950,6 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 		spoilerByWork[k.WorkID] = k.Spoiler
 	}
 
-	// DISTINCT (work, name): the same name may hold several credit rows for one
-	// character on one work (e.g. per release) — collapse to one voice entry.
 	var voiceRows []struct {
 		WorkID       int64  `gorm:"column:work_id"`
 		CreditNameID int64  `gorm:"column:credit_name_id"`
@@ -1336,21 +982,16 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 	return res, nil
 }
 
-// CharacterDetail is a character's full self-description (step 46): identity
-// fields + aliases + multilingual intros (step 65).
 type CharacterDetail struct {
-	ID          int64
-	DisplayName string
-	Latin       *string
-	Lang        string
-	Gender      *int16
-	Description string
-	InstanceOf  *int64
-	ImageHash   *string
-	FigureHash  *string
-	// Typical-set physical attributes (step 81 field PR C2): nullable typed
-	// columns, plus the long-tail Extra and the per-column source attribution
-	// derived from field_provenance.
+	ID            int64
+	DisplayName   string
+	Latin         *string
+	Lang          string
+	Gender        *int16
+	Description   string
+	InstanceOf    *int64
+	ImageHash     *string
+	FigureHash    *string
 	BirthdayMonth *int16
 	BirthdayDay   *int16
 	BloodType     *int16
@@ -1363,35 +1004,22 @@ type CharacterDetail struct {
 	Extra         map[string]any
 	AttrSources   map[string]string
 	Aliases       []CharacterAliasRow
-	// Intros are the catalog_character_intro rows merged to one element per
-	// language (lowest source_id wins), the same contract as the work read
-	// face. Characters are catalog-native, so there is no claimed bridge —
-	// native rows are the only source. Reuses WorkIntroRow: the shape
-	// ({lang, intro, source_id}) is identical by design (step 65).
-	Intros []WorkIntroRow
-	// Traits are the step-93 VNDB trait links at or below the requested
-	// spoiler ceiling, ordered (group_tid, gorder, name) so groups render
-	// contiguously. Sexual rides on every row — consumers gate it themselves
-	// (the catalog is R18-capable; the step-81 precedent).
-	Traits []CharacterTraitRow
+	Intros        []WorkIntroRow
+	Traits        []CharacterTraitRow
 }
 
-// CharacterTraitRow is one trait on a character's read face (step 93).
 type CharacterTraitRow struct {
-	ID   int64  `gorm:"column:id"`
-	Name string `gorm:"column:name"`
-	// NameZh is the Simplified-Chinese rendering (wave 176); '' when the
-	// vocabulary row has none yet.
+	ID           int64   `gorm:"column:id"`
+	Name         string  `gorm:"column:name"`
 	NameZh       string  `gorm:"column:name_zh"`
 	GroupTID     string  `gorm:"column:group_tid"`
-	GroupName    *string `gorm:"column:group_name"` // NULL for a root trait itself
+	GroupName    *string `gorm:"column:group_name"`
 	GroupNameZh  *string `gorm:"column:group_name_zh"`
 	Sexual       bool    `gorm:"column:sexual"`
 	SpoilerLevel int16   `gorm:"column:spoiler_level"`
 	Lie          bool    `gorm:"column:lie"`
 }
 
-// CharacterAliasRow is one writing-variant of a character's name.
 type CharacterAliasRow struct {
 	ID                 int64   `gorm:"column:id"`
 	Name               string  `gorm:"column:name"`
@@ -1401,10 +1029,6 @@ type CharacterAliasRow struct {
 	IsPrimaryForLocale bool    `gorm:"column:is_primary_for_locale"`
 }
 
-// CharacterByID loads a character's identity fields plus its aliases. Returns
-// (nil, nil) when the character does not exist (caller maps to 404), aligning
-// with the labels/{id} miss semantics (step 20, 85f7f08). maxSpoiler caps the
-// traits[] spoiler level (0 = safe default; the handler clamps to 0..2).
 func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxSpoiler int16) (*CharacterDetail, error) {
 	db := s.db.WithContext(ctx)
 
@@ -1437,7 +1061,7 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		return nil, err
 	}
 	if head.ID == 0 {
-		return nil, nil // caller maps nil to 404
+		return nil, nil
 	}
 	detail := &CharacterDetail{
 		ID: head.ID, DisplayName: head.DisplayName, Latin: head.Latin, Lang: head.Lang,
@@ -1453,9 +1077,6 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		FROM catalog_character_alias WHERE character_id = ? ORDER BY id`, characterID).Scan(&detail.Aliases).Error; err != nil {
 		return nil, err
 	}
-	// Intros: one element per language — the same merge as nativeWorkIntros
-	// (provenance ASC puts source rows ahead of machine translations, then
-	// lowest source_id; the first row seen per lang wins).
 	var introRows []struct {
 		Lang       string `gorm:"column:lang"`
 		Intro      string `gorm:"column:intro"`
@@ -1469,16 +1090,12 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 	seenLang := map[string]bool{}
 	for _, r := range introRows {
 		if seenLang[r.Lang] {
-			continue // a higher-priority row already claimed this language
+			continue
 		}
 		seenLang[r.Lang] = true
 		detail.Intros = append(detail.Intros, WorkIntroRow{Lang: r.Lang, Intro: r.Intro, SourceID: r.SourceID, Machine: r.Provenance == 1})
 	}
 	sortIntros(detail.Intros)
-	// Traits (step 93): links at or below the spoiler ceiling, joined to the
-	// vocabulary; group display name resolves by self-join on the verbatim
-	// vndb group tid (NULL when the trait IS a root). Ordered so groups render
-	// contiguously in VNDB's own order.
 	if err := db.Raw(`SELECT t.id, t.name, t.name_zh, t.group_tid,
 			g.name AS group_name, g.name_zh AS group_name_zh,
 			t.sexual, l.spoiler_level, l.lie
@@ -1493,7 +1110,6 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 	return detail, nil
 }
 
-// CreditRow is one credit joined with its role, name, character and source.
 type CreditRow struct {
 	RoleID       int64
 	RoleKey      string
@@ -1505,19 +1121,12 @@ type CreditRow struct {
 	Latin        *string
 	CharacterID  *int64
 	CharacterNM  *string
-	// LabelID / LabelNM are the organizational signer on label-natured roles
-	// (developer / publisher credits), which coexists with the credited name
-	// rather than replacing it. NULL on the ~98% of rows that are purely
-	// personal credits.
-	LabelID   *int64
-	LabelNM   *string
-	Note      string
-	SourceKey *string
+	LabelID      *int64
+	LabelNM      *string
+	Note         string
+	SourceKey    *string
 }
 
-// WorkCredits loads a work's credits ordered by role then source then name.
-// Orphan credit names are returned as-is (no person layer). The caller groups
-// consecutive rows by role.
 func (s *ReadService) WorkCredits(ctx context.Context, workID int64) ([]CreditRow, error) {
 	var rows []CreditRow
 	err := s.db.WithContext(ctx).Raw(`SELECT

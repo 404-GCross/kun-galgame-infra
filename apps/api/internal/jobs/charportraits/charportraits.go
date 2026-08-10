@@ -1,22 +1,3 @@
-// Package charportraits backfills catalog CHARACTER portraits: it reads the
-// step-47 output src_vndb.portrait_backfill (one in-gate VNDB character portrait
-// per catalog character, already filtered to sexual/violence ≤ 100), uploads the
-// portrait bytes from a local VNDB image mirror (rsync ch/) into the image
-// service under site_key "catalog" (preset "character"), and writes the returned
-// content hash back to catalog_character.image_hash.
-//
-// It is the character-layer sibling of internal/jobs/portraitfill (which fills
-// galgame COVER portraits under site galgame_wiki). Design (refs/proj/48):
-//
-//   - Idempotent: a character whose image_hash is already non-null is SKIPPED
-//     before any byte read (skipped_has_hash). A second full run writes nothing.
-//   - Bytes only ever come from a LOCAL mirror dir (--vndb-image-dir). rsync is
-//     the ops fetch step; this job never dials t.vndb.org.
-//   - Catalog DSN is ALWAYS explicit (--dsn): the rehearsal copy locally
-//     (kun_catalog_rehearsal), the live catalog only in the acceptance-tester's
-//     production run — it is NEVER defaulted, so a bare run cannot touch a live DB.
-//   - image_hash is written under site "catalog"; the sibling catalog portrait
-//     refping (internal/jobs.RunCatalogImageRefping) keeps that hash set alive.
 package charportraits
 
 import (
@@ -37,41 +18,28 @@ import (
 )
 
 const (
-	// preset is the image-service preset for character portraits (see
-	// apps/api/configs/image_presets.yaml). The catalog image client's
-	// image_allowed_presets MUST contain it, else every upload is 403'd.
-	preset = "character"
-	// uploaderSub stamps a machine identity onto first_uploader_sub so the
-	// backfilled rows are traceable in the image audit trail (there is no human
-	// uploader for a batch backfill).
-	uploaderSub = "system:catalog-portrait-backfill"
-	// site is the image tenant these portraits belong to (informational; the
-	// actual site is derived server-side from the authenticated client's
-	// image_site_key, which must equal "catalog").
+	preset         = "character"
+	uploaderSub    = "system:catalog-portrait-backfill"
 	site           = "catalog"
 	defaultTimeout = 60 * time.Second
 )
 
-// Opts configures a run.
 type Opts struct {
-	Apply        bool          // false = dry run: resolve candidates + count local-file availability, upload nothing
-	Limit        int           // max portrait_backfill rows to process (0 = all)
-	Offset       int           // skip this many rows (for chunking)
-	DSN          string        // catalog DSN — REQUIRED; rehearsal copy locally, live catalog only in the prod run
-	VNDBImageDir string        // local rsync mirror root containing ch/ (bytes are read from here, never fetched)
-	ImageBaseURL string        // image_service base override (point at the LOCAL compose/dev service)
-	UploadGap    time.Duration // min delay between uploads (0 = none; raise for the production sweep)
+	Apply        bool
+	Limit        int
+	Offset       int
+	DSN          string
+	VNDBImageDir string
+	ImageBaseURL string
+	UploadGap    time.Duration
 }
 
-// candidate is one portrait_backfill row joined to its catalog character's
-// current image_hash (nil pointer = not yet backfilled).
 type candidate struct {
 	CatalogCharacterID int64   `gorm:"column:catalog_character_id"`
 	ImageID            string  `gorm:"column:image_id"`
 	ImageHash          *string `gorm:"column:image_hash"`
 }
 
-// runner carries per-run dependencies + counters (serial, so plain ints).
 type runner struct {
 	db  *gorm.DB
 	cli *imageclient.Client
@@ -81,8 +49,6 @@ type runner struct {
 	pingHashes                                                     []string
 }
 
-// Run resolves the backfill set, forecasts local-file availability, and (when
-// Apply) uploads portraits + writes image_hash. Returns a loggable summary.
 func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess — pass the rehearsal copy locally, the live catalog only in the production run")
@@ -91,8 +57,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		return nil, fmt.Errorf("--vndb-image-dir is required (local rsync mirror containing ch/)")
 	}
 
-	// Catalog is its own image tenant. Unlike galgame_wiki there is no account
-	// fallback: the client MUST be site_key "catalog".
 	clientCfg := cfg.CatalogImageClient
 	if opts.Apply && (clientCfg.ClientID == "" || clientCfg.ClientSecret == "") {
 		return nil, fmt.Errorf("catalog image client not configured (set KUN_CATALOG_IMAGE_CLIENT_ID/SECRET); refusing to --apply")
@@ -114,7 +78,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 
 	r := &runner{db: db, gap: opts.UploadGap}
 
-	// ---- dry run: forecast only (no client, no writes) ----
 	if !opts.Apply {
 		var hasHash, present, missing, badID int
 		for _, c := range cands {
@@ -146,7 +109,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		}, nil
 	}
 
-	// ---- apply ----
 	r.cli = imageclient.New(imageclient.Config{
 		BaseURL:      resolveBaseURL(cfg, clientCfg, opts.ImageBaseURL),
 		CDNBase:      cfg.ImageService.CDNBase,
@@ -175,8 +137,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		}
 	}
 
-	// Keep freshly-uploaded portraits alive immediately (don't wait for the
-	// nightly refping — an image sits at TTL from upload time).
 	for _, b := range chunk(r.pingHashes, 1000) {
 		if _, err := r.cli.ReferencePing(ctx, b); err != nil {
 			slog.Warn("char-portraits reference-ping failed", "err", err)
@@ -192,8 +152,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	return r.summary(len(cands)), nil
 }
 
-// fillPortrait reads one local portrait, uploads it, and writes image_hash.
-// Returns quota=true when the daily image quota is exhausted (caller aborts).
 func (r *runner) fillPortrait(ctx context.Context, dir string, c candidate) (quota bool) {
 	rel, err := chRelPath(c.ImageID)
 	if err != nil {
@@ -236,9 +194,6 @@ func (r *runner) fillPortrait(ctx context.Context, dir string, c candidate) (quo
 	if res.Deduplicated {
 		r.dedup++
 	}
-	// Write only when still unset — a concurrent run (or a portrait shared by
-	// several characters mid-batch) never clobbers, and this is the idempotency
-	// key: a re-run reads image_hash non-null and skips before uploading.
 	tx := r.db.WithContext(ctx).Exec(
 		`UPDATE catalog_character SET image_hash = ?, updated_at = NOW() WHERE id = ? AND image_hash IS NULL`,
 		res.Hash, c.CatalogCharacterID)
@@ -248,7 +203,6 @@ func (r *runner) fillPortrait(ctx context.Context, dir string, c candidate) (quo
 		return false
 	}
 	if tx.RowsAffected == 0 {
-		// Already set by a concurrent writer — count as a skip, not an upload.
 		r.skippedHasHash++
 		return false
 	}
@@ -270,9 +224,6 @@ func (r *runner) summary(candidates int) map[string]any {
 	}
 }
 
-// loadCandidates reads the backfill set joined to each character's current
-// image_hash, ordered + windowed for chunking. image_hash is fetched (not
-// filtered) so a re-run reports skipped_has_hash for the whole window.
 func loadCandidates(ctx context.Context, db *gorm.DB, limit, offset int) ([]candidate, error) {
 	q := db.WithContext(ctx).
 		Table("src_vndb.portrait_backfill AS pb").

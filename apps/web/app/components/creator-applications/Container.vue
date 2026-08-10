@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Admin review queue for creator-role applications (apply → review →
-// approve/decline). The application + role grant live in OAuth; this is the
-// admin UI over /admin/creator/applications. See
-// docs/auth/01-creator-role-design.md.
 const api = useApi()
 
 interface UserBrief {
@@ -20,9 +16,6 @@ interface CreatorApplication {
   decline_reason: string
   reviewed_at: string | null
   created_at: string
-  // Applicant brief, embedded server-side by /admin/creator/applications so the
-  // admin UI needs no separate (S2S-only) /users/batch hydrate. Null if the
-  // user row no longer exists.
   user: UserBrief | null
 }
 
@@ -97,7 +90,6 @@ const handleApprove = async (id: number) => {
   }
 }
 
-// Decline carries an optional reason (shown to the user) → modal.
 const declineOpen = ref(false)
 const declineTarget = ref<number | null>(null)
 const declineReason = ref('')

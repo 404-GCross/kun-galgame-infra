@@ -1,33 +1,3 @@
-// rekey-edit-history re-anchors the editing engine's history from the retiring
-// wiki family onto the catalog registry (N5, refs/proj/161 §1 P1).
-//
-// It moves every edit_proposal / edit_revision / edit_proposal_amendment row
-// filed against `galgame.game` onto `catalog.work`:
-//
-//	entity_family galgame → catalog
-//	entity_type   galgame.game → catalog.work
-//	entity_id     wiki gid → catalog work id (catalog_external_ref, wiki:gid)
-//	field keys    the 26 wiki keys → the wave-154 catalog.work key table
-//	              (keymap.go: 17 mapped onto 9, 9 retired in place)
-//	snapshots     transformed into the catalog vocabulary and VALIDATED with
-//	              the catalog fields' own closures before being written
-//
-// Preserved untouched: seq, the proposer/amender double signature, proposal
-// status and decision bookkeeping, the proposal↔revision chain, and the legacy
-// columns the E2a transform wrote. This tool renames a coordinate system; it
-// does not rewrite what happened.
-//
-// A gid with no catalog work is RESIDUE: it is not migrated, it is listed
-// (--residue-out), and the T phase dumps then deletes it. Rows are held
-// together by entity: if a gid is residue, every proposal and revision of that
-// gid is residue, so no chain can be half-migrated.
-//
-// Idempotent: the work set is `entity_type = 'galgame.game'`, which the apply
-// empties. A second run migrates zero rows.
-//
-//	go run ./cmd/rekey-edit-history --dsn '...'                     # dry run
-//	go run ./cmd/rekey-edit-history --dsn '...' --apply             # migrate
-//	go run ./cmd/rekey-edit-history --dsn '...' --verify-only       # invariants
 package main
 
 import (
@@ -47,18 +17,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// entityChunk bounds one transaction: how many wiki entities are transformed
-// and written together.
 const entityChunk = 200
 
 const (
-	// wikiType is the work set: every engine row still filed under the
-	// retiring family.
 	wikiType = "galgame.game"
 
-	// catalogFamily is the family the catalog.work spec registers under
-	// (editspec.RegisterWork, Family: "catalog"). Spelled here because the
-	// UPDATE writes the column directly.
 	catalogFamily = "catalog"
 )
 
@@ -116,9 +79,8 @@ func main() {
 	}
 }
 
-// residueEntry is one row (or one entity's rows) the migration refuses to move.
 type residueEntry struct {
-	Kind     string `json:"kind"` // "entity" | "open_proposal"
+	Kind     string `json:"kind"`
 	GID      int64  `json:"gid"`
 	Reason   string `json:"reason"`
 	Revision int    `json:"revisions"`
@@ -134,7 +96,6 @@ type rekeyer struct {
 	ids     *idMaps
 	residue []residueEntry
 
-	// ledger
 	entities, entitiesMapped                 int
 	revisions, revisionsMapped               int
 	proposals, proposalsMapped               int
@@ -187,9 +148,6 @@ func (r *rekeyer) run(ctx context.Context) error {
 	return nil
 }
 
-// wikiEntities lists every gid that still holds engine rows, from BOTH tables:
-// a proposal-only entity (declined without ever merging) is as much an entity
-// as one with revisions.
 func (r *rekeyer) wikiEntities(ctx context.Context) ([]int64, error) {
 	var gids []int64
 	err := r.db.WithContext(ctx).Raw(
@@ -234,11 +192,6 @@ func (r *rekeyer) chunk(ctx context.Context, gids []int64) error {
 	r.revisions += len(revs)
 	r.proposals += len(props)
 
-	// Seq offsets: a work that ALREADY has catalog.work revisions (N2/N3 shipped
-	// before this window) would collide on uq_edit_revision_entity_seq. The
-	// migrated chain is then appended above the existing max — order and
-	// monotonicity preserved, and every displaced entity is reported, because
-	// a downstream consumer holding a seq needs to know it moved.
 	offsets, err := r.seqOffsets(ctx, gids)
 	if err != nil {
 		return err
@@ -311,11 +264,6 @@ func (r *rekeyer) chunk(ctx context.Context, gids []int64) error {
 		}
 		for _, p := range propsByGID[gid] {
 			if p.Status == editing.StatusOpen {
-				// An open proposal's patch is still REPLAYABLE, and a patch is a
-				// partial document whose fold keys cannot be translated (see
-				// transform.go docMode). Migrating one would hand the merge path a
-				// half-vocabulary patch. It stays behind as residue; the window
-				// operator decides (decline it, or merge it before the cutover).
 				r.residue = append(r.residue, residueEntry{
 					Kind: "open_proposal", GID: gid,
 					Reason:   fmt.Sprintf("proposal %d is still OPEN: its patch is replayable and cannot be safely rekeyed — decline or merge it before the window", p.ID),
@@ -383,8 +331,6 @@ func (r *rekeyer) chunk(ctx context.Context, gids []int64) error {
 	})
 }
 
-// seqOffsets returns, per work id, the max seq already held by NATIVE
-// catalog.work revisions (0 = none, the expected case in the N5 window).
 func (r *rekeyer) seqOffsets(ctx context.Context, gids []int64) (map[int64]int, error) {
 	workIDs := make([]int64, 0, len(gids))
 	for _, gid := range gids {
@@ -412,7 +358,6 @@ func (r *rekeyer) seqOffsets(ctx context.Context, gids []int64) (map[int64]int, 
 	return out, nil
 }
 
-// amendmentUpdates rekeys the patch deltas of the proposals being migrated.
 func (r *rekeyer) amendmentUpdates(ctx context.Context, proposalIDs []int64) (map[int64][]byte, error) {
 	out := map[int64][]byte{}
 	if len(proposalIDs) == 0 {

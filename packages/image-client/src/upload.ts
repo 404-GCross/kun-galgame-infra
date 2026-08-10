@@ -1,9 +1,3 @@
-// Upload helpers. Most calling sites will proxy uploads through their own
-// backend (which uses the Go SDK), but sites that want frontend direct
-// upload can use these helpers.
-//
-// Frontend direct upload requires the image service's CORS to be enabled
-// and the user to have a JWT with image:upload scope. See docs/image_service.
 
 export interface UploadResult {
   hash: string

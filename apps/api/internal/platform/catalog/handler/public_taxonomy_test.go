@@ -1,8 +1,3 @@
-// public_taxonomy_test.go — A2-1b wire-level coverage of the taxonomy read
-// faces: the closed filter vocabularies (an unknown token is a 400, never a
-// silently-dropped filter), the works-list engine_id filter's strict parsing,
-// the shared limit / cursor semantics, and the engine detail's 400/404 split.
-// Integration against kun_catalog_test (openCatalogTestDB).
 package handler
 
 import (
@@ -18,9 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// taxonomyApp mounts the taxonomy lanes (plus the works list, for the
-// engine_id filter) bare — the devapi chain is a separate concern, exactly as
-// in publicApp.
 func taxonomyApp(db *gorm.DB) *fiber.App {
 	resolveSvc := service.NewResolveService(repository.NewRedirectRepository(db))
 	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
@@ -34,8 +26,6 @@ func taxonomyApp(db *gorm.DB) *fiber.App {
 	return app
 }
 
-// seedTaxonomy wipes and refills the taxonomy tables: one label, one canonical
-// tag, one engine, and one LIVE galgame work wired to all three.
 func seedTaxonomy(t *testing.T, db *gorm.DB) (labelID, tagID, engineID int64) {
 	t.Helper()
 	for _, tbl := range []string{
@@ -46,9 +36,6 @@ func seedTaxonomy(t *testing.T, db *gorm.DB) (labelID, tagID, engineID int64) {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	ids := seedPublicWorks(t, db, 1)
-	// work_count counts LIVE claims only (146) — an entity page's member list is
-	// works?<filter>=&claim_state=live, so the fixture work must be one or every
-	// count on this face is legitimately 0.
 	require.NoError(t, db.Exec(
 		`UPDATE catalog_work SET site = 'galgame_wiki', product_work_id = 9350, claim_state = ? WHERE id = ?`,
 		model.ClaimStateLive, ids[0]).Error)
@@ -71,10 +58,6 @@ func seedTaxonomy(t *testing.T, db *gorm.DB) (labelID, tagID, engineID int64) {
 	return label.ID, tag.ID, engine.ID
 }
 
-// TestTaxonomyClosedVocabularies pins the wave's 400 rule: a filter token
-// outside our own closed set fails loudly with the legal values spelled out.
-// Serving the unfiltered page instead would be a plausible-looking 200 whose
-// rows do not answer the question that was asked.
 func TestTaxonomyClosedVocabularies(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedTaxonomy(t, db)
@@ -84,7 +67,6 @@ func TestTaxonomyClosedVocabularies(t *testing.T) {
 		{"label kind unknown", "/v1/catalog/labels?kind=studio", msgBadLabelKind},
 		{"label kind numeric", "/v1/catalog/labels?kind=0", msgBadLabelKind},
 		{"label kind uppercase", "/v1/catalog/labels?kind=GAME_BRAND", msgBadLabelKind},
-		// "other" is an output-only fallback, never an accepted filter value.
 		{"label kind other", "/v1/catalog/labels?kind=other", msgBadLabelKind},
 		{"tag tier unknown", "/v1/catalog/tags?tier=popular", msgBadTagTier},
 		{"tag tier numeric", "/v1/catalog/tags?tier=1", msgBadTagTier},
@@ -98,8 +80,6 @@ func TestTaxonomyClosedVocabularies(t *testing.T) {
 		})
 	}
 
-	// Every legal token is accepted (200) — the vocabulary check must not be
-	// stricter than the vocabulary it advertises.
 	for _, url := range []string{
 		"/v1/catalog/labels", "/v1/catalog/labels?kind=game_brand", "/v1/catalog/labels?kind=bunko",
 		"/v1/catalog/labels?kind=publisher", "/v1/catalog/labels?kind=anime_studio",
@@ -115,9 +95,6 @@ func TestTaxonomyClosedVocabularies(t *testing.T) {
 	}
 }
 
-// TestTaxonomyLimitAndCursorSemantics pins that the three lanes inherit the
-// works-list posture verbatim: non-positive / non-numeric limit is a 400, and a
-// malformed cursor is a 400 (never a 500 — it is caller error).
 func TestTaxonomyLimitAndCursorSemantics(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedTaxonomy(t, db)
@@ -147,8 +124,6 @@ func TestTaxonomyLimitAndCursorSemantics(t *testing.T) {
 	}
 }
 
-// TestTaxonomyItemsCarryWorkCount checks the wire shape end to end, including
-// the nsfw switch travelling from the query string into the count.
 func TestTaxonomyItemsCarryWorkCount(t *testing.T) {
 	db := openCatalogTestDB(t)
 	labelID, tagID, engineID := seedTaxonomy(t, db)
@@ -163,17 +138,10 @@ func TestTaxonomyItemsCarryWorkCount(t *testing.T) {
 	assert.Equal(t, "Wire Brand", row["display_name"])
 	assert.Equal(t, "game_brand", row["kind"])
 	assert.EqualValues(t, 1, row["work_count"])
-	// wave 170: the 会社 browse row carries the brand logo hash, always present
-	// (a label with no logo reports "" rather than omitting the key).
 	assert.Equal(t, fixtureLogoHash, row["logo_hash"])
-	// A label with no corporate family reports false rather than omitting the
-	// key — the browse row's whole job here is to say a relation-graph call
-	// would be wasted.
 	assert.Equal(t, false, row["has_relations"])
 	assert.Nil(t, body["data"].(map[string]any)["next_cursor"])
 
-	// Once it has an edge, the flag flips — this is what turns twenty
-	// speculative relation-graph calls into one.
 	parent := model.CatalogLabel{DisplayName: "Wire Holdings", Kind: model.LabelKindPublisher}
 	require.NoError(t, db.Create(&parent).Error)
 	require.NoError(t, db.Create(&model.CatalogLabelRelation{
@@ -204,8 +172,6 @@ func TestTaxonomyItemsCarryWorkCount(t *testing.T) {
 	assert.EqualValues(t, 1, row["work_count"])
 }
 
-// TestEngineDetailWire pins the 400 (non-numeric id) / 404 (unknown id) split
-// and the always-present refs[].
 func TestEngineDetailWire(t *testing.T) {
 	db := openCatalogTestDB(t)
 	_, _, engineID := seedTaxonomy(t, db)
@@ -225,9 +191,6 @@ func TestEngineDetailWire(t *testing.T) {
 	assert.Equal(t, []any{}, data["refs"], "refs is always present, [] when the engine has no anchor")
 }
 
-// TestWorksListEngineIDFilter pins the ninth works-list filter: strict positive
-// integer (an illegal value is a 400, never a silently-dropped filter) and a
-// legal one actually narrows the page.
 func TestWorksListEngineIDFilter(t *testing.T) {
 	db := openCatalogTestDB(t)
 	_, _, engineID := seedTaxonomy(t, db)

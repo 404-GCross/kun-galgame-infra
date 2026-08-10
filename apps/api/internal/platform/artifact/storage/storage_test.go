@@ -5,10 +5,10 @@ import "testing"
 func TestPercentEncode(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"abc", "abc"},
-		{"a-_.~Z9", "a-_.~Z9"}, // unreserved set passes through
-		{"a b", "a%20b"},       // space
+		{"a-_.~Z9", "a-_.~Z9"},
+		{"a b", "a%20b"},
 		{"file(1).zip", "file%281%29.zip"},
-		{"中.zip", "%E4%B8%AD.zip"}, // UTF-8 multibyte, byte-wise
+		{"中.zip", "%E4%B8%AD.zip"},
 	}
 	for _, c := range cases {
 		if got := percentEncode(c.in); got != c.want {

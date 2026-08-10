@@ -8,8 +8,6 @@ import (
 	"api/internal/platform/ai/upstream"
 )
 
-// TestModerateNormal — the upstream-scored path: a configured upstream returns a
-// flagged verdict, which is parsed and metered as status=ok with tokens+channel.
 func TestModerateNormal(t *testing.T) {
 	cleanTables(t)
 	up := &fakeUpstream{
@@ -54,9 +52,6 @@ func TestModerateNormal(t *testing.T) {
 	}
 }
 
-// TestModerateUpstreamErrorFailOpen — a configured upstream that 5xxs/errors:
-// fail-open allow (flagged:false, degraded:true), metered status=upstream_error,
-// and the call WAS attempted (calls==1).
 func TestModerateUpstreamErrorFailOpen(t *testing.T) {
 	cleanTables(t)
 	up := &fakeUpstream{configured: true, model: "deepseek-chat", err: context.DeadlineExceeded}
@@ -78,9 +73,6 @@ func TestModerateUpstreamErrorFailOpen(t *testing.T) {
 	}
 }
 
-// TestModerateDegradedEnvEmpty — the decoupling proof: an UNCONFIGURED upstream
-// (empty env) degrades WITHOUT dialling (calls==0), fail-open, metered
-// status=degraded.
 func TestModerateDegradedEnvEmpty(t *testing.T) {
 	cleanTables(t)
 	up := &fakeUpstream{configured: false}
@@ -105,13 +97,11 @@ func TestModerateDegradedEnvEmpty(t *testing.T) {
 	}
 }
 
-// TestBudgetOverCapFailOpen — a set cap whose current-day spend is exceeded:
-// fail-open allow, metered status=budget_denied, and upstream NOT dialled.
 func TestBudgetOverCapFailOpen(t *testing.T) {
 	cleanTables(t)
 	insertBudget(t, model.RouteModerateText, "letmoe", ptr[int64](100))
 	insertUsageCost(t, "letmoe", model.RouteModerateText, 60)
-	insertUsageCost(t, "letmoe", model.RouteModerateText, 50) // total 110 >= 100
+	insertUsageCost(t, "letmoe", model.RouteModerateText, 50)
 
 	up := &fakeUpstream{configured: true, model: "deepseek-chat",
 		result: upstream.ChatResult{Content: `{"flagged": true}`, Channel: "deepseek-chat"}}
@@ -127,7 +117,6 @@ func TestBudgetOverCapFailOpen(t *testing.T) {
 	if up.calls != 0 {
 		t.Fatalf("over-budget must NOT dial upstream, calls=%d", up.calls)
 	}
-	// The two seed rows + the budget_denied row.
 	var denied int64
 	if err := testDB.Model(&model.AIUsage{}).
 		Where("site = ? AND route = ? AND status = ?", "letmoe", model.RouteModerateText, model.StatusBudgetDenied).
@@ -139,8 +128,6 @@ func TestBudgetOverCapFailOpen(t *testing.T) {
 	}
 }
 
-// TestBudgetUnderCapAllows — the same cap but current-day spend below it: the
-// call proceeds normally (status=ok), proving the fuse only trips over the cap.
 func TestBudgetUnderCapAllows(t *testing.T) {
 	cleanTables(t)
 	insertBudget(t, model.RouteModerateText, "letmoe", ptr[int64](1000))
@@ -162,11 +149,9 @@ func TestBudgetUnderCapAllows(t *testing.T) {
 	}
 }
 
-// TestBudgetNullCapNoBlock — the v0 default: a NULL cap (or an explicit NULL-cap
-// override row) never blocks, even with accumulated spend.
 func TestBudgetNullCapNoBlock(t *testing.T) {
 	cleanTables(t)
-	insertBudget(t, model.RouteModerateText, "letmoe", nil) // explicit no-cap override
+	insertBudget(t, model.RouteModerateText, "letmoe", nil)
 	insertUsageCost(t, "letmoe", model.RouteModerateText, 999999)
 
 	up := &fakeUpstream{configured: true, model: "deepseek-chat",
@@ -182,12 +167,10 @@ func TestBudgetNullCapNoBlock(t *testing.T) {
 	}
 }
 
-// TestBudgetRouteDefaultOverride — a route-wide default (” site) cap applies to
-// a site that has no specific row.
 func TestBudgetRouteDefaultOverride(t *testing.T) {
 	cleanTables(t)
-	insertBudget(t, model.RouteModerateText, "", ptr[int64](100)) // route-wide default
-	insertUsageCost(t, "letmoe", model.RouteModerateText, 150)    // letmoe over the default
+	insertBudget(t, model.RouteModerateText, "", ptr[int64](100))
+	insertUsageCost(t, "letmoe", model.RouteModerateText, 150)
 
 	up := &fakeUpstream{configured: true, model: "deepseek-chat",
 		result: upstream.ChatResult{Content: `{"flagged": false}`, Channel: "deepseek-chat"}}
@@ -202,21 +185,12 @@ func TestBudgetRouteDefaultOverride(t *testing.T) {
 	}
 }
 
-// TestModerateTruncatedReplyIsNotUpstreamError — a reply the token ceiling cut
-// off mid-JSON must meter as status=truncated, not upstream_error.
-//
-// The distinction is the whole lesson of the 2026-07-22..08-07 fault: with both
-// filed under upstream_error, a max_tokens value too small for a reasoning model
-// destroyed half of all escalated verdicts for 16 days while looking exactly like
-// someone else's flaky server. Truncation is ours to fix; upstream_error is not.
 func TestModerateTruncatedReplyIsNotUpstreamError(t *testing.T) {
 	cleanTables(t)
 	up := &fakeUpstream{
 		configured: true,
 		model:      "glm-5.2",
 		result: upstream.ChatResult{
-			// Cut off exactly the way a ceiling cuts it: valid JSON up to the point
-			// the budget ran out, so it parses as "unexpected end of JSON input".
 			Content:          `{"flagged": true, "categories": ["abu`,
 			Channel:          "glm-5.2",
 			FinishReason:     "length",
@@ -230,8 +204,6 @@ func TestModerateTruncatedReplyIsNotUpstreamError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Moderate: %v", err)
 	}
-	// Still fail-open — a truncated verdict is no verdict, and moderate-text never
-	// convicts on one.
 	if res.Flagged || !res.Degraded {
 		t.Fatalf("want fail-open degraded, got flagged=%v degraded=%v", res.Flagged, res.Degraded)
 	}
@@ -250,9 +222,6 @@ func TestModerateTruncatedReplyIsNotUpstreamError(t *testing.T) {
 	}
 }
 
-// TestModerateUnparseableWithoutTruncation — an unparseable reply that did NOT
-// hit the ceiling stays upstream_error. Guards the split from collapsing the
-// other way: not every parse failure is our config's fault.
 func TestModerateUnparseableWithoutTruncation(t *testing.T) {
 	cleanTables(t)
 	up := &fakeUpstream{

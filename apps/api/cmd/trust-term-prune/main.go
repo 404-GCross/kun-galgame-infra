@@ -1,42 +1,3 @@
-// cmd/trust-term-prune retires Tier0 word-list terms by MEASURED PRECISION,
-// using the pipeline's own shadow record as the evidence.
-//
-// Every scan stores the terms it matched (trust_scan_result.tier0_matched)
-// alongside the AI verdict for the same text. Joining the two gives, per term,
-// how often it fired and how often the content it fired on was actually judged
-// abusive — that ratio is the term's precision, and it is the only honest basis
-// for keeping or dropping a word. The counterpart tool cmd/import-trust-terms
-// adds terms in bulk; this one is how they earn their place afterwards.
-//
-// Why this matters more than it sounds: a word list is the ONE tier that can
-// block deterministically, and a bad term there is not a mild inefficiency — it
-// silently suppresses legitimate speech at a rate nobody measures, because a
-// false positive on the keyword tier produces no signal at all unless something
-// like this goes looking for it.
-//
-// Usage:
-//
-//	go run ./cmd/trust-term-prune [flags]
-//
-// Flags:
-//
-//	-source          only consider terms whose note contains this substring
-//	                 ("" = all); use it to retire one imported lexicon at a time.
-//	-min-hits        observations a term needs before its precision is trusted (20).
-//	-max-precision   deprecate evidenced terms scoring BELOW this (0.10 = 10%).
-//	-drop-unevidenced  also deprecate terms with fewer than -min-hits matches —
-//	                 "never demonstrated value", a weaker claim than "measured bad".
-//
-// Terms with purpose=compliance are NEVER retired by this tool. Their precision
-// is measured against an abuse classifier that does not judge compliance
-// content, so the number reads ~0% however well the term works; they are printed
-// for human review instead.
-//	-backup          write the full affected set to this JSON file before writing.
-//	-apply           write; default is a dry-run report (nothing is changed).
-//
-// Deprecation is TERMINAL by design (the admin face offers no un-deprecate), so
-// -apply refuses to run without -backup: the backup is what makes a wrong call
-// recoverable via cmd/import-trust-terms.
 package main
 
 import (
@@ -57,8 +18,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// termStat is one term's observed record: how many scans it matched, and how
-// many of those the classifier independently judged abusive.
 type termStat struct {
 	ID        int64   `json:"id"`
 	Term      string  `json:"term"`
@@ -69,8 +28,6 @@ type termStat struct {
 	Hits      int64   `json:"hits"`
 	Flagged   int64   `json:"flagged"`
 	Precision float64 `json:"precision"`
-	// Reason records WHY this term was retired, so the backup file explains
-	// itself months later without the operator having to reconstruct the flags.
 	Reason string `json:"reason"`
 }
 
@@ -134,11 +91,6 @@ func main() {
 	slog.Info("terms retired", "count", len(doomed))
 }
 
-// collect joins every active term against its observed match record. Terms that
-// never fired come back with zero counts rather than being omitted — "never
-// fired" is itself a finding, and the caller decides what to do with it.
-// It also returns the corpus size (scans carrying an evaluated tier0 record),
-// without which none of the ratios can be read honestly.
 func collect(db *gorm.DB, source string) ([]termStat, int64, error) {
 	var corpus int64
 	if err := db.Model(&model.TrustScanResult{}).
@@ -146,8 +98,6 @@ func collect(db *gorm.DB, source string) ([]termStat, int64, error) {
 		return nil, 0, err
 	}
 
-	// The per-term aggregate is computed in the database: unnesting the jsonb
-	// match arrays here would mean streaming every scan row into this process.
 	const q = `
 		WITH matched AS (
 		    SELECT coalesce(flagged, false) AS flagged,
@@ -182,17 +132,6 @@ func collect(db *gorm.DB, source string) ([]termStat, int64, error) {
 	return stats, corpus, nil
 }
 
-// classify applies the retirement policy, separating the two claims it can make:
-// a term that fired enough to be judged and scored badly ("measured"), and a
-// term that never fired at all ("unevidenced"). They are different assertions —
-// the first is proof of harm, the second only absence of value — so the second
-// is opt-in.
-// A COMPLIANCE term is never auto-retired, whatever its precision reads. The
-// number the policy tests is agreement with the ABUSE classifier, and a
-// compliance term answers a question that classifier never asks — so it scores
-// ~0% precision while working perfectly. Judging it by that number would empty
-// the compliance lexicon and produce a report that looked fully evidence-based
-// while doing it. Such terms go to a review bucket for a human instead.
 func classify(stats []termStat, minHits int64, maxPrecision float64, dropUnevidenced bool) (doomed, review []termStat) {
 	for _, s := range stats {
 		var reason string
@@ -216,10 +155,6 @@ func classify(stats []termStat, minHits int64, maxPrecision float64, dropUnevide
 	return doomed, review
 }
 
-// report prints the decision's basis before anything is written. A pruning run
-// that only says "retired 46,000 terms" is unreviewable; the operator needs the
-// corpus size, the survivors, and the worst offenders by volume to judge whether
-// the policy did what they meant.
 func report(stats, doomed, review []termStat, corpus int64, minHits int64, maxPrecision float64) {
 	var fired, totalHits, totalFlagged int64
 	for _, s := range stats {
@@ -239,8 +174,6 @@ func report(stats, doomed, review []termStat, corpus int64, minHits int64, maxPr
 	}
 	fmt.Printf("Policy:      deprecate if hits >= %d and precision < %.4f\n\n", minHits, maxPrecision)
 
-	// Highest-volume terms first: at scale the damage a word list does is
-	// dominated by its loudest few entries, not by the long tail.
 	loud := make([]termStat, len(stats))
 	copy(loud, stats)
 	sort.Slice(loud, func(i, j int) bool { return loud[i].Hits > loud[j].Hits })
@@ -284,10 +217,6 @@ func writeBackup(path string, doomed []termStat) error {
 	return os.WriteFile(path, b, 0o644)
 }
 
-// deprecate flips the batch in one transaction and appends a SINGLE audit row
-// describing the policy. One row per term would bury the audit log under tens of
-// thousands of mechanically identical entries; what a future reader needs is the
-// rule that was applied and when, which the policy_ref carries.
 func deprecate(db *gorm.DB, doomed []termStat, source string, minHits int64, maxPrecision float64, dropUnevidenced bool) error {
 	ids := make([]int64, len(doomed))
 	for i, s := range doomed {
@@ -298,8 +227,6 @@ func deprecate(db *gorm.DB, doomed []termStat, source string, minHits int64, max
 		source, minHits, maxPrecision, dropUnevidenced, len(ids), time.Now().UTC().Format(time.RFC3339))
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		// Batched: a single IN () with tens of thousands of parameters exceeds
-		// what the driver will bind.
 		const batch = 1000
 		for start := 0; start < len(ids); start += batch {
 			end := min(start+batch, len(ids))
@@ -310,8 +237,6 @@ func deprecate(db *gorm.DB, doomed []termStat, source string, minHits int64, max
 			}
 		}
 		return service.AppendAudit(tx, service.AuditEntry{
-			// ActorID stays NULL: no operator acted on an individual term — the
-			// policy did, and the policy is recorded in policy_ref.
 			Action:    "terms_pruned_by_precision",
 			PolicyRef: &policy,
 		})

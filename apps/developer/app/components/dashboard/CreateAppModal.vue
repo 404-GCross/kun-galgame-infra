@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import type { DevApp } from '~~/shared/types/dev'
 
-// Create a new application (POST /dev/apps). name required (≤100), description
-// optional (≤100). The 5-per-account limit is enforced server-side; its 400
-// message is surfaced verbatim.
 const emit = defineEmits<{ close: []; created: [DevApp] }>()
 
 const api = useApi()
@@ -26,8 +23,6 @@ const handleSubmit = async () => {
   }
   isLoading.value = true
   try {
-    // Wire body mirrors the 06a POST /dev/apps contract (name + optional
-    // description).
     const body: Record<string, unknown> = { name: name.value.trim() }
     if (description.value.trim()) body.description = description.value.trim()
     const res = await api.post<DevApp>('/dev/apps', body)

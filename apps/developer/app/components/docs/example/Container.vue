@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// A worked example over two REAL series (the 2026-07-28 golden-sample
-// acceptance data): SEQUEL (doujin, リーフジオメトリ) × いろセカ (commercial,
-// FAVORITE). Every response excerpt below is a real value from the live API —
-// nothing is mocked. Both series are R18, which conveniently demonstrates the
-// caller-controlled nsfw gate (hidden by default).
 useSeoMeta({
   title: '实战示例',
   description:

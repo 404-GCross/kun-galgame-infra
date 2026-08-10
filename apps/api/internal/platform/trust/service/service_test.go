@@ -15,10 +15,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration tests against a real Postgres (the community convention):
-// TEST_DATABASE_DSN or a local default; a missing database skips the whole
-// package. Schema comes from migrate.Run — the exact production migration.
-
 var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
@@ -45,9 +41,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// cleanTables truncates the mutable tables so ordering-independent probes start
-// fresh. trust_report_reason is left intact (its global seeds are provisioned by
-// migrate and reused across tests).
 func cleanTables(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
@@ -61,7 +54,6 @@ func cleanTables(t *testing.T) {
 	}
 }
 
-// fakeWeigher is a deterministic Weigher: per-reporter overrides, else a default.
 type fakeWeigher struct {
 	weights map[int64]ReporterWeight
 	def     ReporterWeight
@@ -80,7 +72,6 @@ func (f *fakeWeigher) Weigh(_ context.Context, reporterID int64) (ReporterWeight
 
 func (f *fakeWeigher) set(reporterID int64, w ReporterWeight) { f.weights[reporterID] = w }
 
-// registerKind inserts a subject-kind registry row (with an optional callback).
 func registerKind(t *testing.T, site, key string, callbackURL, secret *string) {
 	t.Helper()
 	kind := model.TrustSubjectKind{Site: site, Key: key, CallbackURL: callbackURL, CallbackSecret: secret, IsDeprecated: false}
@@ -89,7 +80,6 @@ func registerKind(t *testing.T, site, key string, callbackURL, secret *string) {
 	}
 }
 
-// reasonID looks up the global reason id for a key (seeded by migrate).
 func reasonID(t *testing.T, key string) int64 {
 	t.Helper()
 	var id int64
@@ -99,7 +89,6 @@ func reasonID(t *testing.T, key string) int64 {
 	return id
 }
 
-// countReports returns how many report rows exist for a subject.
 func countReports(t *testing.T, site, kind, subject string) int64 {
 	t.Helper()
 	var n int64
@@ -111,7 +100,6 @@ func countReports(t *testing.T, site, kind, subject string) int64 {
 	return n
 }
 
-// countOpenItems returns how many OPEN (pending/claimed) items exist for a subject.
 func countOpenItems(t *testing.T, site, kind, subject string) int64 {
 	t.Helper()
 	var n int64
@@ -124,7 +112,6 @@ func countOpenItems(t *testing.T, site, kind, subject string) int64 {
 	return n
 }
 
-// getItem reloads a review item.
 func getItem(t *testing.T, id int64) *model.TrustReviewItem {
 	t.Helper()
 	var it model.TrustReviewItem

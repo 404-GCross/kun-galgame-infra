@@ -1,25 +1,3 @@
-// Image Service — content-addressed, OAuth-authenticated, per-site
-// quota-limited image upload platform.
-//
-// See docs/image_service/ for the design.
-//
-// Usage:
-//
-//	go run ./cmd/image           # 启动服务（要求已经跑过 ./cmd/image-setup）
-//
-// 首次接入或新环境，先跑一次：
-//
-//	go run ./cmd/image-setup --seed-test-client
-//
-// Endpoints (V1+V2):
-//
-//	POST /image/upload           — multipart/form-data: file + preset
-//	GET  /image/:hash            — metadata lookup
-//	GET  /image/stats            — per-site stats
-//	POST /image/meta-batch       — JSON: {hashes: [...]} → {metas: {hash: {width,height,thumbhash}}}
-//	POST /image/reference-ping   — JSON: {hashes: [...]}
-//	GET  /healthz                — no auth
-//	GET  /metrics                — no auth, internal-only by deployment
 package main
 
 import (
@@ -58,8 +36,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// `healthcheck` subcommand for container HEALTHCHECK (distroless/slim has
-	// no curl). No-op for a normal start; exits before any infra is touched.
 	health.MaybeProbe(cfg.ImageService.Port, "/healthz")
 
 	logger.Init(cfg.Server.Env)
@@ -104,9 +80,6 @@ func main() {
 	statsRepo := repository.NewStatsRepository(imagesDB.DB())
 	clientRepo := siteRepo.NewOAuthClientRepository(application.DB.DB())
 
-	// Pass the images DB so SoftDelete (DELETE /image/:hash, used by the
-	// OAuth avatar-GC-on-anonymize path) and async moderation enqueue have a
-	// live handle. Without it s.db is nil and SoftDelete nil-panics.
 	svc := service.New(presets, s3Client, imgRepo, usageRepo, cfg.ImageService.CDNBase,
 		service.Options{DB: imagesDB.DB()})
 	q := quota.New(application.Cache)
@@ -122,9 +95,6 @@ func main() {
 
 	application.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 
-	// Upload route is feature-gated. When disabled (the default), return
-	// 503 + clear error code without running auth so it's symmetric for
-	// any caller. Other endpoints stay on the authenticated group.
 	if cfg.ImageService.UploadEnabled {
 		application.Fiber.Post("/image/upload",
 			imgMW.ClientAuth(clientRepo, cfg),
@@ -140,8 +110,6 @@ func main() {
 	img.Get("/:hash", h.Meta)
 	img.Post("/meta-batch", h.MetaBatch)
 	img.Post("/reference-ping", h.Ping)
-	// Soft-delete an image the caller's site used (GC physically removes
-	// after the TTL). Backs the OAuth avatar-GC-on-anonymize path.
 	img.Delete("/:hash", h.SoftDelete)
 
 	addr := fmt.Sprintf("%s:%d", cfg.ImageService.Host, cfg.ImageService.Port)
@@ -163,9 +131,6 @@ func main() {
 	}
 }
 
-// uploadDisabled is registered in place of the real upload handler when
-// KUN_IMAGE_UPLOAD_ENABLED is unset/false. Returns 503 + a clear code so
-// callers can branch on it.
 func uploadDisabled(c fiber.Ctx) error {
 	return response.Error(c,
 		fiber.StatusServiceUnavailable,

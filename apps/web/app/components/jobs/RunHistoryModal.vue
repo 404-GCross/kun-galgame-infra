@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Run history for one job (GET /admin/jobs/:name/runs). Fetches on open (the
-// keep-mounted v-model pattern — see the modal-refactor charter). On-demand, so
-// it uses useApi rather than an SSR useApiFetch.
 import { jobStatusMeta, jobTriggerLabel } from '~/constants/jobs'
 import type { JobRun } from '~~/shared/types/jobs'
 

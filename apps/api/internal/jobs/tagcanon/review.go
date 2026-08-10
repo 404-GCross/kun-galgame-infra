@@ -10,13 +10,10 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// ReviewOpts tunes the confidence buckets (doc 87 ruling 5). Defaults: high ≥
-// 0.90 (auto-pass, drafter spot-checks 30), [0.60,0.90) medium (full human
-// review file), < 0.60 low (dropped, counted).
 type ReviewOpts struct {
 	HighFloor   float64
 	MediumFloor float64
-	SpotCheck   int // how many high-confidence rows to surface for the drafter's抽查
+	SpotCheck   int
 }
 
 func (o ReviewOpts) withDefaults() ReviewOpts {
@@ -32,26 +29,18 @@ func (o ReviewOpts) withDefaults() ReviewOpts {
 	return o
 }
 
-// ReviewStats reports the bucketing.
 type ReviewStats struct {
-	HighExact    int // auto-pass merges
-	MediumExact  int // need human review
-	LowExact     int // dropped
+	HighExact    int
+	MediumExact  int
+	LowExact     int
 	SingleHigh   int
 	SingleMedium int
 	SingleLow    int
-	NonExact     map[Relation]int // narrower/broader/related/unrelated (留档, never merged)
-	Approved     int              // records marked Approve=true (high buckets)
+	NonExact     map[Relation]int
+	Approved     int
 	Total        int
 }
 
-// MakeReview consumes the propose JSONL, buckets every record by confidence /
-// relation, writes the human-readable markdown review file (medium bucket in
-// full + a high-confidence spot-check sample + hierarchy/low tallies) and the
-// machine decisions JSONL that apply-reviewed consumes. ONLY exact relations are
-// ever eligible to merge (ruling 1); narrower/broader/related/unrelated are
-// preserved in the decisions file with Approve=false for a future hierarchy
-// wave.
 func MakeReview(inPath, mdPath, decisionsPath string, opts ReviewOpts) (*ReviewStats, error) {
 	opts = opts.withDefaults()
 	recs, err := readRecords(inPath)
@@ -120,9 +109,6 @@ func MakeReview(inPath, mdPath, decisionsPath string, opts ReviewOpts) (*ReviewS
 	return st, nil
 }
 
-// writeReviewMarkdown renders the human review file: a spot-check sample of the
-// auto-passed high bucket, the FULL medium bucket (one line per decision, the
-// user is the final arbiter), and hierarchy/low tallies.
 func writeReviewMarkdown(path string, decisions []pairRec, st *ReviewStats, opts ReviewOpts) error {
 	f, err := os.Create(path)
 	if err != nil {
@@ -139,7 +125,6 @@ func writeReviewMarkdown(path string, decisions []pairRec, st *ReviewStats, opts
 	fmt.Fprintf(w, "- 低置信丢弃(conf<%.2f):%d 对 + 单源 %d\n", opts.MediumFloor, st.LowExact, st.SingleLow)
 	fmt.Fprintf(w, "- 层级/相邻留档(非 exact,不合并):%s\n\n", nonExactSummary(st.NonExact))
 
-	// medium pairs — full, one line per decision.
 	fmt.Fprintf(w, "## 中置信 · 配对(全审;把要合并的行 approve 改为 true)\n\n")
 	fmt.Fprintf(w, "| A 原文 / 中文 (来源, 用量) | B 原文 / 中文 (来源, 用量) | 关系 | 置信 | 建议 | 理由 |\n")
 	fmt.Fprintf(w, "|---|---|---|---|---|---|\n")
@@ -150,7 +135,6 @@ func writeReviewMarkdown(path string, decisions []pairRec, st *ReviewStats, opts
 			r.Relation, r.Confidence, mdEscape(r.Reason))
 	}
 
-	// medium singles — full.
 	fmt.Fprintf(w, "\n## 中置信 · 单源准入 tier/kind(全审)\n\n")
 	fmt.Fprintf(w, "| 原文 / 中文 (来源, 用量) | tier | kind | 置信 | 理由 |\n")
 	fmt.Fprintf(w, "|---|---|---|---|---|\n")
@@ -160,7 +144,6 @@ func writeReviewMarkdown(path string, decisions []pairRec, st *ReviewStats, opts
 			tierLabel(r.Tier), kindLabel(r.Kind_), r.Confidence, mdEscape(r.Reason))
 	}
 
-	// high spot-check.
 	fmt.Fprintf(w, "\n## 高置信抽查(前 %d;自动放行,仅供核对)\n\n", opts.SpotCheck)
 	fmt.Fprintf(w, "| A 原文 / 中文 (来源) | B 原文 / 中文 (来源) | 置信 | 理由 |\n")
 	fmt.Fprintf(w, "|---|---|---|---|\n")
@@ -174,8 +157,6 @@ func writeReviewMarkdown(path string, decisions []pairRec, st *ReviewStats, opts
 			nameCellNoUsage(r.BOrig, r.BName, r.BSource), r.Confidence, mdEscape(r.Reason))
 		shown++
 	}
-	// Flush explicitly and surface the error — a short write here silently drops
-	// medium-bucket rows a human must adjudicate while the command reports success.
 	return w.Flush()
 }
 
@@ -247,7 +228,6 @@ func nonExactSummary(m map[Relation]int) string {
 	return strings.Join(parts, " / ")
 }
 
-// mdEscape neutralizes pipe/newline so a reason never breaks the markdown table.
 func mdEscape(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "|", "\\|")

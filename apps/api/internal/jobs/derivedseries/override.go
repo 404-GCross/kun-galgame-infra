@@ -12,10 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// MemberHash is the membership snapshot an override was reviewed against:
-// sha256 (hex) over the sorted member work ids joined by commas. Exported for
-// the review tool (cmd/apply-series-name-overrides), which must compute the
-// same value the builder will verify.
 func MemberHash(works []int64) string {
 	ids := append([]int64(nil), works...)
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
@@ -33,10 +29,6 @@ type overrideRow struct {
 	DisplayName string `gorm:"column:display_name"`
 }
 
-// applyOverrides swaps candidates' mechanical names for reviewed ones where the
-// membership snapshot still matches, and reaps the rows it can no longer trust:
-// an override whose hash mismatches (the component changed) or whose series the
-// graph no longer produces. Both are counted; the reap only writes on apply.
 func applyOverrides(ctx context.Context, db *gorm.DB, src int16,
 	want map[string]*candidate, opts Opts, st *Stats) error {
 	var rows []overrideRow
@@ -52,8 +44,6 @@ func applyOverrides(ctx context.Context, db *gorm.DB, src int16,
 			stale = append(stale, r.ExternalID)
 			continue
 		}
-		// The mechanical counters already ticked for this candidate; move it
-		// into the override bucket so the three counts stay a partition.
 		switch cand.namedBy {
 		case "prefix":
 			st.NamedByPrefix--

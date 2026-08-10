@@ -12,7 +12,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// ImageRepository handles CRUD for the images table.
 type ImageRepository struct {
 	db *gorm.DB
 }
@@ -21,8 +20,6 @@ func NewImageRepository(db *gorm.DB) *ImageRepository {
 	return &ImageRepository{db: db}
 }
 
-// FindByHash returns (nil, nil) if not found. "not found" is the hot path
-// on upload (dedup miss) so we silence the default GORM logger emission.
 func (r *ImageRepository) FindByHash(ctx context.Context, hash string) (*model.Image, error) {
 	var img model.Image
 	err := r.db.WithContext(ctx).
@@ -38,11 +35,6 @@ func (r *ImageRepository) FindByHash(ctx context.Context, hash string) (*model.I
 	return &img, nil
 }
 
-// Create inserts a new Image, deduplicating on hash. Returns inserted=true
-// when a row was actually written, false when an identical hash already
-// existed (the INSERT became a no-op via ON CONFLICT DO NOTHING). The caller
-// converges the loser of a concurrent first-upload race on the winning row
-// instead of surfacing the unique-index violation as a 500.
 func (r *ImageRepository) Create(ctx context.Context, img *model.Image) (bool, error) {
 	res := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hash"}}, DoNothing: true}).
@@ -53,10 +45,6 @@ func (r *ImageRepository) Create(ctx context.Context, img *model.Image) (bool, e
 	return res.RowsAffected == 1, nil
 }
 
-// FindByHashIncludingDeleted returns the row even if it is soft-deleted
-// (deleted_at set). Used by Upload to revive a soft-deleted hash rather than
-// INSERTing a duplicate that would collide with the unique index. Returns
-// (nil, nil) when the hash has never existed.
 func (r *ImageRepository) FindByHashIncludingDeleted(ctx context.Context, hash string) (*model.Image, error) {
 	var img model.Image
 	err := r.db.WithContext(ctx).
@@ -72,8 +60,6 @@ func (r *ImageRepository) FindByHashIncludingDeleted(ctx context.Context, hash s
 	return &img, nil
 }
 
-// Resurrect clears deleted_at and refreshes last_referenced_at for a hash,
-// bringing a soft-deleted image back to life on re-upload.
 func (r *ImageRepository) Resurrect(ctx context.Context, hash string) error {
 	return r.db.WithContext(ctx).
 		Model(&model.Image{}).
@@ -82,8 +68,6 @@ func (r *ImageRepository) Resurrect(ctx context.Context, hash string) error {
 		Error
 }
 
-// UpdateVariants atomically replaces the variants JSONB column for the
-// given hash.
 func (r *ImageRepository) UpdateVariants(ctx context.Context, hash string, variants []string) error {
 	img := &model.Image{}
 	img.SetVariants(variants)
@@ -94,8 +78,6 @@ func (r *ImageRepository) UpdateVariants(ctx context.Context, hash string, varia
 		Error
 }
 
-// TouchReferenced updates last_referenced_at for a set of hashes. Returns
-// the number of rows that actually matched.
 func (r *ImageRepository) TouchReferenced(ctx context.Context, hashes []string) (int64, error) {
 	if len(hashes) == 0 {
 		return 0, nil
@@ -107,9 +89,6 @@ func (r *ImageRepository) TouchReferenced(ctx context.Context, hashes []string) 
 	return res.RowsAffected, res.Error
 }
 
-// ImageMeta is the intrinsic, display-relevant metadata of an image:
-// dimensions + the ThumbHash placeholder. Immutable per hash (content-
-// addressed), so consumers may cache it forever. Returned by MetaByHashes.
 type ImageMeta struct {
 	Hash      string `gorm:"column:hash" json:"-"`
 	Width     int    `gorm:"column:width" json:"width"`
@@ -117,10 +96,6 @@ type ImageMeta struct {
 	Thumbhash string `gorm:"column:thumbhash" json:"thumbhash,omitempty"`
 }
 
-// MetaByHashes returns intrinsic metadata (width/height/thumbhash) for the
-// subset of the given hashes that exist and are not soft-deleted, keyed by
-// hash. Powers POST /image/meta-batch so a consumer can fetch placeholders +
-// dimensions for a whole page of images in one roundtrip.
 func (r *ImageRepository) MetaByHashes(ctx context.Context, hashes []string) (map[string]ImageMeta, error) {
 	out := make(map[string]ImageMeta, len(hashes))
 	if len(hashes) == 0 {
@@ -140,8 +115,6 @@ func (r *ImageRepository) MetaByHashes(ctx context.Context, hashes []string) (ma
 	return out, nil
 }
 
-// FindExistingHashes returns the subset of the given hashes that exist and
-// are not soft-deleted. Used by reference-ping to report "not_found".
 func (r *ImageRepository) FindExistingHashes(ctx context.Context, hashes []string) ([]string, error) {
 	if len(hashes) == 0 {
 		return nil, nil

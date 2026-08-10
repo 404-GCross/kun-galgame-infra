@@ -2,8 +2,6 @@
 import { DEV_TIER_COLORS, MAX_APPS_PER_ACCOUNT } from '~/constants/dev'
 import type { DevApp } from '~~/shared/types/dev'
 
-// My applications. SSR-rendered via useApiFetch (access_token cookie forwarded);
-// the create flow POSTs then refreshes the list.
 useSeoMeta({ title: '控制台', robots: 'noindex' })
 
 const { data: appsData, refresh } = await useApiFetch<DevApp[]>('/dev/apps')
@@ -46,7 +44,6 @@ const handleCreated = () => {
       已达到应用数量上限（{{ MAX_APPS_PER_ACCOUNT }}）。如需更多，请停用不再使用的应用。
     </div>
 
-    <!-- App list -->
     <div v-if="apps.length" class="grid gap-4 sm:grid-cols-2">
       <NuxtLink
         v-for="app in apps"
@@ -103,7 +100,6 @@ const handleCreated = () => {
       </NuxtLink>
     </div>
 
-    <!-- Empty state -->
     <KunCard v-else content-class="p-12" class-name="border-dashed">
       <div class="text-center">
         <div

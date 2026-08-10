@@ -18,8 +18,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test: catalog Gold schema + src_vndb Silver schema (the
-// workplatforms pattern — same test database, real SQL against real tables).
 var (
 	testDB  *gorm.DB
 	testDSN string
@@ -102,29 +100,25 @@ func mkLabel(t *testing.T, name, pid string) int64 {
 	return l.ID
 }
 
-// TestImportWorkProducers pins the lane end to end: the olang non-MTL gate,
-// the dev/pub kind split, exact-anchor-only resolution (unresolved counted),
-// the pre-existing-edge skip, and second-apply idempotence.
 func TestImportWorkProducers(t *testing.T) {
 	clean(t)
 
 	wj := mkWork(t, "ja")
-	mkRelease(t, wj, "r1") // original-language release
+	mkRelease(t, wj, "r1")
 	mkTitle(t, "r1", "ja", false)
-	mkRelease(t, wj, "r2") // EN-only localization — gated out
+	mkRelease(t, wj, "r2")
 	mkTitle(t, "r2", "en", false)
-	mkRelease(t, wj, "r3") // ja title but MTL — gated out
+	mkRelease(t, wj, "r3")
 	mkTitle(t, "r3", "ja", true)
 
-	mkRP(t, "r1", "p1", true, true)  // dev+pub on the olang release
-	mkRP(t, "r1", "p2", false, true) // pub-only
-	mkRP(t, "r1", "p9", true, false) // dev but p9 has NO label anchor → unresolved
-	mkRP(t, "r2", "p3", false, true) // localization publisher — gated out
-	mkRP(t, "r3", "p4", false, true) // MTL release — gated out
+	mkRP(t, "r1", "p1", true, true)
+	mkRP(t, "r1", "p2", false, true)
+	mkRP(t, "r1", "p9", true, false)
+	mkRP(t, "r2", "p3", false, true)
+	mkRP(t, "r3", "p4", false, true)
 
 	l1 := mkLabel(t, "ブランド1", "p1")
 	l2 := mkLabel(t, "ブランド2", "p2")
-	// Pre-existing publisher edge (E2a-mint shape) — must be skip-counted.
 	src2 := int16(2)
 	require.NoError(t, testDB.Create(&model.CatalogWorkLabel{
 		WorkID: wj, LabelID: l2, Kind: model.WorkLabelKindPublisher, SourceID: &src2,
@@ -133,7 +127,6 @@ func TestImportWorkProducers(t *testing.T) {
 	ctx := context.Background()
 	opts := Opts{DSN: testDSN}
 
-	// Dry: plan only.
 	st, err := Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.DevPlanned, "p1 dev (p9 unresolved, r2/r3 gated)")
@@ -144,7 +137,6 @@ func TestImportWorkProducers(t *testing.T) {
 	require.NoError(t, testDB.Table("catalog_work_label").Count(&n).Error)
 	assert.Equal(t, int64(1), n, "dry run must not write (only the pre-existing edge)")
 
-	// Apply.
 	opts.Apply = true
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
@@ -160,7 +152,6 @@ func TestImportWorkProducers(t *testing.T) {
 	require.NotNil(t, edges[0].SourceID)
 	assert.Equal(t, int16(2), *edges[0].SourceID)
 
-	// Second apply: zero writes.
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Zero(t, st.Written, "idempotent re-run")

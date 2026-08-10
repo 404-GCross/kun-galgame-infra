@@ -1,39 +1,3 @@
-// public_releases.go — the RELEASE-GRAIN new-releases timeline on the frozen
-// /v1/catalog public projection (wave 174).
-//
-// ── why a second dated lane next to the calendar ─────────────────────────────
-//
-// The calendar (public_calendar.go) is a WORK-grain surface: it places each
-// work by its EARLIEST dated release and shows it exactly once, in one month.
-// That is the right shape for 新作月表 — "which titles come out in June" — and
-// it is deliberately blind to everything that happens to a title afterwards: a
-// Switch port, a Steam re-edition, a Chinese localisation are all releases of a
-// work whose earliest date was years ago, so the calendar can never surface
-// them at all.
-//
-// This lane is the other half: EVERY dated release row is its own item, ordered
-// by its own date. A port shows up on the day the port ships. The two lanes
-// share the work population predicate, the olang / nsfw / content_limit gates
-// and the ETag pipeline, so a consumer that renders one renders the other.
-//
-// ── the population ───────────────────────────────────────────────────────────
-//
-// A release is in the timeline when its work is in the public fetchable set
-// (galgame, status live, not soft-deleted) and the release itself is not
-// soft-deleted and carries a date known to at least the MONTH (released_y AND
-// released_m). Year-only and undated releases are deliberately absent: a feed
-// entry whose position is "somewhere in 2019" cannot be ordered against a real
-// date, and those rows already have their homes on the calendar's pending / tba
-// buckets. Same composed ordinal as everywhere else (releaseOrd), so this lane,
-// the calendar and the works list's release_date can never disagree.
-//
-// ── cost ─────────────────────────────────────────────────────────────────────
-//
-// Zero migrations. Measured against the 2026-08 prod snapshot (168,643 rows in
-// the ungated population): 21.9 ms for the date_desc first page, 37.5 ms for
-// date_asc, 24.5 ms for a mid-feed keyset resume, 20.5 ms for the meta query.
-// The ordinal is a top-N heapsort over a hash join, not an index scan — well
-// inside budget, so no expression index was added for it.
 package service
 
 import (
@@ -48,25 +12,16 @@ import (
 	"gorm.io/datatypes"
 )
 
-// Cursor lanes of the two sort directions. Each is its own lane token so a
-// cursor minted while reading forwards can never be replayed backwards
-// (decodePublicCursor pins it) — the positions mean opposite things.
 const (
 	releaseFeedLaneDesc = "releases-date-desc"
 	releaseFeedLaneAsc  = "releases-date-asc"
 )
 
-// ReleaseFeedSortDateDesc / ReleaseFeedSortDateAsc are the two public sort
-// tokens. Exported because the handler owns the closed-vocabulary 400.
 const (
 	ReleaseFeedSortDateDesc = "date_desc"
 	ReleaseFeedSortDateAsc  = "date_asc"
 )
 
-// ReleaseKindFromKey is the inverse of releaseKindKey — the CLOSED public kind
-// vocabulary, used by the handler to 400 an unknown ?kind= token. Exported for
-// exactly that reason: the strings a caller may send must be the strings the
-// items print, and one function owning both directions is what keeps them so.
 func ReleaseKindFromKey(k string) (int16, bool) {
 	switch k {
 	case "default":
@@ -84,55 +39,24 @@ func ReleaseKindFromKey(k string) (int16, bool) {
 	}
 }
 
-// DefaultReleaseFeedKinds is what an OMITTED ?kind= resolves to: the FULL
-// RELEASE kinds only (default / digital / physical), i.e. trial and patch are
-// excluded.
-//
-// 发售动态 means "a thing came out". A demo and a translation patch are real
-// release rows and stay addressable — kind=trial,patch fetches them, and
-// kind=default,digital,physical,trial,patch is the true unfiltered feed — but
-// they are not what a "new releases" surface is asking for, and on the vndb
-// lane they outnumber the releases they belong to. The default therefore
-// EXCLUDES them rather than making every consumer remember to.
 var DefaultReleaseFeedKinds = []int16{
 	model.ReleaseKindDefault, model.ReleaseKindDigital, model.ReleaseKindPhysical,
 }
 
-// ReleaseFeedFilter is the timeline's request shape: the population gates (all
-// of which ride in the ETag key) plus the sort direction and the include=
-// projection selector for the attached work block.
 type ReleaseFeedFilter struct {
-	// NSFW / OLang / DisplayLimits are the PARENT-WORK gates, word for word the
-	// calendar's — one nsfw, one olang and one content_limit mean one thing
-	// across the whole public face.
 	NSFW          bool
 	OLang         PublicOLang
 	DisplayLimits []string
-	// Kinds is the release-kind set; empty resolves to DefaultReleaseFeedKinds
-	// at query time (never to "no gate" — the trial/patch exclusion IS the
-	// default). Values are model.ReleaseKind* constants.
-	Kinds []int16
-	// Langs is the RELEASE-language set, matched over COALESCE(r.lang, w.olang).
-	// Empty = no gate at all (the parameter's default and its explicit `all`
-	// both land here) — unlike OLang, whose zero value is the curated family.
-	Langs []string
-	// Official gates the vndb `official` flag; nil = no gate. See
-	// releaseFeedSource for the absent-key ruling.
-	Official *bool
-	// Platform is the release's primary platform code; "" = no gate. OPEN
-	// vocabulary, so an unknown code is an empty feed, never a 400.
-	Platform string
-	// DateFrom / DateTo are composed ordinals (y*10000+m*100+d), inclusive;
-	// 0 = unbounded.
-	DateFrom int64
-	DateTo   int64
-	// Sort is one of the ReleaseFeedSort* tokens; anything else (including "")
-	// degrades to date_desc, the feed reading.
-	Sort    string
-	Include WorksListInclude
+	Kinds         []int16
+	Langs         []string
+	Official      *bool
+	Platform      string
+	DateFrom      int64
+	DateTo        int64
+	Sort          string
+	Include       WorksListInclude
 }
 
-// lane is the filter's cursor lane token.
 func (f ReleaseFeedFilter) lane() string {
 	if f.Sort == ReleaseFeedSortDateAsc {
 		return releaseFeedLaneAsc
@@ -140,7 +64,6 @@ func (f ReleaseFeedFilter) lane() string {
 	return releaseFeedLaneDesc
 }
 
-// kinds resolves the effective release-kind set (see DefaultReleaseFeedKinds).
 func (f ReleaseFeedFilter) kinds() []int16 {
 	if len(f.Kinds) > 0 {
 		return f.Kinds
@@ -148,15 +71,6 @@ func (f ReleaseFeedFilter) kinds() []int16 {
 	return DefaultReleaseFeedKinds
 }
 
-// PopulationKey is the ETag discriminator of the whole population.
-//
-// EVERY gate that changes membership is in here, for the reason the calendar's
-// key spells out: two different populations must never share a cache validator,
-// their (count, max created_at, max id) triples can coincide by accident, and a
-// validator that ignored a gate would serve one caller's feed to another on the
-// first If-None-Match. The SORT is deliberately absent — reversing the order
-// does not change the SET, and both directions of one population legitimately
-// share a validator.
 func (f ReleaseFeedFilter) PopulationKey() string {
 	gate := "sfw"
 	if f.NSFW {
@@ -184,19 +98,6 @@ func (f ReleaseFeedFilter) PopulationKey() string {
 	}, "-")
 }
 
-// ReleaseFeedMeta returns the timeline's (row count, newest created_at, highest
-// release id) over the WHOLE filtered set — the cheap ETag basis, so a matching
-// If-None-Match can 304 without ever loading (and enriching) a page.
-//
-// catalog_release carries created_at but no updated_at, so unlike the calendar
-// this lane cannot fold a single freshness stamp. It folds THREE numbers
-// instead: the count moves when a row enters or leaves the population (an edit
-// that dates a previously undated release, a soft delete, a work leaving the
-// live set), max(created_at) moves when a row is imported, and max(id) breaks
-// the one tie those two share — a same-second insert paired with a delete. An
-// in-place date EDIT of an existing row still moves the count only if it
-// crosses the month-precision threshold, which is the known and accepted floor
-// of a cheap validator: s-maxage is 60 seconds, not a day.
 func (s *PublicService) ReleaseFeedMeta(ctx context.Context, f ReleaseFeedFilter) (int64, time.Time, int64, error) {
 	from, where, args := releaseFeedSource(f)
 	var row struct {
@@ -214,9 +115,6 @@ func (s *PublicService) ReleaseFeedMeta(ctx context.Context, f ReleaseFeedFilter
 	return row.N, row.MaxCreated, row.MaxID, nil
 }
 
-// releaseFeedRow is one raw timeline row: the release columns, its composed
-// ordinal, the is_first discriminator, and the parent work's registry columns
-// (the works-list base item is built from those, batched per page).
 type releaseFeedRow struct {
 	ID        int64
 	Kind      int16
@@ -243,25 +141,17 @@ type releaseFeedRow struct {
 	UpdatedAt     time.Time
 }
 
-// ReleaseFeed serves one keyset page of the timeline. A malformed or
-// cross-direction cursor is ErrBadCursor (the handler maps it to 400).
 func (s *PublicService) ReleaseFeed(ctx context.Context, f ReleaseFeedFilter, cursor string, limit int) (dto.PublicReleaseFeedData, error) {
 	lane := f.lane()
 	cur, err := decodePublicCursor(cursor, lane)
 	if err != nil {
 		return dto.PublicReleaseFeedData{}, err
 	}
-	// Defensive only — the handler is the wire authority (it 400s a bad limit).
 	limit = clampBrowseLimit(limit)
 
 	from, where, args := releaseFeedSource(f)
 	ord := releaseOrd("r")
 	if cur.ID > 0 {
-		// The tiebreak is id ASC in BOTH directions, so the descending lane's
-		// keyset is a MIXED-direction comparison and cannot use the row-value
-		// form the works list and the calendar use ((a,b) > (?,?) requires both
-		// columns to move the same way). It is written out as the explicit OR
-		// instead; the ordinal is sorted, not indexed, so nothing is lost.
 		if lane == releaseFeedLaneAsc {
 			where = append(where, "(("+ord+") > ? OR (("+ord+") = ? AND r.id > ?))")
 		} else {
@@ -275,10 +165,6 @@ func (s *PublicService) ReleaseFeed(ctx context.Context, f ReleaseFeedFilter, cu
 	}
 	args = append(args, limit)
 
-	// is_first is a correlated scalar in the SELECT list on purpose: Postgres
-	// evaluates it only for the rows that survive ORDER BY + LIMIT (measured: 20
-	// index probes on idx_catalog_release_work_id per page), so the port
-	// discriminator costs one page's worth of lookups, not one per candidate.
 	q := `SELECT r.id, r.kind, r.title, r.lang, r.platform,
 			r.released_y, r.released_m, r.released_d, r.extra,
 			` + ord + ` AS ord,
@@ -307,11 +193,6 @@ func (s *PublicService) ReleaseFeed(ctx context.Context, f ReleaseFeedFilter, cu
 	return out, nil
 }
 
-// buildReleaseFeedItems projects one raw page to the wire items, with exactly
-// two batched follow-up loads: the release-level EXACT anchors (the same
-// entityRefsFor the work-detail face's releases[] rides on) and the works-list
-// base items for the page's DISTINCT work ids. A page of five ports of one work
-// therefore costs one work enrichment, not five.
 func (s *PublicService) buildReleaseFeedItems(ctx context.Context, rows []releaseFeedRow, f ReleaseFeedFilter) ([]dto.PublicReleaseFeedItem, error) {
 	if len(rows) == 0 {
 		return []dto.PublicReleaseFeedItem{}, nil
@@ -362,7 +243,6 @@ func (s *PublicService) buildReleaseFeedItems(ctx context.Context, rows []releas
 			item.Date = &d
 		}
 		if item.Refs == nil {
-			// The public face serializes [] never null.
 			item.Refs = []dto.PublicCatalogRef{}
 		}
 		if item.Labels == nil {
@@ -371,22 +251,15 @@ func (s *PublicService) buildReleaseFeedItems(ctx context.Context, rows []releas
 		labelBlocks = append(labelBlocks, item.Labels)
 		out[i] = item
 	}
-	// One aggregate for the whole page's edition chips, so a chip on the timeline
-	// carries the same work_count the same chip carries on a work page.
 	if err := s.fillWorkLabelCounts(ctx, labelBlocks, f.NSFW); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// releaseFeedSource renders the FROM clause and the population predicates
-// shared by the meta and page queries. FIXED internal SQL — the only caller
-// input reaching it is bound as arguments.
 func releaseFeedSource(f ReleaseFeedFilter) (from string, where []string, args []any) {
 	from = `FROM catalog_release r JOIN catalog_work w ON w.id = r.work_id`
 
-	// The works-list population predicate on the parent work, verbatim, plus
-	// the release's own two conditions.
 	where = []string{
 		"r.deleted_at IS NULL", "w.deleted_at IS NULL", "w.status = ?", "w.medium_id = ?",
 		"r.released_y IS NOT NULL", "r.released_m IS NOT NULL",
@@ -410,12 +283,6 @@ func releaseFeedSource(f ReleaseFeedFilter) (from string, where []string, args [
 	args = append(args, f.kinds())
 
 	if len(f.Langs) > 0 {
-		// COALESCE, not a bare r.lang: the dlsite/getchu lanes create one store
-		// SKU per work and leave lang NULL, and a store SKU is by construction
-		// in its work's original language. Gating on the raw column would drop
-		// half the registry's releases from every lang= query. The ITEM still
-		// prints the raw r.lang (empty when unrecorded) — the coalesce is a
-		// matching rule, not a fabricated value.
 		where = append(where, "COALESCE(r.lang, w.olang) IN ?")
 		args = append(args, f.Langs)
 	}
@@ -433,11 +300,6 @@ func releaseFeedSource(f ReleaseFeedFilter) (from string, where []string, args [
 		}
 	}
 	if f.Platform != "" {
-		// The works-list platform predicate's RELEASE leg, verbatim: the primary
-		// platform column. (The works list unions a work-level leg on top; that
-		// grain has no meaning on a release row, and extra.platforms is a
-		// display list this face prints but does not filter on — same as the
-		// works list.)
 		where = append(where, "r.platform = ?")
 		args = append(args, f.Platform)
 	}
@@ -452,8 +314,6 @@ func releaseFeedSource(f ReleaseFeedFilter) (from string, where []string, args [
 	return from, where, args
 }
 
-// ReleaseFeedETag mints the timeline's weak validator from the cheap meta
-// triple. The population gates ride in the key — see PopulationKey.
 func ReleaseFeedETag(populationKey string, count int64, maxCreated time.Time, maxID int64) string {
 	return `W/"relfeed-` + populationKey + `-` +
 		strconv.FormatInt(count, 10) + `-` +

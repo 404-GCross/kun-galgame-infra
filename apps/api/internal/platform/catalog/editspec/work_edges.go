@@ -12,33 +12,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// work_edges.go — the four taxonomy EDGES of a work: tags, labels, engines and
-// series (03 定案 §2).
-//
-// One rule shapes all four: the wire payload is CATALOG IDS, never names. The
-// wiki family passed tid/eid/official-id keys of its own tables, and every
-// consumer that ever had to map those keys is a bridge this nativization
-// deletes. A picker on the product side searches the catalog vocabulary and
-// submits what it found.
-//
-// The second rule is the curated lane. Each Apply full-replaces only the rows
-// this face owns and leaves every importer row untouched:
-//
-//   - work_tag / work_engine carry source_id → the lane is source_id = curated;
-//   - work_label carries a nullable source_id → same, with NULL (pre-source
-//     rows) staying out of the lane;
-//   - series_member carries NO source column, so the lane is expressed one
-//     level up: a curated membership may only point at a CURATED series (see
-//     applySeriesIDs, where the restriction is a correctness requirement, not
-//     tidiness).
-//
-// Edges that duplicate an importer assertion insert as DO NOTHING rather than
-// erroring: "this work is by that label" being true from two directions is not
-// a conflict, and the human's intent (the edge exists) is already satisfied.
-
-// assertWorkExists is the existence check every facet Apply needs — the scalar
-// applies get it free from RowsAffected, a child-table write does not. Soft
-// deletes are scoped out by the model, so a deleted work is not found.
 func assertWorkExists(ctx context.Context, tx *gorm.DB, entityID int64) error {
 	var w catmodel.CatalogWork
 	err := tx.WithContext(ctx).Select("id").First(&w, entityID).Error
@@ -48,7 +21,6 @@ func assertWorkExists(ctx context.Context, tx *gorm.DB, entityID int64) error {
 	return err
 }
 
-// parseIDList parses a bare array of positive catalog ids.
 func parseIDList(v any, what string) ([]int64, error) {
 	arr, err := asArray(v, what)
 	if err != nil {
@@ -85,14 +57,6 @@ func validateTagIDs(v any) error    { _, err := parseIDList(v, "tag ids"); retur
 func validateEngineIDs(v any) error { _, err := parseIDList(v, "engine ids"); return err }
 func validateSeriesIDs(v any) error { _, err := parseIDList(v, "series ids"); return err }
 
-// ── tags ────────────────────────────────────────────────────────────────────
-
-// applyTagIDs replaces the curated tag edges. catalog_work_tag stores the tag
-// NAME (it is a verbatim folksonomy table: every source files its own spelling
-// and the canonical layer sits above it), so the ids the wire carries are
-// resolved through catalog_tag here — the single place that translation lives.
-// sexual rides along from the canonical row, because the safety axis is a
-// property of the tag, not of who attached it.
 func applyTagIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
 	ids, err := parseIDList(value, "tag ids")
 	if err != nil {
@@ -123,20 +87,12 @@ func applyTagIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 	for _, t := range tags {
 		rows = append(rows, catmodel.CatalogWorkTag{
 			WorkID: entityID, Name: t.Name, SourceID: curatedSourceID,
-			// count 0 = "no vote data", the honest value for a curated edge;
-			// spoiler 0 = not a spoiler, the same default every non-VNDB lane
-			// writes because no other source models the axis.
 			Sexual: t.Sexual,
 		})
 	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
 
-// loadTagIDs reads the curated lane back as ids by joining the names home
-// through catalog_tag. A curated row whose canonical tag was since renamed or
-// folded away resolves to nothing and drops out of the value — the snapshot
-// tells the truth about what is still addressable rather than carrying a name
-// the wire cannot express.
 func loadTagIDs(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
 	var ids []int64
 	if err := db.WithContext(ctx).Raw(`
@@ -149,9 +105,6 @@ func loadTagIDs(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
 	return int64sToAny(ids), nil
 }
 
-// ── labels ──────────────────────────────────────────────────────────────────
-
-// workLabel is one parsed label edge: which label, in what attribution role.
 type workLabel struct {
 	LabelID int64
 	Kind    int16
@@ -247,8 +200,6 @@ func loadLabels(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
 	return out, nil
 }
 
-// ── engines ─────────────────────────────────────────────────────────────────
-
 func applyEngineIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
 	ids, err := parseIDList(value, "engine ids")
 	if err != nil {
@@ -287,17 +238,6 @@ func loadEngineIDs(ctx context.Context, db *gorm.DB, workID int64) ([]any, error
 	return int64sToAny(ids), nil
 }
 
-// ── series ──────────────────────────────────────────────────────────────────
-
-// applySeriesIDs replaces the work's CURATED series memberships.
-//
-// catalog_series_member has no source column, so the lane is defined by the
-// SERIES: a curated membership may only point at a series whose own source is
-// curated. That is not a stylistic choice — the dlsite series importer
-// reconciles membership by "insert absent, delete stale", so a human-added
-// member of a dlsite series would be reaped on its next run. Attaching a work
-// to an upstream series is therefore a curation operation (the identity plane),
-// not a field edit, exactly as 03 定案 §0 line 3 partitions them.
 func applySeriesIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
 	ids, err := parseIDList(value, "series ids")
 	if err != nil {
@@ -346,11 +286,6 @@ func loadSeriesIDs(ctx context.Context, db *gorm.DB, workID int64) ([]any, error
 	return int64sToAny(ids), nil
 }
 
-// ── shared ──────────────────────────────────────────────────────────────────
-
-// assertEntitiesExist fails the merge when the payload references a vocabulary
-// row that is not there. A dangling edge is worse than a rejected edit: the
-// read face would render an entity with no name.
 func assertEntitiesExist(ctx context.Context, tx *gorm.DB, model any, ids []int64, field string) error {
 	if len(ids) == 0 {
 		return nil

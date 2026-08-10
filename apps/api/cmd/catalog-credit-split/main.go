@@ -1,29 +1,3 @@
-// catalog-credit-split detaches import-era contamination from
-// catalog_credit_name rows: the wrong source anchors come off, the inferred
-// person link is cleared, and an action=split revision records the pre-split
-// state (refs/proj/156-p2b-adjudication.md). Logic lives in
-// internal/jobs/creditsplit.
-//
-// Input is the adjudicated worklist — one JSON object per line:
-//
-//	{"credit_name_id":18996,"detach_sources":["eg"],"reason":"bare surname 井上"}
-//
-// --mode migrate is the wave-163 follow-up that pays off the debt a split
-// leaves (see internal/jobs/creditsplit/migrate.go): it pre-mints the
-// credit_name the next import would mint for the detached source id and moves
-// that source's credit rows onto it, so the staff member never appears twice on
-// a work page. Its worklist is one line per detached anchor:
-//
-//	{"credit_name_id":18996,"source":"vndb","external_id":"39609","name":"井上",
-//	 "lang":"ja","matched_by":"rule:vndb-staff-import","reason":"wave 156b split"}
-//
-// Dry-run is the DEFAULT and --dsn is REQUIRED, never defaulted: the rehearsal
-// copy locally (kun_catalog_rehearsal), the live catalog only in the acceptance
-// run. A second --apply writes nothing.
-//
-//	go run ./cmd/catalog-credit-split --worklist w.jsonl --receipts r.jsonl \
-//	    --dsn "host=localhost port=5432 user=postgres dbname=kun_catalog_rehearsal sslmode=disable"
-//	go run ./cmd/catalog-credit-split --apply --actor 1 --worklist w.jsonl --receipts r.jsonl --dsn ...
 package main
 
 import (

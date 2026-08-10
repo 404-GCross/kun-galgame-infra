@@ -1,16 +1,3 @@
-// import-store-anchors writes RELEASE-GRAIN store identity anchors (Steam /
-// DMM / DLsite) from VNDB's own curated release extlinks (wave 197). The store
-// id sits on the release VNDB itself anchors, so the ref lands EXACT — the
-// wave-167 getchu argument at three more storefronts.
-//
-// Prerequisites: `ingest-vndb --only extlinks` and `--only releases_extlinks`
-// must have staged those dump tables into the catalog DB, and catalog_source
-// must carry the steam / dmm / dlsite rows (seed).
-//
-// Dry-run is the DEFAULT; pass --apply to write.
-//
-//	go run ./cmd/import-store-anchors --dsn "$CATALOG"
-//	go run ./cmd/import-store-anchors --dsn "$CATALOG" --only steam --apply
 package main
 
 import (

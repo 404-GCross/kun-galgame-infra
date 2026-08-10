@@ -9,15 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Declarative subject-kind registration (step 06). A site (or an admin batch)
-// declares the kinds it wants and trust CONVERGES the registry to that
-// declaration, per kind: create the missing ones, update the ones whose provided
-// mutable fields drift, leave the matching ones untouched, and NEVER revive a
-// deprecated kind (reviving one is an admin decision — 章程 ruling 13). The same
-// convergence backs the S2S ensure face and the admin batch endpoint (site is
-// the only difference: derived from the client binding vs an explicit param).
-
-// EnsureOutcome is one kind's convergence verdict.
 type EnsureOutcome string
 
 const (
@@ -27,11 +18,6 @@ const (
 	EnsureDeprecatedSkipped EnsureOutcome = "deprecated_skipped"
 )
 
-// EnsureSubjectKindItem is one declared kind. The three optional fields are
-// SPARSE: a nil field is not part of the declaration, so an omitted field never
-// forces an update and never clobbers an admin-set value the caller does not know
-// about. On create, an omitted callback stays unset and notify_on_dismiss
-// defaults false.
 type EnsureSubjectKindItem struct {
 	Key             string
 	CallbackURL     *string
@@ -39,18 +25,11 @@ type EnsureSubjectKindItem struct {
 	NotifyOnDismiss *bool
 }
 
-// EnsureSubjectKindResult pairs a declared key with its convergence verdict. The
-// results preserve request order (duplicated keys included).
 type EnsureSubjectKindResult struct {
 	Key     string
 	Outcome EnsureOutcome
 }
 
-// EnsureSubjectKinds converges the registry to the declared kinds for one site.
-// actorID is the audit actor (nil = a system/S2S actor; an admin batch passes the
-// operator's id). Each kind is converged in its own transaction — matching the
-// single-row Create/Patch paths — so a partial batch on error is re-converged by
-// the next (idempotent) call. Results are returned in request order.
 func (s *RegistryService) EnsureSubjectKinds(ctx context.Context, actorID *int64, site string, items []EnsureSubjectKindItem) ([]EnsureSubjectKindResult, error) {
 	results := make([]EnsureSubjectKindResult, 0, len(items))
 	for _, item := range items {
@@ -63,7 +42,6 @@ func (s *RegistryService) EnsureSubjectKinds(ctx context.Context, actorID *int64
 	return results, nil
 }
 
-// ensureOneSubjectKind applies the convergence rules to a single (site, key).
 func (s *RegistryService) ensureOneSubjectKind(ctx context.Context, actorID *int64, site string, item EnsureSubjectKindItem) (EnsureOutcome, error) {
 	var outcome EnsureOutcome
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -89,7 +67,6 @@ func (s *RegistryService) ensureOneSubjectKind(ctx context.Context, actorID *int
 			return lerr
 		}
 
-		// A deprecated kind is never revived by a declaration.
 		if existing.IsDeprecated {
 			outcome = EnsureDeprecatedSkipped
 			return nil
@@ -124,8 +101,6 @@ func (s *RegistryService) ensureOneSubjectKind(ctx context.Context, actorID *int
 	return outcome, nil
 }
 
-// derefStr treats a nil *string as the empty string, so a NULL callback column
-// compares equal to a declared "" (no phantom update).
 func derefStr(p *string) string {
 	if p == nil {
 		return ""

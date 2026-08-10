@@ -13,14 +13,12 @@ func TestKeyset_ThreadList(t *testing.T) {
 	cleanTables(t)
 	ts := NewThreadService(testDB, NoopSink{})
 
-	// Five topics, opened in order → increasing last_posted_at.
 	var opened []int64
 	for i := range 5 {
 		th := openTopic(t, ts, "letmoe", 100, fmt.Sprintf("b%d", i), "x")
 		opened = append(opened, th.ID)
 	}
 
-	// Paginate the list (limit 2) and collect every id.
 	var got []int64
 	seen := map[int64]bool{}
 	cursor := repository.ThreadCursor{}
@@ -48,7 +46,6 @@ func TestKeyset_ThreadList(t *testing.T) {
 	if len(got) != len(opened) {
 		t.Fatalf("keyset should cover all threads without gaps: got %d of %d", len(got), len(opened))
 	}
-	// Newest activity first = reverse of open order.
 	for i := 0; i < len(opened); i++ {
 		want := opened[len(opened)-1-i]
 		if got[i] != want {
@@ -63,7 +60,6 @@ func TestKeyset_Posts(t *testing.T) {
 	ps := NewPostService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
-	// 12 replies by a TL1 author (exempt from the TL0 daily reply cap).
 	seedTrust(t, 800, model.TrustLevelBasic, 0)
 	const replies = 12
 	for i := range replies {
@@ -72,7 +68,6 @@ func TestKeyset_Posts(t *testing.T) {
 		}
 	}
 
-	// Paginate posts ascending by post_number (page size 5); expect 1..13.
 	var numbers []int32
 	var after int32 = 0
 	for {
@@ -91,7 +86,7 @@ func TestKeyset_Posts(t *testing.T) {
 			break
 		}
 	}
-	want := replies + 1 // opening post + replies
+	want := replies + 1
 	if len(numbers) != want {
 		t.Fatalf("expected %d posts, got %d", want, len(numbers))
 	}

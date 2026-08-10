@@ -7,9 +7,6 @@ import (
 	"api/internal/platform/editing"
 )
 
-// The proposal list's total (wave 162, 161 §6.P3-verdict STOP-4). The property
-// that matters is that it counts the FILTERED set and ignores the page limit —
-// a contribution statistic read off a capped page answers 50 forever.
 func TestListProposalsTotalIgnoresLimit(t *testing.T) {
 	e := newEngine(t)
 	createWidget(t, 1)
@@ -42,8 +39,6 @@ func TestListProposalsTotalIgnoresLimit(t *testing.T) {
 		t.Fatalf("total = %d, want 7 (the whole filtered set, not the page)", total)
 	}
 
-	// Every filter the list honours must narrow the total too, or "my merged
-	// edits" would count everyone's.
 	_, total, err = e.ListProposalsWithTotal(testCtx, editing.ProposalFilter{
 		EntityType: "test.widget", ProposerUID: mine, Status: -1, Limit: 1,
 	})
@@ -63,8 +58,6 @@ func TestListProposalsTotalIgnoresLimit(t *testing.T) {
 		t.Fatalf("merged total = %d, want 0 (nothing merged yet)", total)
 	}
 
-	// The unchanged ListProposals still returns the same page — the total is
-	// purely additive.
 	page, err := e.ListProposals(testCtx, editing.ProposalFilter{
 		EntityType: "test.widget", Status: -1, Limit: 2,
 	})

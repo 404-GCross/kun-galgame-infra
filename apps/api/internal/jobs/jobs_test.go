@@ -21,7 +21,6 @@ func TestScheduleNextDailyAt(t *testing.T) {
 	loc := time.UTC
 	s := Schedule{DailyAt: "03:00"}
 
-	// now before today's 03:00 → today 03:00
 	now := time.Date(2026, 5, 16, 1, 0, 0, 0, loc)
 	got := s.Next(now)
 	want := time.Date(2026, 5, 16, 3, 0, 0, 0, loc)
@@ -29,7 +28,6 @@ func TestScheduleNextDailyAt(t *testing.T) {
 		t.Fatalf("before fire: got %v want %v", got, want)
 	}
 
-	// now exactly at 03:00 → next day (strictly after)
 	now = time.Date(2026, 5, 16, 3, 0, 0, 0, loc)
 	got = s.Next(now)
 	want = time.Date(2026, 5, 17, 3, 0, 0, 0, loc)
@@ -37,7 +35,6 @@ func TestScheduleNextDailyAt(t *testing.T) {
 		t.Fatalf("at fire: got %v want %v", got, want)
 	}
 
-	// now after 03:00 → next day
 	now = time.Date(2026, 5, 16, 9, 30, 0, 0, loc)
 	got = s.Next(now)
 	want = time.Date(2026, 5, 17, 3, 0, 0, 0, loc)

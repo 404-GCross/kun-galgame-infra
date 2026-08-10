@@ -1,8 +1,3 @@
-// Package bangumicommon exposes a pinned, embedded snapshot of the
-// bangumi/common vocabulary files (staff positions, subject relations,
-// subject platforms). The catalog registry seeds read from here, so seeding
-// is self-contained and test-hermetic. Provenance and refresh procedure are
-// documented in data/README.md.
 package bangumicommon
 
 import (
@@ -15,7 +10,6 @@ import (
 //go:embed data/*.yml
 var dataFS embed.FS
 
-// Bangumi subject type IDs, the outer key of every vocabulary map.
 const (
 	SubjectTypeBook  = 1
 	SubjectTypeAnime = 2
@@ -24,16 +18,12 @@ const (
 	SubjectTypeReal  = 6
 )
 
-// StaffCategory groups staff positions on Bangumi's edit UI, e.g. game
-// positions under "发行类" (producer).
 type StaffCategory struct {
 	Order int    `yaml:"order"`
 	EN    string `yaml:"en"`
 	CN    string `yaml:"cn"`
 }
 
-// StaffPosition is one credit position, e.g. subject type 4 (game) position
-// 1001 = Developer/开发.
 type StaffPosition struct {
 	EN         string          `yaml:"en"`
 	CN         string          `yaml:"cn"`
@@ -41,8 +31,6 @@ type StaffPosition struct {
 	Categories []StaffCategory `yaml:"categories"`
 }
 
-// Relation is one subject↔subject relation type, e.g. subject type 4 (game)
-// relation 1 = Adaptation/改编.
 type Relation struct {
 	EN   string `yaml:"en"`
 	CN   string `yaml:"cn"`
@@ -50,8 +38,6 @@ type Relation struct {
 	Desc string `yaml:"desc"`
 }
 
-// Platform is one release platform of a subject type, e.g. game platform
-// 4 = PC.
 type Platform struct {
 	ID     int    `yaml:"id"`
 	Type   string `yaml:"type"`
@@ -59,8 +45,6 @@ type Platform struct {
 	Alias  string `yaml:"alias"`
 }
 
-// LoadStaffPositions returns staff positions keyed by subject type, then
-// position ID.
 func LoadStaffPositions() (map[int]map[int]StaffPosition, error) {
 	var doc struct {
 		Staffs map[int]map[int]StaffPosition `yaml:"staffs"`
@@ -74,8 +58,6 @@ func LoadStaffPositions() (map[int]map[int]StaffPosition, error) {
 	return doc.Staffs, nil
 }
 
-// LoadRelations returns subject relation types keyed by subject type, then
-// relation ID.
 func LoadRelations() (map[int]map[int]Relation, error) {
 	var doc struct {
 		Relations map[int]map[int]Relation `yaml:"relations"`
@@ -89,9 +71,6 @@ func LoadRelations() (map[int]map[int]Relation, error) {
 	return doc.Relations, nil
 }
 
-// LoadPlatforms returns platforms keyed by group, then platform ID. Groups
-// are strings because upstream mixes numeric subject types ("1", "2", "4",
-// "6") with the special groups "book_series" and "game_platforms".
 func LoadPlatforms() (map[string]map[int]Platform, error) {
 	var doc struct {
 		Platforms map[string]map[int]Platform `yaml:"platforms"`

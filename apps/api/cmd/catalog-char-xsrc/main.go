@@ -1,26 +1,3 @@
-// catalog-char-xsrc builds the wave-177 cross-source character duplicate
-// candidates (refs/proj/177): live single-source characters co-resident on a
-// work with a character of a different single source, whose names differ only
-// by transliteration / itaiji / spelling — the pair shape the roster-era exact
-// matcher missed (硯川・e・涙香 vs 硯川・ユーフラジー・涙香).
-//
-// Three evidence tiers, ALL adjudicated by the LLM (never auto-merged here):
-//
-//	1  folded-name equality (NFKC + separators + itaiji, aliases expanded)
-//	2  voice-actor bridge: the same credit name voices both sides on the
-//	   shared work (bucket character_cv, the wave-156 calibrated lane)
-//	3  name similarity (shared segment / contiguous LCS) without a CV bridge
-//
-// The binary has two DB-free-ends: -mode packets talks to the database and
-// writes pairs.jsonl (join metadata) + packets.jsonl (evidence packets for
-// cmd/catalog-adjudicate); -mode emit joins the verdicts back and writes the
-// worklist for cmd/catalog-dedup-batch plus the human-review tail. The merge
-// itself always runs through the dedup-batch proposal path
-// (-note "rule:catalog-dedup step-177").
-//
-//	go run ./cmd/catalog-char-xsrc -mode packets -pairs pairs.jsonl -packets packets.jsonl
-//	go run ./cmd/catalog-char-xsrc -mode emit -pairs pairs.jsonl -verdicts verdicts.jsonl \
-//	    -worklist worklist.jsonl -review review.txt
 package main
 
 import (
@@ -108,8 +85,6 @@ func main() {
 	}
 }
 
-// runPackets is the database end: compute the tiered pairs, then write the
-// join metadata and the rendered evidence packets side by side.
 func runPackets(db *gorm.DB, pairsPath, packetsPath string) error {
 	pairs, info, err := buildPairs(db)
 	if err != nil {

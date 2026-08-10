@@ -22,15 +22,11 @@ const statusLabel = (s: string) => IMAGE_REVIEW_STATUS_MAP[s]?.label ?? s
 
 const shortHash = (h: string) => `${h.slice(0, 8)}…${h.slice(-4)}`
 
-// Variant chip label: dims from constants if known, else just the name.
-// Falls back gracefully if a new YAML variant is deployed before this
-// constants file is updated (chip still renders, just without dims).
 const variantDims = (name: string) => {
   const d = IMAGE_VARIANT_DIMENSIONS[name]
   return d ? `${d.w}×${d.h}` : ''
 }
 
-// Reject-reason flow via KunModal (replaces native prompt()).
 const rejectOpen = ref(false)
 const rejectHash = ref('')
 const rejectReason = ref('')
@@ -48,10 +44,6 @@ const confirmReject = () => {
 </script>
 
 <template>
-  <!-- Whole table is one lightbox gallery: clicking any row's thumbnail
-       opens the viewer at that row, with ←/→ flipping through the entire
-       current page. The Gallery's display:contents wrapper sits OUTSIDE
-       the table so it doesn't disturb table layout semantics. -->
   <KunLightboxGallery>
   <div class="overflow-x-auto rounded-xl bg-content1 shadow-sm">
     <table class="w-full min-w-[56rem] text-sm">
@@ -71,11 +63,6 @@ const confirmReject = () => {
           class="border-t border-default-200 align-top"
         >
           <td class="px-3 py-2">
-            <!-- Item.src = the original (full-resolution) URL; the
-                 lightbox viewer needs the full image for zoom/pan
-                 quality. The thumbnail inside the slot keeps using
-                 the smallest available variant (100 → mini → main)
-                 for cheap list-page rendering. -->
             <KunLightboxGalleryItem :src="item.url" :alt="item.hash">
               <img
                 :src="item.variant_urls['100'] || item.variant_urls['mini'] || item.url"

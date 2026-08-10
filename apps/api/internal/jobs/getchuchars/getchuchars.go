@@ -18,34 +18,27 @@ import (
 const (
 	entityTypeRelease = int16(6)
 	linkKindExact     = int16(0)
-	// langJa — the profile prose is Japanese; Getchu has no other language.
-	langJa = "ja"
-	// provenanceSource is the key recorded in catalog_character.field_provenance,
-	// matching the vocabulary wave 81 established there ("vndb", "bangumi", …).
-	provenanceSource = "getchu"
+	langJa            = "ja"
+	provenanceSource  = "getchu"
 )
 
-// Opts configures a run. Both DSNs are explicit and never defaulted: this job
-// reads a staging database and writes the live catalog, and a bare invocation
-// must not be able to guess either.
 type Opts struct {
-	DSN       string // catalog
-	GetchuDSN string // the crawler's staging database
+	DSN       string
+	GetchuDSN string
 	Apply     bool
 	Limit     int
 }
 
-// Stats reports one run.
 type Stats struct {
 	Match MatchStats
 
 	IntroWritten int
-	IntroExists  int // the character already has a ja intro (fill-missing)
+	IntroExists  int
 	IntroNoText  int
-	AttrsWritten int // characters that gained at least one attribute
-	AttrFields   int // individual columns filled
-	AttrSkipped  int // every field this row could offer was already set
-	AttrAdopted  int // fields this lane had written before it recorded provenance
+	AttrsWritten int
+	AttrFields   int
+	AttrSkipped  int
+	AttrAdopted  int
 	Conflict     int
 	Errors       int
 }
@@ -60,7 +53,6 @@ func (s Stats) String() string {
 		s.AttrsWritten, s.AttrFields, s.AttrAdopted, s.AttrSkipped, s.Conflict, s.Errors)
 }
 
-// Run matches and (in apply mode) writes.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" || opts.GetchuDSN == "" {
 		return nil, fmt.Errorf("--dsn and --getchu-dsn are both REQUIRED; refusing to guess either")
@@ -99,10 +91,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// writeIntro fills a MISSING ja intro. Fill-missing across all sources, not
-// just this one: wave 120 already gave many of these characters an EG or
-// Bangumi intro, and the read face should not surface two Japanese intros for
-// one character.
 func writeIntro(ctx context.Context, db *gorm.DB, source int16, c Candidate, apply bool, st *Stats) {
 	text := strings.TrimSpace(c.Profile)
 	if text == "" {
@@ -121,7 +109,7 @@ func writeIntro(ctx context.Context, db *gorm.DB, source int16, c Candidate, app
 		return
 	}
 	if !apply {
-		st.IntroWritten++ // the forecast count; nothing is written
+		st.IntroWritten++
 		return
 	}
 	res := db.WithContext(ctx).Exec(`
@@ -138,22 +126,6 @@ func writeIntro(ctx context.Context, db *gorm.DB, source int16, c Candidate, app
 	}
 }
 
-// writeAttrs fills the typed columns wave 81 built, using THAT wave's parsers
-// (charattrs.Parse*) rather than a private copy — one set of rules for the
-// sentinels, the ranges and the blood vocabulary.
-//
-// Fill-missing per FIELD: the current row is read first and only genuinely NULL
-// columns are proposed. Two things depend on reading first rather than leaning
-// on `coalesce(col, ?)`:
-//
-//   - the counters mean something. coalesce updates the row whatever happens,
-//     so RowsAffected is 1 even when nothing changed, and a second pass claimed
-//     to have written the same 10,166 fields again. A fill-missing lane must be
-//     able to show a zero second pass.
-//   - field_provenance can be recorded for exactly the fields this source
-//     supplied. Wave 81 made that column the record of which upstream stands
-//     behind each attribute (187,377 characters carry it); writing values
-//     without it would leave getchu-sourced heights unattributable.
 func writeAttrs(ctx context.Context, db *gorm.DB, source string, c Candidate, apply bool, st *Stats) {
 	if len(c.Attrs) == 0 {
 		return
@@ -206,13 +178,6 @@ func writeAttrs(ctx context.Context, db *gorm.DB, source string, c Candidate, ap
 		return
 	}
 	fill := map[string]any{}
-	// adopt: a column this source proposes that is ALREADY set to exactly this
-	// value and carries no provenance entry. That is the signature of a value
-	// this lane itself wrote before it recorded provenance — the first
-	// production run filled 10,166 fields that way. Claiming them back is
-	// self-healing and cannot mis-attribute: a field another source filled
-	// carries that source's entry, and a field with a different value is not
-	// ours to claim.
 	var adopt []string
 	for col, v := range proposed {
 		switch {
@@ -228,8 +193,6 @@ func writeAttrs(ctx context.Context, db *gorm.DB, source string, c Candidate, ap
 		st.AttrSkipped++
 		return
 	}
-	// Counted once, on the single path both modes pass through: an adopt-only
-	// row went through two increments when the dry branch had its own.
 	st.AttrAdopted += len(adopt)
 	if !apply {
 		if len(fill) > 0 {
@@ -261,14 +224,12 @@ func writeAttrs(ctx context.Context, db *gorm.DB, source string, c Candidate, ap
 		slog.Warn("write character attrs", "character", c.CharacterID, "err", res.Error)
 		return
 	}
-	if n := len(fill) - 2; n > 0 { // minus field_provenance and updated_at
+	if n := len(fill) - 2; n > 0 {
 		st.AttrsWritten++
 		st.AttrFields += n
 	}
 }
 
-// sameValue compares a persisted column against a proposed one across the
-// int16/string shapes this lane writes.
 func sameValue(cur any, proposed any) bool {
 	switch c := cur.(type) {
 	case int16:
@@ -282,7 +243,6 @@ func sameValue(cur any, proposed any) bool {
 	}
 }
 
-// currentAttrs reads the columns this lane may fill plus the provenance doc.
 func currentAttrs(ctx context.Context, db *gorm.DB, id int64) (map[string]any, map[string]json.RawMessage, error) {
 	var row struct {
 		HeightCM      *int16          `gorm:"column:height_cm"`
@@ -345,7 +305,4 @@ func closeDB(db *gorm.DB) {
 	}
 }
 
-// The intro write is raw SQL rather than a GORM Create because the table's
-// identity PK uses `default:(-)` and the fill-missing check has already run;
-// this reference keeps the model discoverable from here.
 var _ = model.CatalogCharacterIntro{}

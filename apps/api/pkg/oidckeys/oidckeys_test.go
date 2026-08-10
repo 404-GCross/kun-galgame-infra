@@ -9,8 +9,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// TestGenerateEncryptSignRoundtrip exercises the whole Phase-0 crypto path for
-// both algs: generate → encrypt private → decrypt → parse → sign a JWT → verify.
 func TestGenerateEncryptSignRoundtrip(t *testing.T) {
 	kek := DeriveKEK("test-kek-secret")
 	cases := []struct {
@@ -69,7 +67,6 @@ func TestGenerateEncryptSignRoundtrip(t *testing.T) {
 	}
 }
 
-// TestThumbprintDeterministic asserts the kid is a stable RFC 7638 thumbprint.
 func TestThumbprintDeterministic(t *testing.T) {
 	km, err := Generate(AlgES256)
 	if err != nil {
@@ -84,7 +81,6 @@ func TestThumbprintDeterministic(t *testing.T) {
 	}
 }
 
-// TestDecryptWrongKEKFails confirms AES-GCM rejects a wrong KEK (no silent pass).
 func TestDecryptWrongKEKFails(t *testing.T) {
 	km, err := Generate(AlgES256)
 	if err != nil {

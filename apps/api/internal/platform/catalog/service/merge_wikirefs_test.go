@@ -1,6 +1,3 @@
-// merge_wikirefs_test.go — the wiki id-map exemption from the merge's
-// anti-double-exact demotion (A2-0 §4c-1). Integration against
-// kun_catalog_test (service_test.go TestMain).
 package service
 
 import (
@@ -12,10 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// wikiSourceID resolves the curated (ex-galgame_wiki) registry source id.
-// Looked up through the same dual-read key list production uses, so the test
-// passes on either side of the wave-161 rename rather than pinning one
-// spelling and quietly failing on the day the other lands.
 func wikiSourceID(t *testing.T) int16 {
 	t.Helper()
 	var rows []struct {
@@ -36,13 +29,6 @@ func wikiSourceID(t *testing.T) int16 {
 	return id
 }
 
-// TestMergeKeepsWikiIdMapRefsExact pins both halves of the exemption in one
-// merge: two labels each carrying their own wiki oid converge, and BOTH oids
-// must stay exact on the survivor — a wiki id is an address-book entry, and N
-// old ids legitimately point at one surviving entity (that is what a merge
-// MEANS for the redirect promise). Meanwhile two competing vndb exacts on the
-// same pair still demote, which is the doctrine the exemption carves out of,
-// not one it replaces.
 func TestMergeKeepsWikiIdMapRefsExact(t *testing.T) {
 	cleanTables(t)
 	ctx := t.Context()
@@ -53,11 +39,8 @@ func TestMergeKeepsWikiIdMapRefsExact(t *testing.T) {
 	source := &model.CatalogLabel{DisplayName: "Merged Brand", Kind: model.LabelKindGameBrand}
 	require.NoError(t, testDB.Create(source).Error)
 
-	// The wiki id map: one oid per side. Both must survive as exact.
 	addExternalRef(t, model.EntityTypeLabel, target.ID, wikiSrc, "1001", model.LinkKindExact)
 	addExternalRef(t, model.EntityTypeLabel, source.ID, wikiSrc, "1002", model.LinkKindExact)
-	// An upstream source with the same double-exact shape: the regression the
-	// exemption must NOT weaken — competing vndb ids are a real contradiction.
 	addExternalRef(t, model.EntityTypeLabel, target.ID, srcVNDB, "p111", model.LinkKindExact)
 	addExternalRef(t, model.EntityTypeLabel, source.ID, srcVNDB, "p222", model.LinkKindExact)
 
@@ -84,9 +67,6 @@ func TestMergeKeepsWikiIdMapRefsExact(t *testing.T) {
 	}, refs, "both wiki oids must stay exact; the competing vndb exacts must still demote")
 }
 
-// TestMergeKeepsWikiGidRefsExactOnWorks is the same exemption on the WORK
-// family — the gid map behind /galgame/<gid>, which is where the redirect
-// promise is most load-bearing (the single biggest live URL space).
 func TestMergeKeepsWikiGidRefsExactOnWorks(t *testing.T) {
 	cleanTables(t)
 	ctx := t.Context()

@@ -9,7 +9,6 @@ import (
 	"api/internal/platform/trust/model"
 )
 
-// getScan reloads a scan-result row.
 func getScan(t *testing.T, id int64) *model.TrustScanResult {
 	t.Helper()
 	var r model.TrustScanResult
@@ -19,8 +18,6 @@ func getScan(t *testing.T, id int64) *model.TrustScanResult {
 	return &r
 }
 
-// TestScanIngestPersistsPending: a valid scan lands status=pending / mode=shadow,
-// with the verdict fields NULL and channel ” (an accept-type surface — no scoring).
 func TestScanIngestPersistsPending(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
@@ -52,7 +49,6 @@ func TestScanIngestPersistsPending(t *testing.T) {
 	if row.AuthorID == nil || *row.AuthorID != author {
 		t.Fatalf("author_id = %v, want %d", row.AuthorID, author)
 	}
-	// Verdict fields untouched at intake.
 	if row.Flagged != nil || row.Score != nil || row.ScoredAt != nil || row.Channel != "" {
 		t.Fatalf("intake must leave verdict fields empty: flagged=%v score=%v scored_at=%v channel=%q",
 			row.Flagged, row.Score, row.ScoredAt, row.Channel)
@@ -62,12 +58,8 @@ func TestScanIngestPersistsPending(t *testing.T) {
 	}
 }
 
-// TestScanIngestRegistryFailLoud: an unregistered (site, subject_kind) is
-// rejected — the same tenant fail-loud as report intake (invariant 11). No row
-// is written.
 func TestScanIngestRegistryFailLoud(t *testing.T) {
 	cleanTables(t)
-	// Deliberately do NOT register the kind.
 	svc := NewScanService(testDB, nil)
 	_, err := svc.Ingest(context.Background(), ScanParams{
 		Site: tSite, SubjectKind: "unregistered_kind", SubjectID: tSubj, Text: "x",
@@ -82,7 +74,6 @@ func TestScanIngestRegistryFailLoud(t *testing.T) {
 	}
 }
 
-// TestScanIngestDeprecatedKindFailLoud: a deprecated kind is also rejected.
 func TestScanIngestDeprecatedKindFailLoud(t *testing.T) {
 	cleanTables(t)
 	kind := model.TrustSubjectKind{Site: tSite, Key: tKind, IsDeprecated: true}
@@ -98,14 +89,11 @@ func TestScanIngestDeprecatedKindFailLoud(t *testing.T) {
 	}
 }
 
-// TestScanIngestTruncation: text over the rune cap is truncated (rune-safe) and
-// the truncation is reported + stored at exactly the cap length.
 func TestScanIngestTruncation(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
 	svc := NewScanService(testDB, nil)
 
-	// Multibyte runes so a byte-based cut would split a glyph; assert rune count.
 	long := strings.Repeat("あ", maxScanTextRunes+500)
 	res, err := svc.Ingest(context.Background(), ScanParams{
 		Site: tSite, SubjectKind: tKind, SubjectID: "long", Text: long,
@@ -122,8 +110,6 @@ func TestScanIngestTruncation(t *testing.T) {
 	}
 }
 
-// TestScanRepeatableNotDeduped: the same subject scanned twice yields TWO rows
-// (scan events are naturally repeatable — every edit is one scan).
 func TestScanRepeatableNotDeduped(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
@@ -141,10 +127,6 @@ func TestScanRepeatableNotDeduped(t *testing.T) {
 	}
 }
 
-// --- step 04: site three-state + allowlist ---------------------------------
-
-// 04①: a non-forwarder caller with NO wire site → the bound site is used (the
-// pre-step-04 behaviour, unchanged; the allowlist is never consulted).
 func TestScanSiteBoundWhenNoWire(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
@@ -162,8 +144,6 @@ func TestScanSiteBoundWhenNoWire(t *testing.T) {
 	}
 }
 
-// 04②: a non-forwarder caller that DOES carry a wire site → 403, no row written
-// (the allowlist gate fires before the registry check).
 func TestScanWireSiteRejectedForNonForwarder(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, "letmoe", tKind, nil, nil)
@@ -183,8 +163,6 @@ func TestScanWireSiteRejectedForNonForwarder(t *testing.T) {
 	}
 }
 
-// 04③: an allow-listed forwarder carrying a wire site → the row lands under the
-// WIRE site (not the bound site), provided that site's kind is registered.
 func TestScanWireSiteAcceptedForForwarder(t *testing.T) {
 	cleanTables(t)
 	const wireSite = "letmoe"
@@ -203,11 +181,8 @@ func TestScanWireSiteAcceptedForForwarder(t *testing.T) {
 	}
 }
 
-// 04④: an allow-listed forwarder carrying a wire site whose (site, kind) is NOT
-// registered → 422 (the registry fail-loud is the counter to a forged site).
 func TestScanWireSiteUnregisteredKind(t *testing.T) {
 	cleanTables(t)
-	// tKind registered for tSite only — NOT for the wire site.
 	registerKind(t, tSite, tKind, nil, nil)
 	svc := NewScanService(testDB, allowFwd())
 
@@ -220,8 +195,6 @@ func TestScanWireSiteUnregisteredKind(t *testing.T) {
 	}
 }
 
-// 04⑤: a forwarder is NOT forced to carry a site — with no wire site it derives
-// from the binding exactly like any other caller.
 func TestScanForwarderNoWireBinds(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)

@@ -12,8 +12,6 @@ import (
 	"api/pkg/trustclient"
 )
 
-// fakeScanner records Scan calls and signals each on a channel so the async
-// ScanningSink goroutine can be awaited deterministically (mirrors fakeForwarder).
 type fakeScanner struct {
 	mu    sync.Mutex
 	calls []trustclient.ScanRequest
@@ -55,7 +53,6 @@ func (f *fakeScanner) last() trustclient.ScanRequest {
 	return f.calls[len(f.calls)-1]
 }
 
-// waitScan blocks until the fake records a call, or fails the test after 2s.
 func waitScan(t *testing.T, f *fakeScanner) {
 	t.Helper()
 	select {
@@ -65,13 +62,10 @@ func waitScan(t *testing.T, f *fakeScanner) {
 	}
 }
 
-// 06: switch off (nil scanner) → the sink never dials, even though a usable
-// client (the fake here) exists. main.go passes nil when KUN_TRUST_SCAN_ENABLED
-// is false; this pins the sink half of that gate.
 func TestScanDisabledZeroDial(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()
-	fake := newFakeScanner() // represents the still-present trust client
+	fake := newFakeScanner()
 	scanSvc := NewScanService(testDB, nil)
 	if scanSvc.Enabled() {
 		t.Fatal("nil scanner must report disabled")
@@ -94,15 +88,12 @@ func TestScanDisabledZeroDial(t *testing.T) {
 	}
 }
 
-// 07: a visible reply (post.created) → exactly one Scan carrying kind=community_post,
-// subject_id=post id, author=the post author (== ActorID), text=raw (no title prefix).
 func TestScanReplyPayload(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()
 	fake := newFakeScanner()
 	scanSvc := NewScanService(testDB, fake)
 	sink := NewScanningSink(NoopSink{}, scanSvc)
-	// Opening post via a NoopSink so only the reply scans.
 	ts := NewThreadService(testDB, NoopSink{})
 	ps := NewPostService(testDB, sink)
 
@@ -134,7 +125,6 @@ func TestScanReplyPayload(t *testing.T) {
 	}
 }
 
-// 08: a first post (post_number==1) → text is `title + "\n\n" + raw`.
 func TestScanFirstPostTitlePrefix(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()
@@ -161,7 +151,6 @@ func TestScanFirstPostTitlePrefix(t *testing.T) {
 	}
 }
 
-// 09: post.edited → a second Scan carrying the NEW raw body.
 func TestScanOnEdit(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()
@@ -177,12 +166,12 @@ func TestScanOnEdit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reply: %v", err)
 	}
-	waitScan(t, fake) // the create scan
+	waitScan(t, fake)
 
 	if _, err := ps.Edit(ctx, EditParams{PostID: post.ID, AuthorID: 200, BodyRaw: "edited body"}); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	waitScan(t, fake) // the edit scan
+	waitScan(t, fake)
 	if fake.count() != 2 {
 		t.Fatalf("expected create+edit scans (2), got %d", fake.count())
 	}
@@ -195,8 +184,6 @@ func TestScanOnEdit(t *testing.T) {
 	}
 }
 
-// 10: a Scanner error must NEVER break the write path — create and edit both
-// still succeed and persist (ruling 7 hard assertion).
 func TestScanErrorNeverBreaksWrite(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()
@@ -213,13 +200,13 @@ func TestScanErrorNeverBreaksWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reply must succeed despite scan error: %v", err)
 	}
-	waitScan(t, fake) // create scan attempted (and failed in the goroutine)
+	waitScan(t, fake)
 
 	edited, err := ps.Edit(ctx, EditParams{PostID: post.ID, AuthorID: 200, BodyRaw: "edited"})
 	if err != nil {
 		t.Fatalf("edit must succeed despite scan error: %v", err)
 	}
-	waitScan(t, fake) // edit scan attempted (and failed)
+	waitScan(t, fake)
 
 	if edited.ContentRaw != "edited" {
 		t.Fatalf("returned post raw = %q, want edited", edited.ContentRaw)
@@ -229,17 +216,12 @@ func TestScanErrorNeverBreaksWrite(t *testing.T) {
 	}
 }
 
-// 11: the ForwardingSink regression — with both decorators nested, a held reply
-// (which emits post.created AND review.enqueued) drives exactly one scan (from
-// post.created) and exactly one forward (from review.enqueued); the two sinks
-// consume disjoint events and never cross.
 func TestScanForwardSinkDisjoint(t *testing.T) {
 	cleanTables(t)
 	fakeScan := newFakeScanner()
 	fakeFwd := newFakeForwarder()
 	scanSvc := NewScanService(testDB, fakeScan)
 	fwdSvc := NewForwardService(testDB, fakeFwd)
-	// Noop → Forwarding → Scanning (order is irrelevant — disjoint kinds).
 	sink := NewScanningSink(NewForwardingSink(NoopSink{}, fwdSvc), scanSvc)
 	ts := NewThreadService(testDB, NoopSink{})
 	ps := NewPostService(testDB, sink)

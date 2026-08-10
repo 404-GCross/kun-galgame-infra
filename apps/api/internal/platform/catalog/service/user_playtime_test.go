@@ -1,9 +1,3 @@
-// user_playtime_test.go — the playtime face's rules that hold without a
-// database: what a report must look like to be stored at all.
-//
-// The folding rules (MAX across clients, finished-outranks-everything) and the
-// aggregate's thresholds need rows, so they live with the DB-backed suites;
-// what is pinned here is the gate every write passes through first.
 package service
 
 import (
@@ -26,15 +20,11 @@ func TestValidateReport(t *testing.T) {
 		want error
 	}{
 		{"a well-formed report", func(*PlaytimeReport) {}, nil},
-		// Zero is legal: "I own it and have not played it" is a fact a manager
-		// legitimately reports, and it simply never clears the aggregate floor.
 		{"zero minutes", func(r *PlaytimeReport) { r.Minutes = 0 }, nil},
 		{"exactly the ceiling", func(r *PlaytimeReport) { r.Minutes = model.PlaytimeMinutesMax }, nil},
 		{"past the ceiling", func(r *PlaytimeReport) { r.Minutes = model.PlaytimeMinutesMax + 1 }, ErrPlaytimeMinutesRange},
 		{"negative minutes", func(r *PlaytimeReport) { r.Minutes = -1 }, ErrPlaytimeMinutesRange},
 		{"no user", func(r *PlaytimeReport) { r.ActorUID = 0 }, ErrPlaytimeActorRequired},
-		// The client is the third key member and the handle a bad reporter is
-		// excluded by; a report that cannot name one has nowhere to live.
 		{"no client", func(r *PlaytimeReport) { r.ClientID = "" }, ErrPlaytimeClientRequired},
 		{"a status outside the vocabulary", func(r *PlaytimeReport) { r.Status = 9 }, ErrPlaytimeBadStatus},
 	}
@@ -52,8 +42,6 @@ func TestValidateReport(t *testing.T) {
 	}
 }
 
-// Every status the wire can name must survive the gate — otherwise a client
-// following the published enum gets a 400 for a legal word.
 func TestValidateReportAcceptsEveryStatus(t *testing.T) {
 	now := time.Now()
 	for _, st := range []int16{

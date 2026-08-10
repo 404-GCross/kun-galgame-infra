@@ -10,42 +10,20 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// TokenClaims represents the claims in a JWT token.
-//
-// Field naming: `ID` (integer PK in OAuth users table) is the FK
-// invariant shared across kungal/moyu/wiki. The `sub` claim carries
-// the UUID per OAuth/OIDC spec; consumers can pick either. The legacy
-// `uid` claim was renamed to `id` in v0.3.0 — all downstream verifiers
-// must read `id` and stop reading `uid`.
 type TokenClaims struct {
-	UserUUID string `json:"sub"`
-	ID       uint   `json:"id"`
-	// Email is gated on the OIDC `email` scope (service.EmailForScope) and is
-	// therefore omitted from tokens whose grant didn't include it — the same rule
-	// /oauth/userinfo and /auth/me apply. Historically it shipped
-	// unconditionally, which made those filters bypassable by base64-decoding the
-	// access token. Consumers must not treat it as a profile source: request the
-	// scope and read /oauth/userinfo, which also reflects revocation and bans.
-	Email  string   `json:"email,omitempty"`
-	Name   string   `json:"name"`
-	Scope  string   `json:"scope,omitempty"`
-	SiteID uint     `json:"site_id,omitempty"`
-	Role   int      `json:"role,omitempty"`
-	Roles  []string `json:"roles,omitempty"`
-	// SiteRoles are the caller's site-scoped roles for the issuing client's
-	// site only (docs/integration/oauth/12-site-roles.md). A flat string array,
-	// never containing user/admin/ren. Consumers union it with Roles before
-	// checking capabilities. Omitted when the user has no grants on this site.
-	// Carried identically on the HS256 and ES256 wire (the signer serializes
-	// this whole struct), so no per-mode handling is needed.
+	UserUUID  string   `json:"sub"`
+	ID        uint     `json:"id"`
+	Email     string   `json:"email,omitempty"`
+	Name      string   `json:"name"`
+	Scope     string   `json:"scope,omitempty"`
+	SiteID    uint     `json:"site_id,omitempty"`
+	Role      int      `json:"role,omitempty"`
+	Roles     []string `json:"roles,omitempty"`
 	SiteRoles []string `json:"site_roles,omitempty"`
-	// ClientID is the OAuth client the token was issued to (RFC 9068 §2.2).
-	// Empty for first-party /auth/login tokens, which have no client.
-	ClientID string `json:"client_id,omitempty"`
+	ClientID  string   `json:"client_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
-// GenerateAccessToken generates a new access token
 func GenerateAccessToken(secret string, claims TokenClaims, expiry time.Duration) (string, error) {
 	jtiBytes := make([]byte, 16)
 	if _, err := rand.Read(jtiBytes); err != nil {
@@ -63,12 +41,6 @@ func GenerateAccessToken(secret string, claims TokenClaims, expiry time.Duration
 	return token.SignedString([]byte(secret))
 }
 
-// GenerateOpaqueRefreshToken returns a high-entropy opaque refresh token (32
-// random bytes, base64url). Refresh tokens are matched by DB value on both
-// refresh paths (never signature-verified — ParseRefreshToken has no callers),
-// so an opaque string is the correct, spec-clean form. Old JWT refresh tokens
-// keep working because the lookup is by value, not format.
-// Design: docs/auth/03-oidc-standardization-design.md §5.3.
 func GenerateOpaqueRefreshToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -77,12 +49,6 @@ func GenerateOpaqueRefreshToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// GenerateRefreshToken generates a new refresh token.
-// Each token includes a unique jti (JWT ID) to prevent collisions
-// when multiple tokens are issued for the same user within the same second.
-//
-// Deprecated: refresh tokens are DB-looked-up, not signature-verified; use
-// GenerateOpaqueRefreshToken. Kept only until all mint sites migrate.
 func GenerateRefreshToken(secret string, userUUID string, expiry time.Duration) (string, error) {
 	jtiBytes := make([]byte, 16)
 	if _, err := rand.Read(jtiBytes); err != nil {
@@ -101,7 +67,6 @@ func GenerateRefreshToken(secret string, userUUID string, expiry time.Duration) 
 	return token.SignedString([]byte(secret))
 }
 
-// ParseToken parses and validates a JWT token
 func ParseToken(tokenString, secret string) (*TokenClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -120,7 +85,6 @@ func ParseToken(tokenString, secret string) (*TokenClaims, error) {
 	return nil, jwt.ErrSignatureInvalid
 }
 
-// ParseRefreshToken parses and validates a refresh token
 func ParseRefreshToken(tokenString, secret string) (string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {

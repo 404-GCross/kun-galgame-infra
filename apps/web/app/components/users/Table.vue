@@ -17,15 +17,9 @@ const emit = defineEmits<{
 
 const cdnBase = useRuntimeConfig().public.imageCdnBase as string
 
-// Display avatars via the hash → legacy fallback chain so newly migrated /
-// uploaded users see the image_service URL while old ones keep working.
 const avatarSrc = (user: User) =>
   resolveAvatarUrl(user, { cdnBase, variant: '256' }, '')
 
-// Destructive ops (ban / anonymize / force-logout) are refused server-side on
-// admins (adminProtected) — there's no superadmin tier, admin is the top. Hide
-// those actions for admin targets so we don't offer buttons that always 403.
-// Unban / moemoepoint / avatar stay available (server allows them on admins).
 const isAdmin = (user: User) => !!user.roles?.includes('admin')
 </script>
 
@@ -80,10 +74,7 @@ const isAdmin = (user: User) => !!user.roles?.includes('admin')
             </div>
           </td>
           <td class="whitespace-nowrap px-6 py-4 text-default-400">
-            <!-- Email is ren-only; the API redacts it to "" for non-ren admins. -->
             {{ user.email || '——' }}
-            <!-- original_email is the pre-anonymize address, returned only to ren
-                 for anonymized users — so this line shows up for ren alone. -->
             <div v-if="user.original_email" class="text-default-300 text-xs">
               原邮箱：{{ user.original_email }}
             </div>
@@ -131,9 +122,6 @@ const isAdmin = (user: User) => !!user.roles?.includes('admin')
                   <KunIcon name="lucide:eye" class="size-4" />
                   查看详情
                 </button>
-                <!-- Anonymized users have status=1 too, so gate ban/unban on
-                     !is_anonymized; anonymized is a terminal state. Ban is also
-                     hidden for admins (server refuses it). -->
                 <button
                   v-if="user.status === 0 && !user.is_anonymized && !isAdmin(user)"
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"
@@ -151,8 +139,6 @@ const isAdmin = (user: User) => !!user.roles?.includes('admin')
                   解除封禁
                 </button>
 
-                <!-- Anonymize: available unless already anonymized (terminal,
-                     irreversible PII scrub) or an admin (server refuses it). -->
                 <button
                   v-if="!user.is_anonymized && !isAdmin(user)"
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"

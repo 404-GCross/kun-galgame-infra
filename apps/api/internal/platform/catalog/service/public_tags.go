@@ -1,6 +1,3 @@
-// public_tags.go — the canonical-tag detail endpoint (GET /v1/catalog/tags/{id},
-// doc 106 G5) over the step-74/87/90 vocabulary (catalog_tag +
-// catalog_tag_source_map).
 package service
 
 import (
@@ -10,11 +7,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// TagDetail projects one canonical tag. found=false → 404 on an unknown id.
-// include=works attaches the works carrying any source tag mapped to this
-// canonical tag (DISTINCT works via catalog_tag_source_map ⋈ catalog_work_tag,
-// scoped to the LIVE galgame fetchable set; offset paging, r18 briefs dropped
-// unless nsfw — the labels/{id} works convention).
 func (s *PublicService) TagDetail(ctx context.Context, id int64, withWorks, nsfw bool, limit, offset int) (dto.PublicTagDetail, bool, error) {
 	var head struct {
 		ID   int64
@@ -27,27 +19,21 @@ func (s *PublicService) TagDetail(ctx context.Context, id int64, withWorks, nsfw
 		return dto.PublicTagDetail{}, false, err
 	}
 	if head.ID == 0 {
-		return dto.PublicTagDetail{}, false, nil // identity PK starts at 1 → 0 = miss
+		return dto.PublicTagDetail{}, false, nil
 	}
 	rec := dto.PublicTagDetail{
 		ID: head.ID, Name: head.Name, Tier: tagTierKey(head.Tier), Kind: tagKindKey(head.Kind),
 	}
-	// work_count is the browse lane's number for this one row (A2-1e) — the
-	// SAME nsfw-aware, live-claim aggregate, so a detail page and the list it was
-	// reached from can never disagree.
 	counts, err := s.workCountsFor(ctx, tagWorkEdge, []int64{id}, nsfw)
 	if err != nil {
 		return dto.PublicTagDetail{}, false, err
 	}
 	rec.WorkCount = counts[id]
-	// sexual is the TAG-level safety flag (A2-1f) — the same derivation and the
-	// same coverage caveat the browse lane's rows carry.
 	sexual, err := s.tagSexualFor(ctx, []int64{id})
 	if err != nil {
 		return dto.PublicTagDetail{}, false, err
 	}
 	rec.Sexual = sexual[id]
-	// intros are part of the base record (not include-gated), like a label's.
 	intros, err := s.tagIntros(ctx, id)
 	if err != nil {
 		return dto.PublicTagDetail{}, false, err
@@ -86,13 +72,6 @@ func (s *PublicService) TagDetail(ctx context.Context, id int64, withWorks, nsfw
 	return rec, true, nil
 }
 
-// tagIntros loads a canonical tag's multilingual intros, merged to one element
-// per language (lowest source_id wins — the step-65 intro merge), lang ASC.
-// The labelIntros projection one table over: the W0 data-layer-retirement wave
-// rescued the wiki's hand-written galgame_tag.description rows into
-// catalog_tag_intro, and this is the read face that makes them reachable.
-// source goes through sourceKey so the wire always carries the PUBLIC source
-// spelling (the character/name intro convention). Empty → [].
 func (s *PublicService) tagIntros(ctx context.Context, tagID int64) ([]dto.PublicTagIntro, error) {
 	var rows []struct {
 		Lang     string `gorm:"column:lang"`
@@ -108,7 +87,7 @@ func (s *PublicService) tagIntros(ctx context.Context, tagID int64) ([]dto.Publi
 	seenLang := map[string]bool{}
 	for _, r := range rows {
 		if seenLang[r.Lang] {
-			continue // a lower source_id already claimed this language
+			continue
 		}
 		seenLang[r.Lang] = true
 		out = append(out, dto.PublicTagIntro{Lang: r.Lang, Intro: r.Intro, Source: s.sourceKey(r.SourceID)})
@@ -116,7 +95,6 @@ func (s *PublicService) tagIntros(ctx context.Context, tagID int64) ([]dto.Publi
 	return out, nil
 }
 
-// tagTierKey projects the TagTier* vocabulary to the public string keys.
 func tagTierKey(t int16) string {
 	switch t {
 	case model.TagTierLongtail:
@@ -128,7 +106,6 @@ func tagTierKey(t int16) string {
 	}
 }
 
-// tagKindKey projects the TagKind* vocabulary to the public string keys.
 func tagKindKey(k int16) string {
 	if k == model.TagKindMeta {
 		return "meta"

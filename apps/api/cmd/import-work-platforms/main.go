@@ -1,11 +1,3 @@
-// import-work-platforms backfills platform facts (step 96): dlsite mirror
-// product_json.platform → catalog_release.platform + extra.platforms for the
-// anchored galgame stubs (the step-76 shape); bgm infobox 平台 →
-// catalog_work_platform rows for bodyless works. Dry-run by default; dlsite
-// writes are guarded on platform still being empty, bgm writes ON CONFLICT
-// DO NOTHING — re-runs are no-ops.
-//
-//	go run ./cmd/import-work-platforms --dsn "$CATALOG" --dlsite-dsn "$DLSITE" [--source dlsite|bgm|all] [--apply]
 package main
 
 import (

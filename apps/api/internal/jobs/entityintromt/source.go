@@ -7,7 +7,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// SourceLang is the language a candidate is translated FROM.
 type SourceLang string
 
 const (
@@ -15,38 +14,16 @@ const (
 	SourceEn SourceLang = "en"
 )
 
-// candidate is one entity eligible for →zh-Hans MT.
-//
-//   - SrcLang / SourceID / Text: the CHOSEN source row — ja preferred (lowest
-//     source_id), en fallback (see the package doc). The machine row is
-//     attributed to that source_id and its src_hash is sha256(Text).
-//   - MZhID / MZhSrcHash: the entity's EXISTING machine zh-Hans row, if any.
-//     Present → idempotence / re-translate decision; absent → a fresh insert.
 type candidate struct {
-	EntityID   int64   `gorm:"column:entity_id"`
-	SrcLang    string  `gorm:"column:src_lang"`
-	SourceID   int16   `gorm:"column:source_id"`
-	Text       string  `gorm:"column:src_text"`
-	MZhID      *int64  `gorm:"column:mzh_id"`
-	MZhSrcHash *string `gorm:"column:mzh_src_hash"`
-	// Gloss is the entity's term list, loaded in bulk after the candidate query
-	// (glossary.go) — never scanned from it.
-	Gloss Glossary `gorm:"-"`
+	EntityID   int64    `gorm:"column:entity_id"`
+	SrcLang    string   `gorm:"column:src_lang"`
+	SourceID   int16    `gorm:"column:source_id"`
+	Text       string   `gorm:"column:src_text"`
+	MZhID      *int64   `gorm:"column:mzh_id"`
+	MZhSrcHash *string  `gorm:"column:mzh_src_hash"`
+	Gloss      Glossary `gorm:"-"`
 }
 
-// loadCandidates resolves one lane's candidate set:
-//
-//	live entities (deleted_at IS NULL)
-//	  → the chosen source row: DISTINCT ON entity, ja rows before en rows
-//	    ((lang <> 'ja') ASC), then lowest source_id — the same row precedence
-//	    the read face surfaces
-//	  → has NO zh-Hans/zh-Hant row with provenance=0 (fill-missing)
-//	  LEFT JOIN its existing machine zh-Hans row (provenance=1), if any
-//
-// Ordered by entity id ASC — a total, deterministic order, so Limit/Offset
-// windows form stable, resumable batches (the character lane runs nightly in
-// slices). The table/column names are interpolated from the package-internal
-// lane table, never from input.
 func loadCandidates(ctx context.Context, db *gorm.DB, lane laneDef, limit, offset int) ([]candidate, error) {
 	t, id := lane.introTable, lane.idCol
 	q := `
@@ -86,9 +63,6 @@ func loadCandidates(ctx context.Context, db *gorm.DB, lane laneDef, limit, offse
 	if err := db.WithContext(ctx).Raw(q, args...).Scan(&out).Error; err != nil {
 		return nil, err
 	}
-	// Whitespace-only source text would hash and "translate" to garbage; drop
-	// it here so dry and apply agree (source rows are NOT NULL but nothing
-	// upstream pins them non-blank).
 	kept := out[:0]
 	for _, c := range out {
 		if strings.TrimSpace(c.Text) != "" {

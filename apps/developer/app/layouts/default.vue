@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Single shell for every route: sticky header + centered content + footer. The
-// header shows account/控制台 per auth state. Fetch the signed-in user once on
-// the server so the header renders logged-in on first paint (hydrates via
-// Pinia); the client plugin restores the session when the server couldn't.
 const auth = useAuth()
 
 await callOnce('auth:user', async () => {
@@ -16,8 +12,6 @@ await callOnce('auth:user', async () => {
   <div class="flex min-h-screen flex-col bg-background">
     <LayoutHeader />
 
-    <!-- min-w-0 lets wide children (tables) scroll inside instead of
-         stretching this flex column past the viewport. -->
     <main class="mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-8 md:px-6">
       <slot />
     </main>

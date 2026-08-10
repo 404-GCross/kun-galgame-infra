@@ -1,19 +1,3 @@
-// import-character-roster lands the work↔character花名册 edges (step 45) that
-// the credit wave (step 13) left out. It imports catalog_work_character from
-// Bangumi (src_bangumi.subject_character), erogamespace (appearances) and VNDB
-// (src_vndb.chars_vns, step 47 — with the per-appearance spoiler level and the
-// same-work same-name attach), gated only by an EXACT work anchor (identity is
-// settled, so no second audit gate). Missing characters are created as orphan
-// entities with self exact anchors (rule:<source>-character-import, the step-13
-// rule); no persons. Roster edges are INDEPENDENT of credits — credit rows are
-// never touched.
-//
-// VNDB staging (src_vndb) lives in the catalog DB — load it first with
-// cmd/ingest-vndb. Bangumi/EG staging are their own tools.
-//
-//	go run ./cmd/migrate-catalog                                 # land the schema (spoiler column)
-//	go run ./cmd/import-character-roster --source vndb           # dry-run (or all)
-//	go run ./cmd/import-character-roster --source vndb --apply   # write (×2 = idempotent)
 package main
 
 import (

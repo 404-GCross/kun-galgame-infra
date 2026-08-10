@@ -5,14 +5,6 @@ import (
 	"strings"
 )
 
-// The typed-tier normalizers and the Bangumi infobox key classifier are a
-// deliberate TRANSCRIPTION of internal/jobs/orglabels/enrich_link.go rather than
-// a shared helper. They are the wire format of an external_id already in the
-// table: the value they produce must stay byte-identical to what E2 wrote, so
-// the copy is pinned here and read as a contract, not refactored for reuse
-// across two packages that must be free to change at different times. Any edit
-// here without the same edit there re-splits rows that used to dedup.
-
 var (
 	reArchiveWrap = regexp.MustCompile(`(?i)web\.archive\.org/web/[^/]+/(https?://.+)$`)
 	reScheme      = regexp.MustCompile(`(?i)^(https?:)?//`)
@@ -21,8 +13,6 @@ var (
 	reDigits      = regexp.MustCompile(`^[0-9]+$`)
 )
 
-// normalizeURL strips the archive wrapper, the scheme and any trailing slash so
-// only protocol / trailing-slash differences dedup. Requires a dotted host.
 func normalizeURL(u string) (string, bool) {
 	u = strings.TrimSpace(u)
 	if u == "" {
@@ -40,7 +30,6 @@ func normalizeURL(u string) (string, bool) {
 	return u, true
 }
 
-// normalizeTwitter reduces a handle or profile URL to the bare lowercase handle.
 func normalizeTwitter(v string) (string, bool) {
 	v = strings.TrimSpace(v)
 	v = reTwitterHost.ReplaceAllString(v, "")
@@ -55,7 +44,6 @@ func normalizeTwitter(v string) (string, bool) {
 	return v, true
 }
 
-// normalizeNumeric keeps a bare numeric id (cien creator, pixiv user).
 func normalizeNumeric(v string) (string, bool) {
 	v = strings.TrimSpace(v)
 	if !reDigits.MatchString(v) {
@@ -63,8 +51,6 @@ func normalizeNumeric(v string) (string, bool) {
 	}
 	return v, true
 }
-
-// ── Bangumi infobox key classification ──────────────────────────────────────
 
 type bgmKeyClass int
 
@@ -80,10 +66,6 @@ var (
 	reTwitterKey = regexp.MustCompile(`(?i)twitter|^x\b|x\s*\(twitter\)|x\(twitter\)`)
 )
 
-// classifyBGMKey buckets an infobox key. Website keys exclude store/social
-// aliases (weibo/blog/steam/dlsite/…) that also carry a URL. The twitter class
-// is kept even though this job's Bangumi sub-lane only consumes the website
-// one — dropping it would quietly reclassify a "X (Twitter)" key as a website.
 func classifyBGMKey(key string) bgmKeyClass {
 	k := strings.TrimSpace(key)
 	if reWebExclude.MatchString(k) {

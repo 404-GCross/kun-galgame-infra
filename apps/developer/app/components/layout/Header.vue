@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Top navigation for every page. Public links (首页/文档) are always shown;
-// 控制台 + the account menu appear per auth state. Theme toggle mirrors the
-// ecosystem popover pattern (fixed trigger icon so SSR/CSR DOM match).
 const auth = useAuth()
 const route = useRoute()
 const colorMode = useColorMode()
@@ -39,7 +36,6 @@ const handleLogout = async () => {
     <div
       class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 md:px-6"
     >
-      <!-- Brand -->
       <NuxtLink to="/" class="flex min-w-0 shrink-0 items-center gap-2">
         <div
           class="flex size-8 items-center justify-center rounded-lg bg-primary text-white"
@@ -51,7 +47,6 @@ const handleLogout = async () => {
         </span>
       </NuxtLink>
 
-      <!-- Center nav (desktop) -->
       <nav class="hidden items-center gap-1 md:flex">
         <NuxtLink
           v-for="link in navLinks"
@@ -68,7 +63,6 @@ const handleLogout = async () => {
         </NuxtLink>
       </nav>
 
-      <!-- Right cluster -->
       <div class="flex shrink-0 items-center gap-2">
         <KunPopover position="bottom-end">
           <template #trigger>
@@ -99,7 +93,6 @@ const handleLogout = async () => {
           </div>
         </KunPopover>
 
-        <!-- Account -->
         <KunPopover v-if="auth.isLoggedIn.value" position="bottom-end">
           <template #trigger>
             <KunButton variant="flat" size="sm">

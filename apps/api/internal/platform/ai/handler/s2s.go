@@ -14,14 +14,10 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Server holds the S2S face dependencies.
 type Server struct {
 	moderation *service.ModerationService
 }
 
-// Setup builds the AI-gateway S2S Huma API over the Fiber app. S2SAuth is
-// applied by the caller as path-scoped Fiber middleware BEFORE this. Callable
-// with a nil service for spec export (handlers are never invoked then).
 func Setup(app *fiber.App, moderation *service.ModerationService) huma.API {
 	InstallErrorEnvelope()
 
@@ -61,8 +57,6 @@ func (s *Server) moderateText(ctx context.Context, in *moderateTextInput) (*mode
 		Site: site, Text: in.Body.Text, AuthorID: in.Body.AuthorID,
 	})
 	if err != nil {
-		// moderate-text is fail-open, so the service returns nil error on every
-		// degraded path; a non-nil error here is an unexpected internal fault.
 		slog.Error("ai moderate-text", "err", err)
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}

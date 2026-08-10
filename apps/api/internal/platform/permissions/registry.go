@@ -1,17 +1,3 @@
-// Package permissions is the cross-domain permission console: the one place
-// that knows ALL live permission vocabularies at once, the runtime overlay that
-// can widen them without a deploy, and the admin face that renders and edits
-// the resulting matrix.
-//
-// It sits ABOVE the per-domain perm packages: each of those owns its own keys
-// and code bundles and knows nothing about the others (that separation is the
-// point of docs/auth/04 §2.2). Aggregating them is a console concern, so the
-// aggregation lives here — a leaf package that imports the six live perm
-// packages and is imported by nothing they depend on, so no cycle is possible.
-//
-// The RETIRED galgame/perm package is deliberately absent. It has zero live
-// enforcement points, so listing its keys would invite an operator to grant a
-// permission that no running code ever checks.
 package permissions
 
 import (
@@ -24,8 +10,6 @@ import (
 	trustPerm "api/internal/platform/trust/perm"
 )
 
-// Role names of the five-role contract (docs/integration/oauth/11-roles.md).
-// They are the matrix's columns, in contract order.
 const (
 	RoleUser      = "user"
 	RoleCreator   = "creator"
@@ -34,21 +18,14 @@ const (
 	RoleRen       = "ren"
 )
 
-// MatrixRoles is the column order of the console matrix.
 var MatrixRoles = []string{RoleUser, RoleCreator, RoleModerator, RoleAdmin, RoleRen}
 
-// axisRank ranks the MANAGEMENT axis (ren > admin > moderator). creator is a
-// qualification role, not a management tier, and `user` is implicit — both rank
-// 0, and neither is ever a delegation target reachable by rank comparison
-// (creator has its own explicit ren-only rule; user rows are immutable).
 var axisRank = map[string]int{
 	RoleModerator: 1,
 	RoleAdmin:     2,
 	RoleRen:       3,
 }
 
-// HighestRank returns the caller's position on the management axis: 0 for a
-// caller holding none of moderator/admin/ren.
 func HighestRank(roles []string) int {
 	best := 0
 	for _, r := range roles {
@@ -59,19 +36,12 @@ func HighestRank(roles []string) int {
 	return best
 }
 
-// Key is one permission plus the human-facing text the console renders. The
-// descriptions live here rather than in each perm package so the whole matrix
-// reads in one voice and one file — and TestRegistryCoversEveryBundledKey pins
-// that no key can be added to a bundle without also being described here.
 type Key struct {
 	Permission authz.Permission
 	DescEN     string
 	DescZH     string
 }
 
-// Domain is one perm package as the console sees it: its vocabulary, its code
-// bundles (the floor), the Holder whose Resolver is swapped when the overlay
-// changes, and the keys it forbids the overlay to grant.
 type Domain struct {
 	Name         string
 	TitleZH      string
@@ -81,14 +51,11 @@ type Domain struct {
 	Keys         []Key
 }
 
-// Registry is the immutable set of live domains, indexed by permission.
 type Registry struct {
 	domains []Domain
 	byKey   map[authz.Permission]int
 }
 
-// NewRegistry indexes the domains. Exported so tests can build a small registry
-// instead of the live one.
 func NewRegistry(domains ...Domain) *Registry {
 	r := &Registry{domains: domains, byKey: make(map[authz.Permission]int)}
 	for i, d := range domains {
@@ -99,12 +66,8 @@ func NewRegistry(domains ...Domain) *Registry {
 	return r
 }
 
-// Domains returns the registered domains in console order.
 func (r *Registry) Domains() []Domain { return r.domains }
 
-// Lookup finds the domain owning p. ok=false means p is not a live key — the
-// validator's first rejection, which is what keeps a typo'd or retired key out
-// of the overlay table.
 func (r *Registry) Lookup(p authz.Permission) (Domain, bool) {
 	i, ok := r.byKey[p]
 	if !ok {
@@ -113,9 +76,6 @@ func (r *Registry) Lookup(p authz.Permission) (Domain, bool) {
 	return r.domains[i], true
 }
 
-// IsNonDelegable reports whether p may never be granted through the overlay.
-// An unknown key answers true — fail-closed, though the validator rejects it
-// earlier for not existing.
 func (r *Registry) IsNonDelegable(p authz.Permission) bool {
 	d, ok := r.Lookup(p)
 	if !ok {
@@ -124,8 +84,6 @@ func (r *Registry) IsNonDelegable(p authz.Permission) bool {
 	return d.NonDelegable.Has(p)
 }
 
-// Effective reports whether role currently holds p, code bundles ∪ overlay —
-// it asks the domain's live Holder, which IS the merged state.
 func (r *Registry) Effective(role string, p authz.Permission) bool {
 	d, ok := r.Lookup(p)
 	if !ok {
@@ -134,8 +92,6 @@ func (r *Registry) Effective(role string, p authz.Permission) bool {
 	return d.Holder.Can([]string{role}, p)
 }
 
-// InCodeBundle reports whether p is granted to role by the COMPILED-IN table —
-// the floor the overlay may widen but never cut.
 func (r *Registry) InCodeBundle(role string, p authz.Permission) bool {
 	d, ok := r.Lookup(p)
 	if !ok {
@@ -149,7 +105,6 @@ func (r *Registry) InCodeBundle(role string, p authz.Permission) bool {
 	return false
 }
 
-// live is the registry of the six domains that have live enforcement points.
 var live = NewRegistry(
 	Domain{
 		Name:         "oauth",
@@ -229,5 +184,4 @@ var live = NewRegistry(
 	},
 )
 
-// Live returns the registry of the six live domains.
 func Live() *Registry { return live }

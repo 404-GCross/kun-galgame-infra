@@ -1,10 +1,3 @@
-// import-work-producers lands the E2b producer-edge backfill (step 100):
-// vndb releases_producers dev/pub flags → work-level catalog_work_label
-// edges (developer=2 first use, publisher=1), original-language gate, exact
-// label anchors only. Dry-run by default; ON CONFLICT DO NOTHING — re-runs
-// are no-ops.
-//
-//	go run ./cmd/import-work-producers --dsn "$CATALOG" [--apply]
 package main
 
 import (

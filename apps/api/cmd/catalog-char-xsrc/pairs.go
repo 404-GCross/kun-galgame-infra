@@ -9,34 +9,26 @@ import (
 	"gorm.io/gorm"
 )
 
-// pairMeta is one candidate pair with everything the emit phase needs. It is
-// the durable per-pair artefact (pairs.jsonl) the verdicts join back onto.
 type pairMeta struct {
 	A        int64    `json:"a"`
 	B        int64    `json:"b"`
-	Tier     int      `json:"tier"` // 1 fold-equal, 2 VA bridge, 3 name-similar
+	Tier     int      `json:"tier"`
 	Works    []int64  `json:"works"`
-	CV       string   `json:"cv,omitempty"` // bridging voice actor name (tier 2, or extra evidence)
+	CV       string   `json:"cv,omitempty"`
 	AName    string   `json:"a_name"`
 	BName    string   `json:"b_name"`
 	ASources []string `json:"a_sources"`
 	BSources []string `json:"b_sources"`
-	Instance bool     `json:"instance,omitempty"` // either side is a variant row — never auto
-	// Survivor-ordering signals (the detector's pickCharSurvivor rule),
-	// captured at packets time so emit needs no database.
-	ARich richness `json:"a_rich"`
-	BRich richness `json:"b_rich"`
+	Instance bool     `json:"instance,omitempty"`
+	ARich    richness `json:"a_rich"`
+	BRich    richness `json:"b_rich"`
 }
 
-// richness orders a group's survivor pick: portrait first (an id consumers may
-// already render), then alias count, then the older id.
 type richness struct {
 	Img      bool `json:"img,omitempty"`
 	NAliases int  `json:"na,omitempty"`
 }
 
-// charInfo is the per-character evidence loaded once for every id any pair
-// touches.
 type charInfo struct {
 	ID       int64
 	Name     string
@@ -45,16 +37,12 @@ type charInfo struct {
 	Instance bool
 	HasImage bool
 	Aliases  []string
-	Anchors  []string // "vndb:c35682"
-	Sources  []string // distinct source keys
+	Anchors  []string
+	Sources  []string
 	Intro    string
 	NAnchors int
 }
 
-// buildPairs computes the wave's candidate pairs: live single-source
-// characters co-resident on a work with a character of a DIFFERENT single
-// source, tiered by evidence strength. Pairs matching no tier are dropped —
-// most co-residents are simply two different characters of the same game.
 func buildPairs(db *gorm.DB) ([]pairMeta, map[int64]*charInfo, error) {
 	type rawPair struct {
 		A     int64  `gorm:"column:a"`
@@ -62,10 +50,6 @@ func buildPairs(db *gorm.DB) ([]pairMeta, map[int64]*charInfo, error) {
 		Works string `gorm:"column:works"`
 	}
 	var raws []rawPair
-	// Sides pair on DISJOINT anchor source sets, not on being single-source:
-	// the reported 硯川 pair is a bgm+eg-resolved row facing its vndb-only
-	// twin. A shared source is the exclusion — that source itself keeps the
-	// two rows apart, so they are its claim of distinctness.
 	if err := db.Raw(`
 		WITH anchored AS (
 			SELECT er.entity_id AS id, array_agg(DISTINCT er.source_id) AS sids
@@ -159,10 +143,6 @@ func foldedEqual(aNames, bNames []string) bool {
 
 func bridgeKey(a, b int64) string { return strconv.FormatInt(a, 10) + "|" + strconv.FormatInt(b, 10) }
 
-// loadVABridges finds every character pair voiced by the SAME credit name on
-// the SAME work (a < b). The bridge is evidence, not proof: one actor voicing
-// two roles in one game is routine, which is exactly what the character_cv
-// prompt adjudicates.
 func loadVABridges(db *gorm.DB) (map[string]string, error) {
 	type row struct {
 		A  int64  `gorm:"column:a"`
@@ -188,9 +168,6 @@ func loadVABridges(db *gorm.DB) (map[string]string, error) {
 	return out, nil
 }
 
-// loadCharInfo loads names, aliases, anchors, the best intro and the ordering
-// signals for every involved character, in id chunks (the 65,535-parameter
-// lesson).
 func loadCharInfo(db *gorm.DB, ids map[int64]bool) (map[int64]*charInfo, error) {
 	all := make([]int64, 0, len(ids))
 	for id := range ids {

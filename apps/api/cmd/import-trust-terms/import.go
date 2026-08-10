@@ -16,34 +16,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// insertBatchSize is the CreateInBatches chunk size (the repo-wide convention
-// for bulk term/label loads).
 const insertBatchSize = 500
 
-// importConfig is the resolved run configuration (the parsed CLI flags).
 type importConfig struct {
-	// site is the target scope: nil = a GLOBAL term (stored site NULL); a
-	// non-nil pointer scopes every imported row to that catalog_site.
-	site *string
-	// kind is the enforcement intent written explicitly onto every row
-	// (0=suspect / 1=banned) — an INTENT column, so never left to a DB default.
-	kind int16
-	// purpose is why the terms are listed, written explicitly onto every row.
-	// It decides which evidence may later retire them (see model.TrustTerm).
-	purpose int16
-	// note is the operator memo flag. Empty = per-file default (the source
-	// filename); non-empty = a fixed memo applied to every file's rows.
-	note string
-	// minRunes drops a term whose POST-Normalize rune count is below it.
+	site     *string
+	kind     int16
+	purpose  int16
+	note     string
 	minRunes int
-	// apply switches from dry-run (default) to a real batched INSERT.
-	apply bool
+	apply    bool
 }
 
-// fileStats is the per-file (and, aggregated, the total) counters of one import
-// pass. inserted is the accepted-for-insert count — a would-insert in dry-run,
-// the actually-inserted count in apply mode (they are equal: dedup + the
-// existing-set preload guarantee the batched INSERT never conflicts).
 type fileStats struct {
 	name          string
 	read          int
@@ -56,14 +39,11 @@ type fileStats struct {
 	samples       []sample
 }
 
-// sample is one raw->norm illustration printed in dry-run (first 5 per file).
 type sample struct {
 	raw  string
 	norm string
 }
 
-// add folds one file's counters into the running total (samples excluded — the
-// total carries none).
 func (t *fileStats) add(f fileStats) {
 	t.read += f.read
 	t.blankComment += f.blankComment
@@ -74,15 +54,11 @@ func (t *fileStats) add(f fileStats) {
 	t.inserted += f.inserted
 }
 
-// runResult is the outcome of an import run: the per-file stats and their total.
 type runResult struct {
 	perFile []fileStats
 	total   fileStats
 }
 
-// resolveNote returns the note pointer for one file: the fixed -note flag when
-// set, otherwise the file's base name (the per-file source marker). The note is
-// always non-empty (a filename is), so this never returns nil in practice.
 func resolveNote(flagNote, filename string) *string {
 	n := flagNote
 	if n == "" {
@@ -94,24 +70,12 @@ func resolveNote(flagNote, filename string) *string {
 	return &n
 }
 
-// processFile runs the line pipeline for ONE file against the SHARED run state:
-//
-//	seen     — every distinct normalized term already encountered THIS run (all
-//	           files import into the single -site scope, so a term repeated
-//	           across files is an in-batch duplicate); mutated here.
-//	existing — the preloaded set of active term_norms already in the DB for this
-//	           scope; read-only.
-//
-// It never touches the DB. Accepted terms are returned as ready-to-insert
-// TrustTerm rows (site/kind/note set, is_deprecated false).
 func processFile(name string, r io.Reader, cfg importConfig, seen, existing map[string]struct{}) (fileStats, []model.TrustTerm, error) {
 	stats := fileStats{name: name}
 	note := resolveNote(cfg.note, name)
 	var out []model.TrustTerm
 
 	sc := bufio.NewScanner(r)
-	// Word-list lines are short, but raise the token cap so a pathological long
-	// line errors loudly rather than silently truncating.
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
 		stats.read++
@@ -134,20 +98,15 @@ func processFile(name string, r io.Reader, cfg importConfig, seen, existing map[
 			stats.samples = append(stats.samples, sample{raw: line, norm: normed})
 		}
 
-		// A term whose normalized form is empty or below the rune floor is noise.
 		if normed == "" || utf8.RuneCountInString(normed) < cfg.minRunes {
 			stats.shortFiltered++
 			continue
 		}
-		// In-batch dedup FIRST (spec pipeline order): every distinct candidate is
-		// recorded in seen, so a repeat — within or across files — is a dup.
 		if _, ok := seen[normed]; ok {
 			stats.dupInBatch++
 			continue
 		}
 		seen[normed] = struct{}{}
-		// Then dedup against the DB's active terms in this scope (idempotency: a
-		// second apply run finds every term already present here → 0 inserted).
 		if _, ok := existing[normed]; ok {
 			stats.dupExisting++
 			continue
@@ -169,9 +128,6 @@ func processFile(name string, r io.Reader, cfg importConfig, seen, existing map[
 	return stats, out, nil
 }
 
-// loadExisting preloads the active term_norms already registered for the target
-// scope (site NULL for global, else the exact site) into a set — the dedup
-// backstop that makes the tool idempotent.
 func loadExisting(db *gorm.DB, site *string) (map[string]struct{}, error) {
 	q := db.Model(&model.TrustTerm{}).Where("is_deprecated = false")
 	if site == nil {
@@ -190,9 +146,6 @@ func loadExisting(db *gorm.DB, site *string) (map[string]struct{}, error) {
 	return set, nil
 }
 
-// insertBatches writes the accepted terms in 500-row batches. Dedup + the
-// existing-set preload guarantee no active-uniqueness conflict, so this is a
-// plain CreateInBatches (no ON CONFLICT clause).
 func insertBatches(db *gorm.DB, terms []model.TrustTerm, batchSize int) error {
 	if len(terms) == 0 {
 		return nil
@@ -203,10 +156,6 @@ func insertBatches(db *gorm.DB, terms []model.TrustTerm, batchSize int) error {
 	return nil
 }
 
-// run is the whole import: preload the existing-scope set, stream every file
-// through the pipeline (printing per-file stats), optionally write the accepted
-// rows, then print the total. Dry-run (cfg.apply == false) reads but never
-// writes.
 func run(db *gorm.DB, out io.Writer, cfg importConfig, files []string) (runResult, error) {
 	existing, err := loadExisting(db, cfg.site)
 	if err != nil {
@@ -243,8 +192,6 @@ func run(db *gorm.DB, out io.Writer, cfg importConfig, files []string) (runResul
 	return res, nil
 }
 
-// printStats renders one stats block. withSamples prints the first-5 raw->norm
-// preview (dry-run only, per-file only — never for the total).
 func printStats(w io.Writer, s fileStats, apply, withSamples bool) {
 	insertedLabel := "would-insert"
 	if apply {

@@ -17,7 +17,6 @@ const site = ref('')
 const search = ref('')
 const searchInput = ref('')
 
-// Debounce the free-text search so each keystroke doesn't refetch.
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 watch(searchInput, (v) => {
   if (searchTimer) clearTimeout(searchTimer)
@@ -48,8 +47,6 @@ const isLoading = computed(() => fetchStatus.value === 'pending')
 
 const fmtTime = (iso: string) => iso.slice(0, 19).replace('T', ' ')
 
-// Idle age (now - updated_at) for in-progress uploads. Client-only (nowTs stays
-// 0 until mount) so SSR and first hydration render the same placeholder — no
 // hydration mismatch on a relative time.
 const nowTs = ref(0)
 onMounted(() => {
@@ -66,10 +63,6 @@ const idleSince = (iso: string) => {
   return `${Math.floor(h / 24)} 天 ${h % 24} 小时`
 }
 
-// Reclaim (immediate hard-clean of an interrupted upload) confirmation state.
-// Distinct from soft-delete: it aborts the dangling B2 multipart + deletes bytes
-// + drops the row. Only offered for status=uploading (the soft-delete path would
-// leak the multipart for those).
 const reclaimOpen = ref(false)
 const reclaimRow = ref<ArtifactAdminRow | null>(null)
 const reclaimLoading = ref(false)
@@ -86,8 +79,6 @@ const confirmReclaim = async () => {
       useKunMessage('已回收该上传（已中止分片并清理）', 'success')
       await refresh()
     } else {
-      // Surfaces the server's reason verbatim — e.g. "upload still active … refusing"
-      // (too recent) or "artifact storage not configured".
       useKunMessage(res.message || '回收失败', 'error')
     }
   } finally {
@@ -96,7 +87,6 @@ const confirmReclaim = async () => {
   }
 }
 
-// Soft-delete confirmation modal state.
 const delOpen = ref(false)
 const delRow = ref<ArtifactAdminRow | null>(null)
 const delLoading = ref(false)
@@ -126,7 +116,6 @@ const confirmDelete = async () => {
   <div class="space-y-4">
     <h1 class="text-foreground text-2xl font-bold">文件列表</h1>
 
-    <!-- Filters -->
     <div class="flex flex-wrap items-center gap-2">
       <KunButton
         v-for="tab in ARTIFACT_STATUS_TABS"
@@ -155,7 +144,6 @@ const confirmDelete = async () => {
 
     <p class="text-default-500 text-sm">共 {{ total }} 个文件</p>
 
-    <!-- Table -->
     <div class="bg-content1 overflow-x-auto rounded-xl shadow-sm">
       <table class="w-full min-w-[64rem] text-sm">
         <thead class="bg-content2 text-default-500">
@@ -215,9 +203,6 @@ const confirmDelete = async () => {
               {{ fmtTime(item.created_at) }}
             </td>
             <td class="px-3 py-2 text-right">
-              <!-- In-progress uploads: reclaim (abort multipart + delete + drop).
-                   Soft-delete is intentionally NOT offered here — it would leave
-                   the B2 multipart dangling. -->
               <KunButton
                 v-if="item.status === 'uploading'"
                 color="warning"
@@ -254,7 +239,6 @@ const confirmDelete = async () => {
       :is-loading="isLoading"
     />
 
-    <!-- Soft-delete confirm -->
     <KunModal v-model="delOpen">
       <div class="space-y-4">
         <h2 class="text-foreground text-xl font-bold">软删除文件</h2>
@@ -280,7 +264,6 @@ const confirmDelete = async () => {
       </div>
     </KunModal>
 
-    <!-- Reclaim (interrupted upload) confirm -->
     <KunModal v-model="reclaimOpen">
       <div class="space-y-4">
         <h2 class="text-foreground text-xl font-bold">回收上传中的文件</h2>

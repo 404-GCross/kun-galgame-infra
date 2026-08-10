@@ -4,15 +4,6 @@ import (
 	"time"
 )
 
-// Session represents a user login session.
-//
-// ClientID identifies which OAuth client (or "" for the legacy /auth/login
-// path used by the admin UI) the session belongs to. Binding sessions to
-// clients lets us:
-//   - prevent a leaked public-client refresh_token from being used by
-//     a different client (refresh checks session.ClientID == request client_id)
-//   - selectively revoke sessions per client without nuking unrelated
-//     sessions of the same user
 type Session struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	UserID       uint      `gorm:"not null;index" json:"user_id"`
@@ -27,18 +18,6 @@ type Session struct {
 	SessionToken string    `gorm:"type:text;uniqueIndex;not null" json:"-"`
 	RefreshToken string    `gorm:"type:text;uniqueIndex;not null" json:"-"`
 
-	// PrevRefreshToken + RotatedAt implement refresh-token rotation with a
-	// grace window. On each refresh the just-spent token moves to
-	// PrevRefreshToken and RotatedAt = now. A request still presenting
-	// PrevRefreshToken within RefreshGraceWindow is a concurrent/retry
-	// caller racing the rotation — the norm for confidential SSR proxies
-	// (kungal/moyu fire several in-flight requests the moment the
-	// access_token expires). It gets a fresh access_token + the CURRENT
-	// refresh_token instead of a 401. Presenting it AFTER the window is
-	// treated as token reuse (possible theft) → session revoked.
-	//
-	// Not unique: '' repeats across rows and it transiently equals a
-	// sibling's current token; a plain index supports the OR-lookup.
 	PrevRefreshToken string     `gorm:"type:text;index;default:''" json:"-"`
 	RotatedAt        *time.Time `json:"-"`
 
@@ -47,41 +26,23 @@ type Session struct {
 	ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
 
-	// BrowserID groups all OP login sessions in one browser into a "session
-	// bag" for multi-account switching (see docs/auth/02-account-switching-design.md).
-	// Set from the kg_browser httpOnly cookie at login; a single-account browser
-	// is simply a bag of one. Empty for pre-migration rows (treated as their own
-	// singleton bag).
 	BrowserID string `gorm:"size:64;index;default:''" json:"-"`
-	// AuthTime is when the user last actively authenticated for this session
-	// (set at login). Used for admin step-up / max_age re-auth checks.
 	AuthTime *time.Time `json:"-"`
-	// LastUsedAt tracks session activity, for the account chooser / device list.
 	LastUsedAt *time.Time `json:"-"`
 
-	// Relations
 	User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
-// TableName returns the table name for Session
 func (Session) TableName() string {
 	return "sessions"
 }
 
-// RefreshGraceWindow is how long a just-rotated (previous) refresh_token
-// stays acceptable. Long enough to absorb concurrent in-flight refreshes
-// and a sloppy client that persists the new token a little late; short
-// enough that genuine token-replay theft is still caught by reuse
-// detection. 2 minutes is comfortably above any real request fan-out.
 const RefreshGraceWindow = 2 * time.Minute
 
-// IsExpired checks if the session has expired
 func (s *Session) IsExpired() bool {
 	return time.Now().After(s.ExpiresAt)
 }
 
-// PrevTokenWithinGrace reports whether RotatedAt is set and the previous
-// refresh_token is still inside the grace window.
 func (s *Session) PrevTokenWithinGrace() bool {
 	return s.RotatedAt != nil && time.Since(*s.RotatedAt) <= RefreshGraceWindow
 }

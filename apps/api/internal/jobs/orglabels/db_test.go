@@ -24,7 +24,6 @@ var testDB *gorm.DB
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_DSN")
 	if dsn == "" {
-		// No password: pgx reads PGPASSWORD / ~/.pgpass for localhost.
 		dsn = "host=localhost port=5432 user=postgres dbname=kun_catalog_test sslmode=disable"
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -38,11 +37,9 @@ func TestMain(m *testing.M) {
 			os.Exit(0)
 		}
 	}
-	// erogamespace staging stand-ins (same shape the EG adapter reads).
 	for _, s := range []string{
 		`CREATE TABLE IF NOT EXISTS brands (id int, pk text, raw jsonb, synced_at timestamptz)`,
 		`CREATE TABLE IF NOT EXISTS games (id bigint, raw jsonb)`,
-		// a leftover games table (importer suite) may predate these columns.
 		`ALTER TABLE games ADD COLUMN IF NOT EXISTS brand_id integer`,
 		`ALTER TABLE games ADD COLUMN IF NOT EXISTS raw jsonb`,
 		`ALTER TABLE brands ADD COLUMN IF NOT EXISTS raw jsonb`,
@@ -56,7 +53,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// cleanAll truncates every table this suite touches, so each run starts fresh.
 func cleanAll(t *testing.T) {
 	t.Helper()
 	tables := []string{
@@ -111,7 +107,6 @@ func TestAnchorAndEnrich_VNDB(t *testing.T) {
 	}
 	cleanAll(t)
 
-	// Works: 901,902 attributed to label 800 (brand); 903 unattributed.
 	mkWork(t, 901)
 	mkWork(t, 902)
 	mkWork(t, 903)
@@ -122,15 +117,9 @@ func TestAnchorAndEnrich_VNDB(t *testing.T) {
 	mkWorkAnchor(t, sourceVNDB, "v902", 902)
 	mkWorkAnchor(t, sourceVNDB, "v903", 903)
 
-	// Producer p1 (co) → works 901,902 (share 2 → exact coworks).
-	// Producer p2 (co) → work 903 (unattributed, no name match → new label).
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.producers (id,type,lang,name,latin,alias,description) VALUES
 		('p1','co','ja','アージュ','age','エイジ'||E'\n'||'age-alias','age is a Japanese developer of visual novels'),
 		('p2','co','ja','新ブランド','','','')`).Error)
-	// The releases themselves: all Japanese originals, so every producer here
-	// is attributable. The edition layer is what the attribution gate reads
-	// (wave 200) — a fixture without it would exercise a code path prod never
-	// takes.
 	for _, rid := range []string{"r1", "r2", "r3"} {
 		require.NoError(t, testDB.Create(&srcv.Release{ID: rid, OLang: "ja", Official: true}).Error)
 	}
@@ -146,14 +135,12 @@ func TestAnchorAndEnrich_VNDB(t *testing.T) {
 	assert.Equal(t, 1, st.NewLabels, "p2 mints a new label")
 	assert.Equal(t, 1, st.NewEdges, "…with one work_label edge on work 903")
 
-	// p1 → label 800 exact.
 	var labelID int64
 	require.NoError(t, testDB.Raw(
 		`SELECT entity_id FROM catalog_external_ref WHERE entity_type=3 AND source_id=? AND external_id='p1' AND link_kind=0`,
 		sourceVNDB).Scan(&labelID).Error)
 	assert.Equal(t, int64(800), labelID)
 
-	// p2 minted a label with a self exact ref + revision + edge on 903.
 	var newLabel int64
 	require.NoError(t, testDB.Raw(
 		`SELECT entity_id FROM catalog_external_ref WHERE entity_type=3 AND source_id=? AND external_id='p2' AND link_kind=0`,
@@ -165,7 +152,6 @@ func TestAnchorAndEnrich_VNDB(t *testing.T) {
 	assert.Equal(t, int64(1), edgeCount)
 	assert.Equal(t, int64(1), revCount)
 
-	// ── second run: zero new writes (idempotent) ─────────────────────────────
 	before := countRefs(t, 3, sourceVNDB)
 	st2, err := anchorAll(ctx, testDB, testDB, "vndb", 0, true)
 	require.NoError(t, err)
@@ -174,7 +160,6 @@ func TestAnchorAndEnrich_VNDB(t *testing.T) {
 	assert.Equal(t, 2, st2.Already, "both p1 and p2 already anchored")
 	assert.Equal(t, before, countRefs(t, 3, sourceVNDB), "no new refs on rerun")
 
-	// ── intro + alias enrichment ─────────────────────────────────────────────
 	est, err := enrichAll(ctx, testDB, testDB, "intro", true)
 	require.NoError(t, err)
 	assert.Equal(t, 1, est.IntroWritten, "p1 description → label 800 intro")
@@ -193,7 +178,6 @@ func TestAnchorAndEnrich_VNDB(t *testing.T) {
 		assert.Equal(t, model.AliasKindSpellingVariant, k)
 	}
 
-	// enrichment is idempotent too.
 	est2, err := enrichAll(ctx, testDB, testDB, "intro", true)
 	require.NoError(t, err)
 	assert.Equal(t, 0, est2.IntroWritten)
@@ -202,17 +186,13 @@ func TestAnchorAndEnrich_VNDB(t *testing.T) {
 	assert.Equal(t, 0, ast2.AliasWritten)
 }
 
-// TestAnchor_ProbableIdempotent locks the fill-missing invariant that a label
-// already probable-anchored by a source is never re-anchored on a second run:
-// two same-named producers with no shared works both name-match one label; the
-// first wins a probable anchor, the second conflicts, and a rerun writes zero.
 func TestAnchor_ProbableIdempotent(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
 	}
 	cleanAll(t)
 
-	mkLabel(t, 810, "SharedCorp", model.LabelKindGameBrand) // no edges, no anchors
+	mkLabel(t, 810, "SharedCorp", model.LabelKindGameBrand)
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.producers (id,type,lang,name,latin,alias,description) VALUES
 		('p4','co','en','SharedCorp','','',''),
 		('p5','co','en','SharedCorp','','','')`).Error)
@@ -230,12 +210,6 @@ func TestAnchor_ProbableIdempotent(t *testing.T) {
 	assert.Equal(t, 0, st2.NewLabels)
 }
 
-// A human ruling must outlive the rule that produced the bad anchor. Deleting
-// the wrong external_ref row is not enough — the co-work rule re-derives it
-// from the same upstream data on the very next run (wave 198: a stripped
-// erogamescape anchor was back within the minute, because the store lists a
-// disbanded brand's titles under its successor's maker page). The rejection
-// row is the durable record, and this pins that the anchorer honours it.
 func TestAnchorSkipsAHumanRejectedPairing(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -253,7 +227,6 @@ func TestAnchorSkipsAHumanRejectedPairing(t *testing.T) {
 		(50, '{"id":50,"kind":"CORPORATION","brandname":"アリスソフト"}'::jsonb)`).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO games (id, brand_id) VALUES (701,50),(702,50)`).Error)
 
-	// Two shared works would otherwise be an exact anchor.
 	require.NoError(t, testDB.Exec(`
 		INSERT INTO catalog_match_rejection (entity_type, entity_id, source_id, external_id, reason)
 		VALUES (3, 600, ?, '50', 'different company, same catalogue via succession')`, sourceEG).Error)
@@ -281,10 +254,9 @@ func TestAnchorAndEnrich_EG(t *testing.T) {
 	mkLabel(t, 600, "アリスソフト", model.LabelKindGameBrand)
 	mkEdge(t, 701, 600, model.WorkLabelKindBrand)
 	mkEdge(t, 702, 600, model.WorkLabelKindBrand)
-	mkWorkAnchor(t, sourceEG, "701", 701) // EG anchors external_id = game id
+	mkWorkAnchor(t, sourceEG, "701", 701)
 	mkWorkAnchor(t, sourceEG, "702", 702)
 
-	// Brand 50 (CORPORATION) → games 701,702 → works 701,702 (share 2 → exact).
 	require.NoError(t, testDB.Exec(`INSERT INTO brands (id, raw) VALUES
 		(50, '{"id":50,"kind":"CORPORATION","brandname":"アリスソフト","makername":"株式会社アリスソフト","brandfurigana":"アリスソフト","makerfurigana":"カブシキガイシャアリスソフト","url":"https://www.alicesoft.com/","twitter":"alice_soft","cien":"12345"}'::jsonb)`).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO games (id, brand_id) VALUES (701,50),(702,50)`).Error)
@@ -299,7 +271,6 @@ func TestAnchorAndEnrich_EG(t *testing.T) {
 		sourceEG).Scan(&labelID).Error)
 	assert.Equal(t, int64(600), labelID)
 
-	// alias (furigana → search hint) + link (site/twitter/cien).
 	ast, err := enrichAll(ctx, testDB, testDB, "alias", true)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, ast.AliasWritten, 1)
@@ -326,7 +297,6 @@ func TestAnchorAndEnrich_EG(t *testing.T) {
 	assert.Equal(t, sourceCien, links[2].SourceID)
 	assert.Equal(t, "12345", links[2].ExternalID)
 
-	// links idempotent.
 	lst2, err := enrichAll(ctx, testDB, testDB, "link", true)
 	require.NoError(t, err)
 	assert.Equal(t, 0, lst2.LinkWritten)
@@ -343,10 +313,9 @@ func TestAnchorAndEnrich_Bangumi(t *testing.T) {
 	mkLabel(t, 400, "ういんどみる", model.LabelKindGameBrand)
 	mkEdge(t, 501, 400, model.WorkLabelKindBrand)
 	mkEdge(t, 502, 400, model.WorkLabelKindBrand)
-	mkWorkAnchor(t, sourceBangumi, "9001", 501) // external_id = subject id
+	mkWorkAnchor(t, sourceBangumi, "9001", 501)
 	mkWorkAnchor(t, sourceBangumi, "9002", 502)
 
-	// Person 300 (type 2 company) → subjects 9001,9002 (share 2 → exact).
 	require.NoError(t, testDB.Exec(`INSERT INTO src_bangumi.person (id,name,type,summary,comments,collects,parser_version,ingested_at,infobox_raw,infobox_parsed,parse_error) VALUES
 		(300,'ういんどみる',2,'ういんどみるはゲームブランド',0,0,'v1',now(),'',
 		 '{"Fields":[{"Key":"官网","Value":"http://windmill.suki.jp/"},{"Key":"Twitter","Value":"windmill_web"}]}'::jsonb,'')`).Error)
@@ -363,7 +332,6 @@ func TestAnchorAndEnrich_Bangumi(t *testing.T) {
 		sourceBangumi).Scan(&labelID).Error)
 	assert.Equal(t, int64(400), labelID)
 
-	// intro (summary → ja) + link (infobox site + twitter).
 	est, err := enrichAll(ctx, testDB, testDB, "intro", true)
 	require.NoError(t, err)
 	assert.Equal(t, 1, est.IntroWritten)
@@ -381,10 +349,6 @@ func TestAnchorAndEnrich_Bangumi(t *testing.T) {
 	assert.Equal(t, int64(1), twID)
 }
 
-// A merged-away label must leave the name index the moment it is retired.
-// Otherwise it keeps competing for identity: the spine sees two same-named
-// labels, declines to anchor, and files the merge candidate again — so
-// executing the merge could never clear the ambiguity that raised it.
 func TestNameIndexExcludesRetiredLabels(t *testing.T) {
 	cleanAll(t)
 	mkLabel(t, 41, "NEXTON", model.LabelKindPublisher)

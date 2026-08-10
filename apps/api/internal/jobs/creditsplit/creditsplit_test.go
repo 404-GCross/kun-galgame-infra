@@ -67,8 +67,6 @@ func TestLoadWorklistValidates(t *testing.T) {
 	}
 }
 
-// fixture builds one contaminated credit name: a bgm anchor that stays, an eg
-// anchor that must come off, and an inferred person link.
 func fixture(t *testing.T) (cnID, personID int64) {
 	t.Helper()
 	for _, tbl := range []string{"catalog_revision", "catalog_external_ref", "catalog_credit_name", "catalog_person"} {
@@ -124,7 +122,6 @@ func TestSplitDryThenApplyThenSecondPassIsZeroWrite(t *testing.T) {
 	var cn model.CatalogCreditName
 	require.NoError(t, testDB.First(&cn, cnID).Error)
 	assert.Nil(t, cn.PersonID)
-	// The person row itself is untouched — a split is not a person deletion.
 	require.NoError(t, testDB.First(&model.CatalogPerson{}, personID).Error)
 
 	var rev model.CatalogRevision
@@ -145,8 +142,6 @@ func TestSplitDryThenApplyThenSecondPassIsZeroWrite(t *testing.T) {
 	assert.EqualValues(t, 1, revs)
 }
 
-// Detaching every anchor would leave a sourceless name — that is a deletion in
-// disguise and means the worklist row is wrong, so it is refused, not performed.
 func TestSplitRefusesToStripEveryAnchor(t *testing.T) {
 	cnID, _ := fixture(t)
 	wl := write(t, fmt.Sprintf(`{"credit_name_id":%d,"detach_sources":["bgm","eg"]}`, cnID))
@@ -156,7 +151,6 @@ func TestSplitRefusesToStripEveryAnchor(t *testing.T) {
 	assert.Zero(t, st.AnchorsDropped)
 	assert.Len(t, anchors(t, cnID), 2)
 
-	// An unknown source key is refused too, rather than silently detaching nothing.
 	wl2 := write(t, fmt.Sprintf(`{"credit_name_id":%d,"detach_sources":["nope"]}`, cnID))
 	st2, err := Run(context.Background(), Opts{DSN: testDSN, WorklistPath: wl2, Apply: true})
 	require.NoError(t, err)

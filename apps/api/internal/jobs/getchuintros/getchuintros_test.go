@@ -19,18 +19,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema plus a
-// stand-in for the crawler's staging `items` table. In production those are two
-// databases; here one DSN plays both parts, which is faithful enough because
-// the job never joins across them — it reads the staging side into a map.
 var (
 	testDB  *gorm.DB
 	testDSN string
 )
 
-// TestMain gates the DB-backed tests PER TEST (dbtest.Skip) rather than exiting
-// the package: pick_test.go holds pure functions, and a package-level exit
-// would report them as `ok` while running none of them.
 func TestMain(m *testing.M) {
 	var ok bool
 	testDSN, ok = dbtest.DSN()
@@ -51,8 +44,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "FAIL: catalog seed failed: %v\n", err)
 		os.Exit(1)
 	}
-	// The staging stand-in. Only the two columns the job reads matter; the real
-	// table (kun-getchu-api) has eighteen more.
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS items (getchu_id text PRIMARY KEY, story text)`).Error; err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL: staging items table: %v\n", err)
 		os.Exit(1)
@@ -61,13 +52,9 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// --- fixtures -------------------------------------------------------------
-
 const (
 	getchuSource = int16(17)
-	// The rule wave 167 stamps on every Getchu anchor. matched_by is NOT NULL,
-	// so a fixture that omits it cannot insert at all.
-	getchuRule = "rule:vndb-extlink-getchu"
+	getchuRule   = "rule:vndb-extlink-getchu"
 )
 
 func clean(t *testing.T) {
@@ -75,10 +62,6 @@ func clean(t *testing.T) {
 	if testDB == nil {
 		dbtest.Skip(t)
 	}
-	// catalog_external_ref carries a POLYMORPHIC entity_id, so it has no foreign
-	// key to catalog_work and a CASCADE truncate of works leaves its rows
-	// behind. It is cleaned explicitly, without RESTART IDENTITY — that sequence
-	// is shared with every other package running against this database.
 	for _, table := range []string{"catalog_external_ref", "catalog_release", "items"} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" CASCADE").Error)
 	}
@@ -89,9 +72,6 @@ func clean(t *testing.T) {
 
 var nextProductWorkID int64 = 970000
 
-// mkWork builds a work in the requested population. Published needs BOTH a site
-// and a product_work_id — model.ClaimStateKey will not call a row live without
-// the second, and (site, product_work_id) is unique, so each gets a fresh id.
 func mkWork(t *testing.T, name string, pop workpop.Population) int64 {
 	t.Helper()
 	w := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: name}
@@ -108,7 +88,6 @@ func mkWork(t *testing.T, name string, pop workpop.Population) int64 {
 	return w.ID
 }
 
-// mkAnchoredRelease gives a work a release carrying an EXACT getchu ref.
 func mkAnchoredRelease(t *testing.T, workID int64, getchuID string) {
 	t.Helper()
 	rel := model.CatalogRelease{WorkID: workID, Kind: 0}
@@ -151,8 +130,6 @@ func introOf(t *testing.T, workID int64, lang string) (string, int16, bool) {
 	return row.Intro, row.SourceID, res.RowsAffected > 0
 }
 
-// --- tests ----------------------------------------------------------------
-
 func TestFillsMissingJapanese(t *testing.T) {
 	clean(t)
 	work := mkWork(t, "空の作品", workpop.Published)
@@ -173,15 +150,12 @@ func TestFillsMissingJapanese(t *testing.T) {
 	assert.Equal(t, getchuSource, source)
 }
 
-// Fill-missing is across ALL sources, not just this one: a work that already
-// reads in Japanese from Bangumi or DLsite must not gain a second Japanese
-// intro, because the read face would surface both.
 func TestSkipsWorkThatAlreadyReadsInJapanese(t *testing.T) {
 	clean(t)
 	work := mkWork(t, "既に日本語あり", workpop.Published)
 	mkAnchoredRelease(t, work, "1002")
 	mkStagingItem(t, "1002", "getchu の紹介文")
-	mkIntro(t, work, "ja", 3) // bangumi
+	mkIntro(t, work, "ja", 3)
 
 	st := run(t, true, workpop.Published)
 	assert.Equal(t, 1, st.SkipHasJa)
@@ -191,8 +165,6 @@ func TestSkipsWorkThatAlreadyReadsInJapanese(t *testing.T) {
 	assert.Equal(t, int16(3), source)
 }
 
-// An existing intro in ANOTHER language is not a reason to skip — filling the
-// Japanese gap is the point, and it is what feeds the nightly ja→zh lane.
 func TestChineseIntroDoesNotBlockTheJapaneseFill(t *testing.T) {
 	clean(t)
 	work := mkWork(t, "中文あり", workpop.Published)
@@ -206,8 +178,6 @@ func TestChineseIntroDoesNotBlockTheJapaneseFill(t *testing.T) {
 	assert.True(t, found)
 }
 
-// A second --apply must write nothing. Fill-missing is self-idempotent (the row
-// it wrote makes the language present), and the ON CONFLICT is only a backstop.
 func TestSecondApplyIsAZeroWriteNoOp(t *testing.T) {
 	clean(t)
 	work := mkWork(t, "二度目", workpop.Published)
@@ -223,8 +193,6 @@ func TestSecondApplyIsAZeroWriteNoOp(t *testing.T) {
 	assert.Equal(t, 1, second.SkipHasJa)
 }
 
-// The published population is NARROWER than claimed, which is narrower than
-// all. Getting this wrong would spend the lane on the draft sea.
 func TestPopulationNarrows(t *testing.T) {
 	clean(t)
 	for i, pop := range []workpop.Population{workpop.Bodyless, workpop.Claimed, workpop.Published} {
@@ -239,13 +207,11 @@ func TestPopulationNarrows(t *testing.T) {
 	assert.Equal(t, 3, run(t, false, workpop.All).Planned)
 }
 
-// An anchored work whose Getchu page was never crawled, or carries no story
-// block, is reported — not silently dropped from the denominator.
 func TestUnreachableWorkIsCountedNotHidden(t *testing.T) {
 	clean(t)
 	work := mkWork(t, "story なし", workpop.Published)
 	mkAnchoredRelease(t, work, "3001")
-	mkStagingItem(t, "3001", "") // fetched, but Getchu had no story block
+	mkStagingItem(t, "3001", "")
 
 	st := run(t, true, workpop.Published)
 	assert.Equal(t, 1, st.Works)
@@ -253,8 +219,6 @@ func TestUnreachableWorkIsCountedNotHidden(t *testing.T) {
 	assert.Equal(t, 0, st.Written)
 }
 
-// Only EXACT anchors are read. A probable ref sits in the confirm bucket and
-// asserting identity from it is exactly what this lane must not do.
 func TestProbableAnchorIsNotRead(t *testing.T) {
 	clean(t)
 	work := mkWork(t, "probable のみ", workpop.Published)
@@ -271,8 +235,6 @@ func TestProbableAnchorIsNotRead(t *testing.T) {
 	assert.Equal(t, 0, st.Written)
 }
 
-// Writing an intro bumps the work's updated_at so the public changes feed
-// learns it is worth re-pulling; a skip must not.
 func TestWrittenWorkIsTouchedAndSkippedWorkIsNot(t *testing.T) {
 	clean(t)
 	filled := mkWork(t, "書かれる", workpop.Published)
@@ -302,8 +264,6 @@ func TestWrittenWorkIsTouchedAndSkippedWorkIsNot(t *testing.T) {
 	assert.Equal(t, before[1].UpdatedAt, after[1].UpdatedAt, "the skipped work did not")
 }
 
-// Both DSNs are required. A bare invocation must not be able to guess either —
-// this job reads a staging database and writes the live catalog.
 func TestBothDSNsAreRequired(t *testing.T) {
 	_, err := Run(context.Background(), Opts{GetchuDSN: "x"})
 	require.Error(t, err)

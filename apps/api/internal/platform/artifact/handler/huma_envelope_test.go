@@ -21,8 +21,6 @@ type okOutput struct {
 	Body Envelope[okPayload]
 }
 
-// TestEnvelopeSuccess proves a Huma operation returning Envelope[T] serializes
-// to the house success shape {code:0,message:"成功",data:{...}}.
 func TestEnvelopeSuccess(t *testing.T) {
 	InstallErrorEnvelope()
 	_, api := humatest.New(t)
@@ -44,8 +42,6 @@ func TestEnvelopeSuccess(t *testing.T) {
 	}
 }
 
-// TestEnvelopeError proves a houseError comes out as the house error shape
-// {code,message} as application/json (NOT Huma's default problem+json).
 func TestEnvelopeError(t *testing.T) {
 	InstallErrorEnvelope()
 	_, api := humatest.New(t)
@@ -70,8 +66,6 @@ func TestEnvelopeError(t *testing.T) {
 	}
 }
 
-// TestEnvelopeInternalError proves Huma-internal errors (raised by the framework,
-// e.g. validation) also flow through the house envelope via the NewError override.
 func TestEnvelopeInternalError(t *testing.T) {
 	InstallErrorEnvelope()
 	_, api := humatest.New(t)

@@ -29,31 +29,21 @@ func cn(src int16, key, name string, usage int, works ...int64) candName {
 	return c
 }
 
-// TestBuildCandidatePairs pins the blocking convergence (doc 87 ruling 3): a
-// pair fires on substring / edit-distance / co-occurrence, cross-source ONLY,
-// deduped, each labeled by the first rule that matched. Same-source and
-// too-short names never pair; co-occurrence needs both work-id sets.
 func TestBuildCandidatePairs(t *testing.T) {
 	pool := []candName{
-		// substring: dlsite「巨乳/爆乳」contains vndb「巨乳」
 		cn(tVndb, "vndb", "巨乳", 300),
 		cn(tDl, "dlsite", "巨乳/爆乳", 1500),
-		// edit distance 1: vndb「学园」vs dlsite「学院」(one rune apart)
 		cn(tVndb, "vndb", "学园", 200),
 		cn(tDl, "dlsite", "学院", 400),
-		// co-occurrence (bgm↔dlsite, shared catalog_work ids): distinct surface
-		// forms, no literal overlap, but heavy work overlap.
 		cn(tBgm, "bangumi", "银发", 90, 1, 2, 3, 4),
 		cn(tDl, "dlsite", "白毛", 80, 1, 2, 3, 5),
-		// same-source pair must NOT fire (both vndb)
 		cn(tVndb, "vndb", "开朗", 50),
 		cn(tVndb, "vndb", "开郎", 50),
-		// single rune — ignored (below MinLen)
 		cn(tDl, "dlsite", "萝", 900),
 	}
 	pairs, st := buildCandidatePairs(pool, blockOpts{})
 
-	got := map[string]string{} // "A|B" → rule
+	got := map[string]string{}
 	for _, p := range pairs {
 		got[p.A.Name+"|"+p.B.Name] = p.Block
 	}
@@ -67,7 +57,6 @@ func TestBuildCandidatePairs(t *testing.T) {
 	assert.Equal(t, 1, st.Cooccur)
 	assert.Equal(t, 3, st.Total)
 
-	// idempotent order: a second run yields the same slice.
 	pairs2, _ := buildCandidatePairs(pool, blockOpts{})
 	require.Len(t, pairs2, len(pairs))
 	for i := range pairs {
@@ -83,8 +72,6 @@ func TestLevenshtein(t *testing.T) {
 	assert.Equal(t, 3, levenshtein("", "xyz"))
 }
 
-// TestMockMatcher pins the deterministic seam: every relation branch is
-// reachable and the model id is obviously a mock.
 func TestMockMatcher(t *testing.T) {
 	m := MockMatcher{Model: "glm"}
 	ctx := context.Background()
@@ -106,7 +93,6 @@ func TestMockMatcher(t *testing.T) {
 	v, _, _ = m.MatchPair(ctx, PairInput{AName: "机器人", BName: "料理"})
 	assert.Equal(t, RelUnrelated, v.Relation)
 
-	// ClassifyName: meta by the pinned set; tier by usage bucket.
 	nv, _, _ := m.ClassifyName(ctx, NameInput{Name: "R18", Usage: 500})
 	assert.EqualValues(t, model.TagKindMeta, nv.Kind)
 	assert.EqualValues(t, model.TagTierHidden, nv.Tier, "meta → hidden")
@@ -119,9 +105,6 @@ func TestMockMatcher(t *testing.T) {
 	assert.EqualValues(t, model.TagTierLongtail, nv.Tier, "low-usage content → longtail")
 }
 
-// TestMakeReviewBuckets pins the confidence bucketing + the exact-only merge
-// rule: high-exact auto-approves, medium needs review, low drops, and NON-exact
-// relations are preserved (留档) but never approved.
 func TestMakeReviewBuckets(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "verdicts.jsonl")
@@ -148,8 +131,6 @@ func TestMakeReviewBuckets(t *testing.T) {
 	assert.Equal(t, 1, st.SingleMedium)
 	assert.Equal(t, 2, st.Approved, "1 high pair + 1 high single")
 
-	// decisions file: exactly the two high records are Approve=true; the narrower
-	// is present but never approved.
 	out, err := readRecords(dec)
 	require.NoError(t, err)
 	approved, narrowerSeen := 0, false
@@ -165,7 +146,6 @@ func TestMakeReviewBuckets(t *testing.T) {
 	assert.Equal(t, 2, approved)
 	assert.True(t, narrowerSeen)
 
-	// the markdown review file exists and names the medium pair.
 	body, err := os.ReadFile(md)
 	require.NoError(t, err)
 	assert.Contains(t, string(body), "学园", "medium pair surfaced for human review")

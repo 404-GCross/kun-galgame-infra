@@ -1,8 +1,3 @@
-// Admin-face read aggregates over the ai_usage ledger. The dashboard needs three
-// axes (doc 20 §5): a site×route×channel usage/cost/status summary, a day×route
-// trend, and the current budget-fuse config. These are plain SQL GROUP BYs (no
-// materialization); the site-leading and route-leading indexes from
-// migrate.rawSQL back the window scans.
 package service
 
 import (
@@ -14,17 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// StatsService serves the admin usage/trend reads.
 type StatsService struct {
 	db *gorm.DB
 }
 
-// NewStatsService wires the service to the kun_ai DB.
 func NewStatsService(db *gorm.DB) *StatsService { return &StatsService{db: db} }
 
-// windowIntervals maps the wire window token to a Postgres interval literal. The
-// handler validates the token via a Huma enum, so an unknown value here falls
-// back to 24h defensively.
 var windowIntervals = map[string]string{
 	"24h": "24 hours",
 	"7d":  "7 days",
@@ -38,10 +28,6 @@ func resolveWindow(window string) (string, string) {
 	return "24h", windowIntervals["24h"]
 }
 
-// Summary aggregates the window by (site, route, channel): call counts, token
-// sums, cost, and the terminal-status distribution — plus a totalled overview.
-// The COUNT(*) FILTER columns are aliased to the exact snake_case the DTO's gorm
-// tags expect (章程 GORM acronym-column trap: the OK count → "ok", never "o_k").
 func (s *StatsService) Summary(ctx context.Context, window string) (dto.UsageSummary, error) {
 	resolved, interval := resolveWindow(window)
 
@@ -71,12 +57,6 @@ func (s *StatsService) Summary(ctx context.Context, window string) (dto.UsageSum
 	return dto.UsageSummary{Window: resolved, Overview: overviewOf(rows), Rows: rows}, nil
 }
 
-// overviewOf totals the per-group rows into the dashboard's headline card. The
-// error rate is the non-OK fraction (upstream_error + budget_denied + degraded +
-// truncated) over total calls — derived as calls-ok rather than by summing the
-// buckets, so a status with no bucket of its own still lands in the rate. That
-// is how truncation stayed inside the error rate while being invisible in the
-// breakdown; the derivation was right, the breakdown was incomplete.
 func overviewOf(rows []dto.SummaryRow) dto.UsageOverview {
 	var o dto.UsageOverview
 	for _, r := range rows {
@@ -96,9 +76,6 @@ func overviewOf(rows []dto.SummaryRow) dto.UsageOverview {
 	return o
 }
 
-// Daily returns a day×route calls/cost series covering the last `days` calendar
-// days (inclusive of today). The lower bound is the start of (today-(days-1))
-// in the DB session timezone.
 func (s *StatsService) Daily(ctx context.Context, days int) (dto.DailySeries, error) {
 	if days < 1 {
 		days = 1

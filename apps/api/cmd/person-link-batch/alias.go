@@ -8,8 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// orderedPair normalizes a candidate pair to a<b (candidates are stored that
-// way; the helper keeps set lookups robust).
 func orderedPair(a, b int64) [2]int64 {
 	if a > b {
 		return [2]int64{b, a}
@@ -17,14 +15,6 @@ func orderedPair(a, b int64) [2]int64 {
 	return [2]int64{a, b}
 }
 
-// aliasClassifier judges the alias_declared candidates with a SECOND line of
-// evidence beyond the declaration:
-//   - A3: the two names are co-credited on the same work (loadCoCreditPairs);
-//   - A4: the declaration is bidirectional — each side's ingested search-hint
-//     aliases (step 25) name the other side's whole folded name.
-//
-// Everything is precomputed in two bulk queries so the per-candidate closure is
-// allocation-free.
 func aliasClassifier(db *gorm.DB, rows []candidateRow) (func(candidateRow) string, error) {
 	coCredit, err := loadCoCreditPairs(db)
 	if err != nil {
@@ -49,8 +39,6 @@ func aliasClassifier(db *gorm.DB, rows []candidateRow) (func(candidateRow) strin
 	}, nil
 }
 
-// loadCoCreditPairs returns the alias_declared candidate pairs whose two names
-// share a credit on the same work — the "collaborated on a title" evidence.
 func loadCoCreditPairs(db *gorm.DB) (map[[2]int64]bool, error) {
 	var rows []struct {
 		AID int64 `gorm:"column:a_id"`
@@ -75,8 +63,6 @@ func loadCoCreditPairs(db *gorm.DB) (map[[2]int64]bool, error) {
 	return set, nil
 }
 
-// loadAliasFolds maps each credit_name id to the folded forms of its ingested
-// aliases (catalog_name_alias, step 25's search hints).
 func loadAliasFolds(db *gorm.DB, ids []int64) (map[int64]map[string]bool, error) {
 	out := map[int64]map[string]bool{}
 	if len(ids) == 0 {

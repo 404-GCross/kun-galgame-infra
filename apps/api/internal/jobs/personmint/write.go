@@ -13,24 +13,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// provEntry is one R8 provenance record; the array is latest-first (wave 81).
 type provEntry struct {
 	Source string `json:"source"`
 	At     string `json:"at"`
 }
 
-// writer turns decided plans into rows. It owns the two invariants that make
-// this wave safe to re-run: a person field is only ever filled when EMPTY, and
-// an et=0 anchor is claimed by exactly one cluster.
 type writer struct {
-	db    *gorm.DB
-	env   *environment
-	stats *Stats
-	apply bool
-	// claimed is the intra-run et=0 uniqueness tripwire. Two clusters
-	// contributing the same (source, external_id) would mean the wave-152
-	// union-find split one source identity across two persons — an E1a
-	// contradiction that must stop the run, not be written.
+	db      *gorm.DB
+	env     *environment
+	stats   *Stats
+	apply   bool
 	claimed map[anchorKey]string
 }
 
@@ -88,9 +80,6 @@ func (w *writer) mint(ctx context.Context, p *mintPlan) error {
 	})
 }
 
-// personFields is the decided field write set for one host, already reduced to
-// "only what is EMPTY today" — the fill-missing rule of doc 153 §5. It never
-// contains a field the host already has a value for, so a re-run plans nothing.
 type personFields struct {
 	updates map[string]any
 	prov    map[string]json.RawMessage
@@ -110,10 +99,6 @@ func (f *personFields) updateMap() map[string]any {
 	return out
 }
 
-// planFields decides which of the host's columns this wave may fill and
-// records the provenance entry for each. A host that already carries a value
-// keeps it — even when the sources agree with it — because the person layer
-// has human editors and this pipeline is not one of them.
 func (w *writer) planFields(p *mintPlan) *personFields {
 	f := &personFields{updates: map[string]any{}, prov: map[string]json.RawMessage{}, now: time.Now().UTC().Format(time.RFC3339)}
 	if p.Host != nil && len(p.Host.FieldProvenance) > 0 {
@@ -159,10 +144,6 @@ func (w *writer) planFields(p *mintPlan) *personFields {
 		w.stats.BirthKept++
 	}
 
-	// display_name and primary_credit_name_id are set on CREATE and never
-	// re-elected: every genesis person already carries both, and re-electing a
-	// display name from an import is exactly the kind of churn the field
-	// provenance rules exist to prevent.
 	if p.Host != nil {
 		if p.Host.DisplayName == "" {
 			f.updates["display_name"] = p.DisplayName
@@ -195,9 +176,6 @@ func (w *writer) createPerson(ctx context.Context, tx *gorm.DB, p *mintPlan, f *
 	return person.ID, nil
 }
 
-// linkMembers fills credit_name.person_id from NULL only. The WHERE clause
-// repeats the NULL condition the plan already checked: a concurrent writer
-// that linked the name in between must win, not be overwritten.
 func (w *writer) linkMembers(ctx context.Context, tx *gorm.DB, p *mintPlan, personID int64) error {
 	if len(p.LinkFill) == 0 {
 		return nil
@@ -212,10 +190,6 @@ func (w *writer) linkMembers(ctx context.Context, tx *gorm.DB, p *mintPlan, pers
 	return nil
 }
 
-// writeAnchors inserts the et=0 identity assertions. ON CONFLICT DO NOTHING is
-// the backstop behind the preloaded owner map — the partial unique index
-// (source, external_id, entity_type) WHERE link_kind=0 is what actually
-// guarantees one owner per source id.
 func (w *writer) writeAnchors(ctx context.Context, tx *gorm.DB, p *mintPlan, personID int64) error {
 	for _, a := range p.AnchorsNew {
 		res := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.CatalogExternalRef{
@@ -230,8 +204,6 @@ func (w *writer) writeAnchors(ctx context.Context, tx *gorm.DB, p *mintPlan, per
 			return fmt.Errorf("anchor person %d to (%d,%s): %w", personID, a.SourceID, a.ExternalID, res.Error)
 		}
 		if res.RowsAffected == 0 {
-			// The unique index refused it: some other person owns that source
-			// id. Writing on regardless would fork one identity in two.
 			return fmt.Errorf("et=0 anchor (source %d, %s) of cluster %s is already owned by another person",
 				a.SourceID, a.ExternalID, p.ClusterID)
 		}

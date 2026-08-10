@@ -7,11 +7,7 @@ const route = useRoute()
 const router = useRouter()
 const colorMode = useColorMode()
 
-// Desktop-only collapse (md+). On mobile the sidebar is a full-width
-// slide-in drawer, so collapse width is irrelevant there.
 const isSidebarCollapsed = ref(false)
-// Mobile drawer open state (< md). Desktop ignores it — the sidebar is
-// always visible via md:translate-x-0.
 const isMobileMenuOpen = ref(false)
 
 const canSee = (item: SidebarItem) =>
@@ -24,9 +20,6 @@ const visibleMenu = computed(() =>
   }))
 )
 
-// Expanded state for collapsible sidebar groups (keyed by label). A group is
-// open if explicitly toggled, otherwise auto-open when one of its children is
-// the active route.
 const expandedGroups = ref<Record<string, boolean>>({})
 const isGroupOpen = (item: SidebarItem) =>
   item.label in expandedGroups.value
@@ -39,10 +32,6 @@ const toggleGroup = (item: SidebarItem) => {
   }
 }
 
-// Trigger uses a fixed icon (not derived from colorMode.preference) so
-// SSR and CSR render the exact same DOM. The current preference is
-// shown inside the popover instead — and the popover is closed by
-// default, so its body never enters the SSR pass.
 const colorModeOptions = [
   { value: 'light', label: '浅色', icon: 'lucide:sun' },
   { value: 'dark', label: '深色', icon: 'lucide:moon' },
@@ -53,7 +42,6 @@ const setColorMode = (mode: string) => {
   colorMode.preference = mode
 }
 
-// Close the mobile drawer on navigation — a client-side route change
 // would otherwise leave it open over the destination page.
 watch(
   () => route.path,
@@ -62,8 +50,6 @@ watch(
   }
 )
 
-// Lock body scroll while the mobile drawer is open. Shared refcount so it
-// composes with KunModal / KunLightbox locks instead of clobbering them.
 const { lock, unlock } = useBodyScrollLock()
 let locked = false
 watch(isMobileMenuOpen, (open) => {
@@ -82,22 +68,12 @@ onUnmounted(() => {
   }
 })
 
-// Client safety net: if there's still no user by mount (token present but
-// /auth/me failed — revoked/invalid), bounce to login. The no-token case is
-// already handled by the auth middleware. Registered BEFORE the await below so
-// the component instance is still active when the lifecycle hook is set up.
 onMounted(() => {
   if (!auth.user.value) {
     router.push('/auth/login')
   }
 })
 
-// Fetch the signed-in user ONCE, on the server, so the admin shell renders with
-// the user on first paint and the result hydrates to the client via Pinia — no
-// per-page client-side refetch. Previously BOTH this layout and
-// profile/Container.vue called auth.fetchUser() in onMounted; with an empty
-// persisted store both passed the `!user` guard and fired /auth/me twice (a
-// race). callOnce + Pinia hydration collapses that to a single SSR request.
 await callOnce('auth:user', async () => {
   if (!auth.user.value) {
     await auth.fetchUser()
@@ -107,7 +83,6 @@ await callOnce('auth:user', async () => {
 
 <template>
   <div class="bg-background flex min-h-screen">
-    <!-- Mobile backdrop (< md). Tap to close the drawer. -->
     <Transition
       enter-active-class="transition-opacity duration-300 ease-out"
       enter-from-class="opacity-0"
@@ -121,9 +96,6 @@ await callOnce('auth:user', async () => {
       />
     </Transition>
 
-    <!-- Sidebar. Desktop: fixed, always visible (md:translate-x-0) with
-         collapse width. Mobile: off-canvas drawer at full width, slides in
-         when isMobileMenuOpen. -->
     <aside
       :class="[
         'bg-content1 fixed inset-y-0 left-0 z-50 flex w-64 flex-col shadow-lg transition-all duration-300',
@@ -132,7 +104,6 @@ await callOnce('auth:user', async () => {
         isSidebarCollapsed ? 'md:w-16' : 'md:w-64'
       ]"
     >
-      <!-- Logo row + mobile close button -->
       <div
         class="border-default-200 flex h-16 items-center justify-between gap-2 border-b px-4"
       >
@@ -161,10 +132,8 @@ await callOnce('auth:user', async () => {
         </KunButton>
       </div>
 
-      <!-- Navigation -->
       <nav class="flex-1 space-y-1 overflow-y-auto p-4">
         <template v-for="item in visibleMenu" :key="item.label">
-          <!-- Leaf item -->
           <NuxtLink
             v-if="!item.children"
             :to="item.to"
@@ -175,7 +144,6 @@ await callOnce('auth:user', async () => {
             <span v-if="!isSidebarCollapsed" class="truncate">{{ item.label }}</span>
           </NuxtLink>
 
-          <!-- Collapsed sidebar: flatten the group to its child icons -->
           <template v-else-if="isSidebarCollapsed">
             <NuxtLink
               v-for="child in item.children"
@@ -188,7 +156,6 @@ await callOnce('auth:user', async () => {
             </NuxtLink>
           </template>
 
-          <!-- Expanded sidebar: group header + collapsible children -->
           <div v-else>
             <button
               type="button"
@@ -218,7 +185,6 @@ await callOnce('auth:user', async () => {
         </template>
       </nav>
 
-      <!-- Collapse button (desktop only) -->
       <KunButton
         variant="light"
         rounded="none"
@@ -236,20 +202,16 @@ await callOnce('auth:user', async () => {
       </KunButton>
     </aside>
 
-    <!-- Main content. min-w-0 lets wide children (tables) scroll inside
-         instead of stretching this flex column past the viewport. -->
     <div
       :class="[
         'flex min-w-0 flex-1 flex-col transition-all duration-300',
         isSidebarCollapsed ? 'md:ml-16' : 'md:ml-64'
       ]"
     >
-      <!-- Top Bar -->
       <header
         class="border-default-200 bg-content1 sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b px-4 shadow-sm md:px-6"
       >
         <div class="flex min-w-0 items-center gap-2 md:gap-4">
-          <!-- Hamburger (mobile only) -->
           <KunButton
             variant="light"
             size="sm"
@@ -264,7 +226,6 @@ await callOnce('auth:user', async () => {
         </div>
 
         <div class="flex shrink-0 items-center gap-2 md:gap-4">
-          <!-- Color Mode Toggle -->
           <KunPopover position="bottom-end">
             <template #trigger>
               <KunButton
@@ -295,12 +256,10 @@ await callOnce('auth:user', async () => {
             </div>
           </KunPopover>
 
-          <!-- User Menu — avatar dropdown with in-place account switcher -->
           <LayoutAccountSwitcher />
         </div>
       </header>
 
-      <!-- Page Content -->
       <main class="flex-1 p-4 md:p-6">
         <slot />
       </main>

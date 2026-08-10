@@ -1,8 +1,3 @@
-// Resolve a human name from ANY catalog/galgame entity record. The faces name
-// themselves differently: labels carry a flat display_name; names/characters
-// nest it (`name` as a string, a { name, latin } stub, or a locale map);
-// galgame aggregates use a `names` locale map. Honest chain, null when truly
-// nameless (callers fall back to #id).
 export const entityName = (data: Record<string, unknown>): string | null => {
   const dn = data.display_name
   if (typeof dn === 'string' && dn) return dn

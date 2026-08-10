@@ -1,12 +1,3 @@
-// Package quota enforces per-site daily upload quotas for the artifact service
-// via Redis counters. Mirrors internal/platform/image/quota but with an
-// artifact: key namespace and reservation at INIT time (the service never sees
-// the bytes; it reserves on the caller-declared size). Keys:
-//
-//	artifact:quota:count:<site>:<YYYYMMDD>
-//	artifact:quota:bytes:<site>:<YYYYMMDD>
-//
-// Both expire in 26h so they self-clean across day rollover.
 package quota
 
 import (
@@ -21,22 +12,18 @@ import (
 
 const keyTTL = 26 * time.Hour
 
-// Errors.
 var (
 	ErrCountExceeded = errors.New("quota: daily upload count exceeded")
 	ErrBytesExceeded = errors.New("quota: daily upload bytes exceeded")
 	ErrNotConfigured = errors.New("quota: redis cache not configured")
 )
 
-// Checker guards uploads with per-site daily quotas.
 type Checker struct {
 	cache *cache.RedisCache
 }
 
-// New creates a quota checker backed by the given Redis cache.
 func New(c *cache.RedisCache) *Checker { return &Checker{cache: c} }
 
-// DailyUsage is the current-day usage for a site.
 type DailyUsage struct {
 	Count      int64
 	Bytes      int64
@@ -55,10 +42,6 @@ func nextDay(now time.Time) time.Time {
 func countKey(site, day string) string { return fmt.Sprintf("artifact:quota:count:%s:%s", site, day) }
 func bytesKey(site, day string) string { return fmt.Sprintf("artifact:quota:bytes:%s:%s", site, day) }
 
-// Reserve checks quota and increments both counters. If either dimension would
-// be exceeded it returns the specific error without consuming quota. Uses
-// GET-then-SET (cache.RedisCache exposes only Get/Set); acceptable per-V1
-// concurrency tradeoff, same as the image service.
 func (c *Checker) Reserve(ctx context.Context, site string, bytesToAdd int64, limitCount int, limitBytes int64) (*DailyUsage, error) {
 	if c == nil || c.cache == nil {
 		return nil, ErrNotConfigured

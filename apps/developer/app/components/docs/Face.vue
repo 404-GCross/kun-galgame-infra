@@ -1,12 +1,9 @@
 <script setup lang="ts">
-// /docs/[face] overview: the face's grouped endpoint directory. Each group
-// heading makes the tag layer visible; each row links to its operation page.
 const route = useRoute()
 const { findFace, faceOperationCount } = useDocs()
 
 const face = computed(() => findFace(route.params.face as string))
 
-// Unknown face → a real 404 (SSR-correct status), not a blank page.
 if (!face.value) {
   throw createError({ statusCode: 404, statusMessage: '未找到该数据面', fatal: true })
 }
@@ -22,7 +19,6 @@ useSeoMeta({
 
 <template>
   <div class="space-y-8">
-    <!-- Breadcrumb -->
     <nav class="flex items-center gap-1.5 text-sm text-default-400">
       <NuxtLink to="/docs" class="transition-colors hover:text-foreground">
         文档

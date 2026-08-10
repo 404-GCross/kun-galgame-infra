@@ -4,13 +4,6 @@ import (
 	"context"
 )
 
-// WorkRelationRow is one cross-media relation edge rendered single-directionally
-// from the viewed work's perspective (wave 104 — the S2S read face finally
-// surfaces the REL1 edge table). Phrase is the direction-resolved display
-// phrase (forward for outgoing and symmetric edges, reverse otherwise). The
-// other end's identity fields ride along so the consumer renders a brief
-// without a second query; the internal face carries r18 ends verbatim (the
-// PUBLIC face drops them per its own nsfw gate).
 type WorkRelationRow struct {
 	Key           string  `gorm:"column:key"`
 	Phrase        string  `gorm:"column:phrase"`
@@ -21,15 +14,9 @@ type WorkRelationRow struct {
 	Status        int16   `gorm:"column:status"`
 	Site          *string `gorm:"column:site"`
 	ProductWorkID *int64  `gorm:"column:product_work_id"`
-	// ClaimState rides along so the public face can stamp claimed_by.state on
-	// the other end without a second query (A2-1e / R7). The S2S face maps its
-	// DTOs field by field and therefore stays byte-identical.
-	ClaimState *int16 `gorm:"column:claim_state"`
+	ClaimState    *int16  `gorm:"column:claim_state"`
 }
 
-// loadWorkRelations reads a work's relation edges (both directions, one query)
-// joined to the other end's live work row. Deleted ends drop; everything else
-// is the caller's concern (per-face policy).
 func (s *ReadService) loadWorkRelations(ctx context.Context, workID int64) ([]WorkRelationRow, error) {
 	var rows []WorkRelationRow
 	if err := s.db.WithContext(ctx).Raw(`
@@ -54,13 +41,8 @@ func (s *ReadService) loadWorkRelations(ctx context.Context, workID int64) ([]Wo
 	return rows, nil
 }
 
-// seriesRelationTypeID is catalog_relation_type.id for same_series (seed key
-// "same_series", symmetric). vndb's ser edges project here (importer type 7).
 const seriesRelationTypeID = 7
 
-// SeriesSiblingRow is one work in the viewed work's same_series transitive
-// closure (wave 113). Identity rides along so the consumer renders a brief
-// without a second query.
 type SeriesSiblingRow struct {
 	WorkID        int64   `gorm:"column:work_id"`
 	DisplayName   string  `gorm:"column:display_name"`
@@ -69,33 +51,10 @@ type SeriesSiblingRow struct {
 	Status        int16   `gorm:"column:status"`
 	Site          *string `gorm:"column:site"`
 	ProductWorkID *int64  `gorm:"column:product_work_id"`
-	// ClaimState rides along so the public face can stamp claimed_by.state on
-	// the other end without a second query (A2-1e / R7). The S2S face maps its
-	// DTOs field by field and therefore stays byte-identical.
-	ClaimState *int16 `gorm:"column:claim_state"`
+	ClaimState    *int16  `gorm:"column:claim_state"`
 }
 
-// loadSeriesSiblings computes the transitive closure of the same_series (type 7)
-// relation from workID via a recursive CTE (a connected-component walk — UNION
-// dedups and terminates), returning every OTHER live work in the same series
-// component. same_series is symmetric and, as an equivalence relation,
-// transitive: a leaf work (wave 113 measured 68.6% of series nodes are degree-1
-// leaves) sees its WHOLE family here, not just the one neighbour the pairwise
-// relations face records. Self is excluded; deleted ends drop.
-//
-// Wave 117 splits this into two statements — the walk and the briefs — because
-// this runs on EVERY work detail read (S2S works/{id}, by-anchor, public
-// /v1/catalog/works/{id}) and the old single-statement form was unconditionally
-// quadratic-ish: the materialised `edges` UNION ALL view cannot be
-// parameterised, so the planner re-scanned the whole relation table twice per
-// recursion round (prod: 87.5ms / 6,699 buffers, plus a 226k-row hash over
-// catalog_work). The LATERAL shape below probes per node instead, so the two
-// covering partial indexes (idx_catalog_work_relation_series_a/_b, see
-// migrate.go) serve the whole walk as Index Only Scans. Keep the LATERAL form:
-// measurements showed an equivalent UNION-ALL-view form never gets the probe.
 func (s *ReadService) loadSeriesSiblings(ctx context.Context, workID int64) ([]SeriesSiblingRow, error) {
-	// Stage 1 — the connected component's node set. UNION (not UNION ALL)
-	// dedups, which is what terminates the walk on cycles.
 	var nodes []int64
 	if err := s.db.WithContext(ctx).Raw(`
 		WITH RECURSIVE reach(node) AS (
@@ -113,9 +72,6 @@ func (s *ReadService) loadSeriesSiblings(ctx context.Context, workID int64) ([]S
 		workID, seriesRelationTypeID, seriesRelationTypeID, workID).Scan(&nodes).Error; err != nil {
 		return nil, err
 	}
-	// Stage 2 — briefs. The 98.2% of works with no series edge stop here and
-	// never touch catalog_work at all; nil matches what the old form scanned
-	// into for an empty walk (the handler/public projections pre-size non-nil).
 	if len(nodes) == 0 {
 		return nil, nil
 	}

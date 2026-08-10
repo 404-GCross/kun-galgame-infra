@@ -57,8 +57,6 @@ func clean(t *testing.T) {
 	}
 }
 
-// fixture builds one work + release, its EXACT vndb release anchor, and the
-// VNDB extlink chain that hangs off it.
 func fixture(t *testing.T, name, vndbReleaseID string, links map[string]string) int64 {
 	t.Helper()
 	var medium int16
@@ -86,9 +84,6 @@ func fixture(t *testing.T, name, vndbReleaseID string, links map[string]string) 
 	return rel.ID
 }
 
-// TestImportFromVNDBExtlinks is the wave-167 core: the anchor comes off VNDB's
-// curated link on a release we already trust, so it lands EXACT with no
-// matching step anywhere in the chain.
 func TestImportFromVNDBExtlinks(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -100,7 +95,6 @@ func TestImportFromVNDBExtlinks(t *testing.T) {
 	relB := fixture(t, "getchudl-only", "r200", map[string]string{"getchudl": "999001"})
 	relC := fixture(t, "other-store-only", "r300", map[string]string{"dlsite": "RJ01"})
 
-	// --- dry run decides, writes nothing.
 	st, err := Run(ctx, testDB, Opts{})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Candidates, "only the getchu link is a candidate")
@@ -110,7 +104,6 @@ func TestImportFromVNDBExtlinks(t *testing.T) {
 	require.NoError(t, testDB.Raw(`SELECT count(*) FROM catalog_external_ref WHERE source_id = ?`, getchuSource).Scan(&n).Error)
 	assert.EqualValues(t, 0, n, "dry run writes nothing")
 
-	// --- apply.
 	st, err = Run(ctx, testDB, Opts{Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Written)
@@ -125,8 +118,6 @@ func TestImportFromVNDBExtlinks(t *testing.T) {
 		"the ref is exactly as strong as the vndb ref it rides on")
 	assert.Equal(t, matchedBy, ref.MatchedBy)
 
-	// getchudl is a different edition on a different page shape — deliberately
-	// not ingested. Other stores are none of this importer's business.
 	for _, rel := range []int64{relB, relC} {
 		require.NoError(t, testDB.Raw(
 			`SELECT count(*) FROM catalog_external_ref WHERE source_id = ? AND entity_id = ?`,
@@ -134,16 +125,12 @@ func TestImportFromVNDBExtlinks(t *testing.T) {
 		assert.EqualValues(t, 0, n, "release %d must not be anchored", rel)
 	}
 
-	// --- second apply writes zero.
 	st, err = Run(ctx, testDB, Opts{Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.Candidates, "an anchored release leaves the candidate set")
 	assert.Zero(t, st.Written)
 }
 
-// TestNeverRegradesAnExistingAnchor pins the step-21 negative-knowledge rule: a
-// row someone else wrote — at a different tier, pointing somewhere else — is
-// left exactly as it is. A bulk importer does not overrule a judgement.
 func TestNeverRegradesAnExistingAnchor(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -166,9 +153,6 @@ func TestNeverRegradesAnExistingAnchor(t *testing.T) {
 	assert.Equal(t, "human:review", ref.MatchedBy)
 }
 
-// TestProbableVndbAnchorIsNotAChain pins the one place the trust argument could
-// leak: the getchu ref is only as strong as the vndb ref it rides on, so a
-// PROBABLE vndb anchor must not produce an EXACT getchu one.
 func TestProbableVndbAnchorIsNotAChain(t *testing.T) {
 	clean(t)
 	ctx := context.Background()

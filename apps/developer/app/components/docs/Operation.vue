@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { cn } from '@kungal/ui-core'
 
-// /docs/[face]/[operationId] — the full reference for one endpoint. The page is
-// keyed by path (definePageMeta), so this remounts per operation: resolving
-// synchronously here is safe and lets us seed per-response open state.
 const route = useRoute()
 const { findOperation } = useDocs()
 
@@ -23,7 +20,6 @@ useSeoMeta({
   description: operation.summary
 })
 
-// Responses collapse independently; the 200 payload is open by default.
 const openResp = reactive<Record<string, boolean>>({})
 operation.responses.forEach((r) => {
   openResp[r.status] = r.status === '200'
@@ -49,7 +45,6 @@ const statusMeta = (status: string): { label: string; class: string } => {
 
 <template>
   <article class="space-y-8">
-    <!-- Breadcrumb -->
     <nav class="flex flex-wrap items-center gap-1.5 text-sm text-default-400">
       <NuxtLink to="/docs" class="transition-colors hover:text-foreground">
         文档
@@ -65,14 +60,12 @@ const statusMeta = (status: string): { label: string; class: string } => {
       <code class="font-mono text-default-500">{{ operation.id }}</code>
     </nav>
 
-    <!-- Title + summary -->
     <header class="space-y-3">
       <h1 class="text-2xl font-bold tracking-tight text-foreground">
         {{ operation.id }}
       </h1>
       <p class="text-default-500">{{ operation.summary }}</p>
 
-      <!-- Method + path row -->
       <div
         class="flex items-center gap-3 overflow-x-auto rounded-xl border border-default-200 bg-content1 px-4 py-3"
       >
@@ -83,7 +76,6 @@ const statusMeta = (status: string): { label: string; class: string } => {
         <DocsCopyButton :text="fullUrl" label="复制请求地址" />
       </div>
 
-      <!-- Auth / scope note -->
       <div
         class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-default-400"
       >
@@ -101,13 +93,11 @@ const statusMeta = (status: string): { label: string; class: string } => {
       </div>
     </header>
 
-    <!-- Parameters -->
     <section v-if="operation.params.length" class="space-y-3">
       <h2 class="text-lg font-semibold text-foreground">参数</h2>
       <DocsParamTable :params="operation.params" />
     </section>
 
-    <!-- Request body -->
     <section v-if="operation.requestBody" class="space-y-3">
       <h2 class="text-lg font-semibold text-foreground">请求体</h2>
       <p class="text-xs text-default-400">
@@ -118,7 +108,6 @@ const statusMeta = (status: string): { label: string; class: string } => {
       </div>
     </section>
 
-    <!-- Responses -->
     <section class="space-y-3">
       <h2 class="text-lg font-semibold text-foreground">响应</h2>
       <div
@@ -162,7 +151,6 @@ const statusMeta = (status: string): { label: string; class: string } => {
       </div>
     </section>
 
-    <!-- Example request -->
     <section class="space-y-3">
       <h2 class="text-lg font-semibold text-foreground">请求示例</h2>
       <DocsCurlBlock :code="operation.curl" />

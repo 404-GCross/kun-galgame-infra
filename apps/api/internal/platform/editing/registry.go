@@ -9,9 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// FieldKind is the value type of a registered field — it drives client-side
-// form rendering and diff presentation, never engine behavior (validation is
-// the field's Validate closure).
 type FieldKind string
 
 const (
@@ -25,8 +22,6 @@ const (
 	KindImageHash FieldKind = "imagehash"
 )
 
-// Diff rendering hints (doc 21 §2.4): text line-by-line, lists item-by-item,
-// images side-by-side, scalars inline.
 const (
 	DiffHintInline = "inline"
 	DiffHintLines  = "lines"
@@ -34,59 +29,33 @@ const (
 	DiffHintImage  = "image"
 )
 
-// Propose rules (doc 21 §2.5). "perm:<key>" is built with ProposePerm.
 const (
 	ProposeOpen    = "open"
 	ProposeTrusted = "trusted"
 	ProposeLocked  = "locked"
 )
 
-// Automerge rules. "trusted" automerges when the PROPOSER's trust tier
-// reaches TrustedTier; "always" is the direct-edit tier (e.g. a site editing
-// works it minted itself — revisions are still recorded); "owner" (E1)
-// automerges only when the proposal's site equals the entity's owner site
-// (the spec's OwnerSite hook) — everyone else falls back to an open
-// proposal. Registering an owner rule without the hook fails fast.
 const (
 	AutomergeNever   = "never"
 	AutomergeTrusted = "trusted"
 	AutomergeAlways  = "always"
 	AutomergeOwner   = "owner"
-	// AutomergeReview automerges when the PROPOSER could REVIEW the field —
-	// i.e. holds the review perm (staff), OR is the product-asserted entity
-	// owner on an OwnerReview field. It reuses AllowsReview and keys purely on
-	// the proposer's context, so — unlike AutomergeOwner — it needs no OwnerSite
-	// hook. Lets a site grant its reviewers/owners direct edit (kungal:
-	// admin/ren + the game's creator) while everyone else still files an open
-	// proposal into the review queue.
-	AutomergeReview = "review"
+	AutomergeReview  = "review"
 )
 
 const permPrefix = "perm:"
 
-// ProposePerm builds a propose rule gated on a permission key.
 func ProposePerm(key string) string { return permPrefix + key }
 
-// ReviewPerm builds a review rule gated on a permission key. Review is
-// ALWAYS permission-gated — there is no open/trusted review.
 func ReviewPerm(key string) string { return permPrefix + key }
 
-// Policy is one field's edit policy triple (doc 21 §2.5). The effective
-// policy is the registry default ⊕ per-field override ⊕ site overlay.
 type Policy struct {
-	Propose   string // open | trusted | locked | perm:<key>
-	Review    string // perm:<key>
-	Automerge string // never | trusted | always
-	// OwnerReview additionally grants the review rule to a caller the product
-	// backend asserted as the entity's owner (E3b: the old wire's owner-merge
-	// privilege lifted into an explicit overlay capability). The perm rule
-	// always also passes; false (the zero value) changes nothing.
+	Propose     string
+	Review      string
+	Automerge   string
 	OwnerReview bool
 }
 
-// AllowsPropose evaluates the propose rule for a caller. Locked always
-// denies (callers should surface LockedFieldError before this for a 422
-// rather than a 403 — locked is a schema property, not a caller property).
 func (p Policy) AllowsPropose(pc PolicyContext) bool {
 	switch {
 	case p.Propose == ProposeOpen:
@@ -95,19 +64,11 @@ func (p Policy) AllowsPropose(pc PolicyContext) bool {
 		return pc.TrustTier >= TrustedTier
 	case strings.HasPrefix(p.Propose, permPrefix):
 		return pc.hasPerm(strings.TrimPrefix(p.Propose, permPrefix))
-	default: // locked or malformed — fail closed
+	default:
 		return false
 	}
 }
 
-// AllowsReview evaluates the review rule for a caller: the review perm, OR —
-// when the policy enables OwnerReview — the asserted entity ownership.
-//
-// A ModerationCapped caller passes NEITHER. This is one of the engine's two
-// cap chokepoints (the other is allowsAutomergeWithOwner): amend, merge,
-// decline, revert and the schema projection's can_review all resolve review
-// standing here and nowhere else, so capping the rule caps every verdict the
-// engine can reach.
 func (p Policy) AllowsReview(pc PolicyContext) bool {
 	if pc.ModerationCapped {
 		return false
@@ -116,28 +77,16 @@ func (p Policy) AllowsReview(pc PolicyContext) bool {
 		return true
 	}
 	if !strings.HasPrefix(p.Review, permPrefix) {
-		return false // malformed — fail closed
+		return false
 	}
 	return pc.hasPerm(strings.TrimPrefix(p.Review, permPrefix))
 }
 
-// AllowsAutomerge evaluates the STATIC automerge rules for the PROPOSER.
-// The "owner" rule needs the entity's owner site and is evaluated by the
-// engine (allowsAutomergeWithOwner); here it fails closed, so no caller can
-// accidentally grant owner-automerge without entity context.
 func (p Policy) AllowsAutomerge(pc PolicyContext) bool {
 	return p.allowsAutomergeWithOwner(pc, nil)
 }
 
-// allowsAutomergeWithOwner evaluates the full automerge rule set. owner is
-// the entity's owner site as the spec's OwnerSite hook reported it (nil =
-// unclaimed / unknown → owner rule fails closed).
 func (p Policy) allowsAutomergeWithOwner(pc PolicyContext, owner *string) bool {
-	// The second cap chokepoint, and the reason the cap is not merely a wrapper
-	// around HasPerm: "always" and "trusted" and "owner" reach a merge without
-	// consulting a single permission key, so a tenant whose overlay opens a
-	// field to everyone would land a capped caller's write instantly. Capped
-	// means the write waits for a reviewer, on every tenant, under every rule.
 	if pc.ModerationCapped {
 		return false
 	}
@@ -147,8 +96,6 @@ func (p Policy) allowsAutomergeWithOwner(pc PolicyContext, owner *string) bool {
 	case AutomergeTrusted:
 		return pc.TrustTier >= TrustedTier
 	case AutomergeReview:
-		// Reviewers (perm) + asserted owners (OwnerReview) direct-edit. Keys on
-		// the proposer's context only, so owner is irrelevant here — no hook.
 		return p.AllowsReview(pc)
 	case AutomergeOwner:
 		return owner != nil && *owner != "" && *owner == pc.Site
@@ -157,33 +104,18 @@ func (p Policy) allowsAutomergeWithOwner(pc PolicyContext, owner *string) bool {
 	}
 }
 
-// ApplyFunc writes one field's new value onto the entity's physical model.
-// tx is a transaction on the FAMILY's own DB pool (opened via the spec's
-// Txn); the closure is the only key→column translation layer.
 type ApplyFunc func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error
 
-// FieldSpec declares one editable field of an entity type (doc 21 §2.2).
 type FieldSpec struct {
-	// Key is the eternal field key (§2.2b): lowercase dotted, prefixed with
-	// the entity type (e.g. "catalog.work.display_name"). Never renamed,
-	// never reused; renaming a field = a new key + deprecating this one.
-	Key      string
-	Kind     FieldKind
-	DiffHint string
-	// Deprecated fields stay registered so historical revisions and diffs
-	// keep rendering, but can no longer be proposed or amended.
+	Key        string
+	Kind       FieldKind
+	DiffHint   string
 	Deprecated bool
-	// Policy overrides the spec's DefaultPolicy for this field (nil = use
-	// the default). Site overlays trump both.
-	Policy   *Policy
-	Validate func(value any) error
-	Apply    ApplyFunc
+	Policy     *Policy
+	Validate   func(value any) error
+	Apply      ApplyFunc
 }
 
-// MergeEvent describes a merge the single write path just committed, handed to
-// a spec's OnMerge hook. AmenderUID is set only when the merged patch carried
-// an amendment (the double signature's second signer, nil otherwise); Action
-// is the revision action (merged / direct / reverted).
 type MergeEvent struct {
 	EntityID   int64
 	ActorUID   int64
@@ -191,62 +123,26 @@ type MergeEvent struct {
 	Action     int16
 }
 
-// EntityTypeSpec is one entity type's registration: field table, policies,
-// and the load/apply closures carrying the family's own DB pool (dependency
-// injection — the engine never imports a family package).
 type EntityTypeSpec struct {
-	Family string // e.g. "catalog"
-	Type   string // e.g. "catalog.work" (must be Family + "." + name)
-	// LoadSnapshot reads the entity's full registered-field state as a
-	// field-key→value map. Returns ErrEntityNotFound (possibly wrapped) when
-	// the entity row does not exist.
-	LoadSnapshot func(ctx context.Context, entityID int64) (map[string]any, error)
-	// Txn runs fn inside a transaction on the family's own DB pool; the
-	// engine passes that transaction into each field's Apply.
-	Txn func(ctx context.Context, fn func(tx *gorm.DB) error) error
-	// OwnerSite reports which site owns the entity (nil = unclaimed) for the
-	// "owner" automerge rule (E1). Optional — but registering any policy with
-	// automerge=owner without it fails fast at Register time. Media-agnostic:
-	// what "owner" means is the family's business (catalog: the claiming
-	// site), the engine only compares it to the proposal's site.
-	OwnerSite func(ctx context.Context, entityID int64) (*string, error)
-	// OwnerUserID reports which USER owns the entity (nil = unknown/nobody) —
-	// the per-user counterpart of OwnerSite, and the source the engine derives
-	// PolicyContext.IsEntityOwner from (E3b owner-review without an assertion).
-	// Optional: a nil hook simply means this family derives no ownership, and
-	// only an S2S-asserted flag is honored. Media-agnostic in the same way —
-	// what "owning an entity" means is the family's business (catalog: the
-	// submitter/claimant stamped on catalog_work.owner_user_id), the engine only
-	// compares the result to the caller's uid.
-	OwnerUserID func(ctx context.Context, entityID int64) (*int64, error)
-	// OnMerge fires AFTER a merge commits (lifetime pillar 1: the single write
-	// path — direct edit, reviewer merge, and revert all flow through it), the
-	// media-agnostic seam for post-merge side effects. galgame.game reindexes
-	// Meilisearch and records the revision's contributors here, so EVERY write
-	// path (the kungal BFF, a future /v1 writer) gets them for free and none can
-	// be forgotten. Optional (nil = no side effect, e.g. catalog.work).
-	// Best-effort by contract: the engine fires it OUTSIDE the merge transaction
-	// and only warns on error — a stale index or a missed contributor is
-	// recoverable (reindex-search / a contributor reconcile), whereas pushing
-	// to Meili inside the tx would leave a phantom on rollback.
+	Family        string
+	Type          string
+	LoadSnapshot  func(ctx context.Context, entityID int64) (map[string]any, error)
+	Txn           func(ctx context.Context, fn func(tx *gorm.DB) error) error
+	OwnerSite     func(ctx context.Context, entityID int64) (*string, error)
+	OwnerUserID   func(ctx context.Context, entityID int64) (*int64, error)
 	OnMerge       func(ctx context.Context, ev MergeEvent) error
 	Fields        []FieldSpec
 	DefaultPolicy Policy
-	// SiteOverlays: site → field key → policy replacement (doc 21 §2.5).
-	// E0 ships the mechanism; per-site tuning starts with E1 tenants.
-	SiteOverlays map[string]map[string]Policy
+	SiteOverlays  map[string]map[string]Policy
 
-	fields map[string]*FieldSpec // built by Register
+	fields map[string]*FieldSpec
 }
 
-// Field returns the spec for a registered field key.
 func (s *EntityTypeSpec) Field(key string) (*FieldSpec, bool) {
 	f, ok := s.fields[key]
 	return f, ok
 }
 
-// fieldForWrite resolves a key for a write path: unknown → UnknownFieldError,
-// deprecated → ValidationError (still renderable in history, no new writes).
 func (s *EntityTypeSpec) fieldForWrite(key string) (*FieldSpec, error) {
 	f, ok := s.fields[key]
 	if !ok {
@@ -258,8 +154,6 @@ func (s *EntityTypeSpec) fieldForWrite(key string) (*FieldSpec, error) {
 	return f, nil
 }
 
-// EffectivePolicy resolves a field's policy for a site: site overlay wins,
-// then the field override, then the spec default.
 func (s *EntityTypeSpec) EffectivePolicy(fieldKey, site string) Policy {
 	if overlay, ok := s.SiteOverlays[site]; ok {
 		if p, ok := overlay[fieldKey]; ok {
@@ -272,8 +166,6 @@ func (s *EntityTypeSpec) EffectivePolicy(fieldKey, site string) Policy {
 	return s.DefaultPolicy
 }
 
-// Registry holds the registered entity types. Populated once at the
-// assembly point before serving; reads are lock-free thereafter.
 type Registry struct {
 	types map[string]*EntityTypeSpec
 }
@@ -284,8 +176,6 @@ func NewRegistry() *Registry {
 
 var keyPattern = regexp.MustCompile(`^[a-z0-9_]+(\.[a-z0-9_]+)+$`)
 
-// Register validates and adds an entity type. It returns an error (rather
-// than panicking) so assembly points fail their boot loudly.
 func (r *Registry) Register(spec EntityTypeSpec) error {
 	if spec.Family == "" || spec.Type == "" {
 		return fmt.Errorf("editing: spec needs family and type")
@@ -305,8 +195,6 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 	if err := validatePolicy(spec.DefaultPolicy); err != nil {
 		return fmt.Errorf("editing: type %q default policy: %w", spec.Type, err)
 	}
-	// The owner automerge rule is meaningless without the hook — fail the
-	// boot loudly rather than silently never-automerging (charter: fail-fast).
 	requireOwnerHook := func(where string, p Policy) error {
 		if p.Automerge == AutomergeOwner && spec.OwnerSite == nil {
 			return fmt.Errorf("editing: type %q %s uses automerge=owner but registers no OwnerSite hook", spec.Type, where)
@@ -358,7 +246,6 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 	return nil
 }
 
-// Type returns a registered entity type spec.
 func (r *Registry) Type(entityType string) (*EntityTypeSpec, bool) {
 	s, ok := r.types[entityType]
 	return s, ok

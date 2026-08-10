@@ -1,25 +1,3 @@
-// catalog-adjudicate runs the wave-156 LLM adjudication batch over the
-// evidence packets of the four leftover identity buckets
-// (refs/proj/156-p2b-adjudication.md; charter refs/proj/150).
-//
-// It reads packets JSONL, judges each one with a chat model and APPENDS the
-// verdicts to a JSONL file as they land. Re-running the same command resumes:
-// keys already present in the verdicts file are skipped, so an interrupted
-// multi-hour batch costs nothing and a partially failed batch is completed by
-// simply running it again.
-//
-// The binary needs NO database. It is built static and shipped to the ops host
-// where the gateway credentials live:
-//
-//	CGO_ENABLED=0 GOOS=linux go build -tags timetzdata -o /tmp/catalog-adjudicate ./cmd/catalog-adjudicate
-//	ssh <host> docker run --rm --env-file <llm.env> -v /root/wave156:/w alpine \
-//	    /w/catalog-adjudicate -packets /w/packets_person_edge.jsonl \
-//	    -verdicts /w/verdicts_person_edge.jsonl -errors /w/errors_person_edge.jsonl -workers 16
-//
-// Credentials come from the environment (KUN_AI_UPSTREAM_BASE_URL /
-// KUN_AI_UPSTREAM_TOKEN / KUN_AI_UPSTREAM_MODEL) and are never logged.
-// -mock runs the offline deterministic judge, which is how the pipeline is
-// exercised without a gateway.
 package main
 
 import (

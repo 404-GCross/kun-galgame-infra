@@ -12,18 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testState is the catalog snapshot the bucketing tests plan against: canonical
-// rows in every interesting state (plain, already-sexual, already-hidden) and a
-// source map that deliberately leaves「拔作」and「PC」unmapped, so the
-// mapped/unmapped branches are both exercised.
 func testState() CatalogState {
 	return CatalogState{
 		Vocab: map[string]VocabRow{
 			"调教":   {ID: 1, Sexual: false, Tier: model.TagTierCore},
-			"纯爱":   {ID: 2, Sexual: true, Tier: model.TagTierCore}, // wrongly flagged — de-flag candidate
+			"纯爱":   {ID: 2, Sexual: true, Tier: model.TagTierCore},
 			"黄油":   {ID: 3, Sexual: false, Tier: model.TagTierHidden},
 			"视觉小说": {ID: 4, Sexual: false, Tier: model.TagTierCore},
-			"中出":   {ID: 5, Sexual: true, Tier: model.TagTierCore}, // already sexual → no-op
+			"中出":   {ID: 5, Sexual: true, Tier: model.TagTierCore},
 		},
 		Mapped: map[string]string{
 			verdictKey("bangumi", "調教"):  "调教",
@@ -39,20 +35,17 @@ func v(source, name, class string, conf float64) Verdict {
 	return Verdict{Source: source, Name: name, Class: class, Confidence: conf, Uses: 10, Votes: 20}
 }
 
-// TestBuildPlanBuckets is the core routing table: sexual writes both the
-// verbatim rows and the mapped canonical, junk hides ONLY mapped canonicals,
-// normal writes nothing, and below-threshold anything goes to review untouched.
 func TestBuildPlanBuckets(t *testing.T) {
 	plan := BuildPlan([]Verdict{
-		v("bangumi", "調教", "sexual", 0.96),   // mapped → work rows + canonical
-		v("bangumi", "拔作", "sexual", 0.98),   // UNMAPPED → work rows only
-		v("bangumi", "中出", "sexual", 0.99),   // canonical already sexual → no-op on the vocab side
-		v("bangumi", "黄油", "junk", 0.97),     // canonical already hidden → no-op
-		v("dlsite", "視覚小説", "junk", 0.99),    // mapped → hide the canonical
-		v("bangumi", "PC", "junk", 0.99),     // UNMAPPED junk → nothing to write
-		v("bangumi", "校园", "normal", 0.95),   // ordinary normal → nothing
-		v("bangumi", "青梅竹马", "sexual", 0.55), // below threshold → review
-		v("dlsite", "ロリ", "junk", 0.80),      // below threshold → review
+		v("bangumi", "調教", "sexual", 0.96),
+		v("bangumi", "拔作", "sexual", 0.98),
+		v("bangumi", "中出", "sexual", 0.99),
+		v("bangumi", "黄油", "junk", 0.97),
+		v("dlsite", "視覚小説", "junk", 0.99),
+		v("bangumi", "PC", "junk", 0.99),
+		v("bangumi", "校园", "normal", 0.95),
+		v("bangumi", "青梅竹马", "sexual", 0.55),
+		v("dlsite", "ロリ", "junk", 0.80),
 	}, nil, testState(), PlanOpts{MinConfidence: 0.90})
 
 	assert.Equal(t, []SourceName{
@@ -85,15 +78,11 @@ func TestBuildPlanBuckets(t *testing.T) {
 	assert.Equal(t, 1, plan.Counts.Buckets["0.50-0.70"])
 }
 
-// TestBuildPlanDeflagGuard is the asymmetric-risk rule: a confident "normal"
-// over a canonical currently flagged sexual NEVER auto-flips the flag to false —
-// it goes to the human review file. A false negative here un-hides adult content
-// site-wide, which is exactly what this wave exists to prevent.
 func TestBuildPlanDeflagGuard(t *testing.T) {
 	plan := BuildPlan([]Verdict{
-		v("bangumi", "纯爱", "normal", 0.99),   // canonical 纯爱 is sexual=true
-		v("bangumi", "校园", "normal", 0.99),   // canonical absent → nothing at all
-		v(VocabSource, "中出", "normal", 0.99), // vocab-sourced de-flag candidate
+		v("bangumi", "纯爱", "normal", 0.99),
+		v("bangumi", "校园", "normal", 0.99),
+		v(VocabSource, "中出", "normal", 0.99),
 	}, nil, testState(), PlanOpts{MinConfidence: 0.90})
 
 	assert.Empty(t, plan.VocabSexual)
@@ -107,14 +96,11 @@ func TestBuildPlanDeflagGuard(t *testing.T) {
 	assert.Equal(t, []string{"纯爱", "中出"}, []string{plan.Review[0].Name, plan.Review[1].Name}, "review is sorted by source then name")
 }
 
-// TestBuildPlanVocabSource: a VocabSource verdict names the canonical directly
-// and must NEVER produce a catalog_work_tag write (there is no source_id to
-// write against).
 func TestBuildPlanVocabSource(t *testing.T) {
 	plan := BuildPlan([]Verdict{
 		v(VocabSource, "调教", "sexual", 0.99),
 		v(VocabSource, "视觉小说", "junk", 0.99),
-		v(VocabSource, "不存在的规范名", "sexual", 0.99), // no such row → nothing
+		v(VocabSource, "不存在的规范名", "sexual", 0.99),
 	}, nil, testState(), PlanOpts{MinConfidence: 0.90})
 
 	assert.Empty(t, plan.WorkTagSexual, "the canonical vocabulary has no verbatim rows")
@@ -122,17 +108,14 @@ func TestBuildPlanVocabSource(t *testing.T) {
 	assert.Equal(t, []string{"视觉小说"}, plan.VocabHidden)
 }
 
-// TestBuildPlanReviewedFullTrust: a hand ruling overrides the model verdict for
-// the same (source,name) at full trust — including OVER a below-threshold
-// verdict — and can introduce a name the model never judged.
 func TestBuildPlanReviewedFullTrust(t *testing.T) {
 	plan := BuildPlan([]Verdict{
-		v("bangumi", "調教", "normal", 0.99), // model says normal…
-		v("bangumi", "拔作", "sexual", 0.30), // …and is unsure here
+		v("bangumi", "調教", "normal", 0.99),
+		v("bangumi", "拔作", "sexual", 0.30),
 	}, []ReviewedLine{
 		{Source: "bangumi", Name: "調教", Class: "sexual", Reason: "human: 明确成人向"},
 		{Source: "bangumi", Name: "拔作", Class: "sexual"},
-		{Source: VocabSource, Name: "视觉小说", Class: "junk"}, // never judged by the model
+		{Source: VocabSource, Name: "视觉小说", Class: "junk"},
 	}, testState(), PlanOpts{MinConfidence: 0.90})
 
 	assert.Equal(t, 3, plan.Counts.Reviewed)
@@ -145,9 +128,6 @@ func TestBuildPlanReviewedFullTrust(t *testing.T) {
 	assert.Empty(t, plan.Review)
 }
 
-// TestApplyLimitTruncatesWritesNotReview: --limit is a rehearsal cap on WRITES,
-// taken as a deterministic prefix in a fixed bucket order. The review file is
-// never truncated — a limiter must not hide work from the human.
 func TestApplyLimitTruncatesWritesNotReview(t *testing.T) {
 	verdicts := []Verdict{
 		v("bangumi", "調教", "sexual", 0.99),
@@ -170,8 +150,6 @@ func TestApplyLimitTruncatesWritesNotReview(t *testing.T) {
 	assert.Len(t, limited.Review, 2, "review is never truncated")
 }
 
-// TestBuildPlanDedupes: the same name judged twice (e.g. an appended resume that
-// overlapped) plans exactly one write per target.
 func TestBuildPlanDedupes(t *testing.T) {
 	plan := BuildPlan([]Verdict{
 		v("bangumi", "調教", "sexual", 0.99),
@@ -181,9 +159,6 @@ func TestBuildPlanDedupes(t *testing.T) {
 	assert.Equal(t, []string{"调教"}, plan.VocabSexual)
 }
 
-// ── execution gating ─────────────────────────────────────────────────────────
-
-// fakeWriter records every write the plan attempts — no database involved.
 type fakeWriter struct {
 	work   []string
 	sexual []string
@@ -206,9 +181,6 @@ func (f *fakeWriter) setTagHidden(_ context.Context, name string) (int64, error)
 	return f.rows, nil
 }
 
-// TestExecutePlanDryRunGating: with run=false the writer is touched ZERO times.
-// This is the property that makes "dry decides everything, writes nothing" real
-// rather than a claim in a doc comment.
 func TestExecutePlanDryRunGating(t *testing.T) {
 	plan := BuildPlan([]Verdict{
 		v("bangumi", "調教", "sexual", 0.99),
@@ -235,11 +207,6 @@ func TestExecutePlanDryRunGating(t *testing.T) {
 	assert.Zero(t, st2.Errors)
 }
 
-// ── file-level guards ────────────────────────────────────────────────────────
-
-// TestReadReviewedRejectsBadLines: a typo in a HUMAN ruling must stop the run,
-// never degrade into "no write" — the ruling file is the highest-trust input in
-// the pipeline.
 func TestReadReviewedRejectsBadLines(t *testing.T) {
 	dir := t.TempDir()
 
@@ -261,8 +228,6 @@ func TestReadReviewedRejectsBadLines(t *testing.T) {
 	assert.Equal(t, "拔作", lines[0].Name)
 }
 
-// TestVerdictSourceKeys: VocabSource is never resolved against catalog_source
-// (it is a pseudo key), and the real keys come back deduped and sorted.
 func TestVerdictSourceKeys(t *testing.T) {
 	got := verdictSourceKeys([]Verdict{
 		{Source: "dlsite"}, {Source: "bangumi"}, {Source: "bangumi"}, {Source: VocabSource},
@@ -270,7 +235,6 @@ func TestVerdictSourceKeys(t *testing.T) {
 	assert.Equal(t, []string{"bangumi", "dlsite", "vndb"}, got)
 }
 
-// TestApplyRequiresPaths: guardrails fire before any DB handle is opened.
 func TestApplyRequiresPaths(t *testing.T) {
 	_, err := Apply(t.Context(), ApplyOpts{In: "x.jsonl"})
 	require.ErrorContains(t, err, "DSN is required")
@@ -279,7 +243,6 @@ func TestApplyRequiresPaths(t *testing.T) {
 	require.ErrorContains(t, err, "verdict JSONL is required")
 }
 
-// TestReport is the DB-free census.
 func TestReport(t *testing.T) {
 	in := filepath.Join(t.TempDir(), "verdicts.jsonl")
 	require.NoError(t, writeVerdicts(in, []Verdict{

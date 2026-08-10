@@ -1,38 +1,3 @@
-// Package repincovers re-decides which cover a work pins as its portrait, and
-// cleans up the super-resolution products the old decision wasted GPU on.
-//
-// WHY. The retired cmd/pin-portrait-covers picked "the tallest portrait cover"
-// and consulted the cover KIND only to break a tie between equal heights. A
-// high-resolution scan of a disc face, a box back or a booklet page is taller
-// than a clean digital cover far more often than it should be, so those rows
-// won the pin — and then the GPU wave dutifully upscaled them. Measured on
-// production 2026-08-08: 1,673 works pin something the kind ladder disagrees
-// with, and 47 super-resolution products are enlargements of a box back, a
-// booklet page or a spine.
-//
-// WHAT IT DOES. ladder.go holds the new rule (kind decides the tier, size only
-// orders within it). This file resolves every work that HAS a pin today, and
-// write.go carries out one of four jobs:
-//
-//   - report (default): the plan, with counts and a CSV for human review.
-//   - --export-dir: download the winners that are under 1080px so they can go
-//     through upscale-bench locally. Downloads only; writes nothing.
-//   - --reinject-dir --apply: upload the upscaled products, write ONE new
-//     cover row each (source=upscale, kind inherited) and move the pin to it.
-//   - --purge-bad-upscales --apply: delete the super-resolution rows whose
-//     inherited kind says they enlarge a box back / booklet / spine / disc.
-//
-// DISCIPLINE.
-//   - --dsn is REQUIRED; a bare run cannot touch a database.
-//   - Every write is additive or a flag flip, EXCEPT the purge, which is why
-//     the purge is its own mode and is meant to run last.
-//   - The pin is exclusive: moving it clears the work's other pins in the same
-//     transaction, so "at most one pinned cover per work" survives a crash.
-//   - Bytes go to the CATALOG image scope under the catalog_cover preset. The
-//     first wave uploaded through the galgame_wiki client because covers lived
-//     in the wiki body then; they do not any more, and that key is off limits.
-//   - Idempotent: a re-run re-reads the pins and plans only what still
-//     disagrees, so a second --apply moves nothing.
 package repincovers
 
 import (
@@ -52,33 +17,29 @@ import (
 
 const defaultTimeout = 60 * time.Second
 
-// metaBatchSize is the image service's own cap on /image/meta-batch.
 const metaBatchSize = 1000
 
-// Opts configures a run. The mode flags are mutually exclusive; Run rejects a
-// combination rather than guessing an order.
 type Opts struct {
-	DSN     string // catalog — REQUIRED
+	DSN     string
 	Apply   bool
-	IDs     []int64 // restrict to these works (the plan predicates still apply)
-	Limit   int     // max works to ACT on (0 = all); the report always covers everything
-	PlanOut string  // write the full plan to this CSV path
+	IDs     []int64
+	Limit   int
+	PlanOut string
 
-	ExportDir        string // download under-target winners here
-	ReinjectDir      string // upload the upscaled products from here
+	ExportDir        string
+	ReinjectDir      string
 	PurgeBadUpscales bool
 
-	ImageBaseURL string        // image service base override (local dev)
-	UploadGap    time.Duration // min delay between uploads
+	ImageBaseURL string
+	UploadGap    time.Duration
 }
 
-// Stats reports one run.
 type Stats struct {
-	Works      int // works carrying a pin today
+	Works      int
 	Covers     int
-	NoDims     int // rows image_service does not know (never eligible)
-	Agreed     int // the ladder agrees with the pin in place
-	NoWinner   int // no eligible portrait cover at all; left alone
+	NoDims     int
+	Agreed     int
+	NoWinner   int
 	DirectPin  int
 	NeedUpsc   int
 	DeferNSFW  int
@@ -86,7 +47,7 @@ type Stats struct {
 	Uploaded   int
 	Repinned   int
 	Purged     int
-	Skipped    int // planned but not acted on (missing product file, limit)
+	Skipped    int
 	Errors     int
 	QuotaBreak bool
 }
@@ -97,7 +58,6 @@ func (s Stats) String() string {
 		s.Exported, s.Uploaded, s.Repinned, s.Purged, s.Skipped, s.Errors, s.QuotaBreak)
 }
 
-// Run resolves the plan and carries out the selected mode.
 func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("--dsn is REQUIRED; refusing to guess a catalog database")
@@ -147,7 +107,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 	return r.stats, err
 }
 
-// checkModes refuses an ambiguous combination instead of picking an order.
 func checkModes(o Opts) error {
 	n := 0
 	for _, on := range []bool{o.ExportDir != "", o.ReinjectDir != "", o.PurgeBadUpscales} {
@@ -164,9 +123,6 @@ func checkModes(o Opts) error {
 	return nil
 }
 
-// needsImageClient reports whether this mode talks to image_service. The plan
-// itself does: cover dimensions come from there, and without them the ladder
-// has no shape evidence at all.
 func needsImageClient(o Opts) bool { return !o.PurgeBadUpscales }
 
 func newImageClient(ctx context.Context, cfg *config.Config, opts Opts) (*imageclient.Client, error) {
@@ -199,10 +155,9 @@ type runner struct {
 	gap     time.Duration
 	stats   *Stats
 	touched []int64
-	fresh   []string // hashes uploaded this run, for the reference ping
+	fresh   []string
 }
 
-// coverRow is the raw projection of catalog_work_cover joined to its source key.
 type coverRow struct {
 	ID        int64  `gorm:"column:id"`
 	WorkID    int64  `gorm:"column:work_id"`
@@ -214,14 +169,6 @@ type coverRow struct {
 	Pinned    bool   `gorm:"column:portrait_pinned"`
 }
 
-// plan loads every cover of every work that currently pins one, resolves the
-// dimensions from image_service and runs the ladder.
-//
-// The population is deliberately "works that HAVE a pin". A work with no pin
-// falls back on the read face's own rule (first portrait-shaped cover in sort
-// order), and that rule was measured clean — zero unpinned works lead with a
-// disc face or a box back. Re-deciding those too would be a much larger change
-// than the defect justifies.
 func (r *runner) plan(ctx context.Context, opts Opts) ([]Plan, error) {
 	q := r.db.WithContext(ctx).Raw(`
 		SELECT c.id, c.work_id, c.image_hash, c.kind, s.key AS source_key,
@@ -288,7 +235,6 @@ func (r *runner) plan(ctx context.Context, opts Opts) ([]Plan, error) {
 	return plans, nil
 }
 
-// loadMeta resolves dimensions for every hash in batches of the service's cap.
 func (r *runner) loadMeta(ctx context.Context, hashes []string) (map[string]imageclient.ImageMeta, error) {
 	out := make(map[string]imageclient.ImageMeta, len(hashes))
 	for i := 0; i < len(hashes); i += metaBatchSize {
@@ -302,7 +248,6 @@ func (r *runner) loadMeta(ctx context.Context, hashes []string) (map[string]imag
 	return out, nil
 }
 
-// actionable filters the plans this mode should act on, honouring --limit.
 func actionable(plans []Plan, want Action, limit int) []Plan {
 	out := make([]Plan, 0, len(plans))
 	for _, p := range plans {

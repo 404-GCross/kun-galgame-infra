@@ -1,27 +1,3 @@
-// entity-intro-mt is the ENTITY-intro machine-translation driver
-// (refs/proj/172): →zh-Hans for characters, persons and labels, filling a
-// MISSING language only, from ja when the entity has any ja source row and from
-// en otherwise. Every written row carries provenance=1, the source hash and the
-// producing model; the job never overwrites a source/human zh row.
-//
-//	# dry forecast over all three lanes (no LLM, no writes) — counts + samples
-//	go run ./cmd/entity-intro-mt --dsn "$DSN"
-//
-//	# one lane, resumable slice (the character lane runs nightly in batches)
-//	go run ./cmd/entity-intro-mt --dsn "$DSN" --lane character --limit 2000 --offset 4000
-//
-//	# quality gate: real-translate 30 labels, write them, print pairs
-//	go run ./cmd/entity-intro-mt --dsn "$DSN" --lane label --limit 30 --apply \
-//	    --llm-base http://one-api:3000/v1 --llm-token "$TOK" --model deepseek-chat
-//
-//	# rehearsal: full write-path proof with an OFFLINE mock translator
-//	go run ./cmd/entity-intro-mt --dsn "$DSN" --apply --mock
-//
-// --dsn is ALWAYS explicit (a bare run cannot touch a live DB). The LLM gateway
-// base/token/model come from flags or env (KUN_INTRO_MT_LLM_BASE/_TOKEN/_MODEL,
-// falling back to the AI-gateway upstream KUN_AI_UPSTREAM_BASE_URL/_TOKEN/
-// _MODEL) — NEVER hardcoded. An unconfigured gateway is a BLOCKED precondition
-// for a real apply, not a crash.
 package main
 
 import (
@@ -112,8 +88,6 @@ func printReport(lanes []*entityintromt.LaneStats, apply bool) {
 	}
 }
 
-// printGlossary shows the terms injected into this candidate's prompt — the
-// quality gate reads a translated name against the rendering it was handed.
 func printGlossary(g entityintromt.Glossary) {
 	if len(g) == 0 {
 		return

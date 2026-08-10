@@ -11,8 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// candidate is one work this lane may fill, with the Getchu ids it is anchored
-// to and the content rating its screenshots inherit.
 type candidate struct {
 	WorkID        int64
 	ContentRating int16
@@ -25,25 +23,6 @@ type candidateRow struct {
 	GetchuID      string `gorm:"column:getchu_id"`
 }
 
-// loadCandidates resolves the galgame works that carry an EXACT Getchu release
-// anchor and have NO Getchu-sourced screenshot row yet.
-//
-// PER-SOURCE FILL-MISSING (wave 188, the user's 2026-08-07 ruling). The old rule
-// was whole-work emptiness: Getchu was a FALLBACK for works showing nothing at
-// all, never a supplement (refs/proj/125). That ruling is OVERTURNED. The lanes
-// are semantically different images — a vndb row is a GAME SCREENSHOT, a
-// getchu/dlsite row is OFFICIAL SAMPLE CG — and the read face groups the gallery
-// per source, so a second lane is an addition to the page, not a dilution of a
-// curated one. Admission is therefore scoped to THIS source: a work with vndb,
-// dlsite or curated rows but no getchu rows is a candidate.
-//
-// No population filter beyond that. Unlike an intro, a screenshot gallery costs
-// the reader nothing when the work is a draft, and the claimed/bodyless split
-// does not change whether this source's lane is empty.
-//
-// Cross-source identical bytes are NOT admitted twice: the (work_id, image_hash)
-// unique key rejects them at write time and the first writer keeps its source
-// attribution (see preloadHashes, which deliberately reads ALL sources' hashes).
 func loadCandidates(ctx context.Context, db *gorm.DB, source, medium int16) ([]candidate, error) {
 	var rows []candidateRow
 	err := db.WithContext(ctx).Raw(`
@@ -72,32 +51,13 @@ func loadCandidates(ctx context.Context, db *gorm.DB, source, medium int16) ([]c
 	return out, nil
 }
 
-// stagedImage is one mirrored sample image: where the bytes are and what to
-// call the upload.
 type stagedImage struct {
 	GetchuID string
 	Ordinal  int
-	File     string // basename, which is also the mirror filename
-	// SHA256 of the downloaded bytes, recorded by the mirror pass. Used ONLY to
-	// skip re-uploading bytes this work has already sent (see fill); it is not
-	// assumed equal to the image service's own hash, and the
-	// (work_id, image_hash) unique key remains the correctness backstop.
-	SHA256 string
+	File     string
+	SHA256   string
 }
 
-// loadSamples reads the crawler's staging database for the sample images that
-// have actually been mirrored.
-//
-// `sample` is the CG-screenshot kind. The other three are not screenshots:
-// `package` is the store cover (and the anchored population is already at 100%
-// cover coverage — the whole kind would fill five gaps), while `nameplate` and
-// `portrait` are character art, whose home is catalog_character.image_hash and
-// which cannot be attached to a character without the pairing the page carries
-// and the parser does not yet record.
-//
-// The `_s.jpg` suffix is Getchu's thumbnail of the image beside it, not a
-// separate CG. Only three such rows survived the parser, but uploading one
-// would put a postage stamp in a gallery, so they are excluded here too.
 func loadSamples(ctx context.Context, gdb *gorm.DB) (map[string][]stagedImage, error) {
 	var rows []struct {
 		GetchuID string `gorm:"column:getchu_id"`
@@ -121,14 +81,6 @@ func loadSamples(ctx context.Context, gdb *gorm.DB) (map[string][]stagedImage, e
 	return out, nil
 }
 
-// preloadHashes loads the image hashes already on the candidate works, so a
-// re-run that finds the same bytes under a different sort order still skips.
-// The (work_id, image_hash) unique index is the backstop.
-//
-// ALL sources, not just getchu, and that stays true under wave 188's per-source
-// admission: the unique key spans the whole work, so bytes another lane already
-// uploaded must not be re-uploaded here — the first writer keeps the row and its
-// source attribution.
 func preloadHashes(ctx context.Context, db *gorm.DB, workIDs []int64) (map[int64]map[string]bool, error) {
 	out := map[int64]map[string]bool{}
 	if len(workIDs) == 0 {
@@ -154,10 +106,6 @@ func preloadHashes(ctx context.Context, db *gorm.DB, workIDs []int64) (map[int64
 	return out, nil
 }
 
-// mirrorPath is where kun-getchu-api's mirror pass writes an image:
-// <root>/<getchu_id>/<basename>. Deriving it rather than reading the staging
-// row's local_path keeps the job runnable from a machine that did not do the
-// mirroring — the path recorded there is absolute on the crawler's host.
 func mirrorPath(root, getchuID, file string) string {
 	return strings.Join([]string{strings.TrimRight(root, "/"), getchuID, file}, "/")
 }

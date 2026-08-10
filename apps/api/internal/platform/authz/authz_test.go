@@ -49,8 +49,6 @@ func TestResolverCan(t *testing.T) {
 	}
 }
 
-// TestResolverIsolatedFromSourceBundles verifies NewResolver copies the input:
-// mutating the caller's Bundles after construction must not change results.
 func TestResolverIsolatedFromSourceBundles(t *testing.T) {
 	b := authz.Bundles{"editor": {postEdit}}
 	r := authz.NewResolver(b)

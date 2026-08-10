@@ -1,11 +1,3 @@
-// public_label_graph_test.go — the WIRE of GET
-// /v1/catalog/labels/{id}/relation-graph (wave 188).
-//
-// The service suite pins the traversal; what is pinned here is the shape a
-// consumer parses and the miss posture: nodes/edges always present, logo_hash
-// never omitted, the seed first, and the same 404 / 301 the labels/{id} lane
-// already serves — a stale id must learn where the identity went on this route
-// too, not only on the detail one.
 package handler
 
 import (
@@ -26,8 +18,6 @@ func TestPublicLabelRelationGraphWire(t *testing.T) {
 
 	parent := model.CatalogLabel{DisplayName: "親会社", Kind: model.LabelKindGameBrand, LogoHash: "logohash-oya"}
 	require.NoError(t, db.Create(&parent).Error)
-	// The fact "parent is the parent of live", stored mirrored the way the
-	// importer stores it.
 	require.NoError(t, db.Create(&model.CatalogLabelRelation{
 		LabelID: live, OtherLabelID: parent.ID, Relation: model.LabelRelationParent,
 		SourceID: 2, MatchedBy: "rule:test",
@@ -47,13 +37,11 @@ func TestPublicLabelRelationGraphWire(t *testing.T) {
 		seed := nodes[0].(map[string]any)
 		assert.EqualValues(t, live, seed["id"], "nodes[0] must be the seed")
 		assert.Equal(t, "生存ブランド", seed["name"])
-		// logo_hash is ALWAYS on the wire — "" is the real answer "no logo".
 		require.Contains(t, seed, "logo_hash")
 		assert.Equal(t, "", seed["logo_hash"])
 		assert.EqualValues(t, 0, seed["work_count"])
 		assert.Equal(t, "logohash-oya", nodes[1].(map[string]any)["logo_hash"])
 
-		// One fact, stored twice, on the wire once — in the canonical direction.
 		edges := data["edges"].([]any)
 		require.Len(t, edges, 1)
 		e := edges[0].(map[string]any)
@@ -69,8 +57,6 @@ func TestPublicLabelRelationGraphWire(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 		data := body["data"].(map[string]any)
 		assert.Len(t, data["nodes"].([]any), 1)
-		// [] rather than null: a consumer iterating edges must not have to
-		// null-check the key.
 		require.NotNil(t, data["edges"])
 		assert.Len(t, data["edges"].([]any), 0)
 	})

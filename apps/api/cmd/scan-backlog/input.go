@@ -10,10 +10,6 @@ import (
 	"unicode/utf8"
 )
 
-// readInput streams the JSONL, returning the valid records (capped at limit when
-// limit > 0) and the hygiene counters. A non-UTF-8 line is counted invalidUTF8;
-// a line that fails to decode or lacks an id/text is a badLine; both are skipped
-// (spec ruling 1). Blank lines are ignored silently.
 func readInput(r io.Reader, limit int) ([]inputRecord, inputStats, error) {
 	var recs []inputRecord
 	var st inputStats
@@ -49,18 +45,11 @@ func readInput(r io.Reader, limit int) ([]inputRecord, inputStats, error) {
 	return recs, st, nil
 }
 
-// resumeState is what a prior -out gives us: the set of already-succeeded ids to
-// skip, and the previously-scored rows to fold into the summary/worklist.
 type resumeState struct {
 	done       map[string]struct{}
 	prevScored []scoredRow
 }
 
-// loadResume reads an existing -out JSONL (an append log). A line with an
-// "error" field is a prior failure — NOT counted done, so it is retried this
-// run. A success line (a "flagged" field, no error) marks its id done and folds
-// into the summary basis. A later success supersedes an earlier failure for the
-// same id (append-mode reality). A missing file → empty state (first run).
 func loadResume(path string) (resumeState, error) {
 	rs := resumeState{done: map[string]struct{}{}}
 	f, err := os.Open(path)
@@ -74,7 +63,7 @@ func loadResume(path string) (resumeState, error) {
 
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), scanBufMax)
-	byID := map[string]scoredRow{} // last success wins per id
+	byID := map[string]scoredRow{}
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
 		if len(line) == 0 || !utf8.Valid(line) {
@@ -86,10 +75,10 @@ func loadResume(path string) (resumeState, error) {
 			Flagged *bool  `json:"flagged"`
 		}
 		if err := json.Unmarshal(line, &probe); err != nil || probe.ID == "" {
-			continue // ignore unrecognizable lines in the append log
+			continue
 		}
 		if probe.Error != "" || probe.Flagged == nil {
-			continue // a prior failure (or non-success) — retry it, do not mark done
+			continue
 		}
 		var row scoredRow
 		if err := json.Unmarshal(line, &row); err != nil {

@@ -63,11 +63,9 @@ const handleChangeEmail = async () => {
     const response = await auth.changeEmail(code.value, newEmail.value)
     if (response.code === 0) {
       success.value = '邮箱修改成功'
-      // Update store
       if (userStore.user) {
         userStore.setUser({ ...userStore.user, email: newEmail.value })
       }
-      // Reset form
       codeSent.value = false
       newEmail.value = ''
       code.value = ''

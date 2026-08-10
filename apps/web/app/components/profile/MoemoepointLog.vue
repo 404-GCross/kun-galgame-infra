@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// The user's own moemoepoint ledger, fetched from the self-service endpoint
-// GET /auth/me/moemoepoint/log (reduced view — no admin note/actor). Keyset
-// pagination via before_id (the API's contract); "加载更多" appends.
 import {
   moemoepointReasonLabel,
   moemoepointSourceLabel
@@ -20,8 +17,6 @@ const loadPage = async () => {
   if (loading.value) return
   loading.value = true
   try {
-    // Keyset cursor: rows are returned newest-first, so the next page is
-    // everything before the oldest row we already hold.
     const beforeId = items.value.length
       ? items.value[items.value.length - 1]!.id
       : undefined

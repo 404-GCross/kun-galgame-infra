@@ -12,7 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// DLsiteStats is the DLsite-wave tally.
 type DLsiteStats struct {
 	WorksCreated        int
 	ReleasesCreated     int
@@ -25,15 +24,12 @@ type DLsiteStats struct {
 	SkippedUnmappedRole int
 	Already             int
 	Errors              int
-	// EdgesConsidered (dry) = works carrying a maker; EdgesWritten (apply) =
-	// work↔label attribution edges actually inserted (ON CONFLICT DO NOTHING).
-	EdgesConsidered int
-	EdgesWritten    int
+	EdgesConsidered     int
+	EdgesWritten        int
 }
 
 const dlChunk = 2000
 
-// dlWork is one voice/ASMR work parsed from the DLsite staging row.
 type dlWork struct {
 	workno        string
 	name          string
@@ -42,7 +38,7 @@ type dlWork struct {
 	contentRating int16
 	stub          bool
 	y, m, d       *int16
-	credits       []dlCredit // per-creater credit plan (already role-mapped)
+	credits       []dlCredit
 }
 
 type dlCredit struct {
@@ -50,15 +46,10 @@ type dlCredit struct {
 	roleID     int64
 }
 
-// egCreater / label queued for shared creation.
 type dlNamed struct {
 	ext, name string
 }
 
-// RunDLsite registers the DLsite voice/ASMR catalogue: UNCLAIMED works (R2,
-// site=NULL — asmr has no product yet) + 1:1 releases carrying the workno SKU
-// anchor (R3/R5), circle labels, and tier-0 orphan creator credits. Zero
-// claiming, zero cross-source matching, zero galgame-graph interaction.
 func (im *Importer) RunDLsite(dlsiteDB *gorm.DB) (DLsiteStats, error) {
 	var st DLsiteStats
 	roleMap, err := im.roleMap(dlsiteSource)
@@ -98,10 +89,9 @@ func (im *Importer) RunDLsite(dlsiteDB *gorm.DB) (DLsiteStats, error) {
 		return st, err
 	}
 
-	// --- parse + collect shared entities ---
-	makers := map[string]dlNamed{} // makerExt → name
+	makers := map[string]dlNamed{}
 	makerKind := map[string]int16{}
-	creaters := map[string]dlNamed{} // createrExt → name
+	creaters := map[string]dlNamed{}
 	var works []dlWork
 	for _, r := range rows {
 		if _, ok := makers[r.MakerID]; !ok && r.MakerID != "" {
@@ -128,7 +118,6 @@ func (im *Importer) RunDLsite(dlsiteDB *gorm.DB) (DLsiteStats, error) {
 		works = append(works, w)
 	}
 
-	// New (unanchored) shared entities + not-yet-imported works.
 	newLabels := filterNew(makers, labelAnchor, dlsiteSource)
 	newNames := filterNew(creaters, cnAnchor, dlsiteSource)
 	var todo []dlWork
@@ -149,7 +138,7 @@ func (im *Importer) RunDLsite(dlsiteDB *gorm.DB) (DLsiteStats, error) {
 			if w.stub {
 				st.Stubs++
 			}
-			st.TitlesCreated++ // official
+			st.TitlesCreated++
 			if w.kana != "" && w.kana != w.name {
 				st.TitlesCreated++
 			}
@@ -163,7 +152,6 @@ func (im *Importer) RunDLsite(dlsiteDB *gorm.DB) (DLsiteStats, error) {
 		return st, nil
 	}
 
-	// --- create shared labels + creater credit_names (own tx) ---
 	labelItems := make([]labelItem, len(newLabels))
 	for i, m := range newLabels {
 		labelItems[i] = labelItem{extID: m.ext, name: m.name, lang: "ja", kind: makerKind[m.ext]}
@@ -196,7 +184,6 @@ func (im *Importer) RunDLsite(dlsiteDB *gorm.DB) (DLsiteStats, error) {
 	st.NamesCreated = len(newNames)
 	cnResolve := resolver(cnAnchor, dlsiteSource, nil)
 
-	// --- create works + releases + titles + credits, chunked ---
 	for start := 0; start < len(todo); start += dlChunk {
 		end := min(start+dlChunk, len(todo))
 		chunk := todo[start:end]
@@ -208,19 +195,12 @@ func (im *Importer) RunDLsite(dlsiteDB *gorm.DB) (DLsiteStats, error) {
 		}
 	}
 
-	// Attribution edges for EVERY work (new + already) — see emitDLWorkLabels.
 	if err := im.emitDLWorkLabels(works, labelAnchor, makerKind, &st); err != nil {
 		return st, err
 	}
 	return st, nil
 }
 
-// emitDLWorkLabels asserts the work↔label attribution edge for every parsed
-// work (new + already-imported), keyed by resolving workno → work via the
-// release SKU anchor. Idempotent (composite PK ON CONFLICT DO NOTHING). This is
-// what makes a plain `--apply` re-run BACKFILL edges onto works imported before
-// the edge existed (step 14 → 18): already-imported works skip the work-
-// creation path, so the edge cannot ride there.
 func (im *Importer) emitDLWorkLabels(works []dlWork, labelAnchor map[string]int64, makerKind map[string]int16, st *DLsiteStats) error {
 	var rows []struct {
 		Workno string `gorm:"column:external_id"`
@@ -257,9 +237,6 @@ func (im *Importer) emitDLWorkLabels(works []dlWork, labelAnchor map[string]int6
 	if len(edges) == 0 {
 		return nil
 	}
-	// This lane deliberately re-plans edges for already-imported works, so the
-	// insert itself has to say which ones landed — a steady-state re-run writes
-	// nothing and must therefore touch nothing.
 	touched, err := insertWorkLabelEdges(im.catalog, edges)
 	if err != nil {
 		return err
@@ -268,10 +245,6 @@ func (im *Importer) emitDLWorkLabels(works []dlWork, labelAnchor map[string]int6
 	return touchWorks(im.catalog, touched)
 }
 
-// dlEdgeKind maps a label kind to the attribution-edge kind: a publisher label
-// yields a publisher attribution, everything else (doujin circles) a circle
-// attribution. DLsite's voice subset is all circles today; deriving from the
-// label kind (rather than hardcoding circle) keeps the rare BG=publisher right.
 func dlEdgeKind(labelKind int16) int16 {
 	if labelKind == model.LabelKindPublisher {
 		return model.WorkLabelKindPublisher
@@ -279,8 +252,6 @@ func dlEdgeKind(labelKind int16) int16 {
 	return model.WorkLabelKindCircle
 }
 
-// createDLWorkChunk creates one batch of works (+ titles + releases + anchors +
-// revisions + credits) in the caller's transaction.
 func (im *Importer) createDLWorkChunk(tx *gorm.DB, chunk []dlWork, cnResolve func(string) (int64, bool), st *DLsiteStats) error {
 	src := dlsiteSource
 	workRows := make([]model.CatalogWork, len(chunk))
@@ -302,7 +273,7 @@ func (im *Importer) createDLWorkChunk(tx *gorm.DB, chunk []dlWork, cnResolve fun
 
 	var titles []model.CatalogWorkTitle
 	var releases []model.CatalogRelease
-	relIdx := make([]int, len(chunk)) // chunk i → releases index
+	relIdx := make([]int, len(chunk))
 	var credits []model.CatalogCredit
 	for i := range chunk {
 		w := chunk[i]
@@ -335,8 +306,6 @@ func (im *Importer) createDLWorkChunk(tx *gorm.DB, chunk []dlWork, cnResolve fun
 		return err
 	}
 
-	// Anchors + revisions. workno anchors the RELEASE (SKU → release, R5); the
-	// work itself carries NO dlsite anchor.
 	titlesByWork := map[int64][]model.CatalogWorkTitle{}
 	for _, t := range titles {
 		titlesByWork[t.WorkID] = append(titlesByWork[t.WorkID], t)
@@ -368,14 +337,10 @@ func (im *Importer) createDLWorkChunk(tx *gorm.DB, chunk []dlWork, cnResolve fun
 	return nil
 }
 
-// --- helpers ---------------------------------------------------------------
-
 type createrJSON struct {
 	id, name, classification string
 }
 
-// parseCreaters flattens the DLsite creaters object {classification:[{id,name,
-// classification}]} into a flat list.
 func parseCreaters(raw datatypes.JSON) []createrJSON {
 	var obj map[string][]struct {
 		ID             string `json:"id"`
@@ -414,8 +379,6 @@ func dlContentRating(age string) int16 {
 	}
 }
 
-// dlLabelKind maps the DLsite maker id prefix to a label kind. RG (and the rare
-// VG) are doujin circles; BG would be a publisher (none in the voice subset).
 func dlLabelKind(makerID string) int16 {
 	if strings.HasPrefix(makerID, "BG") {
 		return model.LabelKindPublisher
@@ -440,7 +403,6 @@ func firstNonEmptyStr(vals ...string) string {
 	return ""
 }
 
-// filterNew returns the entities from m not already anchored for source.
 func filterNew(m map[string]dlNamed, anchors map[string]int64, source int16) []dlNamed {
 	out := make([]dlNamed, 0, len(m))
 	for ext, n := range m {

@@ -42,7 +42,6 @@ func TestParseSource(t *testing.T) {
 	}
 }
 
-// writeFile creates a non-empty file, making its directory.
 func writeFile(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -54,7 +53,6 @@ func writeFile(t *testing.T, path string) {
 }
 
 func TestLoadMirrorNoRootAndNoManifest(t *testing.T) {
-	// An empty root is the pre-crawl dry run: it must load, and resolve nothing.
 	m, err := loadMirror("", SourceBangumi)
 	if err != nil {
 		t.Fatalf("loadMirror(\"\"): %v", err)
@@ -63,7 +61,6 @@ func TestLoadMirrorNoRootAndNoManifest(t *testing.T) {
 		t.Fatal("empty root resolved bytes")
 	}
 
-	// A mirror with bytes but no dims.jsonl must still work by probing.
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "123", "logo.png"))
 	m, err = loadMirror(root, SourceBangumi)
@@ -92,19 +89,15 @@ func TestMirrorResolveManifestAndStemPerSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMirror: %v", err)
 	}
-	// Probed by the cien stem (avatar), even though no manifest row names it.
 	if got, ok := m.resolve("7"); !ok || filepath.Base(got) != "avatar.webp" {
 		t.Fatalf("resolve(7) = %q, %v", got, ok)
 	}
-	// The manifest's file wins over the stem probe.
 	if got, ok := m.resolve("9"); !ok || filepath.Base(got) != "shot.gif" {
 		t.Fatalf("resolve(9) = %q, %v", got, ok)
 	}
-	// A manifest row whose bytes are absent is not a resolution.
 	if _, ok := m.resolve("404"); ok {
 		t.Fatal("resolve(404): manifest row without bytes must not resolve")
 	}
-	// The bangumi lane looks for logo.*, so the cien avatar is invisible to it.
 	mb, err := loadMirror(root, SourceBangumi)
 	if err != nil {
 		t.Fatal(err)
@@ -173,9 +166,9 @@ func TestWriteIDsOnlyListsIDsWithoutBytes(t *testing.T) {
 	}
 	cands := []candidate{
 		{LabelID: 1, ExternalID: "30"},
-		{LabelID: 2, ExternalID: "20"}, // already mirrored — omitted
+		{LabelID: 2, ExternalID: "20"},
 		{LabelID: 3, ExternalID: "10"},
-		{LabelID: 4, ExternalID: "30"}, // duplicate id — emitted once
+		{LabelID: 4, ExternalID: "30"},
 	}
 	out := filepath.Join(t.TempDir(), "ids.txt")
 	n, err := writeIDs(out, cands, m)
@@ -204,8 +197,6 @@ func TestWindow(t *testing.T) {
 	}
 }
 
-// fakeUploader stands in for the image client so the write path can be
-// exercised without an image service or a network.
 type fakeUploader struct {
 	hash   string
 	err    error
@@ -224,9 +215,6 @@ func (f *fakeUploader) ReferencePing(_ context.Context, hashes []string) (*image
 	return &imageclient.ReferencePingResult{Updated: int64(len(hashes))}, nil
 }
 
-// TestFillDryRunNeverUploads is the guarantee the default mode rests on: a dry
-// run reads no bytes into the image service and touches no row, whether or not
-// the mirror has the file.
 func TestFillDryRunNeverUploads(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "5", "logo.jpg"))
@@ -241,7 +229,6 @@ func TestFillDryRunNeverUploads(t *testing.T) {
 	if got.would != 1 || got.uploaded != 0 || got.hash != "" {
 		t.Fatalf("dry run = %+v, want would=1 and nothing else", got)
 	}
-	// A candidate with no mirrored bytes is missing, in dry run and apply alike.
 	got = r.fill(context.Background(), candidate{LabelID: 2, ExternalID: "404"}, true)
 	if got.missing != 1 || got.uploaded != 0 {
 		t.Fatalf("absent bytes = %+v, want missing=1", got)
@@ -251,9 +238,6 @@ func TestFillDryRunNeverUploads(t *testing.T) {
 	}
 }
 
-// TestUploadRetriesTransientButNotTerminal pins the retry policy: quota and
-// moderation are terminal (retrying them is pointless and costs the whole run),
-// anything else is retried.
 func TestUploadRetriesTransientButNotTerminal(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "1", "logo.jpg")
@@ -270,8 +254,6 @@ func TestUploadRetriesTransientButNotTerminal(t *testing.T) {
 		}
 	}
 
-	// A transient error retries; the context is cancelled so the test does not
-	// sit through the backoff schedule.
 	counting := &countingUploader{err: errors.New("connection refused")}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -284,7 +266,6 @@ func TestUploadRetriesTransientButNotTerminal(t *testing.T) {
 	}
 }
 
-// countingUploader always fails, counting attempts.
 type countingUploader struct {
 	err   error
 	calls int

@@ -37,8 +37,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// seedTraits replaces the vocabulary table with the given (tid, name, zh, prov)
-// rows and returns their ids by name.
 func seedTraits(t *testing.T, rows [][4]string) map[string]int64 {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`TRUNCATE catalog_character_trait RESTART IDENTITY CASCADE`).Error)
@@ -65,10 +63,6 @@ func loadZh(t *testing.T, id int64) (string, int16) {
 	return row.NameZh, row.Provenance
 }
 
-// TestAutoMigrateAddsTheZhColumns proves deliverable 1: `go run
-// ./cmd/migrate-catalog` (which is migrate.Run, called by TestMain above)
-// creates name_zh / name_zh_provenance with the right types, NOT NULL and the
-// right defaults — no preMigrate block needed, because both carry a default.
 func TestAutoMigrateAddsTheZhColumns(t *testing.T) {
 	var cols []struct {
 		Column   string `gorm:"column:column_name"`
@@ -93,11 +87,6 @@ func TestAutoMigrateAddsTheZhColumns(t *testing.T) {
 	assert.Contains(t, cols[1].Default, "0")
 }
 
-// TestAutoMigrateBackfillsAPopulatedTable is the reason no preMigrate guard is
-// needed: `ADD COLUMN … NOT NULL DEFAULT` succeeds on a table that already has
-// rows, and every pre-existing row gets the correct value (the empty string =
-// no Chinese name yet). Dropping the columns and re-running the migration
-// proves it on a populated table rather than on the empty one TestMain created.
 func TestAutoMigrateBackfillsAPopulatedTable(t *testing.T) {
 	seedTraits(t, [][4]string{{"i1", "Hair", "毛发", "0"}})
 	require.NoError(t, testDB.Exec(`ALTER TABLE catalog_character_trait
@@ -116,18 +105,18 @@ func TestAutoMigrateBackfillsAPopulatedTable(t *testing.T) {
 
 func TestApplyFillsEmptyAndUpgradesMachineButNeverOverwritesCurated(t *testing.T) {
 	ids := seedTraits(t, [][4]string{
-		{"i100", "Ahoge", "", "0"},             // empty → filled
-		{"i101", "Kuudere", "冷娇机翻", "1"},       // machine → upgraded by curated
-		{"i102", "Tsundere", "傲娇", "0"},        // curated, same value → untouched
-		{"i103", "Deredere", "痴情", "0"},        // curated, DIFFERENT value → conflict
-		{"i104", "Not In Dictionary", "", "0"}, // unmatched → untouched
+		{"i100", "Ahoge", "", "0"},
+		{"i101", "Kuudere", "冷娇机翻", "1"},
+		{"i102", "Tsundere", "傲娇", "0"},
+		{"i103", "Deredere", "痴情", "0"},
+		{"i104", "Not In Dictionary", "", "0"},
 	})
 	proposals := []pair{
 		{En: "Ahoge", Zh: "呆毛"},
 		{En: "Kuudere", Zh: "冷娇"},
 		{En: "Tsundere", Zh: "傲娇"},
 		{En: "Deredere", Zh: "一见钟情"},
-		{En: "Ghost Trait", Zh: "幽灵"}, // a key with no vocabulary row at all
+		{En: "Ghost Trait", Zh: "幽灵"},
 	}
 
 	rows, err := loadTraits(context.Background(), testDB)
@@ -162,7 +151,6 @@ func TestApplyFillsEmptyAndUpgradesMachineButNeverOverwritesCurated(t *testing.T
 	assert.Equal(t, "", zh)
 }
 
-// TestApplyIsIdempotent: a second run of the same input writes nothing.
 func TestApplyIsIdempotent(t *testing.T) {
 	seedTraits(t, [][4]string{{"i200", "Ahoge", "", "0"}})
 	proposals := []pair{{En: "Ahoge", Zh: "呆毛"}}
@@ -176,16 +164,11 @@ func TestApplyIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestApplyWritesEveryRowSharingAName: VNDB reuses a name across groups (the
-// same colour under Hair and Eyes), so one dictionary entry legitimately fills
-// several vocabulary rows.
 func TestApplyWritesEveryRowSharingAName(t *testing.T) {
 	ids := seedTraits(t, [][4]string{
 		{"i300", "Red", "", "0"},
 		{"i301", "Red2", "", "0"},
 	})
-	// Give both rows the same NAME (the seed helper keys its map by name, so
-	// they are inserted under distinct names and renamed here).
 	require.NoError(t, testDB.Exec(`UPDATE catalog_character_trait SET name = 'Red' WHERE vndb_tid = 'i301'`).Error)
 
 	rows, err := loadTraits(context.Background(), testDB)
@@ -200,9 +183,6 @@ func TestApplyWritesEveryRowSharingAName(t *testing.T) {
 	}
 }
 
-// TestApplyCSVWritesMachineProvenance covers the --apply-csv lane end to end:
-// the reviewed sheet round-trips through the CSV reader, lands as provenance=1
-// on an empty row, and still cannot touch a curated one.
 func TestApplyCSVWritesMachineProvenance(t *testing.T) {
 	ids := seedTraits(t, [][4]string{
 		{"i400", "Alraune", "", "0"},
@@ -212,7 +192,7 @@ func TestApplyCSVWritesMachineProvenance(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "review.csv")
 	require.NoError(t, writeReviewCSV(path, []csvRow{
 		{TraitID: ids["Alraune"], VndbTID: "i400", Name: "Alraune", Group: "Role", Description: "a plant girl", ProposedZh: "花妖"},
-		{TraitID: ids["Bovine"], VndbTID: "i401", Name: "Bovine", Group: "Body", Description: "", ProposedZh: ""}, // reviewer rejected
+		{TraitID: ids["Bovine"], VndbTID: "i401", Name: "Bovine", Group: "Body", Description: "", ProposedZh: ""},
 		{TraitID: ids["Balaclava"], VndbTID: "i402", Name: "Balaclava", Group: "Clothes", Description: "", ProposedZh: "头套"},
 	}))
 
@@ -240,8 +220,6 @@ func TestApplyCSVWritesMachineProvenance(t *testing.T) {
 	assert.Equal(t, 1, summarise(pairs, writes).Conflict)
 }
 
-// TestLoadMTCandidatesOnlyTheEmptyOnes pins the residue lane's candidate set and
-// its group self-join.
 func TestLoadMTCandidatesOnlyTheEmptyOnes(t *testing.T) {
 	seedTraits(t, [][4]string{
 		{"i500", "Body", "身体", "0"},

@@ -19,15 +19,8 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema plus
-// stand-ins for the crawler's staging tables. In production those are two
-// databases; here one DSN plays both parts, which is faithful because the job
-// never joins across them — it reads the staging side into a map.
 var testDB *gorm.DB
 
-// TestMain gates the DB-backed tests PER TEST (dbtest.Skip) rather than exiting
-// the package: pick_test.go and pool_test.go hold pure functions, and a
-// package-level exit would report them as `ok` while running none of them.
 func TestMain(m *testing.M) {
 	dsn, ok := dbtest.DSN()
 	if !ok {
@@ -74,9 +67,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// requireDB skips only when there is genuinely no database — dbtest.Skip is the
-// no-DSN branch, not a conditional guard, so calling it unguarded skips a
-// suite that was handed a perfectly good DSN.
 func requireDB(t *testing.T) {
 	t.Helper()
 	if testDB == nil {
@@ -84,19 +74,12 @@ func requireDB(t *testing.T) {
 	}
 }
 
-// reset clears everything these tests look at.
-//
-// CASCADE rather than DELETE: sibling packages share this database and leave
-// characters behind with intros and work links hanging off them, so a plain
-// DELETE FROM catalog_character trips a foreign key that has nothing to do with
-// this suite. Starting from empty is also what makes the assertions countable.
 func reset(t *testing.T) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`TRUNCATE item_characters, item_images`).Error)
 	require.NoError(t, testDB.Exec(`TRUNCATE catalog_character CASCADE`).Error)
 }
 
-// mkChar inserts a catalog character, with or without a portrait already.
 func mkChar(t *testing.T, name string, hash *string) int64 {
 	t.Helper()
 	c := model.CatalogCharacter{DisplayName: name, ImageHash: hash}
@@ -104,8 +87,6 @@ func mkChar(t *testing.T, name string, hash *string) int64 {
 	return c.ID
 }
 
-// mkPlate stages a roster row and, when mirrored, the image row that proves its
-// bytes were downloaded.
 func mkPlate(t *testing.T, getchuID string, ordinal int, name, url string, mirrored bool) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(
@@ -133,9 +114,6 @@ func ed(getchuID string, ordinal int) getchuchars.Edition {
 	return getchuchars.Edition{GetchuID: getchuID, Ordinal: ordinal}
 }
 
-// The core admission rule: fill-missing. A character that already has a
-// portrait is skipped and counted, never overwritten — Getchu is the fallback
-// for this facet, and a VNDB portrait outranks it.
 func TestSelectCandidatesSkipsCharactersThatAlreadyHaveAPortrait(t *testing.T) {
 	requireDB(t)
 	reset(t)
@@ -157,11 +135,6 @@ func TestSelectCandidatesSkipsCharactersThatAlreadyHaveAPortrait(t *testing.T) {
 	assert.Equal(t, 0, st.NoImage)
 }
 
-// "Offers art" and "the bytes are downloaded" are separate facts, and selection
-// only asks the first. Requiring the second here made the pre-mirror dry run
-// report a population of zero — which is the moment the number is most needed,
-// because it IS the mirror worklist. Un-downloaded bytes surface later, as
-// Missing.
 func TestSelectCandidatesDoesNotRequireMirroredBytes(t *testing.T) {
 	requireDB(t)
 	reset(t)
@@ -177,9 +150,6 @@ func TestSelectCandidatesDoesNotRequireMirroredBytes(t *testing.T) {
 	assert.Equal(t, 0, st.NoImage)
 }
 
-// NoImage must stay meaningful: a character no edition of which offers a
-// nameplate is genuinely unfillable, and is counted apart from one that is
-// merely waiting on the mirror.
 func TestSelectCandidatesCountsGenuinelyArtlessCharacters(t *testing.T) {
 	requireDB(t)
 	reset(t)
@@ -194,8 +164,6 @@ func TestSelectCandidatesCountsGenuinelyArtlessCharacters(t *testing.T) {
 	assert.Equal(t, 1, st.NoImage)
 }
 
-// The Editions fallback, end to end through SQL: the richest edition carries no
-// art, a second one does, and the character is still fillable from the second.
 func TestSelectCandidatesFallsBackAcrossEditions(t *testing.T) {
 	requireDB(t)
 	reset(t)
@@ -214,9 +182,6 @@ func TestSelectCandidatesFallsBackAcrossEditions(t *testing.T) {
 	assert.Equal(t, 0, st.NoImage)
 }
 
-// A soft-deleted character must not be filled. loadPortraitless asks for the
-// rows that NEED filling, so a character that disappeared between the match and
-// the query falls out rather than staying in by omission.
 func TestSelectCandidatesIgnoresDeletedCharacters(t *testing.T) {
 	requireDB(t)
 	reset(t)
@@ -232,9 +197,6 @@ func TestSelectCandidatesIgnoresDeletedCharacters(t *testing.T) {
 	assert.Equal(t, 1, st.SkipHasImage)
 }
 
-// Only nameplates. The full-body `portrait` kind lives at the same URL shape
-// and would silently pass if the kind filter were dropped — it belongs to a
-// future wave and a different column.
 func TestLoadNameplatesIgnoresOtherKinds(t *testing.T) {
 	requireDB(t)
 	reset(t)
@@ -249,8 +211,6 @@ func TestLoadNameplatesIgnoresOtherKinds(t *testing.T) {
 	assert.Empty(t, got, "a full-body portrait must not be picked up as a bust")
 }
 
-// mkFigure stages a roster row's FULL-BODY art (kind `portrait`, the
-// confusingly-named one) plus its mirrored image row.
 func mkFigure(t *testing.T, getchuID string, ordinal int, name, url string) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(
@@ -262,16 +222,10 @@ func mkFigure(t *testing.T, getchuID string, ordinal int, name, url string) {
 		getchuID, "portrait", ordinal, url, "/crawler/mirror/"+getchuID+"/y.jpg").Error)
 }
 
-// The two slots must be genuinely independent: a character with a bust and no
-// figure is a candidate for the figure slot and NOT for the bust slot, and vice
-// versa. If the slot plumbing leaked — the wrong staging column, the wrong
-// target column — this is where it shows, because each slot would see the
-// other's state.
 func TestSlotsAreIndependent(t *testing.T) {
 	requireDB(t)
 	reset(t)
 	bust := "deadbeef"
-	// Has a bust already, no figure yet.
 	id := mkChar(t, "九條都", &bust)
 	mkPlate(t, "100", 1, "九條都", "https://g/brandnew/100/c100chara1.jpg", true)
 	mkFigure(t, "100", 1, "九條都", "https://g/brandnew/100/c100charab1.jpg")
@@ -292,9 +246,6 @@ func TestSlotsAreIndependent(t *testing.T) {
 	assert.Equal(t, 0, figSt.SkipHasImage)
 }
 
-// A page offering only a bust leaves the figure slot unfillable rather than
-// falling back to the bust bytes — the two are different assets and a figure
-// slot holding a cropped bust would be a lie the read face cannot detect.
 func TestFigureSlotDoesNotFallBackToTheBust(t *testing.T) {
 	requireDB(t)
 	reset(t)

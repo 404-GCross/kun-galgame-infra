@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// The AI-gateway usage dashboard (doc 20 §5): the site×route×channel usage /
-// cost / error-rate view one-api's channel panel cannot give. Three zones —
-// overview cards, the three-dimension summary table, a daily trend — plus the
-// budget-fuse panel. All reads go through useApi('ai') → the same-origin
-// /ai-proxy relay (the AI service has no public domain).
 import { AI_WINDOW_OPTIONS, type AiWindow } from '~/constants/ai'
 import type { AiUsageSummary } from '~~/shared/types/ai'
 
@@ -40,7 +35,6 @@ const fmtPct = (n?: number) => `${((n ?? 0) * 100).toFixed(1)}%`
       </div>
     </div>
 
-    <!-- overview cards -->
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       <div class="border-default-200 bg-content1 rounded-xl border p-4">
         <p class="text-default-500 text-xs">调用数</p>
@@ -71,10 +65,6 @@ const fmtPct = (n?: number) => `${((n ?? 0) * 100).toFixed(1)}%`
         </p>
         <p class="text-default-400 mt-0.5 text-xs">上游未接入前为常态</p>
       </div>
-      <!-- Truncation gets a card of its own because, unlike every other failure
-           here, it is our configuration and not someone else's server: a
-           non-zero value means max_tokens is too small for the channel in use,
-           and the verdicts it destroys are the escalated ones. -->
       <div class="border-default-200 bg-content1 rounded-xl border p-4">
         <p class="text-default-500 text-xs">回复被截断</p>
         <p class="text-danger-600 mt-1 text-2xl font-bold tabular-nums">

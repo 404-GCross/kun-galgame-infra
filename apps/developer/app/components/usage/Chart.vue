@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import type { DevUsageDay } from '~~/shared/types/dev'
 
-// Daily call-volume bar chart — a div-based (no SVG, no dependency) responsive
-// chart over a DENSE day series (0-filled gaps). Bars scale to the window max;
-// zero days show a faint baseline. Hover reveals the exact count; sparse x
-// labels (first / middle / last) keep it readable. Solid theme colors only.
 const props = defineProps<{ days: DevUsageDay[] }>()
 
 const max = computed(() =>
@@ -13,7 +9,6 @@ const max = computed(() =>
 
 const barHeight = (count: number) => `${Math.round((count / max.value) * 100)}%`
 
-// Show a date label only at the ends and the middle to avoid crowding.
 const labelAt = (i: number) => {
   const n = props.days.length
   return i === 0 || i === n - 1 || i === Math.floor((n - 1) / 2)
@@ -39,7 +34,6 @@ const shortDay = (day: string) => day.slice(5) // MM-DD
           "
           :style="{ height: barHeight(d.count) }"
         />
-        <!-- Hover tooltip -->
         <div
           class="pointer-events-none absolute -top-9 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs text-background shadow-sm group-hover:block"
         >

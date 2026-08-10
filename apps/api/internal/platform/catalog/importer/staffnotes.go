@@ -33,28 +33,26 @@ import (
 // scripting (スクリプト) — sampled holders overlap same-work scenario credits
 // only 20%, and the frequent names are known scripters.
 var staffNoteRole = map[string]int64{
-	// engine / code
 	"script":          roleProgram,
 	"scripting":       roleProgram,
 	"programming":     roleProgram,
 	"program":         roleProgram,
 	"programmer":      roleProgram,
 	"coding":          roleProgram,
-	"hacking":         roleProgram, // fan-TL engine work
+	"hacking":         roleProgram,
 	"ui programmer":   roleProgram,
 	"ui programming":  roleProgram,
 	"gui programmer":  roleProgram,
 	"gui programming": roleProgram,
 	"gui coding":      roleProgram,
 
-	// art
 	"graphics":                 roleArtWorker,
 	"graphic":                  roleArtWorker,
 	"2d graphics":              roleArtWorker,
 	"cg":                       roleArtWorker,
-	"image editing":            roleArtWorker, // 改图 (fan-TL image work)
+	"image editing":            roleArtWorker,
 	"image editor":             roleArtWorker,
-	"gui":                      roleArtWorker, // interface art, not engine work
+	"gui":                      roleArtWorker,
 	"ui":                       roleArtWorker,
 	"ui design":                roleArtWorker,
 	"gui design":               roleArtWorker,
@@ -78,11 +76,6 @@ var staffNoteRole = map[string]int64{
 	"cg coloring":              roleColoring,
 	"cg supervision":           roleCGSupervision,
 
-	// movie (OP/ED/demo video production) — same population as the Bangumi
-	// side of 动画制作: role 114's live holders (神月社, プリズムビジョン, …)
-	// are exactly the top names in these note buckets, so this mapping is a
-	// dedupe, not a guess. Qualified forms ("producer, ed movie",
-	// "movie assistance") stay unmapped for the composite wave.
 	"movie":                    roleAnimationWork,
 	"movies":                   roleAnimationWork,
 	"op movie":                 roleAnimationWork,
@@ -100,7 +93,6 @@ var staffNoteRole = map[string]int64{
 	"movie design":             roleAnimationWork,
 	"movie designer":           roleAnimationWork,
 
-	// music / sound
 	"op lyrics":         roleThemeSongLyrics,
 	"ed lyrics":         roleThemeSongLyrics,
 	"op, ed lyrics":     roleThemeSongLyrics,
@@ -118,7 +110,6 @@ var staffNoteRole = map[string]int64{
 	"sound production":  roleSound,
 	"audio production":  roleSound,
 
-	// production
 	"planning":           rolePlanningJP,
 	"producer":           roleProducer,
 	"executive producer": roleExecProducer,
@@ -131,55 +122,42 @@ var staffNoteRole = map[string]int64{
 	"debug":              roleQARole,
 	"special thanks":     roleSpecialThanks,
 
-	// localization — only the bare forms: qualified positions (localization
-	// producer/director/manager …) are management roles the vocabulary has no
-	// faithful row for, and mapping them to 翻译 would misstate the work.
 	"localization": roleTranslator,
 	"localisation": roleTranslator,
 	"translation":  roleTranslator,
 }
 
-// Target role ids — all EXISTING catalog_role rows (seed-owned generated
-// vocabulary + reserved band), verified in use or faithfully labeled. Keys in
-// comments are catalog_role.key.
 const (
-	roleOtherStaffID    int64 = 2   // other-staff 其他 (the bucket being refined)
-	roleTranslator      int64 = 3   // translator 翻译 (bare localization forms)
-	roleQARole          int64 = 5   // qa QA (debug ≈ デバッグ)
-	roleAnimationWork   int64 = 114 // animation-work 动画制作 (OP/ED/demo movie)
-	roleCGSupervision   int64 = 143 // cg-监修 CG 监修
-	roleStaging         int64 = 178 // episode-direction 演出
-	roleExecProducer    int64 = 179 // executive-producer 执行制片人
-	roleGameDesigner    int64 = 181 // game-designer 游戏设计师
-	roleLyric           int64 = 199 // lyric 作词 (bare "Lyrics" — not tied to OP/ED)
-	roleProducer        int64 = 230 // producer 制作人
-	roleProgram         int64 = 238 // program 程序
-	rolePublicity       int64 = 240 // publicity 宣传
-	roleRecording       int64 = 244 // recording 录音
-	roleRecordingStudio int64 = 246 // recording-studio 录音工作室
-	roleSound           int64 = 259 // sound 音响 (audio-production houses)
-	roleSoundEffects    int64 = 261 // sound-effects 音效
-	roleSpecialThanks   int64 = 267 // special-thanks 特别鸣谢
-	roleThemeSongLyrics int64 = 279 // theme-song-lyrics 主题歌作词
-	roleTitleDesign     int64 = 281 // title-design 标题设计 (game logo)
-	roleColoring        int64 = 289 // 上色
-	rolePlanningJP      int64 = 291 // 企画 (the one in live use; generated 224 is empty)
-	roleCooperation     int64 = 305 // 协力 (in live use; generated 121 is empty)
-	roleOriginalWork    int64 = 307 // 原作 (in live use; 168/221 are empty)
-	roleSupervision     int64 = 314 // 监修 (in live use; 274 is empty)
-	roleArtWorker       int64 = 316 // 美工 (generic graphics work)
-	roleBackground      int64 = 319 // 背景 (in live use; 136 is empty)
+	roleOtherStaffID    int64 = 2
+	roleTranslator      int64 = 3
+	roleQARole          int64 = 5
+	roleAnimationWork   int64 = 114
+	roleCGSupervision   int64 = 143
+	roleStaging         int64 = 178
+	roleExecProducer    int64 = 179
+	roleGameDesigner    int64 = 181
+	roleLyric           int64 = 199
+	roleProducer        int64 = 230
+	roleProgram         int64 = 238
+	rolePublicity       int64 = 240
+	roleRecording       int64 = 244
+	roleRecordingStudio int64 = 246
+	roleSound           int64 = 259
+	roleSoundEffects    int64 = 261
+	roleSpecialThanks   int64 = 267
+	roleThemeSongLyrics int64 = 279
+	roleTitleDesign     int64 = 281
+	roleColoring        int64 = 289
+	rolePlanningJP      int64 = 291
+	roleCooperation     int64 = 305
+	roleOriginalWork    int64 = 307
+	roleSupervision     int64 = 314
+	roleArtWorker       int64 = 316
+	roleBackground      int64 = 319
 )
 
-// staffNoteSeparators split a composite note into position components. "/" is
-// safe only because exact table keys ("op/ed movie") are matched first.
 var staffNoteSeparators = regexp.MustCompile(`[,&/]`)
 
-// RefineVNDBStaffRoles answers the role(s) a VNDB staff credit lands under.
-// For the 其他 bucket: an exact table key wins outright; otherwise the note
-// splits into components and refines only when EVERY component is a table key
-// ("Planning, script" → 企画+程序), deduped in note order — one unknown word
-// and the whole note stays in the bucket. Everything else passes through.
 func RefineVNDBStaffRoles(roleID int64, note string) []int64 {
 	if roleID != roleOtherStaffID {
 		return []int64{roleID}
@@ -200,7 +178,7 @@ func RefineVNDBStaffRoles(roleID int64, note string) []int64 {
 		}
 		refined, ok := staffNoteRole[part]
 		if !ok {
-			return []int64{roleID} // never half-map a composite
+			return []int64{roleID}
 		}
 		if !slices.Contains(roles, refined) {
 			roles = append(roles, refined)
@@ -212,14 +190,10 @@ func RefineVNDBStaffRoles(roleID int64, note string) []int64 {
 	return roles
 }
 
-// NormalizeStaffNote is the match key: notes arrive with stray case and
-// whitespace, and the table is keyed on the folded form.
 func NormalizeStaffNote(note string) string {
 	return strings.ToLower(strings.TrimSpace(note))
 }
 
-// StaffNoteRoleTable exposes a copy of the note→role table so tests can
-// assert every target id is a seeded vocabulary row.
 func StaffNoteRoleTable() map[string]int64 {
 	return maps.Clone(staffNoteRole)
 }

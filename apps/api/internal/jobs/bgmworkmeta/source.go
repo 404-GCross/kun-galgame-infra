@@ -11,9 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// registry holds the catalog registry ids this backfill needs, resolved by key
-// (never hardcoded) so a rehearsal / prod DB with different auto-increment
-// seeds still works — the bgmsummaries / workratings discipline.
 type registry struct {
 	galgameMedium int16
 	bangumiSource int16
@@ -34,9 +31,6 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one galgame work (claimed OR bodyless — T2/T2b admit both on
-// both fields, refs/proj/102) joined to its EXACT Bangumi anchor's subject
-// meta_tags + favorite blobs.
 type candidate struct {
 	WorkID    int64  `gorm:"column:work_id"`
 	SubjectID int64  `gorm:"column:subject_id"`
@@ -44,16 +38,6 @@ type candidate struct {
 	Favorite  []byte `gorm:"column:favorite"`
 }
 
-// loadCandidates resolves galgame works carrying an EXACT Bangumi work anchor —
-// matched_by UNRESTRICTED (every exact tier asserts identity, the 66/69 ruling;
-// the releasemeta bgm lane precedent) — joined to the anchored subject's
-// meta_tags + favorite jsonb (src_bangumi is a schema inside the catalog DB,
-// single DSN). T2 + T2b (refs/proj/70 §3/§8, 88, 102): NO claim filter —
-// both fields are catalog-native SOURCE lanes that materialize for claimed
-// and bodyless works alike. DISTINCT ON keeps ONE anchor per work (the lowest external_id); the
-// external_id→bigint cast is safe (surveyed on rehearsal AND live: zero
-// non-numeric exact bgm work anchors — the 69 verification). Limit/Offset window
-// the distinct-work list in Go (the bgmsummaries chunking discipline).
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]candidate, error) {
 	var out []candidate
 	if err := db.WithContext(ctx).
@@ -72,19 +56,13 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offse
 	return window(out, limit, offset), nil
 }
 
-// parseMetaTags defensively decodes a subject's meta_tags jsonb (surveyed: an
-// array of strings on every dump row) into the decided name list: trimmed,
-// blank-skipped, in-subject duplicates collapsed keeping first occurrence
-// (dump order — meta tags carry no votes to rank by). Counters are bumped on
-// st (see the package doc); nil means nothing to write.
 func parseMetaTags(raw []byte, st *Stats) []string {
-	if len(raw) == 0 || string(raw) == "null" { // column NULL → no meta tags
+	if len(raw) == 0 || string(raw) == "null" {
 		st.MetaNoTags++
 		return nil
 	}
 	var els []string
 	if err := json.Unmarshal(raw, &els); err != nil {
-		// Not an array of strings — a malformed dump row. Counted, never fatal.
 		st.MetaNotArray++
 		return nil
 	}
@@ -96,7 +74,7 @@ func parseMetaTags(raw []byte, st *Stats) []string {
 	out := make([]string, 0, len(els))
 	for _, el := range els {
 		name := strings.TrimSpace(el)
-		if name == "" { // whitespace-only element
+		if name == "" {
 			st.MetaNameBlank++
 			continue
 		}
@@ -108,21 +86,17 @@ func parseMetaTags(raw []byte, st *Stats) []string {
 		out = append(out, name)
 	}
 	if len(out) == 0 {
-		return nil // every element was blank — already counted per element
+		return nil
 	}
 	return out
 }
 
-// bucketValue is one decided favorite shelf after defensive parsing.
 type bucketValue struct {
 	Bucket string
 	Metric int16
 	Value  int64
 }
 
-// favoriteShelves maps the dump's shelf keys to the PopularityMetricBgm*
-// vocabulary in metric order. Note the dump serializes Bangumi's "collect"
-// shelf as "done" (surveyed: exactly these five keys on every game row).
 var favoriteShelves = []struct {
 	Key    string
 	Metric int16
@@ -134,11 +108,6 @@ var favoriteShelves = []struct {
 	{"dropped", model.PopularityMetricBgmDropped},
 }
 
-// parseFavorite defensively decodes a subject's favorite jsonb into the
-// decided shelf rows, in fixed shelf order for determinism. A present 0 is a
-// real row; an absent shelf yields no row (the 62 semantics); a non-integer or
-// negative value is skipped (surveyed: none exist — pure defense); a key
-// outside the five-shelf vocabulary is counted, never guessed into a metric.
 func parseFavorite(raw []byte, st *Stats) []bucketValue {
 	if len(raw) == 0 || string(raw) == "null" {
 		st.FavNoObject++
@@ -159,7 +128,7 @@ func parseFavorite(raw []byte, st *Stats) []bucketValue {
 		known[shelf.Key] = true
 		num, ok := shelves[shelf.Key]
 		if !ok {
-			continue // absent shelf = no row, never a fake 0
+			continue
 		}
 		v, err := num.Int64()
 		if err != nil || v < 0 {
@@ -176,8 +145,6 @@ func parseFavorite(raw []byte, st *Stats) []bucketValue {
 	return out
 }
 
-// window applies the offset/limit chunking to an already-distinct candidate
-// list (slicing keeps it obviously correct — the bgmsummaries discipline).
 func window[T any](in []T, limit, offset int) []T {
 	if offset > 0 {
 		if offset >= len(in) {

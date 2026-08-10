@@ -1,25 +1,3 @@
-// Package releaselabels materialises RELEASE-level attribution (wave 200):
-// vndb releases_producers dev/pub flags → catalog_release_label.
-//
-// The work-level lane (internal/jobs/workproducers) answers "who made this
-// work" and must stay narrow to mean anything. Everyone else the sources record
-// — the console-port publisher, the localisation house, the fan-patch group —
-// is a fact about ONE EDITION, and until now had nowhere to live. Flattened
-// upward they turned a company list into a crowd; dropped they were simply lost.
-// This is the shelf they belong on.
-//
-//   - Grain: RELEASE-level, NO language gate. That is the point: a release
-//     already says which language and edition it is, so the reader can see that
-//     Sekai Project published the English one without being told it co-made the
-//     Japanese original.
-//   - Kinds: developer → WorkLabelKindDeveloper, publisher → WorkLabelKindPublisher
-//     (the same vocabulary as the work-level edge — a second enum meaning the
-//     same thing would drift). source_id = vndb.
-//   - Resolution: pid → catalog_label through EXACT vndb label anchors only.
-//     Pids without one are COUNTED, never guessed — the same doctrine E2a set,
-//     and the gap is structural rather than a re-run away.
-//
-// Edges are static facts — ON CONFLICT DO NOTHING; re-runs are no-ops.
 package releaselabels
 
 import (
@@ -33,23 +11,20 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Opts configures a run.
 type Opts struct {
 	Apply bool
-	DSN   string // catalog DB (hosts src_vndb) — REQUIRED
+	DSN   string
 }
 
-// Stats reports a run. Planned counters are identical in dry and apply.
 type Stats struct {
-	DevPlanned int // (release,label) pairs with the developer flag
-	PubPlanned int // (release,label) pairs with the publisher flag
+	DevPlanned int
+	PubPlanned int
 	Written    int
-	SkippedDup int // edge row already there (re-run)
-	Unresolved int // (release,pid) pairs whose pid has no exact vndb label anchor
+	SkippedDup int
+	Unresolved int
 	Errors     int
 }
 
-// Run executes the backfill.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
@@ -72,9 +47,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 
 	st := &Stats{}
 
-	// Candidates: one row per (release,label) with OR-folded flags. vndb can
-	// list a producer on a release twice under different roles, and the fold is
-	// what turns that into "developer AND publisher" rather than two arguments.
 	var cands []struct {
 		ReleaseID int64 `gorm:"column:release_id"`
 		LabelID   int64 `gorm:"column:label_id"`
@@ -96,7 +68,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		return nil, fmt.Errorf("load candidates: %w", err)
 	}
 
-	// The unresolved tail — reported so the gap is a number rather than silence.
 	if err := db.WithContext(ctx).Raw(`
 		SELECT count(DISTINCT (rel.id, rp.pid))
 		FROM catalog_external_ref r
@@ -126,9 +97,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		}
 	}
 
-	// No TouchWorks: this is a one-off materialisation of facts the sources
-	// already held, and bumping ~150k hosts would drown the public changes feed
-	// in a day that saw no editorial change at all.
 	if opts.Apply {
 		for start := 0; start < len(rows); start += 2000 {
 			end := min(start+2000, len(rows))

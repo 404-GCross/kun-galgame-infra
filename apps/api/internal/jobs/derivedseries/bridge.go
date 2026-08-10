@@ -9,33 +9,8 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// crossoverGuardRunes is how much shared prefix between an FD's TARGETS proves
-// they are the same franchise (duplicate rows, a renamed sequel, a translated
-// row) rather than separate lines. Two runes is enough here — unlike naming,
-// the comparison is between the handful of works ONE fandisc points at, not
-// across the whole catalogue, so two runes of agreement is real evidence
-// ("亜美・風立ちぬ" vs "亜美 ～風立ちぬ～" agree on exactly two).
 const crossoverGuardRunes = 2
 
-// crossoverBridges finds the works whose weak edges chain SEPARATE lines into
-// one component: the crossover fandisc problem (wave 185; series 749's Terios
-// blob was five unrelated lines held together by テリぷら-style cross-title FDs).
-//
-// A work is a bridge only when all three hold:
-//
-//   - it carries no strong edge itself (it is a satellite, not a line entry);
-//   - it is the SATELLITE side (edge side a — "a fandisc_of b") of weak edges
-//     whose targets sit in two or more different strong-edge clusters. Direction
-//     matters: a base game with three of its own fandiscs pointing AT it is the
-//     hub of one family, not a bridge between three;
-//   - its targets do not all share a name: when every pair of target titles
-//     agrees on crossoverGuardRunes+ runes (NFKC, case-folded), the "separate
-//     lines" are one franchise split over duplicate or renamed rows, and cutting
-//     would shatter a real family.
-//
-// Bridges get their outgoing weak edges dropped before clustering; the bridge
-// itself usually ends up a singleton and is worklisted rather than published —
-// a work that belongs to several lines at once has no single honest series.
 func crossoverBridges(works []int64, edgesByWork map[int64][]seriesorder.Edge,
 	titles map[int64]string) []int64 {
 	hasStrong := map[int64]bool{}
@@ -53,7 +28,7 @@ func crossoverBridges(works []int64, edgesByWork map[int64][]seriesorder.Edge,
 	}
 	for _, w := range works {
 		for _, e := range edgesByWork[w] {
-			if e.A != w { // walk each edge once, from its a side
+			if e.A != w {
 				continue
 			}
 			if StrongEdgeTypes[e.Type] {
@@ -92,8 +67,6 @@ func crossoverBridges(works []int64, edgesByWork map[int64][]seriesorder.Edge,
 	return bridges
 }
 
-// sameFranchise reports whether every pair of target titles shares the guard
-// prefix — the "these lines are really one franchise" escape hatch.
 func sameFranchise(targets []int64, titles map[int64]string) bool {
 	folded := make([]string, 0, len(targets))
 	for _, t := range targets {
@@ -120,8 +93,6 @@ func commonPrefixRunes(a, b string) int {
 	return n
 }
 
-// pruneBridgeEdges rebuilds the adjacency without the bridges' outgoing weak
-// edges. Everything else — including weak edges pointing AT a bridge — stays.
 func pruneBridgeEdges(edgesByWork map[int64][]seriesorder.Edge, bridges []int64) (map[int64][]seriesorder.Edge, int) {
 	cut := map[int64]bool{}
 	for _, b := range bridges {

@@ -1,45 +1,5 @@
 package importer
 
-// Bangumi type-4 GATED expansion (refs/proj/78, B1). Gates the UNANCHORED
-// Bangumi type=4 (game) subjects through a precision-first three-way OR signal
-// gate and creates a BODYLESS (site=NULL) medium=galgame catalog_work + an
-// EXACT Bangumi anchor (rule:bgm-type4-gated) + title rows + an imported
-// revision per gated subject. It reuses the stub-creation discipline of the
-// dlsite / bangumi-xmedia waves (selfRef / importedRev / workSnapshotJSON /
-// batchRefsRevs / mediumGalgame) — zero new schema, works+titles+anchor+rev only.
-//
-// Governance (user ruling 2026-07-21, precision over recall — 错收难删/漏收可补):
-// console/mobile games are EXCLUDED; the wiki scope is 二次元游戏 (galgame/eroge).
-// Every predicate below is GROUNDED in the step-78 survey of the actual
-// src_bangumi.subject.meta_tags / tags value distributions.
-//
-// Eligibility guard (主机/手游排除): a subject carrying ANY console / handheld /
-// arcade / mobile platform token AND no PC-family token is dropped up front —
-// this is what removes Xenoblade / Disgaea / Madoka-PSP / mobile-otome.
-//
-// Signal P (PC-platform galgame genre): meta_tags has PC/Windows AND
-// (VN|乙女, OR (ADV|AVG AND R18|全年龄)). Bare "PC" is far too loose — 30k+ PC
-// FPS/ACT/RPG titles (Team Fortress 2 carries "PC") would leak — so the platform
-// token is CONJOINED with a galgame-family genre; the ADV/AVG genre is polluted
-// with western/console adventures (Silent Hill 2, Nancy Drew), so it is admitted
-// only when age-rated.
-//
-// Signal T (explicit galgame classification): meta_tags has the CURATED
-// "Galgame" token, OR a folksonomy tag (galgame/黄油/エロゲ/…) applied by ≥3 users.
-// Explicit enough to stand alone.
-//
-// Signal X (cross-source galgame corpus): the subject's NFKC-lower title
-// (name or name_cn, ≥4 chars) appears in the erogamespace / dlsite-game /
-// VNDB-ja release-title corpus — three Japanese PC galgame/VN corpora, all
-// computed with the IDENTICAL lower(normalize(col,NFKC)) fold so equality is
-// byte-isomorphic with the Bangumi name_norm generated columns (the 56a recipe).
-//
-// Creation safety rope (防重创建): before creating, the subject's normalized
-// title is checked against the ENTIRE existing catalog_work_title set — a hit is
-// SKIPPED (a reconcile candidate for the 56a anchor rule, NOT a creation
-// candidate). Idempotent: an anchored subject leaves the pool, so a second
-// --apply writes zero. Dry-run is the DEFAULT and reports the full survey.
-
 import (
 	"fmt"
 	"log/slog"
@@ -53,86 +13,70 @@ import (
 
 const (
 	ruleBgmType4Gated  = "rule:bgm-type4-gated"
-	bgmGatedMinLen     = 4    // normalized-title length floor (chars) — both sides
-	bgmGatedChunk      = 1000 // work-creation transaction batch size
-	bgmGatedSampleSeed = 78   // deterministic random-100 (the reviewer's approval artifact)
+	bgmGatedMinLen     = 4
+	bgmGatedChunk      = 1000
+	bgmGatedSampleSeed = 78
 	bgmGatedSampleN    = 100
 	bgmCollisionSample = 20
-	bgmASCIISample     = 30 // cap for the ascii-drop / ascii-survivor evidence lists
+	bgmASCIISample     = 30
 )
 
-// Cross-source corpus bits — a norm's value in the corpus map is the OR of the
-// corpora that contain it, so the X-only tightening can count DISTINCT corpora.
 const (
-	corpusEG     uint8 = 1 << 0 // erogamespace
-	corpusDLsite uint8 = 1 << 1 // dlsite (game work-types)
-	corpusVNDB   uint8 = 1 << 2 // VNDB ja release titles
+	corpusEG     uint8 = 1 << 0
+	corpusDLsite uint8 = 1 << 1
+	corpusVNDB   uint8 = 1 << 2
 )
 
-// SQL array literals for the meta_tags gate predicates. Kept as inline literals
-// (a fixed, injection-free vocabulary) so the grounded predicate is legible in
-// one place. The jsonb `?`/`?|` OPERATORS are avoided on purpose — GORM treats
-// `?` as a bind placeholder — in favor of the equivalent jsonb_exists /
-// jsonb_exists_any FUNCTION forms.
 const (
-	sqlPCPlatforms = `array['PC','Windows']`
-	sqlPCFamily    = `array['PC','Windows','Mac','Linux','DOS']`
-	// Console / handheld / arcade / mobile — the 主机/手游 exclusion tokens.
+	sqlPCPlatforms   = `array['PC','Windows']`
+	sqlPCFamily      = `array['PC','Windows','Mac','Linux','DOS']`
 	sqlConsoleMobile = `array['PS','PS2','PS3','PS4','PS5','PSP','PSV','NS','NS2','3DS','Wii','WiiU',` +
 		`'Xbox','XBOX','Xbox360','XboxOne','XSX','NGC','GB','GBA','GBC','FC','SFC','SS','MD','DC','N64','NDS','WS','PCE','街机','Android','iOS','Symbian']`
-	sqlGenreStrict = `array['VN','乙女']`   // clean galgame-family genres
-	sqlGenreAdv    = `array['ADV','AVG']` // adventure — needs age-rating to be clean
-	sqlAgeRated    = `array['R18','全年龄']` // R18 / all-ages age-rating tokens
+	sqlGenreStrict = `array['VN','乙女']`
+	sqlGenreAdv    = `array['ADV','AVG']`
+	sqlAgeRated    = `array['R18','全年龄']`
 	sqlGalgameFolk = `array['galgame','黄油','エロゲ','エロゲー','美少女ゲーム','ギャルゲー']`
 )
 
-// dlsiteGameTypes is the DLsite work_type_string allowlist for the cross-source
-// corpus — the GAME types only (excludes manga / CG / voice-ASMR / video / audio
-// / image-material / tools), so a Bangumi title cannot cross-match a DLsite
-// non-game work of a coincidentally-equal name.
 var dlsiteGameTypes = []string{
 	"ノベル", "デジタルノベル", "アドベンチャー", "ロールプレイング", "シミュレーション",
 	"アクション", "パズル", "その他ゲーム", "テーブル", "シューティング", "タイピング", "クイズ",
 }
 
-// BgmGatedStats is the survey + apply tally.
 type BgmGatedStats struct {
-	PoolTotal             int // unanchored type-4 subjects
-	ExcludedConsoleMobile int // dropped by the 主机/手游 guard
-	EligiblePool          int // PoolTotal - ExcludedConsoleMobile
+	PoolTotal             int
+	ExcludedConsoleMobile int
+	EligiblePool          int
 
-	SigP, SigT, SigX    int // per-signal counts over the eligible pool
-	PT, PX, TX, All3    int // intersections
-	POnly, TOnly, XOnly int // each-only
+	SigP, SigT, SigX    int
+	PT, PX, TX, All3    int
+	POnly, TOnly, XOnly int
 
-	GatedTotal            int // eligible AND (P|T|X), after the X-only tightening
-	SkippedASCIIXOnly     int // X-only + all-hits-non-CJK + single-corpus → dropped (reviewer rule)
-	SkippedTitleCollision int // gated but title collides with an existing work
-	SkippedIntraCollision int // two gated survivors share a normalized title
-	ToCreate              int // works to create (= GatedTotal - the two skip counts)
+	GatedTotal            int
+	SkippedASCIIXOnly     int
+	SkippedTitleCollision int
+	SkippedIntraCollision int
+	ToCreate              int
 
 	WorksCreated     int
 	TitlesCreated    int
 	AnchorsCreated   int
 	RevisionsCreated int
 
-	RandomSample     []BgmGatedSample    // deterministic random-100 of ToCreate
-	CollisionSamples []BgmGatedCollision // up to 20 existing-work collisions
+	RandomSample     []BgmGatedSample
+	CollisionSamples []BgmGatedCollision
 
-	ASCIIDroppedSamples  []BgmGatedSample // up to 30 dropped by the X-only tightening
-	ASCIISurvivorSamples []BgmGatedSample // up to 30 pure-non-CJK X-only ≥2-corpus survivors
+	ASCIIDroppedSamples  []BgmGatedSample
+	ASCIISurvivorSamples []BgmGatedSample
 }
 
-// BgmGatedSample is one to-create subject for the reviewer's random-100 list.
 type BgmGatedSample struct {
 	SubjectID int64
 	Name      string
 	NameCN    string
-	Signals   string // e.g. "P", "X", "P+T+X"
+	Signals   string
 }
 
-// BgmGatedCollision is one gated subject skipped because its title already
-// exists on a work (a reconcile candidate).
 type BgmGatedCollision struct {
 	SubjectID    int64
 	Name         string
@@ -142,8 +86,6 @@ type BgmGatedCollision struct {
 	WorkTitle    string
 }
 
-// poolRow is one unanchored type-4 subject with its SQL-computed P/T flags and
-// the console/mobile-exclusion verdict; X is decided Go-side against the corpus.
 type poolRow struct {
 	ID         int64  `gorm:"column:id"`
 	Name       string `gorm:"column:name"`
@@ -156,22 +98,16 @@ type poolRow struct {
 	Excluded   bool   `gorm:"column:excluded"`
 }
 
-// wtNorm identifies the existing work a colliding title belongs to (for the
-// collision sample).
 type wtNorm struct {
 	workID int64
 	title  string
 }
 
-// candidate is a gated survivor queued for creation.
 type candidate struct {
 	row     poolRow
 	signals string
 }
 
-// RunBgmType4Gated executes the gate + creation. eg comes from im.eg, dlsite is
-// passed in (the import-eg-dlsite-releases wiring); src_vndb lives in im.catalog.
-// Dry-run (im.dryRun) reports the full survey and writes nothing.
 func (im *Importer) RunBgmType4Gated(dlsiteDB *gorm.DB) (BgmGatedStats, error) {
 	var st BgmGatedStats
 	if im.eg == nil || dlsiteDB == nil {
@@ -201,7 +137,6 @@ func (im *Importer) RunBgmType4Gated(dlsiteDB *gorm.DB) (BgmGatedStats, error) {
 		st.EligiblePool++
 		p, t := r.SigP, r.SigT
 
-		// Which corpora each normalized title hits (0 = no hit / too short).
 		var nMask, cnMask uint8
 		if runeLen(r.NameNorm) >= bgmGatedMinLen {
 			nMask = xsrc[r.NameNorm]
@@ -212,14 +147,6 @@ func (im *Importer) RunBgmType4Gated(dlsiteDB *gorm.DB) (BgmGatedStats, error) {
 		combined := nMask | cnMask
 		xRaw := combined != 0
 
-		// --- X-only pure-non-CJK single-corpus tightening (reviewer rule,
-		// precision-first 错收难删) ---
-		// An X-ONLY candidate (no P, no T) whose EVERY corpus-hitting normalized
-		// title contains no CJK (kana/kanji/hanzi) — the reviewer's "pure ASCII"
-		// discriminator — is the generic-title-collision failure mode
-		// (Manhunt/Monster/Maria). It is admitted only if it hits ≥2 DISTINCT
-		// corpora; a single-corpus pure-ASCII hit is dropped. CJK-bearing titles
-		// and anything with P/T support are unaffected.
 		asciiDrop, asciiSurvivor := false, false
 		if xRaw && !p && !t && pureASCIIHits(r, nMask, cnMask) {
 			if corpusCount(combined) >= 2 {
@@ -236,7 +163,7 @@ func (im *Importer) RunBgmType4Gated(dlsiteDB *gorm.DB) (BgmGatedStats, error) {
 			if len(st.ASCIIDroppedSamples) < bgmASCIISample {
 				st.ASCIIDroppedSamples = append(st.ASCIIDroppedSamples, bgmSampleOf(r, "X"))
 			}
-			continue // no longer gated
+			continue
 		}
 		if asciiSurvivor && len(st.ASCIISurvivorSamples) < bgmASCIISample {
 			st.ASCIISurvivorSamples = append(st.ASCIISurvivorSamples, bgmSampleOf(r, "X"))
@@ -257,14 +184,12 @@ func (im *Importer) RunBgmType4Gated(dlsiteDB *gorm.DB) (BgmGatedStats, error) {
 
 	toCreate = dropIntraCollisions(toCreate, &st)
 	st.ToCreate = len(toCreate)
-	st.RandomSample = pickRandomSample(toCreate) // from the FULL to-create set (reviewer artifact)
+	st.RandomSample = pickRandomSample(toCreate)
 
 	if im.dryRun {
 		logBgmGated(&st, true)
 		return st, nil
 	}
-	// --limit caps the works actually minted (a small-batch rehearsal aid); the
-	// survey above is always over the full pool.
 	createSet := toCreate
 	if im.limit > 0 && im.limit < len(createSet) {
 		createSet = createSet[:im.limit]
@@ -276,8 +201,6 @@ func (im *Importer) RunBgmType4Gated(dlsiteDB *gorm.DB) (BgmGatedStats, error) {
 	return st, nil
 }
 
-// createGatedWorks mints the bodyless works + titles + exact anchors + imported
-// revisions in chunked transactions (the dlsite/xmedia stub-creation discipline).
 func (im *Importer) createGatedWorks(cands []candidate, st *BgmGatedStats) error {
 	for start := 0; start < len(cands); start += bgmGatedChunk {
 		end := min(start+bgmGatedChunk, len(cands))
@@ -296,12 +219,12 @@ func (im *Importer) createGatedChunk(tx *gorm.DB, chunk []candidate, st *BgmGate
 	for i, c := range chunk {
 		display := c.row.Name
 		olang := "ja"
-		if display == "" { // Chinese-only subject (e.g. 国产 galgame with no ja name)
+		if display == "" {
 			display = c.row.NameCN
 			olang = "zh-Hans"
 		}
 		cr := model.ContentRatingAllAges
-		if c.row.NSFW { // Bangumi nsfw → R18 (doc 17 §6: all-ages is never inferred, but 0 is the not-null floor)
+		if c.row.NSFW {
 			cr = model.ContentRatingR18
 		}
 		works[i] = model.CatalogWork{
@@ -327,8 +250,6 @@ func (im *Importer) createGatedChunk(tx *gorm.DB, chunk []candidate, st *BgmGate
 	if err := tx.CreateInBatches(titles, 1000).Error; err != nil {
 		return err
 	}
-	// Rebuild the per-work title index from the INSERTED slice so the revision
-	// snapshot carries the real title ids (the dlsite createDLWorkChunk pattern).
 	titlesByWork := make(map[int64][]model.CatalogWorkTitle, len(chunk))
 	for _, t := range titles {
 		titlesByWork[t.WorkID] = append(titlesByWork[t.WorkID], t)

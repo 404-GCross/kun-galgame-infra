@@ -2,14 +2,6 @@ package model
 
 import "time"
 
-// UserSiteRole is a site-scoped role grant: the user holds RoleName ONLY on the
-// site identified by SiteID, gaining no cross-site power. It is the storage
-// behind the `site_roles` claim (docs/integration/oauth/12-site-roles.md).
-//
-// RoleName is validated at the grant API — never `user`/`admin`/`ren` (the
-// global-only names), always the site-name policy pattern. The IdP only records
-// the grant; what a name grants is decided by the consuming site's own perm
-// bundle (the platform never learns a product's vocabulary).
 type UserSiteRole struct {
 	ID uint `gorm:"primaryKey" json:"id"`
 	// (user_id, site_id, role_name) is unique — one row per grant. All three
@@ -26,7 +18,6 @@ type UserSiteRole struct {
 	Note      string     `gorm:"type:text;not null;default:''" json:"note,omitempty"`
 }
 
-// TableName returns the table name for UserSiteRole
 func (UserSiteRole) TableName() string {
 	return "user_site_roles"
 }

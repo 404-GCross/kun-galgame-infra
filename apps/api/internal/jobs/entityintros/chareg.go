@@ -9,24 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// The char-eg lane (refs/proj/120) differs from the other three in one physical
-// way: erogamespace is a SEPARATE DATABASE, not a schema inside the catalog DB,
-// so the anchor→text join cannot be a SQL join. Both sides are small (25,586
-// anchors, 30,606 appearance rows), so each is loaded whole and joined in Go —
-// the same shape the roster importer uses for the very same table.
-
-// egAnchor is one live character pinned to an erogamespace character id.
-// ExternalID stays the raw text (it is what the samples/logs report), EGID is
-// the numeric form the appearance rows are keyed on.
 type egAnchor struct {
 	EntityID   int64  `gorm:"column:entity_id"`
 	ExternalID string `gorm:"column:external_id"`
 	EGID       int64  `gorm:"column:eg_id"`
 }
 
-// loadEGAnchors returns one anchor per live character (lowest external id,
-// numerically — EG character ids are all-numeric), mirroring the DISTINCT ON
-// discipline of the in-DB lanes.
 func loadEGAnchors(ctx context.Context, db *gorm.DB, reg registry) ([]egAnchor, error) {
 	const query = `SELECT DISTINCT ON (c.id) c.id AS entity_id, r.external_id, r.external_id::bigint AS eg_id
 		FROM catalog_character c
@@ -43,21 +31,6 @@ func loadEGAnchors(ctx context.Context, db *gorm.DB, reg registry) ([]egAnchor, 
 	return out, nil
 }
 
-// loadEGTexts picks ONE appearance text per erogamespace character.
-//
-// An EG character id is global (not per-game), so a character reappearing in a
-// series carries several formal_explanation texts — and the pk is
-// game/character/stage, so even one game can contribute several rows. The
-// ruling (120 §4) is: among the appearances with a non-empty, non-spoiler
-// formal_explanation take the LONGEST text, ties broken by the smallest game
-// id; pk closes the last theoretical tie so the pick is fully deterministic.
-//
-// netabare = true marks a spoiler write-up. Exactly one such row exists today
-// (and its text is empty anyway), but the exclusion is written into the query
-// rather than left to the data: the mirror re-syncs, and this table has no
-// spoiler-aware read face to hide behind (catalog_character_intro carries no
-// spoiler flag — the same reasoning that makes the vndb lane drop spoiler spans
-// outright). Compared as text so a re-typed field cannot raise a cast error.
 func loadEGTexts(ctx context.Context, egDB *gorm.DB) (map[int64]string, error) {
 	const query = `SELECT DISTINCT ON (character_id) character_id, raw->>'formal_explanation' AS text
 		FROM appearances
@@ -79,14 +52,6 @@ func loadEGTexts(ctx context.Context, egDB *gorm.DB) (map[int64]string, error) {
 	return out, nil
 }
 
-// loadEGCandidates joins the anchors to their chosen text and reports how many
-// anchored characters EG has nothing usable for.
-//
-// noSupply is counted over the WHOLE anchor set, not the window: it is a
-// coverage fact about the source, and making it depend on --limit/--offset
-// would turn a chunked run's summary into noise. The window applies to the
-// candidates (the supplied set), exactly as the in-DB lanes window their
-// post-join set, so chunks stay evenly sized.
 func loadEGCandidates(ctx context.Context, catalogDB, egDB *gorm.DB, reg registry, limit, offset int) ([]candidate, int, error) {
 	anchors, err := loadEGAnchors(ctx, catalogDB, reg)
 	if err != nil {

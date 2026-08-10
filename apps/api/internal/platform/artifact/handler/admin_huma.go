@@ -1,10 +1,3 @@
-// Admin artifact operations over Huma (code-first OpenAPI 3.1), layered on the
-// OAuth service's Fiber app. Auth is applied by the caller as path-scoped Fiber
-// middleware (Auth + the oauth.admin_access gate) BEFORE these operations — Huma
-// registers on the app, not on the admin group, so the group's middleware does
-// NOT cover these routes; the caller must gate the prefix. list/delete/reclaim
-// additionally require artifact.files.manage (ren), enforced in-handler here. See
-// docs/artifact/10-openapi-and-clients.md §4.3 and cmd/oauth registerArtifactAdmin.
 package handler
 
 import (
@@ -25,13 +18,8 @@ import (
 
 type adminCtxKey string
 
-// ctxKeyAdminRoles carries the authenticated caller's roles (lifted from the
-// Fiber Locals that middleware.Auth set) into the Huma request context.
 const ctxKeyAdminRoles adminCtxKey = "artifact_admin:roles"
 
-// AdminAuthBridge lifts user_roles from fiber.Ctx.Locals into the Huma context so
-// ren-gated operations can enforce the permission in-handler. The Fiber-layer
-// Auth + oauth.admin_access gate has already run and rejected non-admins before this.
 func AdminAuthBridge(ctx huma.Context, next func(huma.Context)) {
 	fc := humafiber.Unwrap(ctx)
 	if roles, ok := fc.Locals("user_roles").([]string); ok {
@@ -40,24 +28,15 @@ func AdminAuthBridge(ctx huma.Context, next func(huma.Context)) {
 	next(ctx)
 }
 
-// adminRoles reads the caller's roles that AdminAuthBridge lifted into the Huma
-// request context.
 func adminRoles(ctx context.Context) []string {
 	roles, _ := ctx.Value(ctxKeyAdminRoles).([]string)
 	return roles
 }
 
-// AdminHumaServer adapts AdminHandler (transport-free core) to Huma operations.
 type AdminHumaServer struct {
 	h *AdminHandler
 }
 
-// SetupAdmin builds a Huma API over the Fiber app for the admin artifact
-// operations and returns it so the caller can export its OpenAPI (cmd/gen-openapi
-// -admin). The auto doc/openapi routes are disabled. NOTE: this does NOT apply
-// auth — the caller MUST gate the /api/v1/admin/artifact prefix with
-// Auth + the oauth.admin_access permission before invoking, because Huma
-// registers on the app (not the admin group).
 func SetupAdmin(app *fiber.App, h *AdminHandler) huma.API {
 	InstallErrorEnvelope()
 
@@ -94,8 +73,6 @@ func (s *AdminHumaServer) register(api huma.API) {
 	}, s.reclaim)
 }
 
-// ---- inputs / outputs (house envelope) ----
-
 type adminListInput struct {
 	Site        string `query:"site" doc:"Filter by site key"`
 	Status      string `query:"status" enum:"uploading,ready,failed" doc:"Filter by upload status"`
@@ -127,9 +104,6 @@ type adminReclaimOutput struct {
 	Body Envelope[dto.AdminArtifactReclaim]
 }
 
-// requireRen returns a 403 house error unless the caller holds
-// artifact.files.manage (ren). The path prefix is already gated to admins at
-// the Fiber layer; this is the extra restriction on browsing/mutating operations.
 func (s *AdminHumaServer) requireRen(ctx context.Context) error {
 	if !perm.Resolver.Can(adminRoles(ctx), perm.FilesManage) {
 		return apiErr(http.StatusForbidden, apperr.ErrForbidden)
@@ -171,7 +145,6 @@ func (s *AdminHumaServer) list(ctx context.Context, in *adminListInput) (*adminL
 }
 
 func (s *AdminHumaServer) stats(ctx context.Context, _ *struct{}) (*adminStatsOutput, error) {
-	// admin-gated at the path; stats power the dashboard so no extra ren check.
 	data, err := s.h.Stats(ctx)
 	if err != nil {
 		slog.Error("artifact admin stats", "err", err)

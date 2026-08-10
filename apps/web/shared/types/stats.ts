@@ -1,7 +1,3 @@
-// Registration analytics returned by the OAuth admin endpoints
-//   GET /admin/stats/registrations?days=N
-//   GET /admin/stats/registrations/hourly?date=YYYY-MM-DD
-// Buckets are in the server's stats timezone (Asia/Shanghai).
 
 export interface DailyRegistration {
   date: string // YYYY-MM-DD

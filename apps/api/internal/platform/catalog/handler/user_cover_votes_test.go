@@ -20,15 +20,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// The user-token write plane over HTTP (wave 176). The subject of every test
-// here is the same sentence: the actor and the tenant come from the verified
-// token, and there is no body to say otherwise.
-
 const userTestSecret = "catalog-user-face-test-secret"
 
-// fakeClientLookup stands in for the OAuth client registry (a table in the OTHER
-// database this service holds a pool onto). The face only ever asks it one
-// question, so the interface — and the fake — is one method wide.
 type fakeClientLookup map[string]*siteModel.OAuthClient
 
 func (f fakeClientLookup) FindByClientID(_ context.Context, clientID string) (*siteModel.OAuthClient, error) {
@@ -39,25 +32,19 @@ func (f fakeClientLookup) FindByClientID(_ context.Context, clientID string) (*s
 	return c, nil
 }
 
-// userVoteApp wires the face exactly as cmd/catalog does: the shared JWT
-// middleware and UserGate on the prefix, then the Huma ops on the app.
 func userVoteApp(db *gorm.DB, clients fakeClientLookup) *fiber.App {
 	app := fiber.New()
-	verifier := oidctoken.NewVerifier(userTestSecret, nil) // HS256-only (no JWKS)
+	verifier := oidctoken.NewVerifier(userTestSecret, nil)
 	app.Use(UserPrefix, middleware.JWTAuth(verifier), UserGate(clients))
 	SetupUser(app, service.NewCoverVoteService(db), nil, nil, nil, service.NewReadService(db))
 	return app
 }
 
-// userToken mints the access token the OP would have issued, for the ordinary
-// logged-in user.
 func userToken(t *testing.T, uid uint, scope, clientID string) string {
 	t.Helper()
 	return userTokenRoles(t, uid, scope, clientID, "user")
 }
 
-// userTokenRoles is userToken with an explicit role set — the editing face
-// (wave 177) resolves permissions from exactly these claims.
 func userTokenRoles(t *testing.T, uid uint, scope, clientID string, roles ...string) string {
 	t.Helper()
 	tok, err := utils.GenerateAccessToken(userTestSecret, utils.TokenClaims{
@@ -71,7 +58,6 @@ func userVotePath(workID, coverID int64) string {
 	return fmt.Sprintf("%s/works/%d/covers/%d/vote", UserPrefix, workID, coverID)
 }
 
-// userVoteReq issues a bodiless request with (or without) a bearer token.
 func userVoteReq(t *testing.T, app *fiber.App, method, path, token string) (int, []byte) {
 	t.Helper()
 	req := httptest.NewRequest(method, path, nil)
@@ -85,9 +71,6 @@ func userVoteReq(t *testing.T, app *fiber.App, method, path, token string) (int,
 	return resp.StatusCode, raw
 }
 
-// TestUserCoverVote_Refusals walks the auth chain from the outside in. Each row
-// is a different way of not being a client-bound catalog user, and none of them
-// may leave a ballot behind.
 func TestUserCoverVote_Refusals(t *testing.T) {
 	db := openCatalogTestDB(t)
 	f := seedCoverVoteFixture(t, db)
@@ -115,7 +98,6 @@ func TestUserCoverVote_Refusals(t *testing.T) {
 		assert.Equalf(t, tc.want, status, "%s: %s", tc.name, string(raw))
 	}
 
-	// A garbage bearer token is the token's failure, not the user's.
 	status, raw := userVoteReq(t, app, "PUT", path, "not-a-jwt")
 	assert.Equal(t, fiber.StatusUnauthorized, status, string(raw))
 
@@ -124,9 +106,6 @@ func TestUserCoverVote_Refusals(t *testing.T) {
 	assert.EqualValues(t, 0, rows, "no refusal left a row behind")
 }
 
-// TestUserCoverVote_ActorAndSiteComeFromTheToken is the wave's whole doctrine
-// pinned on the row that lands in the table: the uid is the token's `id` and
-// the site is the token's client's binding — neither was on the wire.
 func TestUserCoverVote_ActorAndSiteComeFromTheToken(t *testing.T) {
 	db := openCatalogTestDB(t)
 	f := seedCoverVoteFixture(t, db)
@@ -155,8 +134,6 @@ func TestUserCoverVote_ActorAndSiteComeFromTheToken(t *testing.T) {
 	assert.Equal(t, "kungal", row.Site, "the site is the token's client's catalog_site")
 	assert.Equal(t, f.coverA, row.CoverID)
 
-	// A second user, arriving through a different client, is a different tenant
-	// on the same work — the counts add and the sites differ.
 	status, raw = userVoteReq(t, app, "PUT", userVotePath(f.work, f.coverA),
 		userToken(t, 78, ScopeCatalogEdit, "letmoe-client"))
 	require.Equal(t, fiber.StatusOK, status, string(raw))
@@ -168,9 +145,6 @@ func TestUserCoverVote_ActorAndSiteComeFromTheToken(t *testing.T) {
 	assert.Equal(t, []string{"kungal", "letmoe"}, sites)
 }
 
-// TestUserCoverVote_MovesAndWithdraws: the ballot rules are the table's, so the
-// user plane inherits them unchanged — one row per (work, user), moved by a
-// re-vote, and an idempotent withdrawal.
 func TestUserCoverVote_MovesAndWithdraws(t *testing.T) {
 	db := openCatalogTestDB(t)
 	f := seedCoverVoteFixture(t, db)
@@ -191,14 +165,11 @@ func TestUserCoverVote_MovesAndWithdraws(t *testing.T) {
 	require.Len(t, moved, 1, "the ballot moved rather than accumulated")
 	assert.Equal(t, f.coverB, moved[0])
 
-	// Withdrawal names a cover for symmetry only: the ballot is per work, so
-	// pointing at the OTHER cover still takes the vote back.
 	status, raw = userVoteReq(t, app, "DELETE", userVotePath(f.work, f.coverA), tok)
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	assert.EqualValues(t, 0, decodeVote(t, raw).Data.VoteCount)
 	assert.False(t, decodeVote(t, raw).Data.Voted)
 
-	// Again: still a 200, still nothing there.
 	status, raw = userVoteReq(t, app, "DELETE", userVotePath(f.work, f.coverA), tok)
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 
@@ -207,8 +178,6 @@ func TestUserCoverVote_MovesAndWithdraws(t *testing.T) {
 	assert.EqualValues(t, 0, rows)
 }
 
-// TestUserCoverVote_NotFound: the subject refusals are the S2S face's, because
-// they are the service's.
 func TestUserCoverVote_NotFound(t *testing.T) {
 	db := openCatalogTestDB(t)
 	f := seedCoverVoteFixture(t, db)

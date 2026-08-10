@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Background-job registry: schedule + latest-run visibility + manual trigger
-// (GET /admin/jobs, POST /admin/jobs/:name/run). The one real "recent activity"
-// backend the dashboard card also feeds from.
 import { jobStatusMeta, jobTriggerLabel } from '~/constants/jobs'
 import type { JobInfo } from '~~/shared/types/jobs'
 
@@ -19,7 +16,6 @@ const runJob = async (name: string) => {
     const res = await api.post(`/admin/jobs/${name}/run`)
     if (res.code === 0) {
       useKunMessage('任务已在后台触发', 'success')
-      // Give the runner a beat to write the running row, then refresh.
       setTimeout(refresh, 1200)
     } else {
       useKunMessage(res.message || '触发失败', 'error')

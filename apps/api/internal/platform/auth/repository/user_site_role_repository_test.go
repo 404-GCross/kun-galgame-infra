@@ -13,9 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestUserSiteRole_Integration exercises the real Postgres query paths: the
-// unexpired-only filter, idempotent upsert, batch lookup, and idempotent revoke.
-// Skipped unless TEST_PG_DSN points at a kun_galgame_infra DB.
 func TestUserSiteRole_Integration(t *testing.T) {
 	dsn := os.Getenv("TEST_PG_DSN")
 	if dsn == "" {
@@ -31,7 +28,6 @@ func TestUserSiteRole_Integration(t *testing.T) {
 	repo := NewUserSiteRoleRepository(db)
 	ctx := context.Background()
 
-	// High test-only id space; clean before and after.
 	const uid, sid = uint(990001), uint(42)
 	clean := func() { db.Where("user_id = ?", uid).Delete(&model.UserSiteRole{}) }
 	clean()
@@ -48,10 +44,9 @@ func TestUserSiteRole_Integration(t *testing.T) {
 		}
 	}
 	grant("moderator", &future)
-	grant("event_organizer", &past) // expired
-	grant("creator", nil)           // permanent
+	grant("event_organizer", &past)
+	grant("creator", nil)
 
-	// ActiveRoleNames excludes the expired grant, sorted.
 	names, err := repo.ActiveRoleNames(ctx, uid, sid)
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +55,6 @@ func TestUserSiteRole_Integration(t *testing.T) {
 		t.Fatalf("ActiveRoleNames = %v, want [creator moderator]", names)
 	}
 
-	// Idempotent re-grant — still exactly one row for the triple.
 	grant("moderator", &future)
 	var count int64
 	db.Model(&model.UserSiteRole{}).
@@ -69,7 +63,6 @@ func TestUserSiteRole_Integration(t *testing.T) {
 		t.Fatalf("re-grant produced %d rows, want 1", count)
 	}
 
-	// Batch form matches the single form.
 	byUser, err := repo.ActiveRoleNamesForUsers(ctx, []uint{uid}, sid)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +71,6 @@ func TestUserSiteRole_Integration(t *testing.T) {
 		t.Fatalf("batch = %v, want [creator moderator]", byUser[uid])
 	}
 
-	// Revoke is idempotent.
 	if err := repo.Revoke(ctx, uid, sid, "moderator"); err != nil {
 		t.Fatal(err)
 	}

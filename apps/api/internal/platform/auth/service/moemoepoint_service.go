@@ -12,25 +12,15 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// MoemoepointService owns every change to a user's moemoepoint balance. It is
-// the single mutation path (see docs/integration/oauth/06-moemoepoint.md):
-// the mutable balance on users.moemoepoint and an append-only audit row in
-// moemoepoint_log are written in ONE transaction, guarded by an idempotency
-// key so retries / cron replays never double-apply.
-//
-// Balance may go negative (no non-negative enforcement) so reversals always
-// succeed — for soft karma that's the lean, correct choice.
 type MoemoepointService struct {
 	db       *gorm.DB
 	userRepo *repository.UserRepository
 }
 
-// NewMoemoepointService creates a MoemoepointService.
 func NewMoemoepointService(db *gorm.DB, userRepo *repository.UserRepository) *MoemoepointService {
 	return &MoemoepointService{db: db, userRepo: userRepo}
 }
 
-// AdjustParams is one moemoepoint change.
 type AdjustParams struct {
 	UserID         uint
 	Delta          int
@@ -42,20 +32,14 @@ type AdjustParams struct {
 	Note           string
 }
 
-// AdjustResult is what Adjust returns.
 type AdjustResult struct {
 	Balance int  `json:"balance"`
-	Applied bool `json:"applied"` // false = idempotency-key hit, no-op
+	Applied bool `json:"applied"`
 	LogID   int64 `json:"-"`
 }
 
-// maxAbsDelta caps a single adjustment. Generous for karma — its purpose is
-// to stop a buggy downstream from setting an absurd balance in one call, not
-// to model any real economy limit.
 const maxAbsDelta = 1_000_000
 
-// Adjust applies a signed delta to a user's balance, atomically writing the
-// audit row. Idempotent on IdempotencyKey.
 func (s *MoemoepointService) Adjust(ctx context.Context, p AdjustParams) (*AdjustResult, error) {
 	if p.Delta == 0 || p.Delta > maxAbsDelta || p.Delta < -maxAbsDelta {
 		return nil, errors.NewWithCode(errors.ErrMoemoepointInvalidDelta)
@@ -69,12 +53,9 @@ func (s *MoemoepointService) Adjust(ctx context.Context, p AdjustParams) (*Adjus
 
 	var result AdjustResult
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Idempotency short-circuit: same key already applied?
 		var existing model.MoemoepointLog
 		e := tx.Where("idempotency_key = ?", p.IdempotencyKey).First(&existing).Error
 		if e == nil {
-			// Same key MUST describe the same change (every business field),
-			// else the caller reused a key for a different request → 16004.
 			if !sameAdjust(&existing, p) {
 				return errors.NewWithCode(errors.ErrMoemoepointIdemConflict)
 			}
@@ -89,7 +70,6 @@ func (s *MoemoepointService) Adjust(ctx context.Context, p AdjustParams) (*Adjus
 			return e
 		}
 
-		// Lock the user row so concurrent adjustments serialize.
 		var u model.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&u, p.UserID).Error; err != nil {
 			return mapUserErr(err)
@@ -106,10 +86,6 @@ func (s *MoemoepointService) Adjust(ctx context.Context, p AdjustParams) (*Adjus
 			IdempotencyKey: p.IdempotencyKey,
 			Note:           p.Note,
 		}
-		// OnConflict DoNothing: a concurrent same-key insert (a requester that
-		// passed the First() miss before the winner committed, then blocked on
-		// this row lock until the winner committed) converges on the winner
-		// instead of 500ing on the unique index.
 		res := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "idempotency_key"}}, DoNothing: true,
 		}).Create(&log)
@@ -124,8 +100,6 @@ func (s *MoemoepointService) Adjust(ctx context.Context, p AdjustParams) (*Adjus
 			if !sameAdjust(&winner, p) {
 				return errors.NewWithCode(errors.ErrMoemoepointIdemConflict)
 			}
-			// u.Moemoepoint was read under our lock AFTER the winner committed,
-			// so it already reflects the winner's update.
 			result = AdjustResult{Balance: u.Moemoepoint, Applied: false, LogID: winner.ID}
 			return nil
 		}
@@ -142,7 +116,6 @@ func (s *MoemoepointService) Adjust(ctx context.Context, p AdjustParams) (*Adjus
 	return &result, nil
 }
 
-// GetBalance returns a user's current balance.
 func (s *MoemoepointService) GetBalance(ctx context.Context, userID uint) (int, error) {
 	var u model.User
 	if err := s.db.WithContext(ctx).Select("moemoepoint").First(&u, userID).Error; err != nil {
@@ -151,8 +124,6 @@ func (s *MoemoepointService) GetBalance(ctx context.Context, userID uint) (int, 
 	return u.Moemoepoint, nil
 }
 
-// GetLog returns a user's audit rows, newest first, keyset-paginated by id.
-// beforeID == 0 means "from the latest". reason != "" filters to one reason.
 func (s *MoemoepointService) GetLog(ctx context.Context, userID uint, limit int, beforeID int64, reason string) ([]model.MoemoepointLog, bool, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -165,7 +136,6 @@ func (s *MoemoepointService) GetLog(ctx context.Context, userID uint, limit int,
 		q = q.Where("reason = ?", reason)
 	}
 	var rows []model.MoemoepointLog
-	// Fetch one extra to compute has_more.
 	if err := q.Order("id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
 		return nil, false, err
 	}
@@ -176,10 +146,6 @@ func (s *MoemoepointService) GetLog(ctx context.Context, userID uint, limit int,
 	return rows, hasMore, nil
 }
 
-// SourceNames maps each source_app (an OAuth client id) to that client's
-// display name, for enriching the ledger with the awarding site. "oauth"
-// (OAuth-internal grants) and unknown ids are absent — the caller falls back
-// to a label. Deduplicated; best-effort (a lookup error just yields no names).
 func (s *MoemoepointService) SourceNames(ctx context.Context, sourceApps []string) map[string]string {
 	seen := make(map[string]struct{}, len(sourceApps))
 	ids := make([]string, 0, len(sourceApps))
@@ -211,8 +177,6 @@ func (s *MoemoepointService) SourceNames(ctx context.Context, sourceApps []strin
 	return out
 }
 
-// UserIDByUUID resolves a UUID to the numeric user id (admin endpoints take
-// :uuid; the service works in numeric ids).
 func (s *MoemoepointService) UserIDByUUID(ctx context.Context, uuid string) (uint, error) {
 	u, err := s.userRepo.FindByUUID(ctx, uuid)
 	if err != nil {
@@ -221,10 +185,6 @@ func (s *MoemoepointService) UserIDByUUID(ctx context.Context, uuid string) (uin
 	return u.ID, nil
 }
 
-// sameAdjust reports whether an existing log row describes the same change as
-// the request. Compares EVERY business field (not just user/delta/reason) so a
-// reused idempotency_key with a different body is detected as a 16004 conflict,
-// per the §3.1 contract ("幂等键已存在但请求体不一致").
 func sameAdjust(existing *model.MoemoepointLog, p AdjustParams) bool {
 	return existing.UserID == p.UserID &&
 		existing.Delta == p.Delta &&

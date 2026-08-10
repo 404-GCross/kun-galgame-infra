@@ -51,8 +51,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// `healthcheck` subcommand for container HEALTHCHECK (distroless has no
-	// shell/curl). No-op for a normal start; exits before any infra is touched.
 	health.MaybeProbe(cfg.Server.Port, "/healthz")
 
 	logger.Init(cfg.Server.Env)
@@ -80,7 +78,6 @@ func main() {
 func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	db := a.DB.DB()
 
-	// Repositories
 	userRepo := authRepo.NewUserRepository(db)
 	sessionRepo := authRepo.NewSessionRepository(db)
 	passwordResetRepo := authRepo.NewPasswordResetRepository(db)
@@ -90,17 +87,10 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	siteRepository := siteRepo.NewSiteRepository(db)
 	signingKeyRepo := authRepo.NewSigningKeyRepository(db)
 
-	// Start background cleanup for expired sessions and authorization codes
 	app.StartCleanup(cleanupCtx, sessionRepo, authCodeRepo)
 
-	// Services
 	mailer := mail.NewMailer(cfg.Mail)
 
-	// Image SDK client (server-to-server). Created up-front so both the
-	// avatar upload handler AND AdminService (avatar GC on anonymize) can
-	// share it. Nil when KUN_IMAGE_CLIENT_ID/SECRET unset → avatar upload
-	// disabled + avatar GC-on-anonymize skipped (anonymize still nulls the
-	// reference, so the binary is reclaimed by image_service's own GC).
 	var imgCli *imageclient.Client
 	if cfg.ImageClient.ClientID != "" && cfg.ImageClient.ClientSecret != "" {
 		imgCli = imageclient.New(imageclient.Config{
@@ -120,11 +110,9 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	userBatchSvc := authService.NewUserBatchService(userRepo, siteRoleRepo)
 	creatorAppSvc := authService.NewCreatorApplicationService(authRepo.NewCreatorApplicationRepository(db), userRepo, userBatchSvc)
 	moemoepointSvc := authService.NewMoemoepointService(a.DB.DB(), userRepo)
-	// Registration grants a welcome gift via the moemoepoint ledger.
 	authSvc.WithMoemoepoint(moemoepointSvc)
 	siteSvc := siteService.NewSiteService(siteRepository, oauthClientRepo)
 
-	// Handlers
 	authH := authHandler.NewAuthHandler(authSvc, cfg)
 	oauthH := authHandler.NewOAuthHandler(oauthSvc, cfg)
 	adminH := authHandler.NewAdminHandler(adminSvc)
@@ -138,11 +126,6 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	}
 	siteH := siteHandler.NewSiteHandler(siteSvc)
 
-	// OIDC signing keys + public metadata (Phase 0). Gated on
-	// KUN_OIDC_KEY_ENC_KEY: when unset, key bootstrap + the jwks/discovery
-	// endpoints are skipped (dev without OIDC). Bootstrap is idempotent —
-	// generates one active ES256 + one active RS256 key on first run.
-	// See docs/auth/03-oidc-standardization-design.md §4/§5.4.
 	var oidcH *authHandler.OIDCHandler
 	if cfg.OIDC.KeyEncKey != "" {
 		signingKeySvc := authService.NewSigningKeyService(signingKeyRepo, cfg.OIDC.KeyEncKey)
@@ -151,17 +134,8 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		}
 		oidcH = authHandler.NewOIDCHandler(signingKeySvc, cfg)
 
-		// Phase 1 token signing/verification. The verifier is accept-both
-		// (ES256/RS256 via the local key set + HS256 legacy) and is set
-		// regardless of the sign flag, so this OP verifies ES256 tokens before
-		// any signer flips. The access-token signer uses ES256 only when
-		// KUN_OIDC_SIGN_ASYMMETRIC is on (and an active key exists); else HS256.
-		// See docs/auth/03-oidc-standardization-design.md §10 Phase 1.
 		verifier := oidctoken.NewVerifier(cfg.JWT.Secret, signingKeySvc)
 		var signer oidctoken.Signer = oidctoken.NewHS256Signer(cfg.JWT.Secret, cfg.OIDC.Issuer)
-		// id_token: always asymmetric (independent of the access-token flag) and
-		// signed RS256 — the OIDC registration default id_token_signed_response_alg,
-		// so standard RP libraries verify it without per-client alg configuration.
 		if kid, key, err := signingKeySvc.ActiveSigner(cleanupCtx, oidckeys.AlgRS256); err != nil {
 			slog.Error("no active RS256 signing key; id_token issuance disabled", "err", err)
 		} else {
@@ -179,21 +153,13 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		slog.Warn("KUN_OIDC_KEY_ENC_KEY unset; OIDC signing keys + jwks/discovery disabled")
 	}
 
-	// Global middleware
 	a.Fiber.Use(middleware.RequestID())
 	a.Fiber.Use(middleware.Logger())
 
-	// Liveness probe — root /healthz, registered before CORS/rate-limit so the
-	// container HEALTHCHECK (the `healthcheck` subcommand) isn't throttled or
-	// CORS-gated. Unified to /healthz across all services.
 	a.Fiber.Get("/healthz", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// Public OIDC/OAuth metadata — world-readable (handlers set ACAO *),
-	// registered BEFORE the origin-restricted CORS middleware so browser-based
-	// OIDC clients can fetch discovery/JWKS cross-origin.
-	// See docs/auth/03-oidc-standardization-design.md §5.4.
 	if oidcH != nil {
 		a.Fiber.Get("/oauth/jwks", oidcH.JWKS)
 		a.Fiber.Get("/.well-known/openid-configuration", oidcH.Discovery)
@@ -203,25 +169,14 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	a.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 	a.Fiber.Use(middleware.RateLimit(a.Cache))
 
-	// API routes
 	api := a.Fiber.Group("/api")
 	v1 := api.Group("/v1")
 
-	// Strict rate limiter for genuinely anonymous brute-force targets
-	// (login / register / password reset). NOT used on /oauth/token —
-	// see oauthTokenLimiter below.
 	strict := middleware.StrictRateLimit(a.Cache)
 
-	// Per-client limiter for /oauth/token. Keyed by client_id so a
-	// confidential SSR backend (kungal/moyu) proxying its whole userbase
-	// through one IP isn't throttled to the strict 10/min/IP bucket.
 	oauthTokenLimiter := middleware.OAuthTokenRateLimit(a.Cache)
 
-	// Auth routes (public)
 	auth := v1.Group("/auth")
-	// Two-step registration: send code, then submit registration with code.
-	// Both behind `strict` (10/min/IP) — abuse vectors are email spam +
-	// account enumeration via name/email-exists errors.
 	auth.Post("/register/send-code", strict, authH.SendRegisterCode)
 	auth.Post("/register", strict, authH.Register)
 	auth.Post("/login", strict, authH.Login)
@@ -229,55 +184,30 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	auth.Post("/password/forgot", strict, authH.ForgotPassword)
 	auth.Post("/password/reset", strict, authH.ResetPassword)
 
-	// Auth routes (protected)
 	authProtected := auth.Group("", middleware.Auth(authSvc))
 	authProtected.Post("/logout", authH.Logout)
 	authProtected.Get("/me", authH.Me)
-	// Multi-account session bag (account chooser, same-site). See
-	// docs/integration/oauth/09-account-switching.md.
 	authProtected.Get("/sessions", authH.ListSessions)
 	authProtected.Post("/sessions/switch", authH.SwitchSession)
 	authProtected.Post("/sessions/logout", authH.LogoutAccount)
 	authProtected.Post("/sessions/logout-all", authH.LogoutAll)
 	authProtected.Patch("/me", authH.UpdateProfile)
-	// Self-service moemoepoint ledger: the user's OWN audit rows (reduced
-	// view — no admin note/actor). Balance itself is already on /auth/me.
 	authProtected.Get("/me/moemoepoint/log", moemoepointH.MyLog)
 	authProtected.Put("/password", authH.ChangePassword)
 	authProtected.Post("/email/send-code", authH.SendEmailChangeCode)
 	authProtected.Put("/email", authH.ChangeEmail)
-	// End-user avatar upload: multipart `file=`, writes users.avatar_image_hash
-	// and returns the image_service result. Registered only when an image
-	// client is configured (same gate as the admin variant below).
 	if avatarUploadH != nil {
 		authProtected.Post("/me/avatar", avatarUploadH.UploadMine)
 	}
 
-	// OAuth 2.0 routes
 	oauth := v1.Group("/oauth")
 	oauth.Post("/token", oauthTokenLimiter, oauthH.Token)
 	oauth.Post("/revoke", oauthH.Revoke)
 	oauth.Get("/authorize", oauthH.Authorize)
-	// Public metadata: GET /oauth/client-info?client_id=X
-	// Powers the OAuth web /oauth/authorize page's auto-consent decision +
-	// "你将授权访问 X" display. Returns only safe fields (name, auto_consent,
-	// site_domain). See ClientPublicInfo + docs/integration/oauth/05-registration.md.
 	oauth.Get("/client-info", oauthH.GetClientPublic)
-	// Public: build a VALIDATED error redirect for the consent page's deny path
-	// + prompt=none silent errors (redirect_uri is checked against the client
-	// here so a crafted one can't open-redirect). See oauth_handler.AuthorizeError.
 	oauth.Post("/authorize/error", oauthH.AuthorizeError)
-	// Public app directory: GET /oauth/ecosystem → the opt-in (listed) clients
-	// for the "one account → these sites" strip. See
-	// docs/integration/oauth/10-app-directory.md.
 	oauth.Get("/ecosystem", oauthH.GetEcosystem)
-	// Public: validates a post-logout redirect against a client's registered
-	// redirect_uris (origin match) for the OP logout page. See
-	// docs/integration/oauth/07-logout.md.
 	oauth.Get("/post-logout-redirect", oauthH.PostLogoutRedirect)
-	// RP-initiated logout entrypoint (browser top-level nav). Bounces to the
-	// OP frontend /auth/logout page. Symmetric with /oauth/authorize. OIDC
-	// RP-Initiated Logout requires the end_session_endpoint to accept GET+POST.
 	oauth.Get("/logout", oauthH.LogoutRedirect)
 	oauth.Post("/logout", oauthH.LogoutRedirect)
 	// Per-route guards, deliberately NOT a group. `oauth.Group("", mw)` attaches
@@ -289,16 +219,8 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	//
 	// /oauth/authorize/consent is our own browser flow → house guard, house body.
 	oauth.Post("/authorize/consent", middleware.Auth(authSvc), oauthH.Consent)
-	// /oauth/userinfo is an OIDC *protocol* endpoint → RFC 6750 guard: OIDC Core
-	// §5.3.3 requires its failures to be a WWW-Authenticate challenge +
-	// {error,error_description}, which is what a standard OIDC client parses.
 	oauth.Get("/userinfo", middleware.BearerAuth(authSvc), oauthH.UserInfo)
 
-	// User routes
-	// Cross-service endpoints (kungal / moyu / galgame_wiki backends).
-	// Auth is OAuth Client Basic Auth — service-to-service, not end-user JWT.
-	// Registered BEFORE the dynamic `/users/:uuid` group so Fiber matches
-	// these literal paths before falling through to the param route.
 	v1.Get("/users/batch",
 		middleware.OAuthClientBasicAuth(oauthClientRepo),
 		userBatchH.Get,
@@ -307,9 +229,6 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		middleware.OAuthClientBasicAuth(oauthClientRepo),
 		userBatchH.Search,
 	)
-	// Moemoepoint service-to-service (kungal / moyu award/deduct + read).
-	// Basic Auth; numeric user id. 3-segment paths so they don't collide
-	// with the `/users/:uuid` JWT group below.
 	v1.Post("/users/:id/moemoepoint",
 		middleware.OAuthClientBasicAuth(oauthClientRepo), moemoepointH.Adjust)
 	v1.Get("/users/:id/moemoepoint",
@@ -320,13 +239,10 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	users := v1.Group("/users", middleware.Auth(authSvc))
 	users.Get("/:uuid", authH.GetProfile)
 
-	// Creator-role application (apply -> admin review -> approve/decline).
-	// Eligibility is gated downstream (forum/moyu); these are the central queue.
 	creator := v1.Group("/creator", middleware.Auth(authSvc))
 	creator.Post("/applications", creatorAppH.Apply)
 	creator.Get("/applications/me", creatorAppH.MyApplication)
 
-	// Admin routes (oauth.admin_access = admin/ren)
 	admin := v1.Group("/admin", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	admin.Get("/users", adminH.ListUsers)
 	admin.Get("/users/:uuid", adminH.GetUser)
@@ -335,38 +251,23 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	admin.Post("/users/:uuid/unban", adminH.UnbanUser)
 	admin.Post("/users/:uuid/anonymize", adminH.AnonymizeUser)
 	admin.Delete("/users/:uuid/sessions", adminH.DeleteUserSessions)
-	// Role management. Group requires oauth.admin_access so admin + ren both
-	// pass; the per-role matrix (admin→moderator/creator only, ren→all except
-	// ren) is enforced in the handler (callerCanManageRole). `ren` is never
-	// grantable via API.
 	admin.Post("/users/:uuid/roles", adminH.AssignRole)
 	admin.Delete("/users/:uuid/roles/:role", adminH.RevokeRole)
-	// Site-scoped role grants (docs/integration/oauth/12-site-roles.md). Gated
-	// by oauth.roles.grant_site (admin/ren) — site roles sit below the global
-	// moderator, so an admin may grant them.
 	admin.Post("/users/:uuid/site-roles",
 		middleware.RequirePermission(sitePerm.Resolver, sitePerm.RolesGrantSite), adminH.AssignSiteRole)
 	admin.Delete("/users/:uuid/site-roles",
 		middleware.RequirePermission(sitePerm.Resolver, sitePerm.RolesGrantSite), adminH.RevokeSiteRole)
-	// Creator application review queue.
 	admin.Get("/creator/applications", creatorAppH.AdminList)
 	admin.Post("/creator/applications/:id/approve", creatorAppH.AdminApprove)
 	admin.Post("/creator/applications/:id/decline", creatorAppH.AdminDecline)
 	admin.Post("/users/:uuid/moemoepoint", moemoepointH.AdminAdjust)
 	admin.Get("/users/:uuid/moemoepoint/log", moemoepointH.AdminGetLog)
-	// Registration analytics — under /stats so it can't collide with the
-	// /users/:uuid param route.
 	admin.Get("/stats/registrations", adminH.RegistrationStats)
 	admin.Get("/stats/registrations/hourly", adminH.HourlyRegistrationStats)
 	if avatarUploadH != nil {
 		admin.Post("/users/:uuid/avatar", avatarUploadH.Upload)
 	}
 
-	// Site routes. The GROUP gate stays oauth.admin_access (reach the console +
-	// see the lists); each mutation additionally names its own CRUD key, so a
-	// console seat can be narrowed to read-only without minting a role. The
-	// per-row ownership rule (mayManage) is enforced in the handler on top and
-	// is unchanged.
 	sites := v1.Group("/sites", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	sites.Get("/", siteH.List)
 	sites.Post("/", middleware.RequirePermission(sitePerm.Resolver, sitePerm.SitesCreate), siteH.Create)
@@ -375,36 +276,19 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	sites.Delete("/:id", middleware.RequirePermission(sitePerm.Resolver, sitePerm.SitesDelete), siteH.Delete)
 	sites.Get("/:id/clients", siteH.GetSiteClients)
 
-	// OAuth client routes — same split: admin_access on the group, a CRUD key
-	// per mutation.
 	oauthClients := v1.Group("/oauth/clients", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	oauthClients.Get("/", siteH.ListClients)
 	oauthClients.Post("/", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsCreate), siteH.CreateClient)
-	// Admin app-directory logo upload → image_service, returns {hash,url}; the
-	// form saves url into the client's logo_url. Decoupled from :id so it works
-	// at create time too. See docs/integration/oauth/10-app-directory.md.
 	if avatarUploadH != nil {
 		oauthClients.Post("/logo", avatarUploadH.UploadClientLogo)
 	}
 	oauthClients.Put("/:id", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsUpdate), siteH.UpdateClient)
-	// The storage sub-resource is an update that additionally needs the
-	// storage-config key (enabling artifact/image capabilities is ren-only).
 	oauthClients.Put("/:id/storage",
 		middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsUpdate),
 		middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsStorageConfig),
 		siteH.UpdateClientStorage)
 	oauthClients.Delete("/:id", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsDelete), siteH.DeleteClient)
 
-	// Developer-platform (NextMoe open API). One repository + one AdminService
-	// back BOTH the admin management face and the developer self-service face, so
-	// the API-key lifecycle (mint/rotate/revoke + resolve-cache busting) has a
-	// single implementation.
-	//   - Admin face (/admin/devapi/*): admin/ren, devapi.manage — enable apps,
-	//     set tier/quota, mint/rotate/revoke any app's keys.
-	//   - Self-service face (/dev/*): user JWT only, owner-guarded — a developer
-	//     builds + manages their OWN apps/keys.
-	// The public read faces are NOT here — they ship with 02/03.
-	// See docs/developer-platform/ §5-9 (04-platform-internals §5-6/§8, 03-auth-and-tiers §7, 05-developer-portal §9).
 	devRepo := devapi.NewRepository(db)
 	devStore := devapi.NewRedisStore(a.Cache)
 	devAdminSvc := devapi.NewAdminService(devRepo, devStore)
@@ -412,17 +296,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	devGroup := admin.Group("/devapi", middleware.RequirePermission(devapiPerm.Resolver, devapiPerm.Manage))
 	devAdminH.Register(devGroup)
 
-	// Developer self-service face. User-JWT auth (no admin permission); every
-	// endpoint is owner-guarded in the service (non-owner → 404, no existence
-	// leak). App/key caps are constants (5 apps/user, 5 active keys/app). The
-	// same devStore feeds the account usage view's live-remaining read.
 	devSelfH := devapi.NewSelfServiceHandler(devapi.NewSelfServiceService(devRepo, devAdminSvc, devStore))
-	// Client fence (confused-deputy guard): after Auth verifies signer + user,
-	// DevPortalFence admits only first-party session tokens (empty client_id) and
-	// tokens issued to an allow-listed OAuth client (the developer portal itself).
-	// An empty KUN_DEV_PORTAL_CLIENT_IDS is fail-closed — first-party only. Any
-	// third-party app's user token (openid/profile/email) is 403.
-	// See docs/developer-platform/03-auth-and-tiers.md.
 	devPortalClients := make(map[string]bool, len(cfg.DevPortalClientIDs))
 	for _, id := range cfg.DevPortalClientIDs {
 		devPortalClients[id] = true
@@ -430,26 +304,15 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	devSelfGroup := v1.Group("/dev", middleware.Auth(authSvc), middleware.DevPortalFence(devPortalClients))
 	devSelfH.Register(devSelfGroup)
 
-	// Permission console + overlay distribution (docs/auth/04 §7). The
-	// distributor is started FIRST so the resolvers already carry the overlay
-	// before the first request is served; it then keeps them current for the
-	// life of the process. a.Cache is the announcement bus — a Redis outage
-	// only costs latency, since every process also polls.
 	permReg := permissions.Live()
 	permDist := permissions.NewDistributor(db, permReg, a.Cache)
 	permDist.Start(cleanupCtx)
 	permH := permissions.NewHandler(permissions.NewService(permReg, permissions.NewStore(db), permDist))
 	permH.Register(admin)
 
-	// Image admin routes — best-effort; if images DB or S3 are unreachable
-	// in dev, skip registration rather than failing the whole oauth service.
 	registerImageAdmin(a, cfg, admin)
 	registerArtifactAdmin(a, cfg, authSvc)
 
-	// Job registry: in-process scheduler (default auto-run) + admin
-	// trigger/visibility. Pure docker-compose: scheduler lives in this
-	// long-lived container; cross-replica single-flight via PG advisory
-	// lock in the runner. Design: docs/jobs/01-implementation-plan.md.
 	jobReg := jobs.NewRegistry()
 	jobs.RegisterAll(jobReg)
 	jobRunner := jobs.NewRunner(cfg, db)
@@ -457,12 +320,9 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	registerJobsAdmin(admin, jobReg, jobRunner)
 }
 
-// registerJobsAdmin wires the job registry admin endpoints. Mirrors
-// registerImageAdmin: admin auth already applied on the group.
 func registerJobsAdmin(admin fiber.Router, reg *jobs.Registry, runner *jobs.Runner) {
 	g := admin.Group("/jobs")
 
-	// GET /api/v1/admin/jobs — registered jobs + each one's latest run.
 	g.Get("", func(c fiber.Ctx) error {
 		type jobView struct {
 			Name      string `json:"name"`
@@ -488,7 +348,6 @@ func registerJobsAdmin(admin fiber.Router, reg *jobs.Registry, runner *jobs.Runn
 		return response.Success(c, out)
 	})
 
-	// POST /api/v1/admin/jobs/:name/run — manual trigger (background).
 	g.Post("/:name/run", func(c fiber.Ctx) error {
 		name := c.Params("name")
 		job, ok := reg.Get(name)
@@ -499,7 +358,6 @@ func registerJobsAdmin(admin fiber.Router, reg *jobs.Registry, runner *jobs.Runn
 		return response.SuccessWithMessage(c, "job triggered (running in background)", fiber.Map{"job": name})
 	})
 
-	// GET /api/v1/admin/jobs/:name/runs?limit=20 — run history.
 	g.Get("/:name/runs", func(c fiber.Ctx) error {
 		name := c.Params("name")
 		if _, ok := reg.Get(name); !ok {
@@ -517,9 +375,6 @@ func registerJobsAdmin(admin fiber.Router, reg *jobs.Registry, runner *jobs.Runn
 	slog.Info("jobs admin endpoints registered under /api/v1/admin/jobs/*")
 }
 
-// registerImageAdmin wires admin endpoints for the image service. These
-// endpoints run inside the oauth service (not cmd/image) because admin
-// auth lives here. Failures are logged and skipped, not fatal.
 func registerImageAdmin(_ *app.App, cfg *config.Config, admin fiber.Router) {
 	imagesDB, err := database.NewPostgresDB(cfg.ImagesDatabase)
 	if err != nil {
@@ -535,8 +390,6 @@ func registerImageAdmin(_ *app.App, cfg *config.Config, admin fiber.Router) {
 	imgRepo := imgRepoPkg.NewImageRepository(imagesDB.DB())
 	usageRepo := imgRepoPkg.NewSiteUsageRepository(imagesDB.DB())
 	statsRepo := imgRepoPkg.NewStatsRepository(imagesDB.DB())
-	// Service here is used only for MainURL/VariantURL formatting; no
-	// upload flow runs on the admin service.
 	svc := imgService.New(nil, s3, imgRepo, usageRepo, cfg.ImageService.CDNBase)
 	adminH := imgHandler.NewAdmin(imagesDB.DB(), svc, statsRepo, s3)
 
@@ -549,14 +402,6 @@ func registerImageAdmin(_ *app.App, cfg *config.Config, admin fiber.Router) {
 	slog.Info("image admin endpoints registered under /api/v1/admin/image/*")
 }
 
-// registerArtifactAdmin wires admin endpoints for the artifact service. Like the
-// image admin, these run inside the oauth service (admin auth lives here) and
-// read the dedicated kun_artifacts DB. Failures are logged + skipped, not fatal.
-// Delete is soft-only. Reclaim (immediate hard-clean of an interrupted upload)
-// needs object-storage access, so it gets the SAME least-privilege cleanup S3
-// client the artifact GC uses (built from ArtifactCleanupS3). When those creds
-// aren't configured, the client is nil and Reclaim returns 503 — exactly the
-// same condition under which the GC no-ops.
 func registerArtifactAdmin(a *app.App, cfg *config.Config, authSvc *authService.AuthService) {
 	artifactsDB, err := database.NewPostgresDB(cfg.ArtifactsDatabase)
 	if err != nil {
@@ -565,8 +410,6 @@ func registerArtifactAdmin(a *app.App, cfg *config.Config, authSvc *authService.
 	}
 	statsRepo := artifactRepo.NewStatsRepository(artifactsDB.DB())
 
-	// Cleanup-scoped S3 client (Abort/Delete), only when creds are configured —
-	// mirrors the GC's guard (RunArtifactGC skips when ArtifactS3 key is empty).
 	var store *artifactStorage.Client
 	if cfg.ArtifactS3.AccessKeyID != "" {
 		if c, serr := artifactStorage.NewClient(cfg.ArtifactCleanupS3()); serr != nil {
@@ -577,12 +420,6 @@ func registerArtifactAdmin(a *app.App, cfg *config.Config, authSvc *authService.
 	}
 	adminH := artifactHandler.NewAdmin(artifactsDB.DB(), statsRepo, store, cfg.ArtifactService.ReclaimMinIdle)
 
-	// These endpoints are served by Huma (code-first OpenAPI — see docs/artifact/10
-	// §4.3). Huma registers on the app, so the /admin group's Auth+admin-access
-	// gate does NOT cover them: gate the exact prefix here with path-scoped Fiber
-	// middleware, registered BEFORE SetupAdmin's routes so it precedes them in the
-	// stack. stats is admin-visible; list/delete/reclaim additionally require the
-	// artifact.files.manage (ren) permission, enforced in-handler (admin_huma.go).
 	a.Fiber.Use("/api/v1/admin/artifact", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	artifactHandler.SetupAdmin(a.Fiber, adminH)
 

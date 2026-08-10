@@ -19,11 +19,6 @@ import (
 // doujinbangumi.ruleTitleYear.
 const ruleBgmTitleYear = "rule:bgm-title-year"
 
-// registry holds the two catalog registry ids this backfill needs, resolved by
-// key (never hardcoded) so a rehearsal / prod DB with different auto-increment
-// seeds still works. In practice both are stable (galgame medium=1, bangumi
-// source=3) but resolving keeps the tool honest — the same discipline
-// cmd/reconcile-doujin-bangumi and cmd/backfill-dlsite-media follow.
 type registry struct {
 	galgameMedium int16
 	bangumiSource int16
@@ -43,28 +38,12 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one bodyless galgame work joined to its EXACT Bangumi subject
-// anchor. Site is carried (not filtered out) so the write-time XOR guard can
-// re-assert it even though loadCandidates already selects only bodyless rows.
 type candidate struct {
 	WorkID    int64   `gorm:"column:work_id"`
 	SubjectID string  `gorm:"column:subject_id"`
 	Site      *string `gorm:"column:site"`
 }
 
-// loadCandidates resolves bodyless galgame works reachable via an EXACT Bangumi
-// work anchor:
-//
-//	catalog_work(bodyless galgame)
-//	  → catalog_external_ref(entity_type=work, source_id=bangumi,
-//	      link_kind=exact, matched_by='rule:bgm-title-year', external_id=subject_id)
-//
-// Probable (rule:bgm-title-only) anchors are excluded by the matched_by +
-// link_kind filter — they are not high-confidence enough to auto-pin. DISTINCT
-// ON keeps ONE subject per work (the lowest external_id) in the theoretical case
-// a work carries several exact anchors; the anti-squatting unique index makes
-// that near-impossible, but slicing keeps chunking obviously correct. Ordered +
-// windowed for chunking.
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]candidate, error) {
 	q := db.WithContext(ctx).
 		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id AS subject_id, w.site AS site
@@ -78,7 +57,6 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offse
 	if err := q.Scan(&out).Error; err != nil {
 		return nil, err
 	}
-	// Window in Go after DISTINCT ON so offset/limit apply to distinct works.
 	if offset > 0 {
 		if offset >= len(out) {
 			return nil, nil
@@ -91,13 +69,6 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offse
 	return out, nil
 }
 
-// preloadExistingCovers loads the set of works that ALREADY carry a Bangumi-
-// sourced cover row, so a re-run skips BEFORE any dims lookup / byte read /
-// upload (the charportraits idempotency discipline). Keyed on source_id=bangumi
-// specifically — a work's step-55 DLsite landscape cover (source=dlsite) must
-// NOT suppress its Bangumi portrait, since the two coexist (§一 work 多封面共存).
-// ON CONFLICT (work_id, image_hash) DO NOTHING is the ultimate write-time guard;
-// this preload just avoids re-hitting the image service.
 func preloadExistingCovers(ctx context.Context, db *gorm.DB, workIDs []int64, bangumiSource int16) (map[int64]bool, error) {
 	have := map[int64]bool{}
 	if len(workIDs) == 0 {

@@ -6,46 +6,29 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// erogamescape work relations (doc 101 REL2). game_relations stores ONE row
-// per directed assertion: (game_subject, game_object, kind) reads "subject is
-// the {kind} of object" — the subject is the DERIVED/later work (verified
-// empirically on title+date samples: わんもあ@ぴぃしぃず(2005) fandisk-of
-// Peace@Pieces(2004), 水夏弐律(2011) sequel-of 水夏(2001), …), which aligns
-// with the REL1 convention (derived work in a) with no flipping needed.
-//
-// Only relations whose BOTH endpoints carry an exact EG work anchor (source
-// 5) are imported. bundling (store SKU packaging, not narrative), apend (DLC
-// — the vocabulary has no append_of and we never guess) and free (ambiguous)
-// are skipped BY DESIGN and counted for the report.
 var egGameRelations = map[string]bgmRelSpec{
-	"sequel":     {typeID: relSequelOf},                            // subject sequel_of object
-	"fandisk":    {typeID: relFandiscOf},                           // subject fandisc_of object
-	"remake":     {typeID: relRemakeOf},                            // subject remake_of object
-	"spinoff":    {typeID: relSideStoryOf},                         // subject side_story_of object
-	"transplant": {typeID: relAlternativeVersion, symmetric: true}, // same work, another platform's edition
+	"sequel":     {typeID: relSequelOf},
+	"fandisk":    {typeID: relFandiscOf},
+	"remake":     {typeID: relRemakeOf},
+	"spinoff":    {typeID: relSideStoryOf},
+	"transplant": {typeID: relAlternativeVersion, symmetric: true},
 }
 
-// egSkippedByDesign names the kinds deliberately not mapped (doc 101 裁定 2).
 var egSkippedByDesign = map[string]bool{"bundling": true, "apend": true, "free": true}
 
-// EGRelationStats is the wave tally (mirrors VNDBRelationStats + the
-// by-design bucket).
 type EGRelationStats struct {
 	TotalRows         int
 	Mapped            int
-	Edges             int // NEW distinct edges this run
+	Edges             int
 	EdgesWritten      int
-	AlreadyInDB       int // cross-source convergence (vndb/bgm asserted the pair first) / re-run
-	Folded            int // duplicate src rows folding to an already-planned edge
-	SkippedByDesign   int // bundling / apend / free (doc 101 裁定 2)
-	SkippedUnmapped   int // unknown kind (unexpected — for 拍板)
-	SkippedUnanchored int // one/both games lack an exact EG work anchor
-	SkippedSelf       int // both ends resolve to the same work
+	AlreadyInDB       int
+	Folded            int
+	SkippedByDesign   int
+	SkippedUnmapped   int
+	SkippedUnanchored int
+	SkippedSelf       int
 }
 
-// RunEGRelations imports the erogamescape game↔game relations that connect two
-// exact-anchored catalog works. Idempotent (ON CONFLICT DO NOTHING on the
-// composite PK); dry by default.
 func (im *Importer) RunEGRelations() (EGRelationStats, error) {
 	var st EGRelationStats
 
@@ -93,7 +76,7 @@ func (im *Importer) RunEGRelations() (EGRelationStats, error) {
 			st.SkippedSelf++
 			continue
 		}
-		a, b := wSub, wObj // derived work in a — EG's subject IS the derived work
+		a, b := wSub, wObj
 		if spec.symmetric && a > b {
 			a, b = b, a
 		}
@@ -125,17 +108,12 @@ func (im *Importer) RunEGRelations() (EGRelationStats, error) {
 	}
 	st.EdgesWritten = int(res.RowsAffected)
 	st.AlreadyInDB += st.Edges - st.EdgesWritten
-	// Edges here are the planned-NEW set (already-stored pairs were filtered out
-	// above), so both endpoints of each one genuinely changed. A re-run plans no
-	// edges at all and returns before this point, touching nothing.
 	if err := touchWorks(im.catalog, relationEndpoints(edges)); err != nil {
 		return st, err
 	}
 	return st, nil
 }
 
-// loadEGWorkAnchors maps EG game id (text) → catalog work id over the exact
-// EG work anchors.
 func (im *Importer) loadEGWorkAnchors() (map[string]int64, error) {
 	var rows []struct {
 		ExternalID string `gorm:"column:external_id"`

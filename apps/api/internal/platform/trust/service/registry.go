@@ -10,17 +10,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// RegistryService owns the subject-kind and reason registries. Registry rows are
-// NEVER deleted — is_deprecated retires them (章程 ruling 13). Every mutation
-// appends an audit row (章程 ruling 10).
 type RegistryService struct{ db *gorm.DB }
 
 func NewRegistryService(db *gorm.DB) *RegistryService { return &RegistryService{db: db} }
 
-// ---- subject kinds ----
-
-// ListSubjectKinds returns registered kinds. site "" = all sites (admin);
-// includeDeprecated=false hides retired kinds (the S2S sanity-check face).
 func (s *RegistryService) ListSubjectKinds(ctx context.Context, site string, includeDeprecated bool) ([]model.TrustSubjectKind, error) {
 	q := s.db.WithContext(ctx).Model(&model.TrustSubjectKind{})
 	if site != "" {
@@ -34,8 +27,6 @@ func (s *RegistryService) ListSubjectKinds(ctx context.Context, site string, inc
 	return kinds, err
 }
 
-// CreateSubjectKind registers a new (site, key). A duplicate → ErrSubjectKindExists
-// (re-open a deprecated one via PatchSubjectKind, never re-insert).
 func (s *RegistryService) CreateSubjectKind(ctx context.Context, actorID int64, site, key string, callbackURL, callbackSecret *string, notifyOnDismiss bool) (*model.TrustSubjectKind, error) {
 	kind := model.TrustSubjectKind{Site: site, Key: key, CallbackURL: callbackURL, CallbackSecret: callbackSecret, IsDeprecated: false, NotifyOnDismiss: notifyOnDismiss}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -57,7 +48,6 @@ func (s *RegistryService) CreateSubjectKind(ctx context.Context, actorID int64, 
 	return &kind, nil
 }
 
-// SubjectKindPatch is a partial update; only non-nil fields are applied.
 type SubjectKindPatch struct {
 	CallbackURL     *string
 	CallbackSecret  *string
@@ -65,7 +55,6 @@ type SubjectKindPatch struct {
 	NotifyOnDismiss *bool
 }
 
-// PatchSubjectKind updates a kind's callback config / deprecation.
 func (s *RegistryService) PatchSubjectKind(ctx context.Context, actorID, id int64, patch SubjectKindPatch) (*model.TrustSubjectKind, error) {
 	var kind model.TrustSubjectKind
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -108,10 +97,6 @@ func (s *RegistryService) PatchSubjectKind(ctx context.Context, actorID, id int6
 	return &kind, nil
 }
 
-// ---- reasons ----
-
-// ListReasons returns the global base (site NULL) plus, when site is given, that
-// site's extensions. site "" = all reasons (admin).
 func (s *RegistryService) ListReasons(ctx context.Context, site string) ([]model.TrustReportReason, error) {
 	q := s.db.WithContext(ctx).Model(&model.TrustReportReason{})
 	if site != "" {
@@ -122,10 +107,6 @@ func (s *RegistryService) ListReasons(ctx context.Context, site string) ([]model
 	return reasons, err
 }
 
-// ListUsableReasons returns the reasons a site's report UI may offer: the
-// global base plus the site's own extensions, non-deprecated only. This backs
-// the S2S face so product BFFs serve the live taxonomy instead of hardcoding
-// the seed set (which silently drifts once admins add or deprecate reasons).
 func (s *RegistryService) ListUsableReasons(ctx context.Context, site string) ([]model.TrustReportReason, error) {
 	var reasons []model.TrustReportReason
 	err := s.db.WithContext(ctx).Model(&model.TrustReportReason{}).
@@ -134,8 +115,6 @@ func (s *RegistryService) ListUsableReasons(ctx context.Context, site string) ([
 	return reasons, err
 }
 
-// CreateReason registers a reason. site nil = a global reason; non-nil = a
-// per-site extension. severity is written explicitly (no default-tag trap).
 func (s *RegistryService) CreateReason(ctx context.Context, actorID int64, key, nameCN string, site *string, severity int16) (*model.TrustReportReason, error) {
 	reason := model.TrustReportReason{Key: key, NameCN: nameCN, Site: site, Severity: severity, IsDeprecated: false}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -152,14 +131,12 @@ func (s *RegistryService) CreateReason(ctx context.Context, actorID int64, key, 
 	return &reason, nil
 }
 
-// ReasonPatch is a partial update; only non-nil fields are applied.
 type ReasonPatch struct {
 	NameCN       *string
 	Severity     *int16
 	IsDeprecated *bool
 }
 
-// PatchReason updates a reason's label / severity / deprecation.
 func (s *RegistryService) PatchReason(ctx context.Context, actorID, id int64, patch ReasonPatch) (*model.TrustReportReason, error) {
 	var reason model.TrustReportReason
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

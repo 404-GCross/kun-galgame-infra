@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Dead-letter dispositions: callbacks the trust service gave up on after the
-// backoff ladder exhausted its retries. Redeliver resets a row to pending so
-// the worker replays it. Defaults to the dead_letter view; the callback_status
-// filter can widen it to pending / delivered / all.
 import {
   TRUST_FILTER_ALL,
   CALLBACK_STATUS,

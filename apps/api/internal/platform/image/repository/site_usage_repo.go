@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// SiteUsageRepository handles CRUD for image_site_usage.
 type SiteUsageRepository struct {
 	db *gorm.DB
 }
@@ -19,9 +18,6 @@ func NewSiteUsageRepository(db *gorm.DB) *SiteUsageRepository {
 	return &SiteUsageRepository{db: db}
 }
 
-// ExistingHashesForSite returns the subset of `hashes` that `site` has recorded
-// usage for AND that still exist (not soft-deleted). Backs the site-scoped
-// reference-ping: a client may only keep alive images its own site referenced.
 func (r *SiteUsageRepository) ExistingHashesForSite(ctx context.Context, site string, hashes []string) ([]string, error) {
 	if len(hashes) == 0 {
 		return nil, nil
@@ -36,8 +32,6 @@ func (r *SiteUsageRepository) ExistingHashesForSite(ctx context.Context, site st
 	return out, err
 }
 
-// RecordUpload upserts one row: inserts on first (hash, site) upload,
-// increments upload_count and updates last_uploaded_at on subsequent ones.
 func (r *SiteUsageRepository) RecordUpload(ctx context.Context, hash, site, uploaderSub, uploaderClient string) error {
 	now := time.Now()
 	usage := &model.ImageSiteUsage{
@@ -61,8 +55,6 @@ func (r *SiteUsageRepository) RecordUpload(ctx context.Context, hash, site, uplo
 		Error
 }
 
-// SitesForHash returns the list of sites that have recorded usage of hash.
-// Used by GET /image/:hash for admin-visible `sites` field.
 func (r *SiteUsageRepository) SitesForHash(ctx context.Context, hash string) ([]string, error) {
 	var sites []string
 	err := r.db.WithContext(ctx).

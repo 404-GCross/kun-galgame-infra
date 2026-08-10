@@ -2,14 +2,9 @@
 import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
 import { roleColor, roleLabel, primaryRole, needsStepUp } from '~/constants/roles'
 
-// Presentational account picker for the OAuth authorize flow
-// (prompt=select_account). The parent owns the switch + step-up logic; this
-// component only renders the bag and surfaces a per-row "switching" spinner.
 const props = defineProps<{
   sessions: BagSession[]
   clientName?: string
-  // sub of the row currently being switched (parent-controlled), so the
-  // clicked row shows a spinner + the whole list disables during the switch.
   switchingSub?: string | null
 }>()
 
@@ -56,9 +51,6 @@ const isSwitching = computed(() => !!props.switchingSub)
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <span class="text-foreground truncate font-medium">{{ session.name }}</span>
-              <!-- KunChip (not KunBadge): KunBadge is a dot/count notification
-                   overlay that can't render a text label; KunChip is the pill
-                   used elsewhere (e.g. users/Table.vue role chips). -->
               <KunChip
                 v-if="primaryRole(session.roles)"
                 :color="roleColor(primaryRole(session.roles))"

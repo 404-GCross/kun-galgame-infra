@@ -7,8 +7,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// TestPairKeyUnordered pins the --prior identity: the key is order-independent
-// (the same unordered identity blocking dedupes on), and distinct pairs differ.
 func TestPairKeyUnordered(t *testing.T) {
 	a := pairKey("bangumi", "母系", "vndb", "Matriarchy")
 	b := pairKey("vndb", "Matriarchy", "bangumi", "母系")
@@ -20,10 +18,6 @@ func TestPairKeyUnordered(t *testing.T) {
 	}
 }
 
-// TestLoadPriorPairKeys pins ruling 5 mechanics: pair records land in the skip
-// set (matched in either order), single records never do, and a missing file is
-// a hard error (falling back to a full re-judge is an operator decision, not a
-// silent one).
 func TestLoadPriorPairKeys(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "decisions.jsonl")
 	recs := []pairRec{
@@ -52,10 +46,6 @@ func TestLoadPriorPairKeys(t *testing.T) {
 	}
 }
 
-// TestSingleCoreUsageFloorClamp pins ruling 6: an LLM-proposed core single
-// below the usage floor lands longtail; at/above the floor it sticks; the clamp
-// never promotes. Deterministic — re-deriving the same decisions yields the
-// same tiers (the stampTierKind second-apply zero-write follows from that).
 func TestSingleCoreUsageFloorClamp(t *testing.T) {
 	keyToID := map[string]int16{sourceKeyBangumi: 3}
 	recs := []pairRec{

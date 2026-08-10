@@ -1,13 +1,3 @@
-// public_taxonomy.go — the taxonomy read faces on the frozen /v1/catalog
-// public projection (A2-1b): the labels / tags / engines browse lanes and the
-// engine detail record.
-//
-// Every filter here is a CLOSED vocabulary — our own token set — so an unknown
-// token is a 400 with the legal values spelled out, exactly like the works
-// list's content_rating. The alternative (ignore it, serve the unfiltered page)
-// is the worst failure class: a plausible-looking 200 whose rows do not match
-// what the caller asked for. Contrast: an unknown SOURCE stays a miss, because
-// sources are an OPEN registry.
 package handler
 
 import (
@@ -29,8 +19,6 @@ const (
 	msgBadCursor    = "malformed cursor"
 )
 
-// LabelsList serves GET /v1/catalog/labels — the keyset label browse lane
-// (id ASC). Filter by kind and/or has_works; work_count is nsfw-aware.
 func (h *PublicHandler) LabelsList(c fiber.Ctx) error {
 	f := service.LabelsListFilter{NSFW: nsfwQuery(c), HasWorks: boolQueryPub(c.Query("has_works"))}
 	if raw := c.Query("kind"); raw != "" {
@@ -52,8 +40,6 @@ func (h *PublicHandler) LabelsList(c fiber.Ctx) error {
 	return response.Success(c, data)
 }
 
-// TagsList serves GET /v1/catalog/tags — the keyset canonical-tag browse lane
-// (id ASC). Filter by tier, kind and/or has_works; work_count is nsfw-aware.
 func (h *PublicHandler) TagsList(c fiber.Ctx) error {
 	f := service.TagsListFilter{NSFW: nsfwQuery(c), HasWorks: boolQueryPub(c.Query("has_works"))}
 	if raw := c.Query("tier"); raw != "" {
@@ -82,8 +68,6 @@ func (h *PublicHandler) TagsList(c fiber.Ctx) error {
 	return response.Success(c, data)
 }
 
-// EnginesList serves GET /v1/catalog/engines — the keyset engine browse lane
-// (id ASC). No filters; work_count is nsfw-aware.
 func (h *PublicHandler) EnginesList(c fiber.Ctx) error {
 	limit, ok := limitPub(c.Query("limit"), 20, 100)
 	if !ok {
@@ -97,9 +81,6 @@ func (h *PublicHandler) EnginesList(c fiber.Ctx) error {
 	return response.Success(c, data)
 }
 
-// EngineDetail serves GET /v1/catalog/engines/{id} — one engine's record with
-// its exact-only identity anchors. 400 on a non-numeric id, 404 on an unknown
-// one (the labels/{id} posture).
 func (h *PublicHandler) EngineDetail(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
@@ -116,8 +97,6 @@ func (h *PublicHandler) EngineDetail(c fiber.Ctx) error {
 	return response.Success(c, rec)
 }
 
-// taxonomyListError maps a browse-lane failure: a malformed cursor is caller
-// error (400), everything else is a 500.
 func taxonomyListError(c fiber.Ctx, err error) error {
 	if stderrors.Is(err, service.ErrBadCursor) {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadCursor)
@@ -125,9 +104,6 @@ func taxonomyListError(c fiber.Ctx, err error) error {
 	return response.InternalError(c, errors.ErrInternalServer)
 }
 
-// labelKindFromKey is the input-validation inverse of the service's
-// labelKindKey. "other" is deliberately NOT accepted: it is an output-only
-// fallback for an int outside the vocabulary, not a filterable kind.
 func labelKindFromKey(k string) (int16, bool) {
 	switch k {
 	case "game_brand":
@@ -147,7 +123,6 @@ func labelKindFromKey(k string) (int16, bool) {
 	}
 }
 
-// tagTierFromKey is the input-validation inverse of the service's tagTierKey.
 func tagTierFromKey(k string) (int16, bool) {
 	switch k {
 	case "core":
@@ -161,7 +136,6 @@ func tagTierFromKey(k string) (int16, bool) {
 	}
 }
 
-// tagKindFromKey is the input-validation inverse of the service's tagKindKey.
 func tagKindFromKey(k string) (int16, bool) {
 	switch k {
 	case "content":

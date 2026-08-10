@@ -1,50 +1,3 @@
-// Package storeanchors mints RELEASE-GRAIN store identity anchors from VNDB's
-// own curated external-link pool (wave 197): Steam appids, DMM content ids and
-// DLsite worknos land as EXACT catalog_external_ref rows on the individual
-// release they identify.
-//
-// WHY RELEASE GRAIN. A store page is a SKU, not a work. One visual novel ships
-// as a Steam edition, a DMM download, a DLsite doujin release and a boxed
-// package, each with its own store id, its own price and its own age rating.
-// Wave 91's `storerefs` hung Steam/DMM ids on the WORK because EG's mirror only
-// records them there; this job fixes the grain where a first-party source
-// states it per release.
-//
-// WHY EXACT, AND WHY THAT IS NOT A CONTRADICTION. The chain is
-//
-//	catalog_release --(exact, source=vndb)--> src_vndb.releases
-//	  --> src_vndb.releases_extlinks --> src_vndb.extlinks (site = steam/dmm/…)
-//
-// VNDB records the store id ON THE RELEASE, and that release is already
-// anchored EXACT to VNDB, so the store ref is exactly as strong as the ref it
-// rides on — the wave-167 `getchurefs` argument, verbatim. EG's
-// `games.steam` / `games.dmm` columns stay PROBABLE for the opposite reason:
-// they are community cross-references of unknown provenance carried at the
-// wrong grain. A PROBABLE vndb anchor never mints an EXACT store one.
-//
-// WHAT THIS JOB REFUSES TO DO:
-//
-//   - Re-point an anchor. A release already holding any ref from a lane's
-//     source keeps it, whatever its tier or value.
-//   - Arbitrate ambiguity. uq_catalog_external_ref_exact admits one holder per
-//     (source, external_id, entity_type). When VNDB lists one store id on
-//     several anchored releases — a base Steam release and its uncensored
-//     sibling, say — there is no release-level evidence for choosing a winner,
-//     so ALL of them are skipped (skipped_ambiguous). Picking by lowest id
-//     would be fabricating a decision.
-//   - Steal a held id. An id already held EXACT by another release is skipped
-//     (skipped_value_taken). At the dlsite lane that counter is large and
-//     meaningful: it is the vndb-imported and dlsite-imported release
-//     populations describing the same SKU twice, a merge worklist, not noise.
-//   - Guess at a URL. DMM values are URL paths; landing and listing pages
-//     carry no content id and are rejected (skipped_malformed), never parsed
-//     into something id-shaped.
-//
-// getchu is deliberately absent: wave 167's `getchurefs` already owns that lane.
-//
-// Discipline: InsertRefIfAbsent (never re-grade); catalog_match_rejection
-// preloaded and honoured; dry-run default; every DSN explicit; a second --apply
-// writes zero.
 package storeanchors
 
 import (
@@ -60,46 +13,35 @@ import (
 	"gorm.io/gorm"
 )
 
-// maxSamples caps how many per-lane example rows a run collects for logging.
 const maxSamples = 8
 
-// Opts configures one run.
 type Opts struct {
 	Apply bool
-	DSN   string // catalog DSN — REQUIRED (also hosts src_vndb)
-	Only  string // one lane name; empty = every lane
-	Limit int    // cap candidates fetched per lane (0 = all); rehearsal aid
+	DSN   string
+	Only  string
+	Limit int
 }
 
-// LaneStats reports one lane. Every counter except Written and Conflict is
-// identical in dry and apply mode: the plan is decided before --apply is
-// consulted. The skipped_* counters are mutually exclusive and, together with
-// Planned, account for every candidate.
 type LaneStats struct {
-	Candidates        int // (anchored release, raw value) pairs the chain yielded
+	Candidates        int
 	Planned           int
 	Written           int
-	Conflict          int // ON CONFLICT DO NOTHING fired (concurrent writer)
+	Conflict          int
 	Errors            int
-	SkippedMalformed  int // value carries no product id — never guessed
-	SkippedRejection  int // blocked by catalog_match_rejection
-	SkippedValueTaken int // id already held EXACT by another release
-	SkippedAmbiguous  int // id maps to several candidate releases in this run
-	SkippedDedup      int // the exact same (release, id) pair appeared twice
-	// TakenSamples lists a few ids blocked by an existing exact holder, the
-	// entry point into the duplicate-release worklist.
-	TakenSamples []string
-	// AmbiguousSamples lists a few ids that map to several releases.
-	AmbiguousSamples []string
+	SkippedMalformed  int
+	SkippedRejection  int
+	SkippedValueTaken int
+	SkippedAmbiguous  int
+	SkippedDedup      int
+	TakenSamples      []string
+	AmbiguousSamples  []string
 }
 
-// Stats reports a run, keyed by lane name in the order the lanes ran.
 type Stats struct {
 	Order []string
 	Lanes map[string]*LaneStats
 }
 
-// Run opens the catalog pool and executes the selected lanes.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess the target database")
@@ -112,7 +54,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return RunWithDB(ctx, db, opts)
 }
 
-// RunWithDB is the pool-agnostic core; tests inject their own handle.
 func RunWithDB(ctx context.Context, db *gorm.DB, opts Opts) (*Stats, error) {
 	selected, err := selectedLanes(opts.Only)
 	if err != nil {
@@ -134,7 +75,6 @@ func RunWithDB(ctx context.Context, db *gorm.DB, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// plannedRef is one decided write.
 type plannedRef struct {
 	releaseID  int64
 	workID     int64
@@ -170,13 +110,7 @@ func runLane(ctx context.Context, db *gorm.DB, opts Opts, l lane, vndbSource int
 	return nil
 }
 
-// decide turns raw candidates into the write plan, filling in every skip
-// counter. It is deliberately a pure function of its inputs so the whole
-// filtering doctrine can be tested without a database.
 func decide(cands []candidate, l lane, taken, rejected map[string]struct{}, ls *LaneStats) []plannedRef {
-	// First pass: normalize, and count how many distinct releases each id
-	// wants. Ambiguity has to be known before any row is planned, so a lane
-	// cannot plan the first occurrence and skip the rest.
 	type normalized struct {
 		candidate
 		ext string
@@ -224,8 +158,6 @@ func decide(cands []candidate, l lane, taken, rejected map[string]struct{}, ls *
 	return plan
 }
 
-// writePlan inserts the planned rows and touches the parent works that really
-// gained an anchor, so the public changes feed sees the new store link.
 func writePlan(ctx context.Context, db *gorm.DB, plan []plannedRef, laneSource int16, matchedBy string, ls *LaneStats) {
 	var touched []int64
 	for _, p := range plan {

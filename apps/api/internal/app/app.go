@@ -15,8 +15,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// App represents a service application with shared infrastructure.
-// Each cmd/ entry creates an App, configures routes, then calls Run().
 type App struct {
 	Config *config.Config
 	Fiber  *fiber.App
@@ -24,24 +22,20 @@ type App struct {
 	Cache  *cache.RedisCache
 }
 
-// Options controls which infrastructure to initialize
 type Options struct {
-	Name      string // Service name (e.g., "oauth", "artifact")
-	NeedCache bool   // Whether to initialize Redis
+	Name      string
+	NeedCache bool
 }
 
-// New creates a new application with the specified infrastructure
 func New(cfg *config.Config, opts Options) (*App, error) {
 	a := &App{Config: cfg}
 
-	// Initialize database (always needed)
 	db, err := database.NewPostgresDB(cfg.Database)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	a.DB = db
 
-	// Initialize cache (optional)
 	if opts.NeedCache {
 		redisCache, err := cache.NewRedisCache(cfg.Redis)
 		if err != nil {
@@ -50,19 +44,14 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		a.Cache = redisCache
 	}
 
-	// Initialize Fiber
 	name := opts.Name
 	if name == "" {
 		name = "kun-api"
 	}
 	a.Fiber = fiber.New(fiber.Config{
-		AppName:      name,
-		ServerHeader: name,
-		ErrorHandler: errorHandler,
-		// fasthttp default is 4 KiB, which is too tight once the browser
-		// accumulates dev cookies (refresh_token, Pinia persist, umami,
-		// color-mode, etc). Hitting the limit returns 431 before CORS runs,
-		// surfacing as a misleading "missing Access-Control-Allow-Origin".
+		AppName:        name,
+		ServerHeader:   name,
+		ErrorHandler:   errorHandler,
 		ReadBufferSize: 32 * 1024,
 		// Real client IP behind Cloudflare → Traefik (dokploy). Without this,
 		// c.IP() returns the immediate peer (Traefik, ~10.0.1.x) for EVERY user,
@@ -87,7 +76,6 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	return a, nil
 }
 
-// Run starts the HTTP server and blocks until shutdown signal
 func (a *App) Run(host string, port int) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -122,7 +110,6 @@ func (a *App) Run(host string, port int) error {
 	return nil
 }
 
-// errorHandler handles Fiber errors
 func errorHandler(c fiber.Ctx, err error) error {
 	code := fiber.StatusInternalServerError
 	message := "Internal Server Error"

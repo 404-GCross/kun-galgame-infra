@@ -1,27 +1,3 @@
-// build-tag-canonical builds the DETERMINISTIC slice of the tag canonical layer
-// (refs/proj/74, design refs/proj/70): it extracts the three per-source tag
-// vocabularies (vndb/bangumi/dlsite — all read from catalog_work_tag grouped
-// by source since the c170b6ab repoint), mechanically prefilters bangumi junk
-// (date/disc/number regexes + maker/label collisions — reported, never written),
-// folds the survivors on NFKC+casefold+trim, and mints ONE catalog_tag +
-// per-source catalog_tag_source_map rows for every norm spanning ≥2 distinct
-// sources (tier=core; hand-pinned meta = kind=meta). Single-source names get NO
-// row this wave. The ORIGINAL layers are read-only — not one row is touched.
-//
-// Logic lives in internal/jobs/tagcanon. Dry-run is the DEFAULT (repo
-// convention); pass --apply to write. The DSN is REQUIRED and never defaulted —
-// all three vocabularies live in catalog_work_tag of ONE database (prod:
-// kun_catalog). Idempotent: ON CONFLICT DO NOTHING on both tables — a second
-// --apply writes zero.
-//
-//	# dry-run: vocab sizes, junk digest, group count, per-source absorption,
-//	#          single-source usage distribution
-//	go run ./cmd/build-tag-canonical \
-//	    --dsn "host=localhost port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable"
-//
-//	# small-sample apply (first 5 groups), then full apply
-//	go run ./cmd/build-tag-canonical --apply --limit 5 --dsn "..."
-//	go run ./cmd/build-tag-canonical --apply --dsn "..."
 package main
 
 import (
@@ -43,7 +19,7 @@ func main() {
 	limit := flag.Int("limit", 0, "max groups to write (0 = all; >0 = small-sample apply, Norm-sorted)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 	if cfg, err := config.Load(); err == nil {
 		logger.Init(cfg.Server.Env)
 	}

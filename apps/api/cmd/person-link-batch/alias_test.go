@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// cleanAll extends cleanCatalog to the tables the alias rules touch.
 func cleanAll(t *testing.T) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`TRUNCATE catalog_match_candidate, catalog_credit_name,
@@ -61,8 +60,6 @@ func mkAlias(t *testing.T, owner int64, name string) {
 	}).Error)
 }
 
-// A3: two names co-credited on the same work are linked; a pair with no shared
-// credit and no bidirectional alias is left for T2.
 func TestAliasA3CoCredit(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no catalog test DB")
@@ -75,10 +72,9 @@ func TestAliasA3CoCredit(t *testing.T) {
 	b := mkName(t, "山田一")
 	w := mkWork(t)
 	mkCredit(t, w, a, role)
-	mkCredit(t, w, b, role) // co-credited on the same work
+	mkCredit(t, w, b, role)
 	mkCandidateReason(t, a, b, model.CandidateReasonAliasDeclared)
 
-	// A different-source lookalike with NO shared credit / bidirectional alias.
 	c := mkName(t, "松田")
 	d := mkName(t, "佐藤")
 	mkCandidateReason(t, c, d, model.CandidateReasonAliasDeclared)
@@ -95,8 +91,6 @@ func TestAliasA3CoCredit(t *testing.T) {
 	assert.Nil(t, personIDOf(t, c), "T2 pair untouched")
 }
 
-// A4: a bidirectional alias declaration (each side's name_alias names the other)
-// is linked; a one-directional one is not.
 func TestAliasA4Bidirectional(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no catalog test DB")
@@ -106,11 +100,10 @@ func TestAliasA4Bidirectional(t *testing.T) {
 
 	a := mkName(t, "麻枝准")
 	b := mkName(t, "Jun Maeda")
-	mkAlias(t, a, "Jun Maeda") // a declares b's name
-	mkAlias(t, b, "麻枝准")       // b declares a's name → bidirectional
+	mkAlias(t, a, "Jun Maeda")
+	mkAlias(t, b, "麻枝准")
 	mkCandidateReason(t, a, b, model.CandidateReasonAliasDeclared)
 
-	// One-directional: only c declares d.
 	c := mkName(t, "丸戸史明")
 	d := mkName(t, "Fumiaki Maruto")
 	mkAlias(t, c, "Fumiaki Maruto")
@@ -125,8 +118,6 @@ func TestAliasA4Bidirectional(t *testing.T) {
 	assert.Nil(t, personIDOf(t, c), "one-directional pair untouched")
 }
 
-// The rule sets do not poach each other's candidates: an alias pass ignores
-// shared-handle candidates and vice-versa.
 func TestRuleSetIsolation(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no catalog test DB")
@@ -135,7 +126,7 @@ func TestRuleSetIsolation(t *testing.T) {
 	ctx := context.Background()
 
 	sa := mkName(t, "同名")
-	sb := mkName(t, "同名") // shared-handle A1
+	sb := mkName(t, "同名")
 	mkCandidateReason(t, sa, sb, model.CandidateReasonSharedExternalID)
 	role := seededRoleID(t)
 	x := mkName(t, "作者X")
@@ -143,22 +134,18 @@ func TestRuleSetIsolation(t *testing.T) {
 	w := mkWork(t)
 	mkCredit(t, w, x, role)
 	mkCredit(t, w, y, role)
-	mkCandidateReason(t, x, y, model.CandidateReasonAliasDeclared) // alias A3
+	mkCandidateReason(t, x, y, model.CandidateReasonAliasDeclared)
 
-	// Alias pass touches only the alias candidate.
 	st, err := run(ctx, testDB, io.Discard, 7, true, ruleSetAlias)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.A3Hits)
 	assert.Nil(t, personIDOf(t, sa), "shared-handle candidate untouched by alias pass")
 
-	// Shared pass touches only the shared-handle candidate.
 	st, err = run(ctx, testDB, io.Discard, 7, true, ruleSetShared)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.A1Hits)
 	assert.NotNil(t, personIDOf(t, sa))
 }
-
-// --- export + receipts -----------------------------------------------------
 
 func TestExportAndReceipts(t *testing.T) {
 	if testDB == nil {
@@ -167,7 +154,6 @@ func TestExportAndReceipts(t *testing.T) {
 	cleanAll(t)
 	ctx := context.Background()
 
-	// An alias_declared pair with no A3/A4 evidence → T2.
 	a := mkName(t, "riya")
 	b := mkName(t, "eufonius")
 	mkAlias(t, a, "some other alias")
@@ -184,31 +170,26 @@ func TestExportAndReceipts(t *testing.T) {
 	assert.Contains(t, lines[1], "riya")
 	assert.Contains(t, lines[1], "some other alias", "alias sample carried for context")
 
-	// Fill a receipt: link the pair.
 	receipt := filepath.Join(dir, "r.tsv")
 	require.NoError(t, os.WriteFile(receipt,
 		[]byte("a_id\tb_id\tdecision\tnotes\n"+itoa(minI(a, b))+"\t"+itoa(maxI(a, b))+"\tlink\tsame person\n"), 0o644))
 
-	// Dry writes nothing.
 	_, err = runReceipts(ctx, testDB, io.Discard, receipt, 7, false)
 	require.NoError(t, err)
 	assert.Nil(t, personIDOf(t, a), "dry writes nothing")
 
-	// Apply links.
 	st, err := runReceipts(ctx, testDB, io.Discard, receipt, 7, true)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Linked)
 	assert.NotNil(t, personIDOf(t, a))
 	assert.Equal(t, model.CandidateStatusAccepted, candStatus(t, minI(a, b), maxI(a, b)))
 
-	// Idempotent: re-applying the same receipt does nothing new.
 	st, err = runReceipts(ctx, testDB, io.Discard, receipt, 7, true)
 	require.NoError(t, err)
 	assert.Zero(t, st.Linked)
 	assert.Equal(t, 1, st.Already)
 }
 
-// A reject receipt flips the candidate to rejected (step-22 semantics).
 func TestReceiptReject(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no catalog test DB")

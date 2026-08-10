@@ -1,28 +1,3 @@
-// Package getchuintros projects the Getchu crawler's work synopses onto
-// catalog works as Japanese intros (refs/proj/167 §9).
-//
-// WHY THIS FACET. 2,562 published works carry no Japanese intro, and no
-// upstream already ingested closes them at scale: Bangumi's summaries were
-// taken in wave 166, VNDB's descriptions are English, DLsite's are for the
-// releases it happens to sell. Getchu carries a synopsis for 12,565 items, and
-// 682 of them land on a published work that has nothing in Japanese today.
-//
-// IT COMPOUNDS. Of those 682, 224 have no Chinese intro either. The resident
-// intro-mt schedule translates Japanese into Chinese nightly, so a work this
-// lane fills is picked up without a second wave — one supply lane closes part
-// of both gaps. The other 458 already read in Chinese and gain the Japanese
-// face alone.
-//
-// MATCHING IS FREE. Unlike getchuchars, nothing is matched here: wave 167
-// minted EXACT Getchu release anchors through VNDB extlinks, so the link from a
-// work to its Getchu page already exists and is first-party. The only choice
-// this lane makes is which of a work's several Getchu releases to read from —
-// see pickStory.
-//
-// FILL-MISSING, NEVER OVERWRITE. A row is written only when the work has NO
-// Japanese intro from ANY source. That keeps the lane off curated first-party
-// text and off the Bangumi/DLsite intros already landed, and makes a second
-// --apply a zero-write no-op.
 package getchuintros
 
 import (
@@ -40,46 +15,34 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// langJa — Getchu is a Japanese storefront and publishes nothing else, so the
-// language is a property of the source, not something to detect. (The 164
-// lesson about never guessing a language tag applies to mixed-language dumps
-// like Bangumi; it does not turn a single-language upstream into a guess.)
 const langJa = "ja"
 
-// maxSamples caps the per-category example rows a run collects for logging.
 const maxSamples = 8
 
-// previewRunes is how many runes of a synopsis a Sample carries.
 const previewRunes = 40
 
-// Opts configures a run. Both DSNs are explicit and never defaulted: this job
-// reads a staging database and writes the live catalog, and a bare invocation
-// must not be able to guess either.
 type Opts struct {
-	DSN        string // catalog — REQUIRED
-	GetchuDSN  string // the crawler's staging database — REQUIRED
+	DSN        string
+	GetchuDSN  string
 	Apply      bool
-	Limit      int // max WORKS to process (0 = all)
+	Limit      int
 	Offset     int
-	Population workpop.Population // empty = all
+	Population workpop.Population
 }
 
-// Sample is one example decision, for dry-run logging and test assertions.
 type Sample struct {
 	WorkID   int64
 	GetchuID string
 	Preview  string
 }
 
-// Stats reports a run. Planned is the decision (identical in dry and apply);
-// Written counts rows actually inserted.
 type Stats struct {
-	Works     int // works in the population carrying an exact Getchu anchor
-	NoStory   int // every anchored Getchu item is unfetched, gone, or storyless
-	SkipHasJa int // the work already reads in Japanese (any source)
-	Planned   int // decided writes
-	Written   int // rows inserted (apply)
-	Conflict  int // ON CONFLICT said the row was already there
+	Works     int
+	NoStory   int
+	SkipHasJa int
+	Planned   int
+	Written   int
+	Conflict  int
 	Errors    int
 
 	PlanSamples    []Sample
@@ -91,8 +54,6 @@ func (s Stats) String() string {
 		s.Works, s.NoStory, s.SkipHasJa, s.Planned, s.Written, s.Conflict, s.Errors)
 }
 
-// Run resolves the candidates and forecasts (dry) or writes (apply) the
-// fill-missing Japanese intro rows.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" || opts.GetchuDSN == "" {
 		return nil, fmt.Errorf("--dsn and --getchu-dsn are both REQUIRED; refusing to guess either")
@@ -155,24 +116,12 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return r.stats, nil
 }
 
-// candidate is one work paired with the synopsis this lane would write.
-// Story is empty when no anchored Getchu item had one — counted, not filtered,
-// so the run reports the reach of the crawl rather than hiding it.
 type candidate struct {
 	WorkID   int64
 	GetchuID string
 	Story    string
 }
 
-// pickStory collapses a work's Getchu anchors to at most one synopsis.
-//
-// A work can carry several Getchu releases and the crawl is uneven — one page
-// fetched with a story, another 'gone' (404) or fetched before Getchu carried a
-// story block. Choosing in SQL (DISTINCT ON, lowest id) would have picked the
-// empty one and reported the work as unreachable; choosing here means the work
-// is only counted no_story when NONE of its anchors has text. Among several
-// that do have text the lowest Getchu id wins — anchors arrive ordered, so the
-// choice is deterministic and re-runs are stable.
 func pickStory(anchors []anchorRow, stories map[string]string) []candidate {
 	var out []candidate
 	for i := 0; i < len(anchors); {
@@ -191,16 +140,11 @@ func pickStory(anchors []anchorRow, stories map[string]string) []candidate {
 	return out
 }
 
-// runner carries per-run dependencies and stats (serial, plain ints).
 type runner struct {
-	db     *gorm.DB
-	source int16
-	exist  map[int64]map[string]bool // work → intro langs already present (any source)
-	stats  *Stats
-	// touched collects works that actually gained a row, so the run bumps their
-	// catalog_work.updated_at once at the end and the public changes feed learns
-	// they are worth re-pulling. Skips, conflicts and dry-runs contribute
-	// nothing, so a second --apply moves no watermark.
+	db      *gorm.DB
+	source  int16
+	exist   map[int64]map[string]bool
+	stats   *Stats
 	touched []int64
 }
 

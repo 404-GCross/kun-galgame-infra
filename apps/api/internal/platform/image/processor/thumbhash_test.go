@@ -11,8 +11,6 @@ import (
 	"go.n16f.net/thumbhash"
 )
 
-// TestThumbhashRoundTrip verifies Thumbhash returns a non-empty, base64-encoded
-// hash that the canonical decoder accepts, and that it is deterministic.
 func TestThumbhashRoundTrip(t *testing.T) {
 	img := image.NewNRGBA(image.Rect(0, 0, 240, 160))
 	for y := range 160 {
@@ -41,8 +39,6 @@ func TestThumbhashRoundTrip(t *testing.T) {
 	}
 }
 
-// TestProcessMainSetsThumbhash verifies the main pipeline populates the
-// thumbhash on its Output alongside width/height.
 func TestProcessMainSetsThumbhash(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 300, 200))
 	for y := range 200 {

@@ -7,9 +7,6 @@ import (
 	"time"
 )
 
-// memStore is an in-memory Store fake for the unit tests, so limit/quota math
-// and the resolve cache can be exercised without a live Redis (裁定 11). Set
-// failing to simulate a store outage (Incr → ErrStoreUnavailable → fail-open).
 type memStore struct {
 	mu       sync.Mutex
 	counters map[string]int64
@@ -57,17 +54,12 @@ func (s *memStore) Del(_ context.Context, key string) error {
 	return nil
 }
 
-// Available mirrors the redis store's config-level liveness: a failing fake is
-// treated as an unreachable backend (the live-remaining read degrades).
 func (s *memStore) Available(_ context.Context) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return !s.failing
 }
 
-// setCounter seeds an integer enforcement counter as the redis store would hold
-// it (INCR stores the value as a decimal string that Get returns verbatim), so
-// the live-remaining read can be exercised without a real Redis.
 func (s *memStore) setCounter(key string, n int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

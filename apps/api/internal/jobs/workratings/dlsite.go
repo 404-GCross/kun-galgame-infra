@@ -9,26 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// The DLsite lane (step 62): one candidate pass feeds BOTH facets — the rating
-// row (catalog_work_rating, source=dlsite) and the popularity rows
-// (catalog_work_popularity, one per published counter). DLsite worknos anchor
-// at RELEASE level (SKU-natured, doc 17 R3), so the candidate query walks
-// work → release → external_ref — unlike the work-level bgm/eg lanes — and
-// pins medium=galgame (the game-domain ruling: the ASMR family carries DLsite
-// anchors too and is out of scope).
-
-// dlsiteCandidate is one galgame work with its representative DLsite workno.
-// DISTINCT ON keeps ONE anchor per work (the lexicographically lowest workno —
-// the bgm-lane precedent; surveyed live: zero galgame-medium works carry more than
-// one distinct workno).
 type dlsiteCandidate struct {
 	WorkID int64  `gorm:"column:work_id"`
 	Workno string `gorm:"column:workno"`
 }
 
-// loadDlsiteCandidates resolves GALGAME-medium works carrying a DLsite EXACT
-// release anchor. Limit/Offset window the distinct-work list in Go (the
-// dlsitemedia chunking discipline).
 func loadDlsiteCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]dlsiteCandidate, error) {
 	var out []dlsiteCandidate
 	if err := db.WithContext(ctx).
@@ -46,14 +31,6 @@ func loadDlsiteCandidates(ctx context.Context, db *gorm.DB, reg registry, limit,
 	return window(out, limit, offset), nil
 }
 
-// dlsiteData is one DLsite mirror works row, extracted from info_json
-// (surveyed 2026-07-21: info_json carries all five values on every mirror row;
-// product_json has the star but none of the counters). All fields nullable —
-// `->>` yields SQL NULL for absent keys AND JSON nulls, exactly the "DLsite
-// does not publish this counter" semantics. rateStar is the mirror's
-// rate_average_2dp: DLsite's own displayed star average on the native 0-5
-// scale (the wire key rate_average_star is that value half-star-bucketed ×10 —
-// a widget encoding, not stored).
 type dlsiteData struct {
 	rateStar  *float64
 	rateCount *int
@@ -62,9 +39,6 @@ type dlsiteData struct {
 	reviews   *int
 }
 
-// loadDlsiteMirror batch-loads the referenced mirror rows. Negative counters
-// (one corrupt row observed live) and a vote-less star (none observed — star ⟺
-// rate_count>=5 in the survey) normalize to NULL: never a fake value.
 func loadDlsiteMirror(ctx context.Context, dlsiteDB *gorm.DB, worknos []string) (map[string]dlsiteData, error) {
 	out := map[string]dlsiteData{}
 	type row struct {
@@ -97,7 +71,7 @@ func loadDlsiteMirror(ctx context.Context, dlsiteDB *gorm.DB, worknos []string) 
 				reviews:   dropNeg(r.Reviews),
 			}
 			if d.rateCount == nil || *d.rateCount <= 0 {
-				d.rateStar, d.rateCount = nil, nil // the pair lives and dies together
+				d.rateStar, d.rateCount = nil, nil
 			}
 			out[r.Workno] = d
 		}
@@ -105,7 +79,6 @@ func loadDlsiteMirror(ctx context.Context, dlsiteDB *gorm.DB, worknos []string) 
 	return out, nil
 }
 
-// dropNeg normalizes a corrupt negative counter to NULL.
 func dropNeg[T int | int64](p *T) *T {
 	if p != nil && *p < 0 {
 		return nil
@@ -113,7 +86,6 @@ func dropNeg[T int | int64](p *T) *T {
 	return p
 }
 
-// runDlsiteLane decides and (apply) writes the dlsite rating + popularity rows.
 func runDlsiteLane(ctx context.Context, db, dlsiteDB *gorm.DB, w *writer, reg registry, opts Opts) error {
 	cands, err := loadDlsiteCandidates(ctx, db, reg, opts.Limit, opts.Offset)
 	if err != nil {
@@ -141,7 +113,6 @@ func runDlsiteLane(ctx context.Context, db, dlsiteDB *gorm.DB, w *writer, reg re
 			continue
 		}
 
-		// Rating row: only when DLsite publishes one (never a fake zero).
 		if dl.rateStar != nil {
 			st.DlRatingPlanned++
 			collect(&st.DlSamples, Sample{WorkID: c.WorkID, Workno: c.Workno, Score: *dl.rateStar, VoteCount: *dl.rateCount})
@@ -153,9 +124,6 @@ func runDlsiteLane(ctx context.Context, db, dlsiteDB *gorm.DB, w *writer, reg re
 			st.DlNoRating++
 		}
 
-		// Popularity rows: one per PUBLISHED counter, metric-ascending. An
-		// absent counter never becomes a row (NULL ≠ 0); a published 0 does
-		// (it is a real value the refresh loop keeps current).
 		for _, pm := range []struct {
 			metric int16
 			value  *int64

@@ -1,29 +1,3 @@
-// enrich-bgm-summaries fills catalog_work_intro rows for galgame works from
-// Bangumi summaries (BGM enrichment wave, refs/proj/57; population + language
-// rework in refs/proj/166). The EXACT anchors point each work at a
-// src_bangumi.subject whose summary is already in the catalog DB — src_bangumi
-// is a schema INSIDE kun_catalog, so ONE --dsn covers both sides (no API, no
-// token, no bytes, no schema changes).
-//
-// Fill-missing-language discipline: a summary is written in its detected
-// language ONLY when the work has no intro row in that language yet (any
-// source) — so a work whose DLsite ja intro already exists skips its duplicate
-// ja summary, and a claimed work's own curated text is never displaced. Logic
-// lives in internal/jobs/bgmsummaries. Idempotent: a second --apply writes zero.
-//
-// Dry-run is the DEFAULT (repo convention); pass --apply to write. --dsn is
-// REQUIRED and never defaulted — the rehearsal copy locally
-// (kun_catalog_rehearsal), the live catalog only in the acceptance run.
-//
-//	# dry-run: report zh_new / ja_fill / skip_dup_lang / no_summary / no_lang
-//	go run ./cmd/enrich-bgm-summaries \
-//	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable"
-//
-//	# apply, published works only (the staged 166 rollout). NOT "claimed":
-//	# claimed includes the draft sea, roughly 3x the rows and 3x the downstream
-//	# translation bill.
-//	go run ./cmd/enrich-bgm-summaries --apply --population published \
-//	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable"
 package main
 
 import (
@@ -47,9 +21,8 @@ func main() {
 	offset := flag.Int("offset", 0, "skip this many candidate works (for chunking)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
-	// config drives only logging here; the DB is reached exclusively via --dsn.
 	if cfg, err := config.Load(); err == nil {
 		logger.Init(cfg.Server.Env)
 	}

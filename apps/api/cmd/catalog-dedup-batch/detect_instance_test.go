@@ -11,11 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestDetectVndbInstanceDetox pins the step-106 guard refinement: a (work,
-// fold) bucket holding {bgm char, vndb base, vndb instance-of-base} is NOT a
-// dirty bucket — the instance steps aside (vndb's deliberate spoiler split)
-// and the bgm row merges onto the base. A vndb double WITHOUT a main link
-// stays a dirty bucket (the 岡部 precedent).
 func TestDetectVndbInstanceDetox(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -53,7 +48,6 @@ func TestDetectVndbInstanceDetox(t *testing.T) {
 		require.NoError(t, testDB.Create(&srcv.Char{ID: id, Main: main, IngestedAt: time.Now()}).Error)
 	}
 
-	// Work 1: the 如月澪 shape — base(vndb c1) + instance(vndb c2, main=c1) + bgm.
 	w1 := mkWork("いろとりどりのセカイ")
 	cBase := mkChar(w1, "如月 澪")
 	cInst := mkChar(w1, "如月 澪")
@@ -64,7 +58,6 @@ func TestDetectVndbInstanceDetox(t *testing.T) {
 	mkAnchor(cInst, srcVndb, "c2")
 	mkAnchor(cBgm, srcBgm, "12236")
 
-	// Work 2: negative control — a vndb double with NO main link stays dirty.
 	w2 := mkWork("対照作品")
 	cA := mkChar(w2, "同名 娘")
 	cB := mkChar(w2, "同名娘")

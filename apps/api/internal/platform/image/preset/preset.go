@@ -1,10 +1,3 @@
-// Package preset loads and serves the image-service preset configuration.
-// Presets define which output variants are generated for each upload flavor
-// (avatar, galgame_banner, topic) and which input MIMEs are allowed.
-//
-// The main compression pipeline (fit 1920x1080, webp@82, strip EXIF) is
-// shared across all presets — presets only control which *extra* variants
-// get generated on top of the main image.
 package preset
 
 import (
@@ -15,19 +8,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// FitMode selects how a variant's target dimensions constrain the input.
 type FitMode string
 
 const (
-	// FitInside keeps aspect ratio, shrinking to fit inside target box.
 	FitInside FitMode = "inside"
-	// FitCover fills target box, cropping if needed. Used for square
-	// avatar thumbnails.
-	FitCover FitMode = "cover"
+	FitCover  FitMode = "cover"
 )
 
-// MainPipelineConfig is the global image processing policy. Applies to
-// every upload regardless of preset.
 type MainPipelineConfig struct {
 	FitWidth  int    `yaml:"fit_width"`
 	FitHeight int    `yaml:"fit_height"`
@@ -36,7 +23,6 @@ type MainPipelineConfig struct {
 	StripEXIF bool   `yaml:"strip_exif"`
 }
 
-// VariantSpec describes one output variant to generate from the main image.
 type VariantSpec struct {
 	Name    string  `yaml:"name"`
 	Width   int     `yaml:"width"`
@@ -46,30 +32,25 @@ type VariantSpec struct {
 	Quality int     `yaml:"quality"`
 }
 
-// Preset describes one preset (avatar / galgame_banner / topic).
 type Preset struct {
 	Variants    []VariantSpec `yaml:"variants"`
 	AllowedMIME []string      `yaml:"allowed_mime"`
 }
 
-// IsMIMEAllowed reports whether the given MIME is in this preset's allow list.
 func (p *Preset) IsMIMEAllowed(mime string) bool {
 	return slices.Contains(p.AllowedMIME, mime)
 }
 
-// Config is the parsed YAML root.
 type Config struct {
 	MainPipeline MainPipelineConfig `yaml:"main_pipeline"`
 	Presets      map[string]Preset  `yaml:"presets"`
 }
 
-// Get returns the preset by name, or (zero, false) if not defined.
 func (c *Config) Get(name string) (Preset, bool) {
 	p, ok := c.Presets[name]
 	return p, ok
 }
 
-// Load reads and parses the given YAML file.
 func Load(path string) (*Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {

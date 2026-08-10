@@ -14,14 +14,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// CatalogImageRefpingOpts mirrors the galgame refping flags.
 type CatalogImageRefpingOpts struct {
-	Batch   int           // hashes per reference-ping request (max 1000)
-	Timeout time.Duration // overall run timeout
-	DryRun  bool          // collect + log only, no image_service call
+	Batch   int
+	Timeout time.Duration
+	DryRun  bool
 }
 
-// DefaultCatalogImageRefpingOpts is what the scheduler uses.
 func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 	return CatalogImageRefpingOpts{Batch: 1000, Timeout: 30 * time.Minute}
 }
@@ -52,7 +50,7 @@ func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 // CONFIGURED-but-wrong client still trips the all-not-found guard below.
 func RunCatalogImageRefping(ctx context.Context, cfg *config.Config, opts CatalogImageRefpingOpts) (Summary, error) {
 	if opts.Batch < 1 || opts.Batch > 1000 {
-		opts.Batch = 1000 // image_service / SDK reject batches > 1000
+		opts.Batch = 1000
 	}
 	if opts.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -62,7 +60,6 @@ func RunCatalogImageRefping(ctx context.Context, cfg *config.Config, opts Catalo
 
 	clientCfg := cfg.CatalogImageClient
 	if clientCfg.ClientID == "" || clientCfg.ClientSecret == "" {
-		// Soft skip — the catalog portrait wave is not provisioned yet.
 		slog.Warn("catalog-image-refping: catalog image client not configured — skipping (set KUN_CATALOG_IMAGE_CLIENT_ID/SECRET once the portrait backfill is live)")
 		return Summary{"skipped": "catalog image client not configured"}, nil
 	}
@@ -130,20 +127,12 @@ func RunCatalogImageRefping(ctx context.Context, cfg *config.Config, opts Catalo
 	if batchErrors > 0 {
 		return summary, fmt.Errorf("reference-ping had %d failed batch(es)", batchErrors)
 	}
-	// All-not-found with zero transport errors is the signature of a site/client
-	// misconfiguration (pinging as the wrong site) — or every portrait already
-	// TTL-deleted. Either way 0 kept alive is a failed run worth alerting on.
 	if totalUpdated == 0 && len(hashes) > 0 {
 		return summary, fmt.Errorf("reference-ping kept 0/%d hashes alive (all not_found) — wrong image client/site (need site=catalog) or images already deleted", len(hashes))
 	}
 	return summary, nil
 }
 
-// collectCatalogRefpingHashes returns the deduped set of every non-empty
-// catalog-scope image hash. The universe — which columns count, and with which
-// live/shadow filter — is the imagerefs registry; unlike galgame images (which
-// also live in revision/PR snapshots), catalog media has exactly one home row
-// each, so the registry IS the whole referenced universe.
 func collectCatalogRefpingHashes(ctx context.Context, db *gorm.DB) ([]string, error) {
 	return imagerefs.DistinctHashes(ctx, db)
 }

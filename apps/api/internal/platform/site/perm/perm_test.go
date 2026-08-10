@@ -7,11 +7,6 @@ import (
 	"api/internal/platform/site/perm"
 )
 
-// goldenGrants is the authoritative role-set for every console permission,
-// derived from the pre-migration gates: the /admin route groups were gated on
-// the admin role → {admin, ren} (+ren correction); the in-handler ren checks
-// stay {ren}; the role-grant matrix splits into grant_basic (admin∪ren) and
-// grant_admin (ren). Any drift fails the build.
 var goldenGrants = map[authz.Permission][]string{
 	perm.AdminAccess:             {"admin", "ren"},
 	perm.RolesGrantBasic:         {"admin", "ren"},
@@ -22,18 +17,14 @@ var goldenGrants = map[authz.Permission][]string{
 	perm.ClientsPrivilegedConfig: {"ren"},
 	perm.SitesManageAll:          {"ren"},
 	perm.PermissionsManage:       {"ren"},
-	// CRUD keys split out of admin_access: default behavior is unchanged, so
-	// they carry exactly admin_access's role set.
-	perm.SitesCreate:   {"admin", "ren"},
-	perm.SitesUpdate:   {"admin", "ren"},
-	perm.SitesDelete:   {"admin", "ren"},
-	perm.ClientsCreate: {"admin", "ren"},
-	perm.ClientsUpdate: {"admin", "ren"},
-	perm.ClientsDelete: {"admin", "ren"},
+	perm.SitesCreate:             {"admin", "ren"},
+	perm.SitesUpdate:             {"admin", "ren"},
+	perm.SitesDelete:             {"admin", "ren"},
+	perm.ClientsCreate:           {"admin", "ren"},
+	perm.ClientsUpdate:           {"admin", "ren"},
+	perm.ClientsDelete:           {"admin", "ren"},
 }
 
-// TestNonDelegableAreDeclaredKeys pins that every non-delegable key is a real
-// console key (a typo would silently make a key delegable again).
 func TestNonDelegableAreDeclaredKeys(t *testing.T) {
 	for p := range perm.NonDelegable {
 		if _, ok := goldenGrants[p]; !ok {
@@ -74,8 +65,6 @@ func TestNonBundleRolesGrantNothing(t *testing.T) {
 	}
 }
 
-// TestManagementAxisContainment pins moderator ⊆ admin ⊆ ren across the whole
-// console vocabulary.
 func TestManagementAxisContainment(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"moderator"}, p) && !perm.Resolver.Can([]string{"admin"}, p) {
@@ -87,7 +76,6 @@ func TestManagementAxisContainment(t *testing.T) {
 	}
 }
 
-// TestCreatorGrantsNothing pins that creator has no console authority.
 func TestCreatorGrantsNothing(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"creator"}, p) {

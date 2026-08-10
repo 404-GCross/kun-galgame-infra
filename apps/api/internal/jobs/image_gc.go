@@ -12,24 +12,18 @@ import (
 	"api/pkg/config"
 )
 
-// ImageGCOpts mirrors the original cmd/image-gc flags; defaults match.
 type ImageGCOpts struct {
-	ColdDays  int  // days since last_referenced_at to report as cold-storage candidates
-	SoftDays  int  // days since last_referenced_at to soft-delete at
-	HardDays  int  // days since deleted_at to hard-delete at
-	DryRun    bool // log only, do not mutate
-	MaxPerRun int  // max rows per phase per run
+	ColdDays  int
+	SoftDays  int
+	HardDays  int
+	DryRun    bool
+	MaxPerRun int
 }
 
-// DefaultImageGCOpts is what the scheduler uses (= old flag defaults).
 func DefaultImageGCOpts() ImageGCOpts {
 	return ImageGCOpts{ColdDays: 60, SoftDays: 365, HardDays: 30, MaxPerRun: 10000}
 }
 
-// RunImageGC runs the image TTL lifecycle (cold-candidate report →
-// soft-delete >SoftDays → hard-delete soft-deleted >HardDays). Body is
-// the original cmd/image-gc logic, returning a Summary instead of
-// printing — single source of truth.
 func RunImageGC(ctx context.Context, cfg *config.Config, opts ImageGCOpts) (Summary, error) {
 	o := DefaultImageGCOpts()
 	if opts.ColdDays > 0 {

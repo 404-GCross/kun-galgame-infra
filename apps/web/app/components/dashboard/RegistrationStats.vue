@@ -2,15 +2,12 @@
 import { REGISTRATION_RANGE_OPTIONS } from '~/constants/stats'
 import type { EChartsOption } from 'echarts'
 
-// Daily series — SSR-fetched; refetches when the range changes.
 const days = ref(30)
 const { data: daily, status: dailyStatus } = await useApiFetch<RegistrationStats>(
   '/admin/stats/registrations',
   { query: computed(() => ({ days: days.value })) }
 )
 
-// Hourly drill-down. Default to the most recent day in the range; changes when
-// the admin clicks a daily bar or picks a date.
 const latestDate = computed(() => daily.value?.series.at(-1)?.date ?? '')
 const selectedDate = ref(daily.value?.series.at(-1)?.date ?? '')
 const { data: hourly } = await useApiFetch<HourlyStats>(
@@ -21,8 +18,6 @@ const { data: hourly } = await useApiFetch<HourlyStats>(
 const summary = computed(() => daily.value?.summary)
 const fmtPct = (n: number) => `${n > 0 ? '+' : ''}${n}%`
 
-// ── theme: brand-ish palette that adapts to light/dark (ECharts can't read
-// our oklch CSS vars, so we map by color mode). ──
 const colorMode = useColorMode()
 const isDark = computed(() => colorMode.value === 'dark')
 const palette = computed(() =>
@@ -68,7 +63,6 @@ const hourlyOption = computed<EChartsOption>(() => {
   }
 })
 
-// Click a daily bar → drill that day's hourly distribution.
 const onDailyClick = (params: { dataIndex: number }) => {
   const d = daily.value?.series[params.dataIndex]
   if (d) selectedDate.value = d.date
@@ -77,7 +71,6 @@ const onDailyClick = (params: { dataIndex: number }) => {
 
 <template>
   <KunCard content-class="justify-start items-stretch gap-0" class-name="p-6">
-    <!-- header + range selector -->
     <div class="flex flex-wrap items-center justify-between gap-3">
       <h2 class="text-lg font-semibold text-foreground">用户注册统计</h2>
       <div class="flex flex-wrap gap-2">
@@ -94,7 +87,6 @@ const onDailyClick = (params: { dataIndex: number }) => {
       </div>
     </div>
 
-    <!-- summary tiles -->
     <div v-if="summary" class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div class="border-default-200 rounded-lg border p-3">
         <p class="text-default-500 text-xs">{{ days }} 天注册</p>
@@ -120,7 +112,6 @@ const onDailyClick = (params: { dataIndex: number }) => {
       </div>
     </div>
 
-    <!-- daily chart -->
     <ClientOnly>
       <VChart
         :option="dailyOption"
@@ -139,7 +130,6 @@ const onDailyClick = (params: { dataIndex: number }) => {
 
     <KunDivider class="my-5" />
 
-    <!-- hourly drill-down -->
     <div class="flex flex-wrap items-center justify-between gap-3">
       <h3 class="text-foreground text-base font-semibold">单日小时分布</h3>
       <div class="flex items-center gap-2">

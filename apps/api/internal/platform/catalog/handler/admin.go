@@ -16,7 +16,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// AdminServer holds the dependencies of the review-queue operations.
 type AdminServer struct {
 	queues    *service.AdminQueueService
 	merge     *service.MergeService
@@ -24,12 +23,6 @@ type AdminServer struct {
 	imageRefs *service.ImageReferenceService
 }
 
-// SetupAdmin builds the admin review-queue Huma API (doc 17 §5 buckets:
-// candidates / proposals / probable refs). Auth is applied by the caller as
-// path-scoped Fiber middleware (middleware.JWTAuth + the catalog.review
-// permission, ren) on the /api/v1/admin/catalog prefix BEFORE this — Huma registers on the
-// app, so the group middleware does not cover these routes. Callable with
-// nil services for spec export.
 func SetupAdmin(app *fiber.App, queues *service.AdminQueueService, merge *service.MergeService, claims *service.ClaimLifecycleService, imageRefs *service.ImageReferenceService) huma.API {
 	InstallErrorEnvelope()
 
@@ -91,14 +84,6 @@ func (s *AdminServer) register(api huma.API) {
 	}, s.detachImageReferences)
 }
 
-// ---- image references ----
-
-// The image service keys bytes by hash and catalog keys references by row, and
-// neither knows about the other: deleting an image whose hash a catalog row
-// still names leaves a blank frame that becomes permanent once the 30-day GC
-// window closes. These two operations are how the admin console asks before it
-// destroys — and how it lets go of the reference when the operator says so.
-
 type imageReferencesInput struct {
 	Hash string `query:"hash" doc:"The image's sha-256 (64 hex characters)"`
 }
@@ -118,8 +103,6 @@ type imageReferencesOutput struct {
 	Body Envelope[imageReferencesData]
 }
 
-// validImageHash keeps a malformed hash from reaching six table scans. The
-// image service's hashes are lowercase sha-256 hex.
 func validImageHash(hash string) bool {
 	if len(hash) != 64 {
 		return false
@@ -141,9 +124,6 @@ func (s *AdminServer) listImageReferences(ctx context.Context, in *imageReferenc
 		slog.Error("catalog admin list image references", "err", err)
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
-	// A hash nothing references is 200 with an empty list, not 404: that is the
-	// console's ordinary case (most images are not catalog media at all), and a
-	// 404 would read as "the check failed" and get clicked through.
 	items := make([]imageReferenceItem, 0, len(refs))
 	for _, r := range refs {
 		items = append(items, imageReferenceItem{Kind: r.Kind, EntityID: r.EntityID, Label: r.Label})
@@ -182,10 +162,7 @@ func (s *AdminServer) detachImageReferences(ctx context.Context, in *detachImage
 	return &detachImageReferencesOutput{Body: okEnvelope(detachImageReferencesData{Removed: removed, TotalRemoved: total})}, nil
 }
 
-// ---- candidates ----
-
 type candidatesInput struct {
-	// -1 = no filter (Huma cannot express optional scalars as pointers).
 	Status     int16 `query:"status" default:"-1" doc:"0=pending 1=accepted 2=rejected 3=deferred; -1 = all"`
 	EntityType int16 `query:"entity_type" default:"-1" doc:"-1 = all"`
 	Reason     int16 `query:"reason" default:"-1" doc:"0=shared_external_id 1=name_norm_equal 2=name_fuzzy 3=importer_suggest 4=llm_suggest; -1 = all"`
@@ -222,13 +199,8 @@ type decideCandidateInput struct {
 }
 
 type decideCandidateData struct {
-	Decided bool `json:"decided"`
-	// ProposalID is set when a non-credit_name accept opened a merge proposal.
-	ProposalID *int64 `json:"proposal_id,omitempty" doc:"Set when a merge-candidate accept opened a proposal"`
-	// PersonID / PersonCreated / NeedsManual describe a credit_name accept's
-	// person link (step 22): the person the two names now share, whether it was
-	// freshly created, and whether the pair was flagged for manual handling
-	// (both names already belonged to different persons — not auto-merged).
+	Decided       bool   `json:"decided"`
+	ProposalID    *int64 `json:"proposal_id,omitempty" doc:"Set when a merge-candidate accept opened a proposal"`
 	PersonID      *int64 `json:"person_id,omitempty"`
 	PersonCreated bool   `json:"person_created,omitempty"`
 	NeedsManual   bool   `json:"needs_manual,omitempty"`
@@ -301,8 +273,6 @@ func (s *AdminServer) detachName(ctx context.Context, in *detachNameInput) (*det
 	return &detachNameOutput{Body: okEnvelope(detachNameData{Detached: true})}, nil
 }
 
-// ---- proposals ----
-
 type proposalsInput struct {
 	Status     int16 `query:"status" default:"-1" doc:"0=open 1=approved 2=executed 3=rejected 4=withdrawn; -1 = all"`
 	EntityType int16 `query:"entity_type" default:"-1" doc:"-1 = all"`
@@ -335,10 +305,8 @@ type proposalActionInput struct {
 }
 
 type proposalActionData struct {
-	ID     int64  `json:"id"`
-	Action string `json:"action"`
-	// ExecuteAfter is returned on a premature execute (422) and after
-	// approve, so the operator sees when the proposal unlocks.
+	ID           int64      `json:"id"`
+	Action       string     `json:"action"`
 	ExecuteAfter *time.Time `json:"execute_after,omitempty"`
 }
 
@@ -364,10 +332,6 @@ func (s *AdminServer) actOnProposal(ctx context.Context, in *proposalActionInput
 		case stderrors.Is(err, service.ErrNotFound):
 			return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
 		case stderrors.Is(err, service.ErrCoolingOff):
-			// 422: the request is well-formed but the cooling-off window has
-			// not elapsed. execute_after rides along in the message so the
-			// operator knows when to retry (admins are not exempt —
-			// doc 10 invariant 4).
 			if p, perr := s.queues.GetProposal(ctx, in.ID); perr == nil && p != nil {
 				return nil, apiErrMsg(http.StatusUnprocessableEntity, errors.ErrOperationFailed,
 					coolingOffMessage(p.ExecuteAfter))
@@ -388,7 +352,6 @@ func (s *AdminServer) actOnProposal(ctx context.Context, in *proposalActionInput
 	return &proposalActionOutput{Body: okEnvelope(data)}, nil
 }
 
-// optionalFilter maps the -1 wire sentinel to "no filter".
 func optionalFilter(v int16) *int16 {
 	if v < 0 {
 		return nil
@@ -402,8 +365,6 @@ func coolingOffMessage(after *time.Time) string {
 	}
 	return "cooling-off window has not elapsed; executable after " + after.Format(time.RFC3339)
 }
-
-// ---- probable refs ----
 
 type probableRefsInput struct {
 	SourceID   int16 `query:"source_id" default:"-1" doc:"-1 = all"`

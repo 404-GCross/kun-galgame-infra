@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Read-only user detail (GET /admin/users/:uuid) — the rich fields the list row
-// can't show: uuid, last IP, active sessions, linked OAuth accounts, per-site
-// data + site roles. Fetches on open (keep-mounted v-model pattern).
 import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
 import { roleColor } from '~/constants/roles'
 import { USER_STATUS_MAP } from '~/constants/admin'
@@ -63,7 +60,6 @@ const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '�
     </div>
     <CommonFetchError v-else-if="errored" @retry="load" />
     <div v-else-if="detail" class="space-y-5">
-      <!-- Identity header -->
       <div class="flex items-center gap-3">
         <KunAvatar
           :user="{ id: 0, name: detail.name, avatar: avatarSrc }"
@@ -88,7 +84,6 @@ const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '�
         </div>
       </div>
 
-      <!-- Key/value facts -->
       <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
         <div class="min-w-0">
           <dt class="text-default-400 text-xs">邮箱</dt>
@@ -138,7 +133,6 @@ const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '�
         </p>
       </div>
 
-      <!-- Global roles -->
       <div>
         <p class="text-default-400 mb-1 text-xs">全局角色</p>
         <div class="flex flex-wrap gap-1">
@@ -157,7 +151,6 @@ const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '�
         </div>
       </div>
 
-      <!-- Per-site data -->
       <div v-if="detail.site_data?.length">
         <p class="text-default-400 mb-1 text-xs">各站点状态</p>
         <div class="space-y-1">
@@ -180,7 +173,6 @@ const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '�
         </div>
       </div>
 
-      <!-- Site roles -->
       <div v-if="detail.site_roles?.length">
         <p class="text-default-400 mb-1 text-xs">站点角色</p>
         <div class="space-y-1">

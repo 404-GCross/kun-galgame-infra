@@ -16,81 +16,41 @@ import (
 	"gorm.io/datatypes"
 )
 
-// Self-service caps (docs/developer-platform/05-developer-portal.md §9 / 06a 裁定 2-3).
-// Plain constants — the developer self-service face has no admin knob to raise
-// them; a higher ceiling is an admin/tier decision, not a self-service one.
 const (
-	// MaxAppsPerOwner is the number of applications one ecosystem account may own.
-	MaxAppsPerOwner = 5
-	// MaxActiveKeysPerApp is the number of live (non-revoked, non-expired) keys an
-	// application may hold at once.
+	MaxAppsPerOwner     = 5
 	MaxActiveKeysPerApp = 5
-	// maxAppNameLen / maxAppDescLen mirror the oauth_clients.name (varchar 100) and
-	// the reused tagline column (varchar 100) sizes — over-length is rejected up
-	// front rather than surfacing as a Postgres error.
-	maxAppNameLen = 100
-	maxAppDescLen = 100
+	maxAppNameLen       = 100
+	maxAppDescLen       = 100
 )
 
-// selfServiceScopes is the scope allow-list a developer may request when minting
-// a key for their own app (裁定 3): the two public read faces only. galgame:nsfw
-// is never self-service-grantable (裁定 6).
 var selfServiceScopes = []string{ScopeCatalogRead, ScopeGalgameRead}
 
 var (
-	// ErrAppLimitReached — the owner already holds MaxAppsPerOwner apps (→ 400).
 	ErrAppLimitReached = errors.New("devapi: application limit reached")
-	// ErrKeyLimitReached — the app already holds MaxActiveKeysPerApp active keys (→ 400).
 	ErrKeyLimitReached = errors.New("devapi: active key limit reached")
-	// ErrScopeNotAllowed — a requested scope is outside the self-service allow-list (→ 400).
 	ErrScopeNotAllowed = errors.New("devapi: scope not permitted (want catalog:read and/or galgame:read)")
-	// ErrNameRequired — app / key name missing (→ 400).
-	ErrNameRequired = errors.New("devapi: name is required")
-	// ErrNameTooLong / ErrDescTooLong — over the column length (→ 400).
-	ErrNameTooLong = errors.New("devapi: name too long (max 100)")
-	ErrDescTooLong = errors.New("devapi: description too long (max 100)")
+	ErrNameRequired    = errors.New("devapi: name is required")
+	ErrNameTooLong     = errors.New("devapi: name too long (max 100)")
+	ErrDescTooLong     = errors.New("devapi: description too long (max 100)")
 )
 
-// SelfServiceService is the developer's own view of the open API: create and
-// manage their own applications, mint/rotate/revoke their own keys, read their
-// own usage. Every operation is owner-guarded. The API-key lifecycle is NOT
-// reimplemented here — it is delegated to the same AdminService the admin
-// console uses (single source for mint/rotate/revoke + cache-busting); this
-// layer only adds the owner guard, the self-service caps, and the scope
-// allow-list on top.
 type SelfServiceService struct {
 	repo  *Repository
 	admin *AdminService
-	// store is the same Redis enforcement backend the middleware increments;
-	// the account-level usage view reads its live quota counters (same source as
-	// enforcement, not an estimate off the rollup table).
 	store Store
 }
 
-// NewSelfServiceService builds the self-service service over the shared repo,
-// the shared AdminService (so key operations reuse one implementation), and the
-// shared counter store (the live-remaining read source).
 func NewSelfServiceService(repo *Repository, admin *AdminService, store Store) *SelfServiceService {
 	return &SelfServiceService{repo: repo, admin: admin, store: store}
 }
 
-// CreateApp registers a new developer application owned by ownerUserID. It is
-// admitted to the open API immediately (dev_enabled) at the free tier; tier /
-// nsfw / quota are admin-only and stay at their defaults. The per-user app cap
-// is enforced first. A client_secret is generated + hashed (never returned —
-// Phase 1 is pure API-key; the OAuth flow is Phase 2/3).
 func (s *SelfServiceService) CreateApp(ctx context.Context, ownerUserID uint, name, description string, login *UserLoginRequest) (*siteModel.OAuthClient, error) {
 	if err := validateAppMeta(name, description, true); err != nil {
 		return nil, err
 	}
-	// The consent screen shows this name beside the user's account; a
-	// self-service registration does not get to claim it is us.
 	if err := validateAppName(name); err != nil {
 		return nil, err
 	}
-	// User login is opt-in at creation. Without it the app keeps the original
-	// fail-closed shape — no grants, no redirect URIs, an API key and nothing
-	// else — so every app registered before this existed behaves identically.
 	redirectURIs, grants, userScopes := "[]", "[]", ""
 	isPublic := false
 	if login != nil {
@@ -103,13 +63,8 @@ func (s *SelfServiceService) CreateApp(ctx context.Context, ownerUserID uint, na
 			return nil, err
 		}
 		redirectURIs = string(encoded)
-		// authorization_code to get a token, refresh_token so a launcher that
-		// runs for months does not send its user back through consent weekly.
 		grants = `["authorization_code","refresh_token"]`
 		userScopes = strings.Join(scopes, " ")
-		// A desktop launcher ships its binary to the user; anything in it is
-		// public. Marking it so is what makes the OAuth service REFUSE its
-		// authorization code unless PKCE was used.
 		isPublic = true
 	}
 	n, err := s.repo.CountAppsByOwner(ctx, ownerUserID)
@@ -131,31 +86,14 @@ func (s *SelfServiceService) CreateApp(ctx context.Context, ownerUserID uint, na
 
 	owner := ownerUserID
 	app := &siteModel.OAuthClient{
-		ID:   clientID,
-		Name: name,
-		// Hash only; the plaintext secret is discarded (unused in Phase 1).
-		Secret: siteModel.HashOAuthClientSecret(secret),
-		// Both stay empty for a key-only app (grants empty = fail-closed on
-		// /oauth/token: an API-key app cannot mint OAuth tokens). An app that
-		// declared user login carries its callbacks and the two code-flow
-		// grants instead — see the block above.
-		RedirectURIs: datatypes.JSON([]byte(redirectURIs)),
-		Grants:       datatypes.JSON([]byte(grants)),
-		IsPublic:     isPublic,
-		// The app's own scope allow-list holds BOTH credentials' vocabularies:
-		// the two public read scopes its API keys draw from (keys' scopes are
-		// ⊆ the app by construction) plus whatever consent scopes it declared.
-		// The two never collide — one set is asked of a machine, the other of
-		// a human — and the OAuth service filters every authorize request
-		// against this column, so an app cannot request what it did not
-		// register.
-		AllowedScopes: datatypes.JSON(appAllowedScopes(userScopes)),
-		// description is stored in the reused tagline column (no dedicated column
-		// exists; tagline is display-only and invisible unless Listed, which
-		// self-service apps never are).
-		Tagline: description,
-		// Every dev_* intent column set explicitly (no GORM default tag → the
-		// zero-value INSERT trap can't bite; dev_tier '' would be invalid).
+		ID:             clientID,
+		Name:           name,
+		Secret:         siteModel.HashOAuthClientSecret(secret),
+		RedirectURIs:   datatypes.JSON([]byte(redirectURIs)),
+		Grants:         datatypes.JSON([]byte(grants)),
+		IsPublic:       isPublic,
+		AllowedScopes:  datatypes.JSON(appAllowedScopes(userScopes)),
+		Tagline:        description,
 		OwnerUserID:    &owner,
 		DevEnabled:     true,
 		DevTier:        TierFree,
@@ -169,7 +107,6 @@ func (s *SelfServiceService) CreateApp(ctx context.Context, ownerUserID uint, na
 	return app, nil
 }
 
-// ListApps returns the caller's applications, each with its live key count.
 func (s *SelfServiceService) ListApps(ctx context.Context, ownerUserID uint) ([]AppView, error) {
 	apps, err := s.repo.ListAppsByOwner(ctx, ownerUserID)
 	if err != nil {
@@ -186,8 +123,6 @@ func (s *SelfServiceService) ListApps(ctx context.Context, ownerUserID uint) ([]
 	return out, nil
 }
 
-// GetApp returns one of the caller's applications with its live key count.
-// Returns gorm.ErrRecordNotFound (→ 404) when the app is not owned by the caller.
 func (s *SelfServiceService) GetApp(ctx context.Context, ownerUserID uint, clientID string) (*AppView, error) {
 	app, err := s.repo.GetAppByOwner(ctx, clientID, ownerUserID)
 	if err != nil {
@@ -200,9 +135,6 @@ func (s *SelfServiceService) GetApp(ctx context.Context, ownerUserID uint, clien
 	return &AppView{Client: app, KeyCount: n}, nil
 }
 
-// UpdateApp patches an owned app's name and/or description (the only
-// self-service-writable fields — tier / nsfw / quota are admin-only). Returns
-// gorm.ErrRecordNotFound (→ 404) for a non-owned app.
 func (s *SelfServiceService) UpdateApp(ctx context.Context, ownerUserID uint, clientID string, name, description *string, login *UserLoginRequest) (*siteModel.OAuthClient, error) {
 	app, err := s.repo.GetAppByOwner(ctx, clientID, ownerUserID)
 	if err != nil {
@@ -217,10 +149,6 @@ func (s *SelfServiceService) UpdateApp(ctx context.Context, ownerUserID uint, cl
 		}
 	}
 	fields := map[string]any{}
-	// Declaring (or re-declaring) user login is a full replacement of the
-	// callback set and the consent scopes — a patch that merged them would
-	// make removing a redirect URI impossible, and a stale callback is exactly
-	// the kind of thing an app wants gone the moment it stops using it.
 	if login != nil {
 		scopes, err := validateUserLogin(*login)
 		if err != nil {
@@ -239,7 +167,7 @@ func (s *SelfServiceService) UpdateApp(ctx context.Context, ownerUserID uint, cl
 		fields["name"] = *name
 	}
 	if description != nil {
-		fields["tagline"] = *description // description ↔ tagline (reused column)
+		fields["tagline"] = *description
 	}
 	if err := s.repo.UpdateAppFields(ctx, app.ID, fields); err != nil {
 		return nil, err
@@ -247,11 +175,6 @@ func (s *SelfServiceService) UpdateApp(ctx context.Context, ownerUserID uint, cl
 	return s.repo.GetApp(ctx, app.ID)
 }
 
-// DeactivateApp disables an owned app for the open API and immediately revokes
-// every one of its live keys (busting each key's resolve cache so they stop
-// working now, not after the 60s TTL). The oauth_clients row itself is kept —
-// only dev_enabled flips off. Returns gorm.ErrRecordNotFound (→ 404) for a
-// non-owned app.
 func (s *SelfServiceService) DeactivateApp(ctx context.Context, ownerUserID uint, clientID string) error {
 	app, err := s.repo.GetAppByOwner(ctx, clientID, ownerUserID)
 	if err != nil {
@@ -265,8 +188,6 @@ func (s *SelfServiceService) DeactivateApp(ctx context.Context, ownerUserID uint
 		if keys[i].RevokedAt != nil {
 			continue
 		}
-		// Reuse the admin revoke path — it sets revoked_at AND busts the resolve
-		// cache for this key's hash.
 		if err := s.admin.RevokeKey(ctx, keys[i].ID); err != nil {
 			return err
 		}
@@ -274,9 +195,6 @@ func (s *SelfServiceService) DeactivateApp(ctx context.Context, ownerUserID uint
 	return s.repo.UpdateAppFields(ctx, app.ID, map[string]any{"dev_enabled": false})
 }
 
-// MintKey mints a key for an owned app. It enforces the owner guard, the
-// per-app active-key cap, and the self-service scope allow-list, then delegates
-// the actual key generation to the shared AdminService (which forces nsfw off).
 func (s *SelfServiceService) MintKey(ctx context.Context, ownerUserID uint, clientID string, in MintKeyInput) (*DeveloperAPIKey, string, error) {
 	if _, err := s.repo.GetAppByOwner(ctx, clientID, ownerUserID); err != nil {
 		return nil, "", err
@@ -297,11 +215,9 @@ func (s *SelfServiceService) MintKey(ctx context.Context, ownerUserID uint, clie
 	if active >= MaxActiveKeysPerApp {
 		return nil, "", ErrKeyLimitReached
 	}
-	// createdBy = the owner (self-service).
 	return s.admin.MintKey(ctx, clientID, in, ownerUserID)
 }
 
-// ListKeys returns an owned app's keys (no secret material). 404 for non-owned.
 func (s *SelfServiceService) ListKeys(ctx context.Context, ownerUserID uint, clientID string) ([]DeveloperAPIKey, error) {
 	if _, err := s.repo.GetAppByOwner(ctx, clientID, ownerUserID); err != nil {
 		return nil, err
@@ -309,10 +225,6 @@ func (s *SelfServiceService) ListKeys(ctx context.Context, ownerUserID uint, cli
 	return s.admin.ListKeys(ctx, clientID)
 }
 
-// RotateKey rotates a key of an owned app (old key enters a 72h grace window).
-// Rotation is a replacement, so it is NOT subject to the active-key cap. Returns
-// (nil, "", nil) — a 404 signal — when the app is owned but the key is not one
-// of its keys. Returns gorm.ErrRecordNotFound for a non-owned app.
 func (s *SelfServiceService) RotateKey(ctx context.Context, ownerUserID uint, clientID string, keyID uint) (*DeveloperAPIKey, string, error) {
 	if _, err := s.repo.GetAppByOwner(ctx, clientID, ownerUserID); err != nil {
 		return nil, "", err
@@ -322,14 +234,11 @@ func (s *SelfServiceService) RotateKey(ctx context.Context, ownerUserID uint, cl
 		return nil, "", err
 	}
 	if key == nil {
-		return nil, "", nil // key not on this app → 404
+		return nil, "", nil
 	}
 	return s.admin.RotateKey(ctx, keyID, ownerUserID)
 }
 
-// RevokeKey revokes a key of an owned app (immediate + cache bust). Returns
-// (false, nil) — a 404 signal — when the app is owned but the key is not one of
-// its keys. Returns gorm.ErrRecordNotFound for a non-owned app.
 func (s *SelfServiceService) RevokeKey(ctx context.Context, ownerUserID uint, clientID string, keyID uint) (found bool, err error) {
 	if _, err := s.repo.GetAppByOwner(ctx, clientID, ownerUserID); err != nil {
 		return false, err
@@ -339,23 +248,19 @@ func (s *SelfServiceService) RevokeKey(ctx context.Context, ownerUserID uint, cl
 		return false, err
 	}
 	if key == nil {
-		return false, nil // key not on this app → 404
+		return false, nil
 	}
 	return true, s.admin.RevokeKey(ctx, keyID)
 }
 
-// Usage returns the caller's app usage aggregated by (day, face) for the last
-// `days` days (inclusive of today, UTC). 404 for a non-owned app.
 func (s *SelfServiceService) Usage(ctx context.Context, ownerUserID uint, clientID string, days int) ([]UsageDayFace, error) {
 	if _, err := s.repo.GetAppByOwner(ctx, clientID, ownerUserID); err != nil {
 		return nil, err
 	}
-	// days-1 so a window of 1 returns just today; UTC to match the stored Day.
 	since := time.Now().UTC().AddDate(0, 0, -(days - 1)).Format("2006-01-02")
 	return s.repo.AggregateUsageByClient(ctx, clientID, since)
 }
 
-// OwnerUsageAppTotal is one app's total usage over the window (named).
 type OwnerUsageAppTotal struct {
 	ClientID  string `json:"client_id"`
 	Name      string `json:"name"`
@@ -364,12 +269,6 @@ type OwnerUsageAppTotal struct {
 	Status5xx int64  `json:"status_5xx"`
 }
 
-// LiveKeyUsage is one active key's real-time budget, read from the Redis
-// enforcement counters (same source the middleware writes, NOT estimated off the
-// rollup table). rate_limit / quota_limit are the key's EFFECTIVE limits (tier
-// default with any app override; 0 = unlimited/internal). quota_used is the
-// requests counted so far today (UTC); quota_reset is the epoch second at the
-// next UTC midnight when the daily counter rolls over.
 type LiveKeyUsage struct {
 	AppName        string `json:"app_name"`
 	KeyID          uint   `json:"key_id"`
@@ -380,12 +279,6 @@ type LiveKeyUsage struct {
 	QuotaReset     int64  `json:"quota_reset"`
 }
 
-// OwnerUsageSummary is the account-level usage view: a dense daily series (every
-// day in the window, gaps 0-filled, oldest→newest) for the volume chart, the
-// per-app and per-face breakdowns, window totals, and the per-key live-remaining
-// rows. `since` is the window start (UTC). live_unavailable is set (and live is
-// empty) when the Redis enforcement backend is unreachable — a read-face
-// degradation, never a 5xx.
 type OwnerUsageSummary struct {
 	Days            int                  `json:"days"`
 	Since           string               `json:"since"`
@@ -399,10 +292,6 @@ type OwnerUsageSummary struct {
 	LiveUnavailable bool                 `json:"live_unavailable,omitempty"`
 }
 
-// OwnerUsage aggregates the caller's usage across ALL their apps for the last
-// `days` days (inclusive of today, UTC): a dense daily series for the chart plus
-// a per-app breakdown sorted by volume. No apps → zero-filled series, empty
-// breakdown (never an error).
 func (s *SelfServiceService) OwnerUsage(ctx context.Context, ownerUserID uint, days int) (*OwnerUsageSummary, error) {
 	apps, err := s.repo.ListAppsByOwner(ctx, ownerUserID)
 	if err != nil {
@@ -416,8 +305,6 @@ func (s *SelfServiceService) OwnerUsage(ctx context.Context, ownerUserID uint, d
 		ByFace: []UsageFaceTotal{},
 		Live:   []LiveKeyUsage{},
 	}
-	// Live per-key remaining is independent of the rollup window (real-time
-	// counters), so it is built even for an owner with zero recorded usage.
 	s.fillLive(ctx, summary, ownerUserID, now)
 
 	if len(apps) == 0 {
@@ -479,11 +366,6 @@ func (s *SelfServiceService) OwnerUsage(ctx context.Context, ownerUserID uint, d
 	return summary, nil
 }
 
-// fillLive populates summary.Live with each active key's real-time budget read
-// from the Redis quota counters. When the counter backend is unreachable it
-// leaves Live empty and sets LiveUnavailable (read-face degradation — the rest
-// of the summary, sourced from the rollup table, is unaffected). A per-key DB
-// error is non-fatal: live is a best-effort adjunct, not the primary payload.
 func (s *SelfServiceService) fillLive(ctx context.Context, summary *OwnerUsageSummary, ownerUserID uint, now time.Time) {
 	if s.store == nil || !s.store.Available(ctx) {
 		summary.LiveUnavailable = true
@@ -517,9 +399,6 @@ func (s *SelfServiceService) fillLive(ctx context.Context, summary *OwnerUsageSu
 	}
 }
 
-// readCounter reads an integer enforcement counter through the store (a miss,
-// an outage, or an unparseable value all read as 0 — the live view never errors
-// on a single stale counter).
 func (s *SelfServiceService) readCounter(ctx context.Context, key string) int64 {
 	b, err := s.store.Get(ctx, key)
 	if err != nil || len(b) == 0 {
@@ -532,9 +411,6 @@ func (s *SelfServiceService) readCounter(ctx context.Context, key string) int64 
 	return n
 }
 
-// denseDays turns sparse (day → totals) rows into a gap-free series over the
-// last `days` days ending today (UTC), oldest→newest, so the chart has a stable
-// x-axis. Missing days become zero rows.
 func denseDays(now time.Time, days int, rows []UsageDayTotal) []UsageDayTotal {
 	byDay := make(map[string]UsageDayTotal, len(rows))
 	for _, r := range rows {
@@ -553,8 +429,6 @@ func denseDays(now time.Time, days int, rows []UsageDayTotal) []UsageDayTotal {
 	return out
 }
 
-// checkSelfServiceScopes rejects any scope outside the self-service allow-list.
-// An empty list is fine — MintKey defaults it to the two public reads.
 func checkSelfServiceScopes(scopes []string) error {
 	for _, sc := range scopes {
 		if !slices.Contains(selfServiceScopes, sc) {
@@ -564,8 +438,6 @@ func checkSelfServiceScopes(scopes []string) error {
 	return nil
 }
 
-// validateAppMeta validates a create/patch app name + description. requireName
-// makes an empty name an error (create); a patch validates only what's present.
 func validateAppMeta(name, description string, requireName bool) error {
 	if requireName && name == "" {
 		return ErrNameRequired
@@ -579,8 +451,6 @@ func validateAppMeta(name, description string, requireName bool) error {
 	return nil
 }
 
-// validateAppMetaPtr validates the optional-pointer PATCH form: a present name
-// must be non-empty, and both are length-checked.
 func validateAppMetaPtr(name, description *string) error {
 	if name != nil {
 		if *name == "" {
@@ -596,8 +466,6 @@ func validateAppMetaPtr(name, description *string) error {
 	return nil
 }
 
-// generateHex returns n cryptographically random bytes as a hex string (client
-// id / secret material — mirrors the site service's generateRandomHex).
 func generateHex(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {

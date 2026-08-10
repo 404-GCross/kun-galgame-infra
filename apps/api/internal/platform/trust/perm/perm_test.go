@@ -7,11 +7,6 @@ import (
 	"api/internal/platform/trust/perm"
 )
 
-// goldenGrants is the authoritative role-set for every trust permission
-// (moderator/admin/ren reach the review inbox; term_manage is the narrower
-// admin/ren-only site-domain ban power — moderator is EXCLUDED; the management
-// axis contains moderator ⊆ admin ⊆ ren). Any drift between the bundles and this
-// table fails the build.
 var goldenGrants = map[authz.Permission][]string{
 	perm.QueueAccess: {"moderator", "admin", "ren"},
 	perm.TermManage:  {"admin", "ren"},
@@ -34,8 +29,6 @@ func TestGoldenBundles(t *testing.T) {
 	}
 }
 
-// TestNonBundleRolesGrantNothing pins the fail-closed default: any role outside
-// the bundles grants nothing.
 func TestNonBundleRolesGrantNothing(t *testing.T) {
 	for _, role := range []string{"user", "", "legacy_top_tier_alias"} {
 		for p := range goldenGrants {
@@ -46,7 +39,6 @@ func TestNonBundleRolesGrantNothing(t *testing.T) {
 	}
 }
 
-// TestManagementAxisContainment pins moderator ⊆ admin ⊆ ren.
 func TestManagementAxisContainment(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"moderator"}, p) && !perm.Resolver.Can([]string{"admin"}, p) {
@@ -58,7 +50,6 @@ func TestManagementAxisContainment(t *testing.T) {
 	}
 }
 
-// TestCreatorGrantsNothing pins that creator has no authority on this surface.
 func TestCreatorGrantsNothing(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"creator"}, p) {
@@ -67,9 +58,6 @@ func TestCreatorGrantsNothing(t *testing.T) {
 	}
 }
 
-// TestModeratorExcludedFromTermManage pins the deliberate narrowing: a content
-// moderator reaches the review inbox (queue_access) but MUST NOT manage the
-// Tier0 word list (term_manage is a site-domain ban power).
 func TestModeratorExcludedFromTermManage(t *testing.T) {
 	if !perm.Resolver.Can([]string{"moderator"}, perm.QueueAccess) {
 		t.Fatal("moderator must still hold queue_access")

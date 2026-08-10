@@ -1,24 +1,3 @@
-// merge-dup-submissions drives an EXPLICIT work merge list through the full
-// merge protocol (propose → approve → execute), for the wave-170 finding: user
-// submissions filed during the cover-less window duplicating works the
-// registry already held.
-//
-// It differs from cmd/merge-work-dups (step 97) in exactly one dimension: the
-// pairs are explicit `source:target` arguments with no worklist-specific
-// sanity checks, because here the SOURCE may itself be claimed (an old
-// kungal draft absorbed into the fresh live submission, or a fresh duplicate
-// absorbed into the established live entry). Direction is the operator's
-// decision per pair — the rule used for wave 170 is "the live, established
-// side survives".
-//
-// The cooling-off window is NOT bypassed here: propose mode approves with the
-// standard 48h timer, and execute mode refuses early. Releasing the timer
-// early is a deliberate ops decision recorded outside this tool.
-//
-//	go run ./cmd/merge-dup-submissions -mode propose --dsn "$DSN" -actor 2 \
-//	    -pair 23020:228616 -pair 228621:228618 [-run]
-//	go run ./cmd/merge-dup-submissions -mode execute --dsn "$DSN" -actor 2 \
-//	    -pair 23020:228616 [-run]
 package main
 
 import (
@@ -38,8 +17,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// notePrefix tags every proposal this tool opens so execute mode (and any
-// later audit) can scope to exactly this wave.
 const notePrefix = "dup-submission(170): "
 
 type pair struct{ src, dst int64 }
@@ -112,9 +89,6 @@ func main() {
 	}
 }
 
-// propose opens + approves one pair's proposal. Idempotent: an existing
-// open/approved proposal for the pair is reported, not duplicated (the
-// partial unique index enforces it; the error is surfaced as a skip).
 func propose(ctx context.Context, merge *service.MergeService, pr pair, actor int64, run bool) error {
 	note := fmt.Sprintf("%swork %d duplicates work %d", notePrefix, pr.src, pr.dst)
 	if !run {
@@ -132,9 +106,6 @@ func propose(ctx context.Context, merge *service.MergeService, pr pair, actor in
 	return nil
 }
 
-// execute runs one pair's APPROVED proposal through ExecuteMerge. The
-// proposal is located by (entity_type, pair, status, note tag) so this never
-// touches another wave's queue.
 func execute(ctx context.Context, db *gorm.DB, merge *service.MergeService, pr pair, actor int64, run bool) error {
 	var ids []int64
 	err := db.WithContext(ctx).Raw(`

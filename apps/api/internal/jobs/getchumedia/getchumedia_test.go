@@ -18,11 +18,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration tests for the candidate rule and the staging read. The UPLOAD
-// half is not exercised here — it needs a live image service, and it is
-// byte-for-byte the dlsitemedia recipe, which has its own coverage. What is
-// specific to this lane, and therefore tested, is WHICH works it admits and
-// WHICH staged images it considers.
 var (
 	testDB  *gorm.DB
 	testDSN string
@@ -135,11 +130,6 @@ func candidates(t *testing.T) []candidate {
 	return got
 }
 
-// --- tests ----------------------------------------------------------------
-
-// Admission is PER-SOURCE fill-missing (wave 188, the 2026-08-07 reversal of
-// the old fallback-only doctrine): only this source's own rows close the lane.
-// A work with a getchu row is done; a work with no screenshot at all is open.
 func TestOnlyWorksWithNoGetchuScreenshotAreAdmitted(t *testing.T) {
 	clean(t)
 	empty := mkWork(t, "no gallery", 2)
@@ -153,10 +143,6 @@ func TestOnlyWorksWithNoGetchuScreenshotAreAdmitted(t *testing.T) {
 	assert.Equal(t, empty, got[0].WorkID)
 }
 
-// The wave-188 reversal itself: a work whose gallery comes from ANOTHER source
-// is still a candidate here. A vndb row is a game screenshot, a getchu row is
-// official sample CG — different things, shown as separate per-source blocks,
-// so the second lane supplements rather than dilutes.
 func TestAnotherSourcesScreenshotDoesNotCloseTheGetchuLane(t *testing.T) {
 	clean(t)
 	w := mkWork(t, "has vndb shots only", 2)
@@ -167,15 +153,10 @@ func TestAnotherSourcesScreenshotDoesNotCloseTheGetchuLane(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, w, got[0].WorkID)
 
-	// ...and once getchu has written its own row the work drops out, so a
-	// second --apply is still a no-op.
 	mkShotFrom(t, w, "getchushot", getchuSource)
 	assert.Empty(t, candidates(t))
 }
 
-// preloadHashes spans EVERY source, so bytes another lane already uploaded are
-// never re-uploaded: the (work_id, image_hash) unique key covers the whole work
-// and the first writer keeps its source attribution.
 func TestPreloadHashesSeesOtherSourcesBytes(t *testing.T) {
 	clean(t)
 	w := mkWork(t, "cross-source bytes", 2)
@@ -186,7 +167,6 @@ func TestPreloadHashesSeesOtherSourcesBytes(t *testing.T) {
 	assert.True(t, got[w]["sharedhash"], "a vndb-sourced hash must still suppress the getchu upload")
 }
 
-// Only EXACT anchors. A probable ref is a guess, and this lane writes bytes.
 func TestProbableAnchorIsNotAdmitted(t *testing.T) {
 	clean(t)
 	w := mkWork(t, "probable only", 2)
@@ -194,8 +174,6 @@ func TestProbableAnchorIsNotAdmitted(t *testing.T) {
 	assert.Empty(t, candidates(t))
 }
 
-// The rating a screenshot carries comes from the work, so the gallery can never
-// disagree with the page it hangs on.
 func TestCandidateCarriesTheWorksContentRating(t *testing.T) {
 	clean(t)
 	w := mkWork(t, "all ages", 0)
@@ -205,8 +183,6 @@ func TestCandidateCarriesTheWorksContentRating(t *testing.T) {
 	assert.EqualValues(t, 0, got[0].ContentRating)
 }
 
-// A work with several Getchu releases collects every anchor, because its
-// samples are spread across them.
 func TestMultipleAnchorsAreAllCollected(t *testing.T) {
 	clean(t)
 	w := mkWork(t, "two editions", 2)
@@ -217,10 +193,6 @@ func TestMultipleAnchorsAreAllCollected(t *testing.T) {
 	assert.ElementsMatch(t, []string{"4001", "4002"}, got[0].GetchuIDs)
 }
 
-// The staging read takes mirrored `sample` rows only: the other kinds are not
-// screenshots, an unmirrored row has no bytes to upload, and `_s.jpg` is
-// Getchu's thumbnail of the image beside it — uploading one would put a postage
-// stamp in the gallery.
 func TestLoadSamplesTakesOnlyMirroredFullSizeSamples(t *testing.T) {
 	clean(t)
 	mkStaged(t, "5001", "sample", 0, "https://www.getchu.com/brandnew/5001/c5001sample1.jpg", true)
@@ -248,8 +220,6 @@ func TestPreloadHashes(t *testing.T) {
 	assert.False(t, got[w]["ccc"])
 }
 
-// Both DSNs are required, and applying without a mirror directory is refused
-// before anything connects — bytes only ever come from the local mirror.
 func TestRequiredInputs(t *testing.T) {
 	_, err := Run(context.Background(), nil, Opts{GetchuDSN: "x"})
 	require.Error(t, err)

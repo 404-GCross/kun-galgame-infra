@@ -11,11 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// packetFor renders one pair into an adjudication packet. The rendered text is
-// byte-for-byte what both the model and a human reviewer read (the wave-156
-// contract). Tier 2 goes to the pinned character_cv bucket; tiers 1 and 3 go
-// to the character_pair bucket, whose prompt does not presume a shared voice
-// actor.
 func packetFor(p pairMeta, info map[int64]*charInfo, titles map[int64]string) personadj.Packet {
 	bucket := personadj.BucketCharacterPair
 	if p.Tier == 2 {
@@ -30,9 +25,6 @@ func packetFor(p pairMeta, info map[int64]*charInfo, titles map[int64]string) pe
 	}
 }
 
-// evidenceText renders a pair's evidence body, shared between the round-one
-// packets and the panel re-adjudication packets so both rounds argue over the
-// same rendering contract.
 func evidenceText(p pairMeta, info map[int64]*charInfo, titles map[int64]string) string {
 	a, b := info[p.A], info[p.B]
 	var sb strings.Builder
@@ -91,8 +83,6 @@ func genderLabel(g int16) string {
 	return fmt.Sprintf("(%d)", g)
 }
 
-// loadWorkTitles loads one display title per work (ja preferred), for the
-// packets' shared-work line.
 func loadWorkTitles(db *gorm.DB, pairs []pairMeta) (map[int64]string, error) {
 	ids := map[int64]bool{}
 	for _, p := range pairs {

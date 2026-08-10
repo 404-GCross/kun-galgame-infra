@@ -1,19 +1,7 @@
 package personadj
 
-// The system prompts are PINNED here (wave 87 discipline: a prompt change is a
-// code change, so a re-run wave can diff prompt versions and a verdict file can
-// be attributed). Every one of them:
-//
-//   - leads with the failure modes wave 152 MEASURED, not with generic advice —
-//     the zero-co-occurrence same-name bucket scored 0.067 precision, and the
-//     bangumi romaji / kana / english alias lanes are transliterations of one
-//     name rather than declarations of a second identity;
-//   - forbids inventing a verdict from outside the three-value vocabulary;
-//   - demands a Chinese one-line reason, which is what the human review file
-//     shows verbatim.
 const promptVersion = "person-adjudicate-v1"
 
-// PromptVersion identifies the pinned prompt set in every verdict batch.
 func PromptVersion() string { return promptVersion }
 
 const personEdgeSystem = `你是 galgame 数据库的资深身份考据编辑。目录里每一行是一个「署名」(credit_name),同一个真实人物可能以多个署名出现(艺名/裏名/本名/罗马字写法)。现在给你两个署名及其证据,请判断它们是否指同一个真实实体。
@@ -104,21 +92,12 @@ var systemPrompts = map[Bucket]string{
 	BucketCharacterPairStrict: characterPairStrictSystem,
 }
 
-// SystemPrompt returns the pinned prompt for a bucket.
 func SystemPrompt(b Bucket) string { return systemPrompts[b] }
 
-// batchSuffix is appended to a bucket's pinned prompt when several cases share
-// one request. The gateway's ceiling is REQUESTS per minute (wave 156 measured
-// a ~22/min plateau that more workers do not move), so packing cases into one
-// request is the only real throughput lever. The contract is strict on purpose:
-// the reply must be an array whose ids echo the input, and any mismatch makes
-// the whole chunk an error to be re-judged one case at a time — a silently
-// misaligned batch would attach verdicts to the wrong pairs.
 const batchSuffix = `
 
 【本次为批量判定】用户消息里有多个用「### 案例 N」分隔的独立案例。请对每个案例独立作答,互不影响。
 只输出一个 JSON 数组,数组每一项形如上面规定的单个 JSON 对象,并额外带一个 "id" 字段等于该案例的编号 N。
 数组长度必须与案例数完全相同,顺序与编号一致。不要输出代码块围栏或任何多余文字。`
 
-// BatchSystemPrompt returns the pinned prompt for a bucket in batch mode.
 func BatchSystemPrompt(b Bucket) string { return systemPrompts[b] + batchSuffix }

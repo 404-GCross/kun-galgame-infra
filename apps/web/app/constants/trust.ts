@@ -1,14 +1,6 @@
-// Trust & Safety review-queue vocabulary: display labels + semantic colors for
-// the wire constants of the trust admin API (docs/trust/admin-openapi.yaml).
-// The numeric values mirror
-// apps/api/internal/platform/trust/model/constants.go and are persisted —
-// never renumber. `-1` is the API's "no filter" sentinel for optional query
-// params.
 
 export const TRUST_FILTER_ALL = -1
 
-// Semantic chip colors (mirrors @kungal/ui-core's KunUIColor union — the
-// project palette only, never Tailwind built-ins).
 export type TrustChipColor =
   | 'default'
   | 'primary'
@@ -18,7 +10,6 @@ export type TrustChipColor =
   | 'danger'
   | 'info'
 
-// review_item.status: 0=pending 1=claimed 2=actioned 3=dismissed
 export const REVIEW_STATUS = {
   pending: 0,
   claimed: 1,
@@ -40,11 +31,6 @@ export const REVIEW_STATUS_COLORS: Record<number, TrustChipColor> = {
   3: 'default'
 }
 
-// trust_term.purpose — WHY a term is listed, which decides what evidence may
-// retire it. An abuse term answers the same question the AI classifier answers,
-// so classifier disagreement measures it. A compliance term answers a question
-// that classifier never asks, so the same number reads ~0% however well the term
-// works — it is exempt from precision-based retirement.
 export const TERM_PURPOSE = {
   abuse: 0,
   compliance: 1
@@ -60,9 +46,6 @@ export const TERM_PURPOSE_COLORS: Record<number, TrustChipColor> = {
   1: 'info'
 }
 
-// trust_scan_result.mode / trust_site_policy.scan_mode — how far a verdict is
-// allowed to act. shadow records and does nothing else; live additionally opens
-// a review item (and, unless auto-hide is off, queues a hide).
 export const SCAN_MODE = {
   shadow: 0,
   live: 1
@@ -88,8 +71,6 @@ export const REVIEW_SOURCE = {
   aiSample: 6
 } as const
 
-// review_item.source: 0=reports 1=ai_text 2=ai_image 3=community_forward
-// 4=mislabel 5=manual 6=ai_sample
 export const REVIEW_SOURCE_LABELS: Record<number, string> = {
   0: '举报',
   1: 'AI 文本',
@@ -97,14 +78,9 @@ export const REVIEW_SOURCE_LABELS: Record<number, string> = {
   3: '社区转交',
   4: '错误标注',
   5: '人工',
-  // A clean verdict drawn at random so a human can confirm the classifier was
-  // right to clear it — the only source that measures what the pipeline MISSES.
-  // Never enforced: nothing is hidden by a calibration draw.
   6: '抽检'
 }
 
-// disposition.action: 0=none 1=hide 2=remove 3=warn_user 4=restrict
-// 5=escalate_idp
 export const ACTION_LABELS: Record<number, string> = {
   0: '无操作(复核放行)',
   1: '隐藏',
@@ -114,11 +90,8 @@ export const ACTION_LABELS: Record<number, string> = {
   5: '升级至账号中心'
 }
 
-// The concrete actions an `actioned` decision may carry (0=none is not a real
-// enforcement action, so it is never offered).
 export const DECIDE_ACTIONS: ReadonlyArray<number> = [1, 2, 3, 4, 5]
 
-// report.status: 0=received 1=linked 2=folded
 export const REPORT_STATUS_LABELS: Record<number, string> = {
   0: '已接收',
   1: '已关联',
@@ -131,7 +104,6 @@ export const REPORT_STATUS_COLORS: Record<number, TrustChipColor> = {
   2: 'default'
 }
 
-// disposition.callback_status: 0=pending 1=delivered 2=dead_letter
 export const CALLBACK_STATUS = {
   pending: 0,
   delivered: 1,
@@ -150,9 +122,6 @@ export const CALLBACK_STATUS_COLORS: Record<number, TrustChipColor> = {
   2: 'danger'
 }
 
-// trust_term.kind: 0=suspect (hold — enqueue, don't block) 1=banned (deny — the
-// synchronous check rejects the write). Mirrors
-// apps/api/internal/platform/trust/model/constants.go (persisted — never renumber).
 export const TERM_KIND = {
   suspect: 0,
   banned: 1

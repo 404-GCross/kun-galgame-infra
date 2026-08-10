@@ -1,30 +1,3 @@
-// backfill-vndb-covers fills catalog-native cover rows for galgame works that
-// carry an EXACT VNDB anchor and show NO cover at all. For each such work it
-// asks the public VNDB API (https://api.vndb.org/kana/vn) what cover the
-// anchored vn has, downloads those bytes from t.vndb.org, uploads them to the
-// catalog image scope and writes ONE catalog_work_cover row —
-// portrait_pinned from the cover's own shape, sexual/violence from VNDB's own
-// per-image votes.
-//
-// Logic lives in internal/jobs/vndbcovers, reusing the step-55
-// (internal/jobs/dlsitemedia) upload/retry/refping machinery. Idempotent: a
-// work with any cover is not a candidate, so a re-run writes nothing.
-//
-// IMPORTANT: --dsn is REQUIRED and must point at the rehearsal copy locally
-// (kun_catalog_rehearsal) — NEVER the live kun_catalog. The acceptance-tester
-// points --dsn at the production catalog for the real run.
-//
-//	# dry: per-work forecast (image found/missing, shape, ratings) + totals
-//	go run ./cmd/backfill-vndb-covers \
-//	    --dsn "host=... dbname=kun_catalog_rehearsal sslmode=disable"
-//
-//	# dry, restricted to an explicit work list
-//	go run ./cmd/backfill-vndb-covers --dsn "..." --ids 1,2,3
-//
-//	# apply against the LOCAL image service + catalog client creds
-//	KUN_CATALOG_IMAGE_CLIENT_ID=... KUN_CATALOG_IMAGE_CLIENT_SECRET=... \
-//	go run ./cmd/backfill-vndb-covers --apply --limit 20 \
-//	    --dsn "..." --ids 1,2,3 --image-base-url http://127.0.0.1:9278
 package main
 
 import (
@@ -51,7 +24,7 @@ func main() {
 	apiBase := flag.String("vndb-api-base", "", "VNDB API base override (default https://api.vndb.org/kana)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
 	workIDs, err := vndbcovers.ParseIDs(*ids)
 	if err != nil {

@@ -37,8 +37,6 @@ const quickstart = [
   }
 ]
 
-// The /v1/galgame face was delisted on 2026-07-30 (it now answers 410 Gone);
-// /v1/catalog is the single public data face.
 const faces = [
   {
     icon: 'lucide:network',
@@ -77,11 +75,9 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
 
 <template>
   <div class="space-y-24">
-    <!-- Hero -->
     <section
       class="grid items-center gap-10 pt-4 md:pt-10 lg:grid-cols-2 lg:gap-14"
     >
-      <!-- Copy -->
       <div class="text-center lg:text-left">
         <div
           class="inline-flex items-center gap-2 rounded-full border border-default-200 bg-content1 px-3 py-1 text-xs font-medium text-default-500"
@@ -142,7 +138,6 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
         </div>
       </div>
 
-      <!-- Request / response showcase -->
       <div
         class="overflow-hidden rounded-2xl border border-default-200 bg-content1 shadow-sm"
       >
@@ -184,7 +179,6 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
       </div>
     </section>
 
-    <!-- Stats band -->
     <section
       class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-default-200 bg-default-200 md:grid-cols-4"
     >
@@ -200,7 +194,6 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
       </div>
     </section>
 
-    <!-- Quickstart -->
     <section>
       <div class="mb-10 text-center">
         <h2 class="text-2xl font-bold text-foreground md:text-3xl">三步开始</h2>
@@ -234,7 +227,6 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
       </div>
     </section>
 
-    <!-- Faces -->
     <section>
       <div class="mb-10 text-center">
         <h2 class="text-2xl font-bold text-foreground md:text-3xl">
@@ -283,7 +275,6 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
       </div>
     </section>
 
-    <!-- Built for production -->
     <section>
       <div class="mb-10 text-center">
         <h2 class="text-2xl font-bold text-foreground md:text-3xl">
@@ -312,7 +303,6 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
       </div>
     </section>
 
-    <!-- Closing CTA -->
     <section
       class="rounded-2xl border border-default-200 bg-content1 px-6 py-12 text-center md:px-10"
     >

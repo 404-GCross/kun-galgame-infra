@@ -20,16 +20,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// CallbackWorker dispatches enforcement callbacks for actioned dispositions
-// (章程 ruling 9): HMAC-SHA256 signed webhooks with exponential backoff, moving
-// a disposition pending → delivered on a 2xx, or → dead_letter after the retry
-// budget. Claiming uses FOR UPDATE SKIP LOCKED so multiple instances never
-// double-deliver. Delivered / dead_letter terminals append an audit row.
 type CallbackWorker struct {
-	db         *gorm.DB
-	httpClient *http.Client
-	// backoff[k-1] is the wait after the k-th failure; after maxAttempts
-	// failures the disposition is dead-lettered. Overridable in tests.
+	db          *gorm.DB
+	httpClient  *http.Client
 	backoff     []time.Duration
 	maxAttempts int
 	batchSize   int
@@ -37,7 +30,6 @@ type CallbackWorker struct {
 	now         func() time.Time
 }
 
-// NewCallbackWorker builds the worker with production defaults.
 func NewCallbackWorker(db *gorm.DB) *CallbackWorker {
 	return &CallbackWorker{
 		db:          db,
@@ -50,8 +42,6 @@ func NewCallbackWorker(db *gorm.DB) *CallbackWorker {
 	}
 }
 
-// callbackBody is the signed webhook payload. The consuming product uses
-// disposition_id as the idempotency key (章程 ruling 9).
 type callbackBody struct {
 	DispositionID int64  `json:"disposition_id"`
 	SubjectKind   string `json:"subject_kind"`
@@ -60,9 +50,6 @@ type callbackBody struct {
 	ReasonCode    string `json:"reason_code"`
 }
 
-// SignPayload computes the X-Trust-Signature value: hex(HMAC-SHA256(secret,
-// timestamp + "." + body)). Exported so tests (and consuming products) verify
-// it the same way.
 func SignPayload(secret, timestamp string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(timestamp))
@@ -71,8 +58,6 @@ func SignPayload(secret, timestamp string, body []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// Run drives DeliverDue on the worker interval until ctx is cancelled. Errors
-// are logged, never fatal — the loop keeps running.
 func (w *CallbackWorker) Run(ctx context.Context) {
 	slog.Info("trust callback worker starting", "interval", w.interval.String(), "batch", w.batchSize)
 	t := time.NewTicker(w.interval)
@@ -89,10 +74,6 @@ func (w *CallbackWorker) Run(ctx context.Context) {
 	}
 }
 
-// DeliverDue claims up to batchSize due pending dispositions and attempts each.
-// It returns the number processed. A single transaction spans the claim + HTTP
-// + terminal update per batch; SKIP LOCKED guarantees no concurrent worker
-// picks the same rows (low-volume v0 — doc 18 §0 queue math).
 func (w *CallbackWorker) DeliverDue(ctx context.Context) (int, error) {
 	processed := 0
 	err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -113,8 +94,6 @@ func (w *CallbackWorker) DeliverDue(ctx context.Context) (int, error) {
 	return processed, err
 }
 
-// deliverOne resolves a disposition's callback target, posts the signed payload,
-// and records the outcome (delivered / retry / dead_letter) within tx.
 func (w *CallbackWorker) deliverOne(ctx context.Context, tx *gorm.DB, d *model.TrustDisposition) error {
 	var item model.TrustReviewItem
 	if err := tx.Take(&item, d.ReviewItemID).Error; err != nil {
@@ -136,7 +115,6 @@ func (w *CallbackWorker) deliverOne(ctx context.Context, tx *gorm.DB, d *model.T
 	return w.markFailure(tx, d, item)
 }
 
-// post sends the signed webhook and reports whether the response was 2xx.
 func (w *CallbackWorker) post(ctx context.Context, url, secret string, item model.TrustReviewItem, d *model.TrustDisposition) bool {
 	body, err := json.Marshal(callbackBody{
 		DispositionID: d.ID, SubjectKind: item.SubjectKind, SubjectID: item.SubjectID,
@@ -195,7 +173,6 @@ func (w *CallbackWorker) markFailure(tx *gorm.DB, d *model.TrustDisposition, ite
 			ReasonCode: strptr(d.ReasonCode),
 		})
 	}
-	// Reschedule (still pending). No audit — only terminal states are audited.
 	next := w.now().Add(w.backoffFor(int(attempts)))
 	return tx.Model(&model.TrustDisposition{}).Where("id = ?", d.ID).Updates(map[string]any{
 		"callback_attempts": attempts,
@@ -203,8 +180,6 @@ func (w *CallbackWorker) markFailure(tx *gorm.DB, d *model.TrustDisposition, ite
 	}).Error
 }
 
-// backoffFor is the wait after the k-th failure (1-based), clamped to the last
-// schedule entry.
 func (w *CallbackWorker) backoffFor(k int) time.Duration {
 	if len(w.backoff) == 0 {
 		return 0

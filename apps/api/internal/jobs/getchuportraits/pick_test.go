@@ -35,9 +35,6 @@ func TestPickPlateUsesTheRichestEditionWhenItHasArt(t *testing.T) {
 	assert.Equal(t, "c100chara3.jpg", got.File)
 }
 
-// The point of the whole Editions mechanism: the edition getchuchars ranked
-// first is the one with the FULLEST PROSE, which says nothing about whether it
-// carries art. Falling back is what keeps a character fillable.
 func TestPickPlateFallsBackToAnEditionThatHasArt(t *testing.T) {
 	c := getchuchars.Candidate{
 		CharacterID: 1, GetchuID: "100", Ordinal: 2,
@@ -49,9 +46,6 @@ func TestPickPlateFallsBackToAnEditionThatHasArt(t *testing.T) {
 	assert.Equal(t, "c200chara9.jpg", got.File)
 }
 
-// The ordinal is part of the key, not decoration: edition 100 having SOME art
-// must not make ordinal 2 fillable from ordinal 7's image. That confusion is
-// precisely the ~39% mis-pairing the positional shortcut would produce.
 func TestPickPlateWillNotBorrowAnotherOrdinalsImage(t *testing.T) {
 	c := getchuchars.Candidate{
 		CharacterID: 1, GetchuID: "100", Ordinal: 2,
@@ -70,8 +64,6 @@ func TestPickPlateReportsNoArt(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// A Candidate that predates Editions must still resolve through its own
-// (GetchuID, Ordinal) rather than silently matching nothing.
 func TestPickPlateHandlesAnEditionlessCandidate(t *testing.T) {
 	c := getchuchars.Candidate{CharacterID: 1, GetchuID: "100", Ordinal: 2}
 	got, ok := pickPlate(c, plates("100", 2, "https://www.getchu.com/brandnew/100/c100chara3.jpg"))

@@ -7,14 +7,8 @@ import (
 	"gorm.io/datatypes"
 )
 
-// maxExtraValueBytes caps a single extra value; longer strings are truncated
-// and counted (refs/proj/81). No real value approaches this today (the whole
-// corpus has zero >2KB infobox values) — it is a guard against a pathological
-// future dump, not a hot path.
 const maxExtraValueBytes = 2048
 
-// infobox mirrors the wiki-parser-go output shape stored in
-// src_bangumi.character.infobox_parsed.
 type infobox struct {
 	Fields []infoField `json:"Fields"`
 }
@@ -31,18 +25,13 @@ type infoItem struct {
 	Value string `json:"Value"`
 }
 
-// bgmResult is one character's Bangumi-derived proposal: the promoted attrs,
-// the long-tail extra map (the "bgm" namespace payload), and the run counters.
 type bgmResult struct {
 	attrs      attrs
-	extra      map[string]any // long-tail + preserved raw promotion strings
+	extra      map[string]any
 	outOfRange int
 	truncated  int
 }
 
-// parseBGMInfobox walks one infobox: promotion keys → typed columns (with
-// out-of-range / year / abnormal raw strings preserved into extra), exclusion
-// keys dropped, everything else folded into the extra long-tail.
 func parseBGMInfobox(raw datatypes.JSON) bgmResult {
 	res := bgmResult{extra: map[string]any{}}
 	if len(raw) == 0 {
@@ -85,7 +74,6 @@ func parseBGMInfobox(raw datatypes.JSON) bgmResult {
 				res.attrs.gender = g
 			}
 		case isExcludedKey(key):
-			// dropped: name/alias/citation/VA — carried by other waves.
 		default:
 			res.collectLongtail(key, f)
 		}
@@ -93,22 +81,18 @@ func parseBGMInfobox(raw datatypes.JSON) bgmResult {
 	return res
 }
 
-// measure runs a height/weight parse and either sets the column or, on an
-// out-of-range number, preserves the raw string and counts it.
 func (r *bgmResult) measure(key, raw string, lo, hi int16, dst **int16) {
 	m := parseBGMMeasure(raw, lo, hi)
 	if m.inRange {
 		*dst = m.value
 		return
 	}
-	if m.found { // a number was present but out of gate
+	if m.found {
 		r.outOfRange++
 		r.putExtra(key, raw)
 	}
 }
 
-// collectLongtail folds one non-promotion, non-excluded field into extra: an
-// Array field flattens its Items to a []string, a scalar keeps its value.
 func (r *bgmResult) collectLongtail(key string, f infoField) {
 	if f.Array && len(f.Items) > 0 {
 		var vals []string
@@ -132,7 +116,6 @@ func (r *bgmResult) collectLongtail(key string, f infoField) {
 	}
 }
 
-// putExtra stores a scalar extra value (truncating an oversized one).
 func (r *bgmResult) putExtra(key, val string) {
 	val = strings.TrimSpace(val)
 	if val == "" {
@@ -146,7 +129,6 @@ func (r *bgmResult) truncate(s string) string {
 		return s
 	}
 	r.truncated++
-	// Cut on a rune boundary at/under the cap.
 	b := []byte(s)[:maxExtraValueBytes]
 	for len(b) > 0 && b[len(b)-1]&0xC0 == 0x80 {
 		b = b[:len(b)-1]

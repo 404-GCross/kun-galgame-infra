@@ -1,29 +1,3 @@
-// Command import-kungal-resource-comments is a one-shot cross-database importer
-// that moves kungal's three remaining comment sections — galgame_rating_comment,
-// galgame_website_comment, galgame_toolset_comment — into the community
-// primitive (kun_community) as the second tenant's site_resource comment
-// threads. It is the three-source sibling of cmd/import-kungal-comments (step
-// 02); the discipline (dry-first, idempotent map ledger, (created,id) ordering,
-// counter recompute, explicit-column trust seed) is identical.
-//
-// Each section becomes anchor_kind=2 (site_resource) threads with prefixed
-// anchor ids rating:<id> / website:<id> / toolset:<id> (charter ruling 18). The
-// tree sections (website/toolset) re-root replies (charter ruling 19); rating is
-// flat and copies target_user_id verbatim. Only galgame_website.comment_count is
-// reset on apply (ruling 21). The shared resource_comment_community_map ledger
-// is written back into the FORUM (source) database (ruling 24).
-//
-// It is dry-run by default; --apply performs the writes. See
-// refs/plans/03-kungal-comments/06-resource-comments-import.md for the contract.
-//
-// Usage:
-//
-//	go run ./cmd/import-kungal-resource-comments \
-//	  --source-dsn="host=localhost port=5432 user=postgres password=... dbname=kungalgame sslmode=disable" \
-//	  [--target-dsn="...kun_community..."] [--site=kungal] [--apply]
-//
-// The source DSN falls back to $KUNGAL_SOURCE_DSN; the target DSN falls back to
-// $KUN_COMMUNITY_DSN and then to the KUN_COMMUNITY_* config (cmd/ convention).
 package main
 
 import (

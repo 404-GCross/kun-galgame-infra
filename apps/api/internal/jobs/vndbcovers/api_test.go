@@ -13,9 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestAPI points the client at a stub server with the throttle disabled —
-// the ~1 req/s spacing is a politeness rule for the real API, not behaviour
-// worth spending seconds of test time on.
 func newTestAPI(t *testing.T, h http.HandlerFunc) *vndbAPI {
 	t.Helper()
 	srv := httptest.NewServer(h)
@@ -62,8 +59,6 @@ func TestFetchImagesRetriesA429(t *testing.T) {
 		first := calls == 1
 		mu.Unlock()
 		if first {
-			// The server's own Retry-After is honoured; 1s keeps the test
-			// honest about the real wait without burning the default 30s.
 			w.Header().Set("Retry-After", "1")
 			w.WriteHeader(http.StatusTooManyRequests)
 			return

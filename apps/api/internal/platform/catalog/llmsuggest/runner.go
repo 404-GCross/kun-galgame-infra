@@ -9,16 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// verdictResult is the parsed same/different/unsure judgment shared by the
-// name-pair and bid-identity tasks.
 type verdictResult struct {
 	Verdict    string  `json:"verdict"`
 	Reason     string  `json:"reason"`
 	Confidence float64 `json:"confidence"`
 }
 
-// verdictSchema constrains the model to a same/different/unsure verdict with a
-// short reason and a self-reported confidence (archived for sorting only).
 var verdictSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -30,9 +26,6 @@ var verdictSchema = map[string]any{
 	"additionalProperties": false,
 }
 
-// judge runs one verdict call with up to two retries (3 attempts total). A
-// schema-invalid or unparseable reply is retried; the final error is returned
-// so the caller can record an error row without aborting the batch.
 func judge(ctx context.Context, c *Client, system, user string, maxTokens int) (verdictResult, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -56,8 +49,6 @@ func judge(ctx context.Context, c *Client, system, user string, maxTokens int) (
 	return verdictResult{}, lastErr
 }
 
-// batchSchema constrains a batched name-pair reply to one result per pair,
-// each tagged with its 1-based index.
 var batchSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -77,9 +68,6 @@ var batchSchema = map[string]any{
 	"additionalProperties": false,
 }
 
-// judgeBatch judges several name pairs in one request and returns verdicts
-// keyed by 1-based index. Missing / out-of-enum entries are simply absent from
-// the map (the caller records those as errors).
 func judgeBatch(ctx context.Context, c *Client, system, user string, n int) (map[int]verdictResult, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -110,9 +98,6 @@ func judgeBatch(ctx context.Context, c *Client, system, user string, n int) (map
 	return nil, lastErr
 }
 
-// runPool executes fn over items with bounded concurrency. fn is responsible
-// for its own persistence and error recording; a panic in fn is not caught, a
-// returned error is ignored (tasks record errors as rows, not returns).
 func runPool[T any](ctx context.Context, items []T, concurrency int, fn func(context.Context, T)) {
 	if concurrency < 1 {
 		concurrency = 1
@@ -134,8 +119,6 @@ func runPool[T any](ctx context.Context, items []T, concurrency int, fn func(con
 	wg.Wait()
 }
 
-// loadDoneHashes preloads the resume set: input hashes already recorded for
-// (model, prompt_version) in the given table, optionally scoped by task.
 func loadDoneHashes(db *gorm.DB, table, model, promptVersion, taskCol, task string) (map[string]bool, error) {
 	q := db.Table(table).Where("model = ? AND prompt_version = ?", model, promptVersion)
 	if taskCol != "" {
@@ -152,7 +135,6 @@ func loadDoneHashes(db *gorm.DB, table, model, promptVersion, taskCol, task stri
 	return done, nil
 }
 
-// recordRun writes the run-metadata row.
 func recordRun(db *gorm.DB, task, model, promptVersion string, counts any, startedAt any, notes string) error {
 	cj, _ := json.Marshal(counts)
 	return db.Exec(

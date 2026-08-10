@@ -1,19 +1,3 @@
-// public_releases.go — GET /v1/catalog/releases, the release-grain
-// new-releases timeline on the frozen /v1/catalog public projection (wave 174).
-//
-// The calendar next door is work-grain and shows a title once, in the month of
-// its EARLIEST release; this lane is release-grain and shows every dated
-// release row on its own date, so ports and re-editions are finally visible.
-// Everything the two lanes share is shared literally: the same parsePublicOLang
-// (curated ja+zh default, OPEN vocabulary), the same content_limit CLOSED
-// vocabulary and 400 message, the same limit posture, the same cheap-meta →
-// mint ETag → 304 short-circuit → page pipeline, the same cacheSearch header.
-//
-// The vocabulary postures, spelled out once because this face mixes all three:
-//
-//	CLOSED (unknown token → 400): sort, kind, official, content_limit
-//	OPEN   (unknown token → empty feed): olang, lang, platform
-//	IGNORED (unknown token → dropped): include
 package handler
 
 import (
@@ -34,15 +18,10 @@ const (
 	msgBadOfficialFlag = "official must be true|false"
 )
 
-// Releases serves GET /v1/catalog/releases — every dated release of the LIVE
-// galgame registry, newest first by default, keyset-paged over (date, id).
 func (h *PublicHandler) Releases(c fiber.Ctx) error {
 	f := service.ReleaseFeedFilter{
-		NSFW:  nsfwQuery(c),
-		OLang: parsePublicOLang(c.Query("olang")),
-		// lang / platform are OPEN vocabularies (upstream BCP-47 tags and vndb
-		// platform codes), so an unrecognized value yields an empty feed rather
-		// than a 400 — the works-list posture for `platform`, verbatim.
+		NSFW:     nsfwQuery(c),
+		OLang:    parsePublicOLang(c.Query("olang")),
 		Langs:    parseOpenList(c.Query("lang")),
 		Platform: strings.TrimSpace(c.Query("platform")),
 		Include:  service.ParseWorksListInclude(c.Query("include")),
@@ -69,9 +48,6 @@ func (h *PublicHandler) Releases(c fiber.Ctx) error {
 	if f.DateTo, ok = datePub(c.Query("date_to")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadReleaseDate)
 	}
-	// content_limit: a CLOSED vocabulary, so an unknown token is a 400 — the
-	// deliberate opposite of olang / lang / platform above. It gates membership,
-	// so it also rides in the ETag's population key.
 	if f.DisplayLimits, ok = displayLimitsPub(c.Query("content_limit")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadDisplayLimit)
 	}
@@ -102,13 +78,6 @@ func (h *PublicHandler) Releases(c fiber.Ctx) error {
 	return response.Success(c, data)
 }
 
-// releaseKindsPub reads the comma-separated kind= filter: the CLOSED release
-// vocabulary (the five strings the items' `kind` prints). Absent/empty → nil,
-// which the service resolves to DefaultReleaseFeedKinds — the FULL-release set,
-// i.e. trial and patch excluded. ok=false — a LOUD 400 — on any token outside
-// the vocabulary, the claimStatesPub / displayLimitsPub posture verbatim: a
-// silently-dropped kind token would answer 200 with the demos the caller asked
-// to exclude.
 func releaseKindsPub(raw string) ([]int16, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -123,7 +92,7 @@ func releaseKindsPub(raw string) ([]int16, bool) {
 			return nil, false
 		}
 		if _, dup := seen[k]; dup {
-			continue // asking for digital twice is asking for digital
+			continue
 		}
 		seen[k] = struct{}{}
 		out = append(out, k)
@@ -131,10 +100,6 @@ func releaseKindsPub(raw string) ([]int16, bool) {
 	return out, true
 }
 
-// officialPub reads the official= tri-state: absent → nil (no gate), true/false
-// → the gate. A CLOSED vocabulary — and deliberately NOT the loose truthiness
-// nsfwQuery accepts, because here a typo must not silently mean "false" and
-// hand the caller a feed of nothing but fan translations.
 func officialPub(raw string) (*bool, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "":
@@ -150,10 +115,6 @@ func officialPub(raw string) (*bool, bool) {
 	}
 }
 
-// parseOpenList reads a comma-separated OPEN vocabulary (lang=): nil for
-// absent, for `all` and for an all-blank list — all three mean "no gate" —
-// otherwise the trimmed set. No validation by construction: the values are
-// upstream tags, so an unknown one is an empty feed, never a 400.
 func parseOpenList(raw string) []string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" || trimmed == "all" {

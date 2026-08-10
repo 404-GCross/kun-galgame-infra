@@ -1,9 +1,5 @@
 package srcvndb
 
-// Row decoders for the two vocabularies and their edges (traits /
-// traits_parents / chars_traits, tags / tags_parents / tags_vn). See ingest.go
-// for the machinery.
-
 import (
 	"time"
 

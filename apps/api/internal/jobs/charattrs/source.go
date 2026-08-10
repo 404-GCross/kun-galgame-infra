@@ -10,8 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// registry holds the catalog source ids resolved BY KEY (never hardcoded), so a
-// rehearsal / prod DB with different auto-increment seeds still works.
 type registry struct {
 	vndbSource    int16
 	bangumiSource int16
@@ -31,10 +29,6 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// vndbCand is one character's anchor + its VNDB typed source columns. The
-// current attribute state is loaded separately (preloadStates) — a flat scan
-// struct, since GORM's Raw().Scan does not populate an embedded struct's
-// promoted columns. DISTINCT ON keeps ONE anchor per character.
 type vndbCand struct {
 	EntityID   int64  `gorm:"column:entity_id"`
 	ExternalID string `gorm:"column:external_id"`
@@ -49,8 +43,6 @@ type vndbCand struct {
 	VHip       int16  `gorm:"column:v_hip"`
 }
 
-// decode maps the VNDB typed columns to a proposed attrs set (sentinels and
-// out-of-range values become nil).
 func (v vndbCand) decode() attrs {
 	m, d := vndbBirthday(v.VBirthday)
 	weight := int16(0)
@@ -89,7 +81,6 @@ func loadVNDBCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, o
 	return window(out, limit, offset), nil
 }
 
-// bgmCand is one character's anchor + its Bangumi infobox.
 type bgmCand struct {
 	EntityID   int64          `gorm:"column:entity_id"`
 	ExternalID string         `gorm:"column:external_id"`
@@ -111,13 +102,8 @@ func loadBGMCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, of
 	return window(out, limit, offset), nil
 }
 
-// preloadChunk keeps each state preload IN-list under the wire protocol's
-// 65,535 parameter cap (the VNDB candidate set is ~160k characters).
 const preloadChunk = 10000
 
-// preloadStates loads the current attribute state of the given characters into
-// a map, in chunks. A flat charState scan works cleanly where an embedded one
-// does not.
 func preloadStates(ctx context.Context, db *gorm.DB, ids []int64) (map[int64]charState, error) {
 	out := make(map[int64]charState, len(ids))
 	for start := 0; start < len(ids); start += preloadChunk {
@@ -136,8 +122,6 @@ func preloadStates(ctx context.Context, db *gorm.DB, ids []int64) (map[int64]cha
 	return out, nil
 }
 
-// window applies offset/limit in Go after DISTINCT ON so they slice distinct
-// characters (the dlsitemedia / entityintros discipline).
 func window[T any](out []T, limit, offset int) []T {
 	if offset > 0 {
 		if offset >= len(out) {

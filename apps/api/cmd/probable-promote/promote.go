@@ -14,31 +14,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// A batch promotion of probable work-refs to exact under a user-ratified
-// policy (step 26). The whole tool is a thin driver around ConfirmRef (the
-// admin probable-ref bucket's promote path) — zero bypass — so a batch run is
-// exactly a reviewer clicking "confirm" on each ref, differing only in
-// verified_by, which here records the POLICY EXECUTOR (a policy approval of the
-// sampled-precision decision, not a per-row human review). matched_by is left
-// untouched (step 13's credits gate keys on it). Idempotent / re-runnable: a
-// ref already exact is counted and skipped.
-
 type ruleStat struct {
-	ToPromote int // probable refs under this rule
+	ToPromote int
 	Promoted  int
-	Already   int // already exact
+	Already   int
 }
 
 type promoteStats struct {
 	Rules    map[string]*ruleStat
 	Promoted int
 	Already  int
-	Conflict int // exact slot held by another entity (ErrExactTaken)
+	Conflict int
 	NotFound int
 	Errors   int
 }
 
-// refRow is one work-ref in scope.
 type refRow struct {
 	EntityID   int64  `gorm:"column:entity_id"`
 	SourceID   int16  `gorm:"column:source_id"`
@@ -47,8 +37,6 @@ type refRow struct {
 	LinkKind   int16  `gorm:"column:link_kind"`
 }
 
-// runPromote circles every work-ref whose matched_by is in the policy rule set
-// and promotes the probable ones through ConfirmRef.
 func runPromote(ctx context.Context, db *gorm.DB, w io.Writer, rules []string, actor int64, apply bool, limit int) (promoteStats, error) {
 	st := promoteStats{Rules: map[string]*ruleStat{}}
 	for _, r := range rules {
@@ -100,7 +88,7 @@ func runPromote(ctx context.Context, db *gorm.DB, w io.Writer, rules []string, a
 			rs.Promoted++
 			st.Promoted++
 		case stderrors.Is(err, service.ErrProposalState):
-			rs.Already++ // raced to exact between load and confirm
+			rs.Already++
 			st.Already++
 		case stderrors.Is(err, service.ErrExactTaken):
 			st.Conflict++
@@ -170,8 +158,6 @@ func srcName(id int16) string {
 	}
 }
 
-// adminQueue builds the review-queue service exactly as cmd/catalog does, so
-// the batch promotion is byte-identical to admin "confirm" clicks.
 func adminQueue(db *gorm.DB) *service.AdminQueueService {
 	resolve := service.NewResolveService(repository.NewRedirectRepository(db))
 	merge := service.NewMergeService(db, resolve,

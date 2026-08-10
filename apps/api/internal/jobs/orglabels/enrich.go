@@ -12,13 +12,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// EnrichStats tallies the E2b facets. Candidate = planned rows (dry + apply);
-// Written = rows actually inserted (apply only; ON CONFLICT / dup-lang skips
-// are excluded, so a second --apply run reports Written 0).
 type EnrichStats struct {
 	IntroCandidates int
 	IntroWritten    int
-	IntroSkipDup    int // label already has this language (any source)
+	IntroSkipDup    int
 	AliasCandidates int
 	AliasWritten    int
 	LinkCandidates  int
@@ -37,7 +34,6 @@ func (s *EnrichStats) add(o EnrichStats) {
 	s.Errors += o.Errors
 }
 
-// RunEnrich opens the pools and executes the requested E2b facet(s).
 func RunEnrich(ctx context.Context, opts Opts) (EnrichStats, error) {
 	facet := opts.Facet
 	if facet == "" {
@@ -51,8 +47,6 @@ func RunEnrich(ctx context.Context, opts Opts) (EnrichStats, error) {
 	return enrichAll(ctx, catalog, eg, facet, opts.Apply)
 }
 
-// enrichAll is the pool-agnostic core (tests inject the catalog handle as eg
-// too). intro/alias/link are all fill-missing and idempotent.
 func enrichAll(ctx context.Context, catalog, eg *gorm.DB, facet string, apply bool) (EnrichStats, error) {
 	var total EnrichStats
 	if facet == "intro" || facet == "all" {
@@ -84,9 +78,6 @@ func enrichAll(ctx context.Context, catalog, eg *gorm.DB, facet string, apply bo
 	return total, nil
 }
 
-// anchoredLabels returns external_id → label_id for a source's entity_type=3
-// anchors (exact + probable). This is the org→label bridge every facet enriches
-// along.
 func anchoredLabels(db *gorm.DB, source int16) (map[string]int64, error) {
 	var rows []struct {
 		ExternalID string `gorm:"column:external_id"`
@@ -105,8 +96,6 @@ func anchoredLabels(db *gorm.DB, source int16) (map[string]int64, error) {
 	return m, nil
 }
 
-// labelDisplayNames returns label_id → display_name for the given label ids, so
-// the alias facet can drop a variant identical to the display name.
 func labelDisplayNames(db *gorm.DB, ids []int64) (map[int64]string, error) {
 	out := make(map[int64]string, len(ids))
 	if len(ids) == 0 {
@@ -130,10 +119,6 @@ func labelDisplayNames(db *gorm.DB, ids []int64) (map[int64]string, error) {
 	return out, nil
 }
 
-// preloadIntroLangs returns label_id → set of languages already present in
-// catalog_label_intro (across ALL sources) — the fill-missing skip index.
-// SOURCE rows only (provenance=0): a machine translation must never block a
-// genuine upstream text in the same language from landing.
 func preloadIntroLangs(db *gorm.DB) (map[int64]map[string]bool, error) {
 	var rows []struct {
 		LabelID int64  `gorm:"column:label_id"`
@@ -152,11 +137,6 @@ func preloadIntroLangs(db *gorm.DB) (map[int64]map[string]bool, error) {
 	return m, nil
 }
 
-// insertIntro writes one label intro, fill-missing. Returns true when a row was
-// actually inserted (RowsAffected>0), false when the ON CONFLICT backstop fired.
-// batchInsert writes rows with ON CONFLICT DO NOTHING (no target — any unique
-// or PK violation is skipped), returning the number actually inserted. This is
-// the fill-missing backstop that makes a second --apply write zero.
 func batchInsert[T any](ctx context.Context, db *gorm.DB, rows []T) (int, error) {
 	if len(rows) == 0 {
 		return 0, nil
@@ -165,9 +145,6 @@ func batchInsert[T any](ctx context.Context, db *gorm.DB, rows []T) (int, error)
 	return int(res.RowsAffected), res.Error
 }
 
-// enrichIntro writes VNDB producer descriptions + Bangumi company/group
-// summaries onto their anchored labels (fill-missing, one per language). The
-// preloaded existing-lang index skips a language any source already supplied.
 func enrichIntro(ctx context.Context, db *gorm.DB, apply bool) (EnrichStats, error) {
 	existing, err := preloadIntroLangs(db)
 	if err != nil {
@@ -183,12 +160,11 @@ func enrichIntro(ctx context.Context, db *gorm.DB, apply bool) (EnrichStats, err
 		if existing[labelID] == nil {
 			existing[labelID] = map[string]bool{}
 		}
-		existing[labelID][lang] = true // same-run dedup across sources
+		existing[labelID][lang] = true
 		st.IntroCandidates++
 		rows = append(rows, model.CatalogLabelIntro{LabelID: labelID, Lang: lang, Intro: text, SourceID: source})
 	}
 
-	// VNDB (description → strip markup → 3-way lang).
 	vndbLabels, err := anchoredLabels(db, sourceVNDB)
 	if err != nil {
 		return st, err
@@ -213,7 +189,6 @@ func enrichIntro(ctx context.Context, db *gorm.DB, apply bool) (EnrichStats, err
 		plan(labelID, detectLangVNDB(text), text, sourceVNDB)
 	}
 
-	// Bangumi (summary → 2-way lang).
 	bgmLabels, err := anchoredLabels(db, sourceBangumi)
 	if err != nil {
 		return st, err
@@ -248,17 +223,10 @@ func enrichIntro(ctx context.Context, db *gorm.DB, apply bool) (EnrichStats, err
 	return st, nil
 }
 
-// enrichAlias writes VNDB producer aliases (spelling variant) + EG furigana
-// (search hint) onto their anchored labels. A variant equal to the label's
-// display name is dropped; lang is unknown (”).
 func enrichAlias(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats, error) {
 	var st EnrichStats
 	var rows []model.CatalogLabelAlias
 	seen := map[string]bool{}
-	// source is which upstream published the spelling — the two legs below draw
-	// from different ones, so it is a per-plan argument rather than a constant of
-	// the run. Recorded since wave 195; provenance is flat source (0) because
-	// neither leg translates anything, it forwards what the upstream wrote.
 	plan := func(labelID int64, name string, kind, source int16) {
 		key := fmt.Sprintf("%d\x00%s", labelID, name)
 		if seen[key] {
@@ -273,7 +241,6 @@ func enrichAlias(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats,
 		})
 	}
 
-	// VNDB alias lines → spelling variant.
 	vndbLabels, err := anchoredLabels(db, sourceVNDB)
 	if err != nil {
 		return st, err
@@ -304,7 +271,6 @@ func enrichAlias(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats,
 		}
 	}
 
-	// EG furigana → search hint. Requires the eg pool.
 	if eg != nil {
 		egLabels, err := anchoredLabels(db, sourceEG)
 		if err != nil {
@@ -347,7 +313,6 @@ func enrichAlias(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats,
 	return st, nil
 }
 
-// valueIDs returns the distinct label ids of an ext→label map.
 func valueIDs(m map[string]int64) []int64 {
 	seen := make(map[int64]bool, len(m))
 	out := make([]int64, 0, len(m))

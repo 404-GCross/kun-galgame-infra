@@ -12,12 +12,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// TrustCallback is the plain Fiber handler for the trust enforcement callback
-// (step 03 rulings 6/7). It lives OUTSIDE the /api/v1/community S2S Basic-auth
-// prefix and authenticates instead with the trust HMAC (X-Trust-Signature /
-// X-Trust-Timestamp) over a single shared secret. A bad / stale / missing
-// signature → 401; an unsupported action → 200 (so the trust worker does not
-// dead-letter it) with an explicit log; a DB error → 500 (retried by trust).
 func TrustCallback(secret string, svc *service.CallbackService) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		body := c.Body()

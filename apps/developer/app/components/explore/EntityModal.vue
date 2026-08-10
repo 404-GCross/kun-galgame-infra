@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Reusable entity-detail modal: click any character / credited name / label /
-// work anywhere in the explore surfaces and get that entity's FULL record from
-// its own read face, typed sections first, complete JSON tree underneath.
-// Fetches through the same /relay/** leg with the caller-provided key.
 interface Target {
   kind: 'characters' | 'names' | 'labels' | 'works'
   id: number
@@ -38,7 +34,6 @@ const KIND_LABEL: Record<Target['kind'], string> = {
   labels: '厂牌 / 社团',
   works: '作品'
 }
-// Per-kind heaviest include set — the fullest single record each face serves.
 const KIND_QUERY: Record<Target['kind'], Record<string, string>> = {
   characters: { include: 'works', spoilers: '2' },
   names: { include: 'credits' },

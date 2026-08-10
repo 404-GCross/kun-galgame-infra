@@ -1,36 +1,3 @@
-// backfill-bgm-work-meta fills two Bangumi-side facets for galgame works in one
-// pass (refs/proj/71, ledger T3; T2 = refs/proj/70 §3/§8, 88):
-//
-//   - meta_tags → catalog_work_tag rows with Count=0 (Bangumi's MODERATED
-//     official tags; count=0 distinguishes them from the voted folksonomy
-//     rows). Fill semantics: ON CONFLICT DO NOTHING — a same-name folksonomy
-//     row keeps its votes.
-//   - favorite shelves ({wish, done, doing, on_hold, dropped} — "done" is the
-//     dump's key for Bangumi's collect shelf) → catalog_work_popularity rows
-//     under the PopularityMetricBgm* vocabulary (10-14). Upsert semantics
-//     (change-detected DO UPDATE): favorites are volatile, a dump-refresh
-//     re-run heals values.
-//
-// Candidates: galgame works (claimed OR bodyless — T2) with an EXACT Bangumi
-// work anchor (matched_by unrestricted — the 66/69 ruling). Both fields admit
-// claimed works: meta_tags (Field A, T2) and favorite shelves (Field B, T2b —
-// refs/proj/102); the read face's per-source XOR keeps dlsite
-// bridge-exclusive.
-// src_bangumi is a schema INSIDE the catalog DB, so ONE --dsn covers the whole
-// run.
-//
-// Logic lives in internal/jobs/bgmworkmeta. Dry-run is the DEFAULT (repo
-// convention); pass --apply to write. The DSN is REQUIRED and never defaulted
-// — the rehearsal copy locally, the live catalog only in the acceptance run.
-// Idempotent: a second --apply writes zero (meta tags all-conflict, favorite
-// shelves all-unchanged).
-//
-//	# dry-run: per-field counters + samples
-//	go run ./cmd/backfill-bgm-work-meta \
-//	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable"
-//
-//	# apply: write both fields
-//	go run ./cmd/backfill-bgm-work-meta --apply --dsn "..."
 package main
 
 import (
@@ -53,9 +20,8 @@ func main() {
 	offset := flag.Int("offset", 0, "skip this many candidate works (for chunking)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
-	// config drives only logging here; the DB is reached exclusively via --dsn.
 	if cfg, err := config.Load(); err == nil {
 		logger.Init(cfg.Server.Env)
 	}

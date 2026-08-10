@@ -1,15 +1,3 @@
-// probable-promote executes a user-ratified batch-upgrade policy: promote the
-// probable work-refs of the named matched_by rules to exact (step 26,
-// B-track). It is a thin, re-runnable driver around the admin bucket's
-// ConfirmRef — no new write rule, no schema — so the reconciler keeps writing
-// probable (R8 doctrine unchanged) and this tool is re-run periodically as new
-// probable volume accrues ("trust but keep sampling").
-//
-//	go run ./cmd/probable-promote --actor <id> --rule rule:eg-vndb-rosetta --rule rule:title-year-strict         # dry
-//	go run ./cmd/probable-promote --actor <id> --rule rule:eg-vndb-rosetta --rule rule:title-year-strict --run   # write
-//
-// --actor is the policy executor; it lands in verified_by, meaning "policy
-// approval of the sampled-precision decision", NOT a per-row human review.
 package main
 
 import (
@@ -27,7 +15,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// ruleFlags collects repeated --rule values.
 type ruleFlags []string
 
 func (r *ruleFlags) String() string { return strings.Join(*r, ",") }

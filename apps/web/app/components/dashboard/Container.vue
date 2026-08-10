@@ -3,24 +3,14 @@ import { DASHBOARD_STAT_CARDS } from '~/constants/dashboard'
 import { jobStatusMeta } from '~/constants/jobs'
 import type { JobInfo } from '~~/shared/types/jobs'
 
-// Greeting only — user is populated client-side by the layout (auth.user is
-// not SSR'd; see profile/auth note).
 const auth = useAuth()
 
-// SSR-rendered (kungal-style): the three counts are fetched on the server so
-// the dashboard cards paint with numbers on first load. Endpoints the admin
-// already has access to (page guarded by middleware ['auth','admin']):
-//   users   → GET /admin/users (paginated; read `total`)
-//   sites   → GET /sites       (full array; length)
-//   clients → GET /oauth/clients (full array; length)
 const { data: usersData } = await useApiFetch<{ total: number }>(
   '/admin/users',
   { query: { page: 1, limit: 1 } }
 )
 const { data: sitesData } = await useApiFetch<Site[]>('/sites')
 const { data: clientsData } = await useApiFetch<OAuthClient[]>('/oauth/clients')
-// The dashboard's "recent activity" feed = the background-job registry's latest
-// runs (the one real activity backend). See components/jobs + /jobs.
 const { data: jobsData } = await useApiFetch<JobInfo[]>('/admin/jobs')
 
 const counts = computed<Record<string, number>>(() => ({
@@ -38,7 +28,6 @@ const stats = computed(() =>
   }))
 )
 
-// Newest job runs across all jobs, most-recent first (top 6).
 const recentRuns = computed(() =>
   (jobsData.value ?? [])
     .filter((j) => j.latest_run)

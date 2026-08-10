@@ -9,9 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestParseBangumiFacts pins the jsonb dirty-value guard (a scalar / null
-// Fields must supply nothing, not panic and not be guessed at) and the two
-// fields this wave reads out of a healthy infobox.
 func TestParseBangumiFacts(t *testing.T) {
 	for name, raw := range map[string]string{
 		"empty":         ``,
@@ -40,9 +37,6 @@ func TestParseBangumiFacts(t *testing.T) {
 	assert.EqualValues(t, 4, *f.BirthD)
 }
 
-// TestParseBirthday covers every shape the staging mirror actually carries,
-// including the PARTIAL dates that are the reason the model has three nullable
-// columns, and the junk that must yield nothing rather than a guess.
 func TestParseBirthday(t *testing.T) {
 	for _, tc := range []struct {
 		in      string
@@ -61,7 +55,6 @@ func TestParseBirthday(t *testing.T) {
 		{"未知", 0, 0, 0},
 		{"", 0, 0, 0},
 		{"女×2　ろん×1", 0, 0, 0},
-		// Out-of-range components are dropped component-wise, never clamped.
 		{"1978年13月4日", 1978, 0, 0},
 		{"0500年1月1日", 0, 1, 1},
 	} {
@@ -74,9 +67,6 @@ func TestParseBirthday(t *testing.T) {
 	}
 }
 
-// TestNormGender pins the two source vocabularies and, above all, that an
-// unrecognized value is UNKNOWN — it must neither assert a gender nor count as
-// a conflict against the other source.
 func TestNormGender(t *testing.T) {
 	for _, in := range []string{"m", "男", "男性", "♂"} {
 		g, ok := normGender(in)
@@ -94,9 +84,6 @@ func TestNormGender(t *testing.T) {
 	}
 }
 
-// TestOrgNamePattern pins the organization discriminator: every token was
-// surveyed against the live member names, and a person-shaped name must not be
-// caught by it.
 func TestOrgNamePattern(t *testing.T) {
 	for _, in := range []string{
 		"株式会社ブリッジ", "有限会社エムツー", "NTTソルマーレ株式会社", "合資会社ワムソフト",

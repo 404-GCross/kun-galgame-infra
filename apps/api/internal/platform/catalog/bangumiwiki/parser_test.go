@@ -63,8 +63,6 @@ func TestParse_MalformedInput(t *testing.T) {
 	}
 }
 
-// Upstream treats empty and whitespace-only input as an empty infobox, not an
-// error; this test pins that behavior so a future upstream change is noticed.
 func TestParse_EmptyInput(t *testing.T) {
 	for _, src := range []string{"", "  \n\t\n"} {
 		box, err := Parse(src)

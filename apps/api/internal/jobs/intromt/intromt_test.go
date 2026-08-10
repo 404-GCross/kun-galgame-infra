@@ -25,20 +25,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + seeds), exactly as production lays it out. Run drives the DSN
-// itself, so we capture it (not just the handle) to exercise the real entry
-// point.
 var (
 	testDB  *gorm.DB
 	testDSN string
 )
 
-// TestMain gates the DB-backed tests PER TEST (dbtest.Skip) rather than exiting
-// the whole package (dbtest.SkipMain). The package also holds pure functions —
-// the source sanitizer, the hash, the decision table — and a package-level exit
-// reported them as `ok` while running none of them, which is the same silent
-// green dbtest exists to prevent, one level down.
 func TestMain(m *testing.M) {
 	var ok bool
 	testDSN, ok = dbtest.DSN()
@@ -63,19 +54,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// --- fixtures -------------------------------------------------------------
-
 func clean(t *testing.T) {
 	t.Helper()
 	if testDB == nil {
 		dbtest.Skip(t)
 	}
-	// catalog_external_ref carries a POLYMORPHIC entity_id, so it has no foreign
-	// key to catalog_work and a CASCADE truncate of works leaves its rows
-	// behind — which then collide with the restarted identity. It is cleaned
-	// explicitly, without RESTART IDENTITY: the sequence is shared with every
-	// other package running against this database and rewinding it
-	// cross-pollutes ids.
 	for _, table := range []string{"catalog_external_ref", "catalog_release"} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" CASCADE").Error)
 	}
@@ -91,16 +74,10 @@ func mkWork(t *testing.T, medium int16, name string, site *string) int64 {
 	return w.ID
 }
 
-// mkPublished builds a work that is actually on the public face: claimed AND
-// carrying a product_work_id, which model.ClaimStateKey requires before it will
-// call a row live at all.
 var nextProductWorkID int64 = 900000
 
 func mkPublished(t *testing.T, medium int16, name string, site *string) int64 {
 	t.Helper()
-	// (site, product_work_id) is UNIQUE — a claim points at exactly one product
-	// row — so the fixture needs a fresh id per work, not one derived from the
-	// name.
 	nextProductWorkID++
 	pid := nextProductWorkID
 	w := model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name, Site: site, ProductWorkID: &pid}
@@ -108,8 +85,6 @@ func mkPublished(t *testing.T, medium int16, name string, site *string) int64 {
 	return w.ID
 }
 
-// mkGetchuAnchor gives a work a release carrying a getchu external ref — the
-// marker that says "the crawler will supply the Japanese original for this one".
 func mkGetchuAnchor(t *testing.T, workID int64, getchu, vndb int16, getchuID string) {
 	t.Helper()
 	rel := model.CatalogRelease{WorkID: workID, Kind: 0}
@@ -120,7 +95,6 @@ func mkGetchuAnchor(t *testing.T, workID int64, getchu, vndb int16, getchuID str
 	_ = vndb
 }
 
-// mkIntro inserts a SOURCE intro row (provenance 0).
 func mkIntro(t *testing.T, workID int64, lang, intro string, source int16) {
 	t.Helper()
 	require.NoError(t, testDB.Create(&model.CatalogWorkIntro{
@@ -153,14 +127,10 @@ func reg(t *testing.T) (medium, dlsite, bangumi int16) {
 	return
 }
 
-// fakeTranslator is the offline LLM seam for pipeline tests: deterministic,
-// counts calls (to prove no LLM is dialed in dry / on skips).
 type fakeTranslator struct {
 	model string
 	calls int
 	fn    func(ja string) string
-	// gloss records the glossary of the LAST call, so a test can prove the
-	// candidate's term list actually reached the LLM seam.
 	gloss Glossary
 }
 
@@ -170,35 +140,27 @@ func (f *fakeTranslator) Translate(_ context.Context, ja string, gloss Glossary)
 	return f.fn(ja), f.model, nil
 }
 
-// --- tests ----------------------------------------------------------------
-
-// TestPilotEndToEnd drives the whole pipeline through the real Run entry point:
-// candidate selection (bodyless + has-ja + no-zh-source, popularity ordered),
-// dry forecast with NO LLM call, apply insert, second-pass idempotence,
-// hash-change re-translate, and the never-overwrite exclusion.
 func TestPilotEndToEnd(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	medium, dlsite, bangumi := reg(t)
 	claimed := "kungal"
 
-	wInsert := mkWork(t, medium, "ja-no-zh", nil)      // ja intro, no zh → insert
-	wHasZh := mkWork(t, medium, "ja-has-zh-src", nil)  // ja + zh source → excluded (fill-missing)
-	wClaimed := mkWork(t, medium, "claimed", &claimed) // claimed → excluded (bodyless only)
-	wNoJa := mkWork(t, medium, "no-ja", nil)           // no ja intro → not a candidate
+	wInsert := mkWork(t, medium, "ja-no-zh", nil)
+	wHasZh := mkWork(t, medium, "ja-has-zh-src", nil)
+	wClaimed := mkWork(t, medium, "claimed", &claimed)
+	wNoJa := mkWork(t, medium, "no-ja", nil)
 
 	mkIntro(t, wInsert, "ja", "これはあらすじです。", bangumi)
 	mkIntro(t, wHasZh, "ja", "日本語のあらすじ。", bangumi)
-	mkIntro(t, wHasZh, "zh-Hans", "已有的中文简介。", bangumi) // source zh → excludes the work
+	mkIntro(t, wHasZh, "zh-Hans", "已有的中文简介。", bangumi)
 	mkIntro(t, wClaimed, "ja", "claimed ja", bangumi)
 	mkIntro(t, wNoJa, "en", "english only", bangumi)
 
-	// popularity so ordering is exercised
 	mkPop(t, wInsert, dlsite, model.PopularityMetricDownloads, 500)
 
 	tr := &fakeTranslator{model: "test-mt", fn: func(ja string) string { return "[译] " + ja }}
 
-	// --- dry: forecasts, NO LLM, NO write.
 	st, err := Run(ctx, nil, Opts{DSN: testDSN})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Candidates, "only wInsert qualifies (has ja, no zh source, bodyless)")
@@ -209,7 +171,6 @@ func TestPilotEndToEnd(t *testing.T) {
 	require.Len(t, st.Samples, 1)
 	assert.Empty(t, st.Samples[0].Zh, "dry captures ja only, no translation")
 
-	// --- apply: translates + inserts one machine row.
 	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Inserted)
@@ -227,7 +188,6 @@ func TestPilotEndToEnd(t *testing.T) {
 	assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wClaimed), "claimed work gets no machine row")
 	assert.EqualValues(t, 6, introCount(t, ""), "5 fixtures + 1 machine insert")
 
-	// --- second apply: idempotent (hash unchanged) — zero writes, zero LLM.
 	tr2 := &fakeTranslator{model: "test-mt", fn: func(ja string) string { return "SHOULD-NOT-BE-CALLED" }}
 	st, err = Run(ctx, tr2, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
@@ -235,7 +195,6 @@ func TestPilotEndToEnd(t *testing.T) {
 	assert.Zero(t, st.Inserted+st.Retranslated)
 	assert.Equal(t, 0, tr2.calls, "unchanged source → no LLM call")
 
-	// --- hash change: mutate the ja source text → re-translate (upsert), same key.
 	require.NoError(t, testDB.Exec(`UPDATE catalog_work_intro SET intro=? WHERE work_id=? AND lang='ja'`,
 		"あらすじが変わった。", wInsert).Error)
 	tr3 := &fakeTranslator{model: "test-mt-v2", fn: func(ja string) string { return "[新译] " + ja }}
@@ -252,15 +211,11 @@ func TestPilotEndToEnd(t *testing.T) {
 	assert.EqualValues(t, 1, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wInsert), "still one zh-Hans row (upsert, not a second row)")
 }
 
-// TestNeverOverwriteSource proves a machine write can NEVER clobber a source
-// row sharing the (work_id, lang, source_id) key: the guarded upsert reports
-// zero rows affected and the run counts it Refused.
 func TestNeverOverwriteSource(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	medium, _, bangumi := reg(t)
 	w := mkWork(t, medium, "src-zh-guard", nil)
-	// A SOURCE zh-Hans row at the exact key a machine row would target.
 	mkIntro(t, w, "zh-Hans", "人工/源中文,不可覆盖。", bangumi)
 
 	r := &runner{db: testDB, tr: nil, stats: &Stats{}}
@@ -274,8 +229,6 @@ func TestNeverOverwriteSource(t *testing.T) {
 	assert.EqualValues(t, 0, row.Provenance, "still a source row")
 }
 
-// TestPopularityOrdering pins the deterministic rank: downloads preferred, then
-// wishlist, then 0, work_id ASC tiebreak. --limit takes the most-popular N.
 func TestPopularityOrdering(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -289,7 +242,7 @@ func TestPopularityOrdering(t *testing.T) {
 	}
 	mkPop(t, wHi, dlsite, model.PopularityMetricDownloads, 9000)
 	mkPop(t, wMid, dlsite, model.PopularityMetricDownloads, 100)
-	mkPop(t, wWish, dlsite, model.PopularityMetricWishlist, 8000) // no downloads → wishlist fallback
+	mkPop(t, wWish, dlsite, model.PopularityMetricWishlist, 8000)
 
 	reg2, err := resolveRegistry(ctx, testDB)
 	require.NoError(t, err)
@@ -297,15 +250,9 @@ func TestPopularityOrdering(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, cands, 2, "--limit 2 keeps the two most popular")
 	assert.Equal(t, wHi, cands[0].WorkID, "9000 downloads first")
-	// wWish (wishlist 8000) outranks wMid (downloads 100) under COALESCE(dl,wl).
 	assert.Equal(t, wWish, cands[1].WorkID)
 }
 
-// TestClaimedPopulation drives the claimed lane (site='kungal'): current-site
-// works with a curated ja row qualify, while bodyless and former-site works are
-// excluded. Fill-missing still applies, and the machine row is attributed to
-// the chosen ja row's source_id. Ordering falls back to work_id ASC because
-// these works carry no dlsite popularity.
 func TestClaimedPopulation(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -326,19 +273,10 @@ func TestClaimedPopulation(t *testing.T) {
 	mkIntro(t, wA, "ja", "認領作品Aのあらすじ。", curated)
 	mkIntro(t, wB, "ja", "認領作品Bのあらすじ。", curated)
 	mkIntro(t, wZh, "ja", "中文既存のあらすじ。", curated)
-	mkIntro(t, wZh, "zh-Hans", "已有的中文简介。", bangumi) // any zh source row excludes the work
+	mkIntro(t, wZh, "zh-Hans", "已有的中文简介。", bangumi)
 	mkIntro(t, wFormer, "ja", "旧サイトのあらすじ。", curated)
 	mkIntro(t, wBodyless, "ja", "ボディレスのあらすじ。", bangumi)
 
-	// Dry claimed lane: every zh-less work that HAS a site, work_id ASC.
-	//
-	// The former-site fixture is admitted, and that is the point: since
-	// refs/proj/168 the lane keys on the PROPERTY "has a site", not on the
-	// literal value. Wave 161 renamed the only value that had ever existed and
-	// every lane pinning the literal went silently empty for three days while
-	// reporting clean zero-candidate runs. Prod carries no stale value today
-	// (only '' and 'kungal'), so this is rename-proofing, not a behaviour
-	// change anyone can observe.
 	st, err := Run(ctx, nil, Opts{DSN: testDSN, Population: PopulationClaimed})
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.Candidates, "zh-present and bodyless works are excluded; a stale site value is still a claim")
@@ -353,8 +291,6 @@ func TestClaimedPopulation(t *testing.T) {
 	assert.Equal(t, wFormer, cands[2].WorkID, "a stale site value is still a claim")
 	assert.Equal(t, curated, cands[0].JaSourceID, "chosen ja row is the curated source row")
 
-	// Apply: machine rows land on every claimed work, with source attribution
-	// inherited from their ja rows.
 	tr := &fakeTranslator{model: "claimed-mt", fn: func(ja string) string { return "[译] " + ja }}
 	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationClaimed})
 	require.NoError(t, err)
@@ -370,19 +306,14 @@ func TestClaimedPopulation(t *testing.T) {
 	assert.EqualValues(t, 1, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wFormer), "a stale site value is still a claim")
 	assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wBodyless), "bodyless work untouched by the claimed lane")
 
-	// default lane stays bodyless: the same DB state yields only wBodyless.
 	st, err = Run(ctx, nil, Opts{DSN: testDSN})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Candidates, "empty Population defaults to the bodyless pilot lane")
 
-	// unknown population → hard error, nothing guessed.
 	_, err = Run(ctx, nil, Opts{DSN: testDSN, Population: "everything"})
 	assert.ErrorContains(t, err, "unknown population")
 }
 
-// TestHTTPTranslator is the LLM-call-layer mock gate (httptest): the client
-// posts the pinned system prompt + ja user text with a bearer token to
-// {base}/chat/completions and parses the plain-text reply as the translation.
 func TestHTTPTranslator(t *testing.T) {
 	var gotAuth, gotPath string
 	var gotBody chatRequest
@@ -409,11 +340,7 @@ func TestHTTPTranslator(t *testing.T) {
 	assert.EqualValues(t, 0, gotBody.Temperature, "faithful/deterministic")
 }
 
-// TestHTTPTranslatorErrors: a 5xx and an empty-choices reply both surface as
-// errors (the runner records them and continues — never writes a bad row).
 func TestHTTPTranslatorErrors(t *testing.T) {
-	// Shrink the retry backoff for the whole test — the 502 case below burns
-	// the full real schedule (40s) otherwise.
 	origSchedule := retrySchedule
 	retrySchedule = []time.Duration{time.Millisecond}
 	defer func() { retrySchedule = origSchedule }()
@@ -427,8 +354,6 @@ func TestHTTPTranslatorErrors(t *testing.T) {
 	_, _, err := tr.Translate(context.Background(), "x", nil)
 	assert.Error(t, err)
 
-	// 429 then 200: the retry valve rides out a rate-limit burst instead of
-	// recording an error (worker-pool safety).
 	var hits int
 	limited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits++
@@ -444,8 +369,6 @@ func TestHTTPTranslatorErrors(t *testing.T) {
 	assert.Equal(t, "译", zh)
 	assert.Equal(t, 2, hits)
 
-	// finish_reason=length: a reasoning model squeezed by max_tokens emits a
-	// non-empty PARTIAL — must error, never be returned as a translation.
 	trunc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"model":"m","choices":[{"message":{"role":"assistant","content":"残りは途中で"},"finish_reason":"length"}]}`)
 	}))
@@ -457,9 +380,6 @@ func TestHTTPTranslatorErrors(t *testing.T) {
 	assert.False(t, NewHTTPTranslator("http://x/v1", "", "m", 64).Configured(), "no token → not configured")
 }
 
-// TestConcurrentApply: the worker pool writes every candidate exactly once
-// with consistent stats — same outcome as serial, only faster. The fake
-// translator sleeps a hair so workers genuinely overlap (race detector food).
 func TestConcurrentApply(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -482,7 +402,6 @@ func TestConcurrentApply(t *testing.T) {
 	assert.EqualValues(t, n, introCount(t, "WHERE provenance = 1"))
 	assert.EqualValues(t, n, tr.calls.Load(), "one gateway call per candidate")
 
-	// Second concurrent pass: pure idempotent skip, no LLM calls.
 	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Workers: 8})
 	require.NoError(t, err)
 	assert.Equal(t, n, st.SkipUnchanged)
@@ -490,8 +409,6 @@ func TestConcurrentApply(t *testing.T) {
 	assert.EqualValues(t, n, tr.calls.Load(), "skips never dial the gateway")
 }
 
-// slowFakeTranslator is a thread-safe fake with a tiny latency so the pool
-// actually overlaps.
 type slowFakeTranslator struct {
 	model string
 	calls atomic.Int64
@@ -503,8 +420,6 @@ func (f *slowFakeTranslator) Translate(_ context.Context, ja string, _ Glossary)
 	return "[译] " + ja, f.model, nil
 }
 
-// TestMockTranslatorDeterminism: the rehearsal mock is a pure function of the
-// source (idempotence + re-translate proof) and stamps an obvious mock model.
 func TestMockTranslatorDeterminism(t *testing.T) {
 	m := MockTranslator{Model: "stub"}
 	a1, mdl, err := m.Translate(context.Background(), "同じ原文", nil)
@@ -516,16 +431,6 @@ func TestMockTranslatorDeterminism(t *testing.T) {
 	assert.True(t, strings.HasPrefix(mdl, "mock:"), "obvious mock model id")
 }
 
-// TestEnglishLaneIsALastResort pins the exclusion that keeps the en→zh lane a
-// last resort: anything with a ja intro belongs to the ja lane. en→zh is a
-// relay — the English is itself a translation of a Japanese original, so it
-// compounds two hops' losses — and fill-missing means whichever lane writes zh
-// FIRST wins permanently.
-//
-// The lane's former SECOND exclusion (anything Getchu anchors) protected it
-// while refs/proj/167 was still about to deliver ja originals; that crawl
-// closed, the gate came out (refs/proj/173), and a Getchu-anchored work
-// without ja is now an ordinary en candidate — pinned below.
 func TestEnglishLaneIsALastResort(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -537,22 +442,17 @@ func TestEnglishLaneIsALastResort(t *testing.T) {
 	require.NotZero(t, getchu, "the seed must carry the getchu source row")
 	site := "kungal"
 
-	// The target: published, English only, nothing else can reach it.
 	wTarget := mkPublished(t, medium, "en-only-orphan", &site)
 	mkIntro(t, wTarget, "en", "A quiet town where nothing ever happens.", curated)
 
-	// Has ja → the ja lane translates it in one hop; the en lane must not touch it.
 	wHasJa := mkPublished(t, medium, "en-and-ja", &site)
 	mkIntro(t, wHasJa, "en", "An English blurb.", curated)
 	mkIntro(t, wHasJa, "ja", "日本語のあらすじ。", bangumi)
 
-	// Getchu anchors it, no ja anywhere → since refs/proj/173 an ordinary en
-	// candidate (the crawl is closed; there is no ja supply left to wait for).
 	wGetchu := mkPublished(t, medium, "en-but-getchu-anchored", &site)
 	mkIntro(t, wGetchu, "en", "Another English blurb.", curated)
 	mkGetchuAnchor(t, wGetchu, getchu, vndb, "1117747")
 
-	// Already has zh → fill-missing excludes it regardless of lane.
 	wHasZh := mkPublished(t, medium, "en-and-zh", &site)
 	mkIntro(t, wHasZh, "en", "Yet another English blurb.", curated)
 	mkIntro(t, wHasZh, "zh-Hans", "已有的中文简介。", bangumi)
@@ -572,7 +472,6 @@ func TestEnglishLaneIsALastResort(t *testing.T) {
 	assert.Equal(t, "A quiet town where nothing ever happens.", cands[0].JaText,
 		"the lane carries the ENGLISH source text through the same field")
 
-	// Apply writes the machine rows, attributed to the English row's source.
 	tr := &fakeTranslator{model: "en-mt", fn: func(src string) string { return "[译] " + src }}
 	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationPublished, SourceLang: SourceEn})
 	require.NoError(t, err)
@@ -586,17 +485,11 @@ func TestEnglishLaneIsALastResort(t *testing.T) {
 	assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wHasJa),
 		"the ja-having work must be left for the japanese path")
 
-	// Second pass writes zero.
 	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationPublished, SourceLang: SourceEn})
 	require.NoError(t, err)
 	assert.Zero(t, st.Inserted, "fill-missing is idempotent")
 }
 
-// TestOlangGateExcludesNonJapaneseOriginals pins the refs/proj/173 ruling: a
-// work whose ORIGINAL language is declared non-Japanese gets no translated
-// intro (its ja/en intro rows are themselves translations — zh via a relay of
-// a relay is not worth writing). Unset olang passes — an unknown must not
-// lose to a known.
 func TestOlangGateExcludesNonJapaneseOriginals(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -623,9 +516,6 @@ func TestOlangGateExcludesNonJapaneseOriginals(t *testing.T) {
 	assert.ElementsMatch(t, []int64{wJa, wUnset}, ids)
 }
 
-// TestPublishedPopulationExcludesDrafts pins that the en lane does not spend
-// translation budget on the draft sea — 5x the published population, and the
-// step-75 ruling already declined to invest there.
 func TestPublishedPopulationExcludesDrafts(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -646,14 +536,8 @@ func TestPublishedPopulationExcludesDrafts(t *testing.T) {
 	assert.Equal(t, 1, st.Candidates, "the draft claim is not on the public face")
 }
 
-// TestSanitizeSourceStripsUpstreamMarkup pins the cleaning that runs before the
-// hash and the translation. All 8 works in the first en→zh run whose English
-// carried VNDB markup produced Chinese carrying the same markup — a relative
-// link that 404s on our domain, or BBCode shown as literal text.
 func TestSanitizeSourceStripsUpstreamMarkup(t *testing.T) {
 	cases := []struct{ in, want string }{
-		// The link TEXT is part of the sentence and must survive; only the
-		// markup goes.
 		{"[Toono Shiki](/c72) hears of murders in [Tsukihime](/v7).",
 			"Toono Shiki hears of murders in Tsukihime."},
 		{"A DLC starring [Nachi](/c55103).", "A DLC starring Nachi."},
@@ -661,10 +545,7 @@ func TestSanitizeSourceStripsUpstreamMarkup(t *testing.T) {
 			"See the site for more."},
 		{"[spoiler]She dies.[/spoiler]", "She dies."},
 		{"[raw]魔法少女[/raw]", "魔法少女"},
-		// An absolute URL is not VNDB's internal link syntax and is left alone.
 		{"[docs](https://example.com/d)", "[docs](https://example.com/d)"},
-		// Nothing to strip must change nothing at all — otherwise every already
-		// translated row would re-hash and the lane would re-translate the world.
 		{"ごく普通の日本語のあらすじ。", "ごく普通の日本語のあらすじ。"},
 		{"", ""},
 	}
@@ -673,10 +554,6 @@ func TestSanitizeSourceStripsUpstreamMarkup(t *testing.T) {
 	}
 }
 
-// TestSanitizeChangesHashOnlyForDirtyText is why no backfill script is needed:
-// the src_hash is taken from the cleaned text, so rows translated from a dirty
-// source stop matching and re-translate themselves, while clean rows keep their
-// hash and stay untouched.
 func TestSanitizeChangesHashOnlyForDirtyText(t *testing.T) {
 	clean := "ごく普通のあらすじ。"
 	assert.Equal(t, hashSource(clean), hashSource(sanitizeSource(clean)),

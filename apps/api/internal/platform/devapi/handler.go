@@ -12,20 +12,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// AdminHandler serves the developer-platform management surface (admin-only,
-// mounted under the oauth console). It follows the site handler conventions:
-// bind → validate → service → house response envelope.
 type AdminHandler struct {
 	svc *AdminService
 }
 
-// NewAdminHandler builds the management handler.
 func NewAdminHandler(svc *AdminService) *AdminHandler {
 	return &AdminHandler{svc: svc}
 }
 
-// Register mounts the management routes on r. The caller (cmd/oauth) applies the
-// auth + devapi.manage permission gate on the group it passes in.
 func (h *AdminHandler) Register(r fiber.Router) {
 	r.Get("/apps", h.ListApps)
 	r.Patch("/apps/:client_id", h.PatchApp)
@@ -34,8 +28,6 @@ func (h *AdminHandler) Register(r fiber.Router) {
 	r.Post("/apps/:client_id/keys/:id/rotate", h.RotateKey)
 	r.Delete("/apps/:client_id/keys/:id", h.RevokeKey)
 }
-
-// --- Request / response DTOs ---
 
 type patchAppRequest struct {
 	OwnerUserID    *uint   `json:"owner_user_id"`
@@ -78,15 +70,11 @@ type keyView struct {
 	CreatedAt   string   `json:"created_at"`
 }
 
-// mintedKeyView is keyView plus the show-once plaintext.
 type mintedKeyView struct {
 	keyView
 	Key string `json:"key"`
 }
 
-// --- Handlers ---
-
-// ListApps returns the dev_enabled applications with their key counts.
 func (h *AdminHandler) ListApps(c fiber.Ctx) error {
 	apps, err := h.svc.ListApps(c.Context())
 	if err != nil {
@@ -109,7 +97,6 @@ func (h *AdminHandler) ListApps(c fiber.Ctx) error {
 	return response.Success(c, out)
 }
 
-// PatchApp updates an app's dev configuration.
 func (h *AdminHandler) PatchApp(c fiber.Ctx) error {
 	clientID := c.Params("client_id")
 	if clientID == "" {
@@ -148,7 +135,6 @@ func (h *AdminHandler) PatchApp(c fiber.Ctx) error {
 	})
 }
 
-// MintKey issues a new key and returns the plaintext ONCE.
 func (h *AdminHandler) MintKey(c fiber.Ctx) error {
 	clientID := c.Params("client_id")
 	if clientID == "" {
@@ -176,7 +162,6 @@ func (h *AdminHandler) MintKey(c fiber.Ctx) error {
 	return response.Success(c, mintedKeyView{keyView: toKeyView(key), Key: plaintext})
 }
 
-// ListKeys returns an app's keys (no secret material).
 func (h *AdminHandler) ListKeys(c fiber.Ctx) error {
 	clientID := c.Params("client_id")
 	if clientID == "" {
@@ -193,7 +178,6 @@ func (h *AdminHandler) ListKeys(c fiber.Ctx) error {
 	return response.Success(c, out)
 }
 
-// RotateKey mints a replacement key (old key enters a grace window).
 func (h *AdminHandler) RotateKey(c fiber.Ctx) error {
 	clientID := c.Params("client_id")
 	keyID, ok := parseKeyID(c)
@@ -211,7 +195,6 @@ func (h *AdminHandler) RotateKey(c fiber.Ctx) error {
 	return response.Success(c, mintedKeyView{keyView: toKeyView(key), Key: plaintext})
 }
 
-// RevokeKey revokes a key immediately.
 func (h *AdminHandler) RevokeKey(c fiber.Ctx) error {
 	clientID := c.Params("client_id")
 	keyID, ok := parseKeyID(c)
@@ -227,9 +210,6 @@ func (h *AdminHandler) RevokeKey(c fiber.Ctx) error {
 	return response.Success(c, nil)
 }
 
-// requireKeyOfClient resolves a key and enforces route nesting (key belongs to
-// client_id). It writes the error response itself and returns a non-nil error
-// the caller returns as-is.
 func (h *AdminHandler) requireKeyOfClient(c fiber.Ctx, clientID string, keyID uint) (*DeveloperAPIKey, error) {
 	key, err := h.svc.GetKeyForClient(c.Context(), clientID, keyID)
 	if goerrors.Is(err, gorm.ErrRecordNotFound) || key == nil {
