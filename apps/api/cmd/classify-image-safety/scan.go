@@ -168,7 +168,7 @@ feed:
 
 func moderateWithRetry(ctx context.Context, c *omniImageClient, url string) (*omniVerdict, error) {
 	var lastErr error
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 7; attempt++ {
 		v, err := c.moderateImage(ctx, url)
 		if err == nil {
 			return v, nil
