@@ -29,9 +29,10 @@ const (
 // and the async scan worker's tier0_matched recording. It is entirely channel-
 // independent (no AI gateway).
 //
-// The matcher is a substring-containment scan (CJK has no word boundaries, so a
-// substring is the v0 reality) compiled into a byte-level Aho-Corasick automaton
-// so it stays flat under tens of thousands of terms. Both stored terms and the
+// The matcher is a byte-level Aho-Corasick automaton so it stays flat under tens
+// of thousands of terms. A hit is then boundary-checked per term: a term whose
+// end is ASCII-alphanumeric requires a non-alphanumeric neighbour there, while a
+// CJK term keeps pure substring semantics (CJK has no word boundaries to demand). Both stored terms and the
 // checked text pass through the single norm.Normalize choke point, so folding
 // stays consistent. The active-term set — and the automaton built from it — is
 // cached in-process (termCacheTTL); the hot path never hits the DB except on a
@@ -55,6 +56,39 @@ type activeTerm struct {
 	norm   string
 	site   string
 	banned bool
+	lead   bool
+	trail  bool
+}
+
+func isASCIIAlnum(b byte) bool {
+	return b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
+}
+
+// matchesWithBoundary re-checks an automaton hit for the boundary its ends
+// demand. Terms with no ASCII-alnum end demand nothing and short-circuit.
+//
+// Substring-only matching measured at 1.58% aggregate precision on 2026-08-09:
+// `ice` fired on "service", `master` on "mastercard", `info` on "information",
+// and the numeric terms landed inside longer IDs. Those terms read as bad terms
+// on the precision report; they were a bad matcher.
+func (t *activeTerm) matchesWithBoundary(text string) bool {
+	if !t.lead && !t.trail {
+		return true
+	}
+	for i := 0; i <= len(text)-len(t.norm); {
+		j := strings.Index(text[i:], t.norm)
+		if j < 0 {
+			return false
+		}
+		s, e := i+j, i+j+len(t.norm)
+		leadOK := !t.lead || s == 0 || !isASCIIAlnum(text[s-1])
+		trailOK := !t.trail || e == len(text) || !isASCIIAlnum(text[e])
+		if leadOK && trailOK {
+			return true
+		}
+		i = s + 1
+	}
+	return false
 }
 
 // termSnapshot is the compiled active-term set: the term table plus the Aho-
@@ -73,7 +107,12 @@ type termSnapshot struct {
 // so they never match — the same defensive skip the linear scan applied.
 func buildSnapshot(terms []activeTerm) *termSnapshot {
 	patterns := make([][]byte, len(terms))
-	for i, t := range terms {
+	for i := range terms {
+		t := &terms[i]
+		if t.norm != "" {
+			t.lead = isASCIIAlnum(t.norm[0])
+			t.trail = isASCIIAlnum(t.norm[len(t.norm)-1])
+		}
 		patterns[i] = []byte(t.norm)
 	}
 	return &termSnapshot{terms: terms, matcher: actrie.Build(patterns)}
@@ -148,13 +187,16 @@ func (s *TermService) Tier0Matches(ctx context.Context, site, text string) ([]st
 // in ascending (insertion) order; for each we apply site scoping — a global term
 // (site "") fires for every site, a per-site term only for its own — then dedupe
 // is inherent (one payload per term) and matched is built in that order. deny
-// wins over hold. Byte-for-byte identical to the old linear strings.Contains scan.
+// wins over hold.
 func (snap *termSnapshot) match(site, normText string) (string, []string) {
 	matched := []string{}
 	deny, hold := false, false
 	for _, i := range snap.matcher.Match([]byte(normText)) {
-		t := snap.terms[i]
+		t := &snap.terms[i]
 		if t.site != "" && t.site != site {
+			continue
+		}
+		if !t.matchesWithBoundary(normText) {
 			continue
 		}
 		matched = append(matched, t.norm)
