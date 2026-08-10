@@ -108,6 +108,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
     - `labels[]` **一家公司一条**,其担任的全部身份进 **`kinds[]`**(排序,恒非空);单数 `kind` 保留,含义收紧为**最具识别力的那一个**(brand → circle → developer → publisher 优先级)。消费端渲染角色请读 `kinds[]`。
     - 作品级归属的定义收窄为「**原语言 · 非补丁** release 的公司」。`orglabels` 内部把**证据集**(用于共现判定,保持宽)与**可归属集**(用于铸边,收窄)拆开;判据是 `src_vndb.releases.olang`,而非旧闸读的 `releases_titles`——后者答的是「有没有该语言的标题」,双语本地化版照样通过。**必须先改规则再谈清理**:删掉的边下一次 mint 会照原规则推回来。
     - 新表 **`catalog_release_label`**(release ↔ label,`kind` 复用 `WorkLabelKind*`):被收窄挤出去的事实落在它真正成立的那一层,而不是被丢弃。`cmd/import-release-labels` 从 vndb 回填,**无语言闸**——release 自己就说明了版次。
+    - **读面**:`releases[]` 每行加 **`labels[]`**,形状与作品级 `labels[]` 逐字同(一家公司一条 + `kinds[]` + `work_count`,共用同一折叠与同一聚合,故两个粒度的数不可能各说各话)。**恒在**,该版次无已知公司时为 `[]`——与同结构里的 `refs[]` 同规:缺键与消费端解析失败无从区分,而「不知道谁发行了这一版」是常见且真实的答案(上游发行方尚无 exact 锚时即如此)。`GET /v1/catalog/releases` 的条目同样恒带此键(时间线上一行提出的问题正是「这个移植是谁在出」,而作品块答不了它)。没有它,表写了没人读,作品页仍是一堆压平的公司。
 
 ### 2.8 `GET /catalog/works/search?q=&medium_id=&limit=` — 作品标题搜索(只读)
 

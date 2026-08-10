@@ -36,7 +36,15 @@ import (
 // attachWorkChipCounts stamps work_count onto a work record's labels[], tags[]
 // and engines[]. Three batched aggregates for the whole record.
 func (s *PublicService) attachWorkChipCounts(ctx context.Context, rec *dto.PublicCatalogWork, nsfw bool) error {
-	if err := s.fillWorkLabelCounts(ctx, [][]dto.PublicWorkLabel{rec.Labels}, nsfw); err != nil {
+	// The work's own chips AND every edition's (wave 200) in ONE aggregate: the
+	// same company routinely appears at both grains, and two calls would ask the
+	// database the same question twice to print the same number.
+	labelBlocks := make([][]dto.PublicWorkLabel, 0, 1+len(rec.Releases))
+	labelBlocks = append(labelBlocks, rec.Labels)
+	for i := range rec.Releases {
+		labelBlocks = append(labelBlocks, rec.Releases[i].Labels)
+	}
+	if err := s.fillWorkLabelCounts(ctx, labelBlocks, nsfw); err != nil {
 		return err
 	}
 

@@ -857,6 +857,22 @@ type PublicRelease struct {
 	// release id / steam appid …) — release-level identity material that was
 	// previously visible only flattened into the work-level refs (doc 106 G3).
 	Refs []PublicCatalogRef `json:"refs"`
+	// Labels are the companies attributed to THIS EDITION (wave 200): who
+	// developed it, who published it. Same chip shape as the work's labels[],
+	// one entry per company with all its capacities in kinds[].
+	//
+	// This is the key the wave exists for. A Switch port published by HuneX and
+	// an English edition published by Sekai Project are facts about two
+	// different editions; flattened onto the work they became an undifferentiated
+	// pile of "companies" that no consumer could attribute back to anything. Here
+	// each one sits on the release it is true of.
+	//
+	// ALWAYS present, [] when the edition has no known company — same rule as
+	// refs[] above. A missing key would be indistinguishable from a consumer's
+	// own parse failure, and "we don't know who published this edition" is a real
+	// and common answer (the upstream producer may have no exact anchor in our
+	// identity graph yet).
+	Labels []PublicWorkLabel `json:"labels"`
 }
 
 // PublicCharacterTrait is one VNDB trait on a character (group is the root
@@ -1286,6 +1302,11 @@ type PublicReleaseFeedItem struct {
 	// the whole reason a release-grain feed is addressable, so unlike the works
 	// list's refs block it is not behind include=.
 	Refs []PublicCatalogRef `json:"refs"`
+	// Labels are the companies attributed to THIS EDITION — PublicRelease.Labels
+	// verbatim, and loaded unconditionally for the same reason refs[] is: on a
+	// timeline the question a row raises is "who is shipping this port", and the
+	// parent work block cannot answer it (that is the whole premise of wave 200).
+	Labels []PublicWorkLabel `json:"labels"`
 	// IsFirst says whether this release is the work's EARLIEST dated one — the
 	// port / re-edition discriminator this feed exists to publish.
 	//

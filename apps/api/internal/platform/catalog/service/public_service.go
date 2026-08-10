@@ -341,6 +341,11 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		Updated:       w.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	s.attachWorkFacets(ctx, &rec, detail, nsfw, limits[w.ID], spoilers)
+	// Before attachWorkChipCounts, which stamps work_count onto these chips
+	// together with the work-level ones (one aggregate, not two).
+	if err = s.attachReleaseLabels(ctx, rec.Releases); err != nil {
+		return dto.PublicCatalogWork{}, false, err
+	}
 	if rec.Engines, err = s.workEngines(ctx, id); err != nil {
 		return dto.PublicCatalogWork{}, false, err
 	}

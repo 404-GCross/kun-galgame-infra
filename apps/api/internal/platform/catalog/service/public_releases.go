@@ -335,6 +335,10 @@ func (s *PublicService) buildReleaseFeedItems(ctx context.Context, rows []releas
 	if err != nil {
 		return nil, err
 	}
+	labels, err := s.releaseLabelsFor(ctx, releaseIDs)
+	if err != nil {
+		return nil, err
+	}
 	works, err := s.enrichWorkListItems(ctx, src, f.NSFW, f.Include)
 	if err != nil {
 		return nil, err
@@ -344,13 +348,14 @@ func (s *PublicService) buildReleaseFeedItems(ctx context.Context, rows []releas
 		byWork[w.ID] = w
 	}
 	out := make([]dto.PublicReleaseFeedItem, len(rows))
+	labelBlocks := make([][]dto.PublicWorkLabel, 0, len(rows))
 	for i, r := range rows {
 		item := dto.PublicReleaseFeedItem{
 			ID: r.ID, Kind: releaseKindKey(r.Kind), Title: derefStrPub(r.Title),
 			Lang: derefStrPub(r.Lang), Platform: derefStrPub(r.Platform),
 			Platforms: publicPlatformsFromExtra(r.Extra),
 			IsFirst:   r.IsFirst, Work: byWork[r.WorkID],
-			Refs: refs[r.ID],
+			Refs: refs[r.ID], Labels: labels[r.ID],
 		}
 		if r.ReleasedY != nil {
 			d := partialISOFromOrdinal(r.Ord)
@@ -360,7 +365,16 @@ func (s *PublicService) buildReleaseFeedItems(ctx context.Context, rows []releas
 			// The public face serializes [] never null.
 			item.Refs = []dto.PublicCatalogRef{}
 		}
+		if item.Labels == nil {
+			item.Labels = []dto.PublicWorkLabel{}
+		}
+		labelBlocks = append(labelBlocks, item.Labels)
 		out[i] = item
+	}
+	// One aggregate for the whole page's edition chips, so a chip on the timeline
+	// carries the same work_count the same chip carries on a work page.
+	if err := s.fillWorkLabelCounts(ctx, labelBlocks, f.NSFW); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

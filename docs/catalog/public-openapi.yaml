@@ -2077,6 +2077,12 @@ components:
         kind:
           description: default|digital|physical|trial|patch
           type: string
+        labels:
+          items:
+            $ref: "#/components/schemas/PublicWorkLabel"
+          type:
+            - array
+            - "null"
         lang:
           type: string
         platform:
@@ -2100,6 +2106,7 @@ components:
         - kind
         - date
         - refs
+        - labels
       type: object
     PublicReleaseFeedData:
       additionalProperties: false
@@ -2137,6 +2144,12 @@ components:
         kind:
           description: default|digital|physical|trial|patch
           type: string
+        labels:
+          items:
+            $ref: "#/components/schemas/PublicWorkLabel"
+          type:
+            - array
+            - "null"
         lang:
           type: string
         platform:
@@ -2162,6 +2175,7 @@ components:
         - kind
         - date
         - refs
+        - labels
         - is_first
         - work
       type: object
