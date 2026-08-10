@@ -2,9 +2,6 @@ package dto
 
 import "time"
 
-// AssignSiteRoleRequest is the body of POST /admin/users/:uuid/site-roles.
-// RoleName is policy-validated in the service (never user/admin/ren; must match
-// the site-name pattern). ExpiresAt nil = permanent grant.
 type AssignSiteRoleRequest struct {
 	SiteID    uint       `json:"site_id" validate:"required"`
 	RoleName  string     `json:"role_name" validate:"required"`
@@ -12,7 +9,6 @@ type AssignSiteRoleRequest struct {
 	ExpiresAt *time.Time `json:"expires_at"`
 }
 
-// SiteRoleResponse is one site-scoped grant shown in the admin user detail.
 type SiteRoleResponse struct {
 	SiteID    uint       `json:"site_id"`
 	SiteName  string     `json:"site_name"`
@@ -23,14 +19,6 @@ type SiteRoleResponse struct {
 	Note      string     `json:"note,omitempty"`
 }
 
-// UserListRequest represents a user list request.
-//
-// Page/Limit are `omitempty` so an absent value (binds to 0) passes
-// validation and the service applies its defaults; a present value is still
-// bounds-checked. SortBy is whitelisted both here (oneof) and at the repo
-// layer (allowlist) — the latter is the load-bearing guard against ORDER BY
-// injection since this DTO's tags only run via the handler's explicit
-// utils.Validate, not an app-wide StructValidator.
 type UserListRequest struct {
 	Page     int    `query:"page" validate:"omitempty,min=1"`
 	Limit    int    `query:"limit" validate:"omitempty,min=1,max=100"`
@@ -40,7 +28,6 @@ type UserListRequest struct {
 	SortDesc bool   `query:"sort_desc"`
 }
 
-// UserListResponse represents a user list response
 type UserListResponse struct {
 	Users      []UserResponse `json:"users"`
 	Total      int64          `json:"total"`
@@ -49,12 +36,7 @@ type UserListResponse struct {
 	TotalPages int            `json:"total_pages"`
 }
 
-// UpdateUserRequest represents a user update request
 type UpdateUserRequest struct {
-	// Admin user-edit must enforce the same name rule as self-edit
-	// (PATCH /auth/me) — otherwise an admin could create an unreachable
-	// account with invisible-codepoint names that no user could log
-	// into. `kun_name` = utils.IsValidName.
 	Name   *string `json:"name" validate:"omitempty,kun_name"`
 	Email  *string `json:"email" validate:"omitempty,email"`
 	Avatar *string `json:"avatar" validate:"omitempty,url"`
@@ -62,19 +44,14 @@ type UpdateUserRequest struct {
 	Status *int    `json:"status" validate:"omitempty,oneof=0 1"`
 }
 
-// BanUserRequest represents a ban user request
 type BanUserRequest struct {
 	Reason string `json:"reason" validate:"required,min=1,max=500"`
 }
 
-// AssignRoleRequest grants a role to a user. `ren` is intentionally absent from
-// the oneof — it is provisioned via DB only and never grantable through the API
-// (see the role-management ren-gate in admin_handler.callerCanManageRole).
 type AssignRoleRequest struct {
 	Role string `json:"role" validate:"required,oneof=user creator moderator admin"`
 }
 
-// UserDetailResponse represents detailed user info for admin
 type UserDetailResponse struct {
 	UserResponse
 	IP            string                 `json:"ip"`
@@ -84,7 +61,6 @@ type UserDetailResponse struct {
 	SiteRoles     []SiteRoleResponse     `json:"site_roles"`
 }
 
-// UserSiteDataResponse represents user site data
 type UserSiteDataResponse struct {
 	SiteID   uint   `json:"site_id"`
 	SiteName string `json:"site_name"`

@@ -19,48 +19,23 @@ import (
 )
 
 const (
-	// coverPreset is the image-service preset these uploads use
-	// (configs/image_presets.yaml). The catalog image client's
-	// image_allowed_presets already contains it — the DLsite (step 55) and
-	// Bangumi cover lanes upload through the same client under the same preset,
-	// so this wave needs no preset change.
 	coverPreset = "catalog_cover"
 
-	// uploaderSub stamps a machine identity onto first_uploader_sub so the
-	// backfilled image rows are traceable — there is no human uploader.
 	uploaderSub = "system:vndb-cover-backfill"
 
-	// coverKind is the VNDB-native cover kind. catalog_work_cover.kind already
-	// speaks VNDB's vocabulary (main / pkgfront / dig / …) and /vn's `image` is
-	// by definition the vn's main cover.
 	coverKind = "main"
 
-	// uploadRetries rides out an image-container recreation mid-run (~30-90s
-	// unreachable, breaking in-flight connections). Quota and moderation are
-	// terminal and never retried. Matches the step-55 machinery.
 	uploadRetries = 6
 
-	// downloadRetries bounds the retries of a transient t.vndb.org failure.
 	downloadRetries = 3
 
-	// maxImageBytes refuses an absurd payload before it reaches memory. VNDB
-	// covers are a few hundred KB; 16 MiB is a fuse, not a limit anyone hits.
 	maxImageBytes = 16 << 20
 
 	downloadTimeout = 60 * time.Second
 
-	// defaultCoverFilename names an upload whose URL carries no usable basename.
 	defaultCoverFilename = "cover.jpg"
 )
 
-// fill downloads one work's VNDB cover and writes its catalog_work_cover row.
-//
-// portrait_pinned follows the cover's own shape (h > w): VNDB covers are mostly
-// vertical package art, which is exactly what the portrait-first UI wants
-// pinned, but the landscape ones must not claim the pin. sexual/violence come
-// from VNDB's own per-image votes rounded onto the catalog scale (ratingLevel)
-// — this is the one source in the media lanes that grades the IMAGE rather than
-// the work, so the flags need no work-level fallback.
 func (r *runner) fill(ctx context.Context, row planRow) {
 	body, filename, err := r.download(ctx, row.Img.URL)
 	if err != nil {
@@ -90,8 +65,6 @@ func (r *runner) fill(ctx context.Context, row planRow) {
 		slog.Warn("write vndb cover row", "work", row.WorkID, "vn", row.VNDBID, "err", tx.Error)
 		return
 	}
-	// Ping regardless of whether the row was new: the bytes are in the image
-	// service either way and sit at TTL from upload time.
 	r.pingHashes = append(r.pingHashes, res.Hash)
 	if tx.RowsAffected == 0 {
 		r.stats.Dedup++
@@ -101,8 +74,6 @@ func (r *runner) fill(ctx context.Context, row planRow) {
 	r.stats.Uploaded++
 }
 
-// download fetches the cover bytes from t.vndb.org, returning the body and the
-// filename to upload it under (the CDN basename, which carries the extension).
 func (r *runner) download(ctx context.Context, src string) ([]byte, string, error) {
 	client := &http.Client{Timeout: downloadTimeout}
 	var lastErr error
@@ -149,10 +120,6 @@ func fetch(ctx context.Context, client *http.Client, src string) ([]byte, error)
 	return body, nil
 }
 
-// coverFilename is the upload filename for a t.vndb.org URL — the basename of
-// its PATH (e.g. "17.jpg"), which carries the extension the image service
-// sniffs against. A URL with no usable path component falls back to a generic
-// name rather than to the host.
 func coverFilename(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -165,10 +132,6 @@ func coverFilename(raw string) string {
 	return base
 }
 
-// upload pushes the downloaded bytes under the catalog_cover preset, retrying
-// transient image-service failures with a fresh reader per attempt (the
-// previous one is consumed). Terminal errors (quota / moderation) return at
-// once.
 func (r *runner) upload(ctx context.Context, body []byte, filename string) (*imageclient.UploadResult, error) {
 	var lastErr error
 	for attempt := 0; attempt < uploadRetries; attempt++ {
@@ -193,8 +156,6 @@ func (r *runner) upload(ctx context.Context, body []byte, filename string) (*ima
 	return nil, lastErr
 }
 
-// classify maps an upload error to a counter. Only quota exhaustion stops the
-// run — a moderation rejection is that one cover's verdict, not the batch's.
 func (r *runner) classify(err error, row planRow) (quota bool) {
 	switch {
 	case stderrors.Is(err, imageclient.ErrQuotaExceeded):

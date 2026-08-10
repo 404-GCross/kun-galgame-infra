@@ -2,104 +2,48 @@ package dto
 
 import "time"
 
-// Wire types of the claim-lifecycle face (wave 155 W2/W3).
-//
-// The two feeds are deliberately NOT modelled on the retiring wiki feeds'
-// DTOs. They cursor the same way (exclusive since-id, ascending) because that
-// is what the downstream crons already implement, but every field name is
-// catalog-native: a new id space wearing the old wire's spelling is how a
-// consumer ends up assuming the old semantics still hold.
-
-// The S2S face's two asserted-actor request shapes — one lifecycle action, one
-// submission mint — retired with their operations in wave 185. Both named the
-// acting user and the acting tenant on the wire; their surviving twins below
-// name neither, because the user-token face derives both from the token.
-
-// StaffClaimActionRequest is the body of a curator's action. The actor is the
-// operator's JWT, not an asserted user, so only the note is on the wire.
 type StaffClaimActionRequest struct {
 	Reason string `json:"reason,omitempty" doc:"Moderator note; REQUIRED for decline, recorded on the event"`
 }
 
-// The claims face's USER-TOKEN request shapes (wave 179). Each is its S2S
-// sibling minus every identity field — `actor` and `site` — because on that
-// face the uid is the token's `id` claim and the tenant is the token client's
-// catalog_site, so a wire field for either would only be a place to lie. Both
-// are written out explicitly rather than embedding the S2S struct (Huma's
-// anonymous-embed trap silently drops the fields), and both are separate types
-// so no future field can land on both faces by accident.
-
-// UserClaimActionRequest is the body of one lifecycle action taken by the
-// token's own user.
 type UserClaimActionRequest struct {
-	// ProductWorkID is required by `claim` and ignored by every other action.
-	// A pointer rather than the S2S face's 0-means-absent int, because on a
-	// body field Huma can express the absence directly.
 	ProductWorkID *int64 `json:"product_work_id,omitempty" minimum:"1" doc:"The product-side work id to anchor (claim only)"`
 	Reason        string `json:"reason,omitempty" doc:"Moderator note; REQUIRED for decline, recorded on the event"`
 }
 
-// UserWorkSubmitRequest mints a work in the pending claim state as the token's
-// own user (wave 162's content contract: the field keys are the editing face's
-// registered catalog.work keys), with the submitter and the submitting tenant
-// derived from the token instead of named on the wire.
-//
-// The content half is keyed exactly like an edit patch, so a wizard renders one
-// form from one schema and posts it here to create or to the editing face to
-// amend. Two keys the matrix does not have and this face therefore does not
-// accept: a work-level release date (send `released` instead: it becomes one
-// curated release row) and a status (lifecycle is claim_state, moved only by
-// the semantic actions).
 type UserWorkSubmitRequest struct {
 	ProductWorkID *int64          `json:"product_work_id,omitempty" minimum:"1" doc:"The product-side work id to anchor this submission at. OMIT IT to have the registry issue the identity: the claim then adopts the minted work id, which the response returns. Idempotency depends on this choice — see the endpoint summary"`
 	Fields        map[string]any  `json:"fields" doc:"Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets"`
 	Released      *WorkSubmitDate `json:"released,omitempty" doc:"Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA"`
 }
 
-// WorkSubmitDate is the fuzzy submitted date. The nullable tail IS the
-// precision — {y:2019} means "sometime in 2019" — which is why there is no
-// separate precision enum (03 §6-1).
 type WorkSubmitDate struct {
 	Y int16 `json:"y" minimum:"1970" maximum:"2200"`
 	M int16 `json:"m,omitempty" minimum:"0" maximum:"12" doc:"0 = unknown month"`
 	D int16 `json:"d,omitempty" minimum:"0" maximum:"31" doc:"0 = unknown day; requires m"`
 }
 
-// WorkSubmitResponse is the minted identity plus the birth event.
 type WorkSubmitResponse struct {
-	WorkID int64 `json:"work_id"`
-	// ProductWorkID is the id the claim is anchored at — the supplied one, or
-	// the registry-issued one (equal to work_id) when the request omitted it.
-	// A product that omitted it creates its local row at THIS id.
+	WorkID        int64  `json:"work_id"`
 	ProductWorkID int64  `json:"product_work_id"`
 	ClaimState    string `json:"claim_state" doc:"Always pending — a submission is born awaiting review"`
 	EventID       int64  `json:"event_id" doc:"The claim-event row recording the birth (from_state null → pending)"`
 	ReleaseID     int64  `json:"release_id,omitempty" doc:"The curated release row the submitted date produced; absent when no date was given"`
 }
 
-// WorkSubmitConflictInfo rides the 409 of a repeat submission so the wizard can
-// resume the existing work instead of retrying the mint.
 type WorkSubmitConflictInfo struct {
 	WorkID        int64  `json:"work_id"`
 	ProductWorkID int64  `json:"product_work_id"`
 	CurrentState  string `json:"current_state"`
-	// MatchedBy names which idempotency key recognized the request: `claim`
-	// (site + product_work_id, exact) or `anchor` (an identity ref the payload
-	// asserted, which also fires when a DIFFERENT user already registered this
-	// game for the same site).
-	MatchedBy string `json:"matched_by" doc:"claim | anchor"`
-	Anchor    string `json:"anchor,omitempty" doc:"The matching identity coordinate (source:external_id), for matched_by=anchor"`
+	MatchedBy     string `json:"matched_by" doc:"claim | anchor"`
+	Anchor        string `json:"anchor,omitempty" doc:"The matching identity coordinate (source:external_id), for matched_by=anchor"`
 }
 
-// ClaimTransitionInfo rides the 409 of an illegal transition so the caller can
-// re-render without a second read.
 type ClaimTransitionInfo struct {
 	CurrentState string   `json:"current_state"`
 	AllowedFrom  []string `json:"allowed_from"`
 }
 
-// ClaimEventFeedItem is one claim transition on the wire. from_state is null
-// exactly once per claim: the transition that created it.
 type ClaimEventFeedItem struct {
 	ID            int64     `json:"id"`
 	WorkID        int64     `json:"work_id"`
@@ -112,33 +56,17 @@ type ClaimEventFeedItem struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-// ClaimEventFeed is one page of the claim-transition cursor feed.
 type ClaimEventFeed struct {
-	Items []ClaimEventFeedItem `json:"items"`
-	// NextSince is the cursor to pass next time. It echoes the request's cursor
-	// on an empty page, so a consumer that stores it unconditionally never
-	// rewinds.
-	NextSince int64 `json:"next_since"`
+	Items     []ClaimEventFeedItem `json:"items"`
+	NextSince int64                `json:"next_since"`
 }
 
-// CursorPage is one page of a DESCENDING, cursor-paged list (wave 157). It is
-// a different shape from Page[T] on purpose: Page is offset-paged with a total
-// only, while a list a user is actively writing to needs a stable cursor —
-// here the id the next page must start below. Total accompanies it because on
-// this face the count IS the per-user statistic downstream products used to
-// need a separate endpoint for.
 type CursorPage[T any] struct {
-	Items []T `json:"items"`
-	// NextBefore is the cursor for the following page; 0 = no more rows.
+	Items      []T   `json:"items"`
 	NextBefore int64 `json:"next_before"`
 	Total      int64 `json:"total"`
 }
 
-// EditRevisionFeedItem is one engine revision on the wire. The snapshot is
-// deliberately absent: the feed exists so a consumer knows THAT an entity
-// changed and which fields did, and shipping every full snapshot would make a
-// routine catch-up page megabytes wide. The revision read face serves the
-// snapshot for the rows a consumer actually cares about.
 type EditRevisionFeedItem struct {
 	ID            int64     `json:"id"`
 	EntityFamily  string    `json:"entity_family"`
@@ -152,16 +80,9 @@ type EditRevisionFeedItem struct {
 	ProposalID    *int64    `json:"proposal_id"`
 	Site          string    `json:"site"`
 	CreatedAt     time.Time `json:"created_at"`
-	// ProductWorkID is the entity's id ON THE PRODUCT SIDE, projected from
-	// catalog_work's claim columns for entity_type=catalog.work only (wave 180).
-	// A consumer replaying this feed keys its own tables by its own id, and
-	// without this it would have to resolve every entity_id through a second
-	// round trip. NULL whenever the entity is not a claimed work of this
-	// revision's site — including every non-work entity type.
-	ProductWorkID *int64 `json:"product_work_id"`
+	ProductWorkID *int64    `json:"product_work_id"`
 }
 
-// EditRevisionFeed is one page of the global revision cursor feed.
 type EditRevisionFeed struct {
 	Items     []EditRevisionFeedItem `json:"items"`
 	NextSince int64                  `json:"next_since"`

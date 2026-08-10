@@ -9,10 +9,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// attrs is the set of typical-set character attributes one source proposes for
-// one character. Every field is a nullable pointer: nil = the source says
-// nothing (or a sentinel / out-of-range value that was dropped). The write
-// layer applies the survivorship + provenance rules per non-nil field.
 type attrs struct {
 	month  *int16
 	day    *int16
@@ -26,11 +22,6 @@ type attrs struct {
 	gender *int16
 }
 
-// Range gates (refs/proj/81 范围哨卡). A parsed value outside its gate never
-// reaches a real column; the Bangumi lane preserves the raw string in extra and
-// counts it (out_of_range). VNDB out-of-range values are simply dropped (its
-// typed columns carry the same garbage a Bangumi free-text field would, so the
-// gate protects both).
 const (
 	minMonth, maxMonth   = 1, 12
 	minDay, maxDay       = 1, 31
@@ -44,11 +35,6 @@ func inRange(v, lo, hi int16) bool { return v >= lo && v <= hi }
 func i16p(v int16) *int16   { return &v }
 func strp(v string) *string { return &v }
 
-// --- shared value hygiene ---
-
-// normalizeWidth folds full-width ASCII letters/digits to half-width so
-// "Ａ型" / "１６０cm" parse like their half-width forms. Non-ASCII runes pass
-// through untouched.
 func normalizeWidth(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -76,8 +62,6 @@ var bgmUnknownSentinels = map[string]bool{
 	"未公開": true, "未公开": true, "非公開": true, "非公开": true, "保密": true,
 }
 
-// isUnknownSentinel reports whether a value is an unknown token or a run of only
-// placeholder punctuation (?, ？, -, — …) — e.g. a bare "？" or "???".
 func isUnknownSentinel(s string) bool {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -96,11 +80,6 @@ func isUnknownSentinel(s string) bool {
 	return true
 }
 
-// --- VNDB typed-column decoders (src_vndb.chars) ---
-
-// vndbSexGender maps VNDB's apparent-sex enum to the Gender vocabulary: m→male,
-// f→female, any other non-empty value (b=both, n=none) → other, ""→unknown.
-// The spoiler columns (spoil_sex/spoil_gender/gender) are never read.
 func vndbSexGender(sex string) *int16 {
 	switch strings.ToLower(strings.TrimSpace(sex)) {
 	case "m":
@@ -114,8 +93,6 @@ func vndbSexGender(sex string) *int16 {
 	}
 }
 
-// vndbBlood maps VNDB's bloodt enum to the BloodType vocabulary. "unknown"/""
-// (the sentinels) → nil.
 func vndbBlood(b string) *int16 {
 	switch strings.ToLower(strings.TrimSpace(b)) {
 	case "a":
@@ -131,8 +108,6 @@ func vndbBlood(b string) *int16 {
 	}
 }
 
-// vndbBirthday decodes VNDB's mmdd-encoded birthday (920 = Sep 20; 0 = unset).
-// Returns (month, day) only when both are in range.
 func vndbBirthday(bday int16) (month, day *int16) {
 	if bday <= 0 {
 		return nil, nil
@@ -145,8 +120,6 @@ func vndbBirthday(bday int16) (month, day *int16) {
 	return i16p(m), i16p(d)
 }
 
-// vndbGate returns v when it is positive and inside [lo,hi], else nil (0/NULL =
-// unset sentinel, out-of-range = garbage).
 func vndbGate(v int16, lo, hi int16) *int16 {
 	if v > 0 && inRange(v, lo, hi) {
 		return i16p(v)
@@ -154,7 +127,6 @@ func vndbGate(v int16, lo, hi int16) *int16 {
 	return nil
 }
 
-// vndbCup returns the upper-cased cup token, or nil when empty.
 func vndbCup(c string) *string {
 	c = strings.ToUpper(strings.TrimSpace(c))
 	if c == "" {
@@ -163,12 +135,6 @@ func vndbCup(c string) *string {
 	return strp(c)
 }
 
-// --- Bangumi infobox value parsers (src_bangumi.character.infobox_parsed) ---
-
-// bgmBirthday is the parse of a 生日 value. keepRaw asks the caller to preserve
-// the original string in extra — set when a year is present (dropped from the
-// month/day columns), the value has trailing/other text, or a part is
-// out-of-range: information the two columns cannot hold (refs/proj/81).
 type bgmBirthday struct {
 	month   *int16
 	day     *int16
@@ -195,8 +161,6 @@ func parseBGMBirthday(raw string) bgmBirthday {
 		if inRange(int16(d), minDay, maxDay) {
 			out.day = i16p(int16(d))
 		}
-		// Keep the raw string when it holds more than the two columns capture:
-		// a year, an out-of-range part, or surrounding text.
 		out.keepRaw = m[1] != "" || out.month == nil || out.day == nil || m[0] != v
 		return out
 	}
@@ -209,13 +173,9 @@ func parseBGMBirthday(raw string) bgmBirthday {
 		out.keepRaw = out.month == nil
 		return out
 	}
-	// Non-sentinel but unparseable (e.g. "夏", a season) — preserve verbatim.
 	return bgmBirthday{keepRaw: true}
 }
 
-// parseBGMBlood maps a 血型 value to the BloodType vocabulary. A non-enum but
-// non-sentinel value (fictional types like X型/F型) returns nil and is dropped
-// (not preserved — the column vocabulary cannot honor it).
 func parseBGMBlood(raw string) *int16 {
 	v := normalizeWidth(strings.TrimSpace(raw))
 	v = strings.TrimSpace(strings.TrimSuffix(strings.ToUpper(v), "型"))
@@ -233,12 +193,6 @@ func parseBGMBlood(raw string) *int16 {
 	}
 }
 
-// bgmGender maps a 性别/性別 value to the Gender vocabulary by unambiguous
-// token: male markers (男/雄/♂/公) without any female marker → male; female
-// markers (女/雌/♀/母) without any male marker → female. A value carrying both
-// (男/女, 男→女, 雄性50%｜雌性50%) or neither (无性别, 扶她) is not asserted —
-// Bangumi 性别 free-text is too varied to safely bucket the tail as "other",
-// unlike VNDB's controlled sex enum.
 func bgmGender(raw string) *int16 {
 	v := normalizeWidth(strings.TrimSpace(raw))
 	if isUnknownSentinel(v) {
@@ -256,13 +210,8 @@ func bgmGender(raw string) *int16 {
 	}
 }
 
-// reFirstNumber pulls the first integer/decimal out of a measurement string
-// ("165cm" → 165, "約 48.5 kg" → 48.5).
 var reFirstNumber = regexp.MustCompile(`(\d+(?:\.\d+)?)`)
 
-// bgmMeasure is the parse of a 身高/体重 value. found reports a number was
-// present; inRange whether it passed the gate. When found && !inRange the
-// caller preserves the raw string in extra and counts it out_of_range.
 type bgmMeasure struct {
 	value   *int16
 	found   bool
@@ -289,9 +238,6 @@ func parseBGMMeasure(raw string, lo, hi int16) bgmMeasure {
 	return bgmMeasure{value: i16p(n), found: true, inRange: true}
 }
 
-// bgmBWH is the parse of a BWH value: three measurements + an embedded cup.
-// oor is true when a number was present but out of range (the caller preserves
-// the raw string + counts it).
 type bgmBWH struct {
 	bust  *int16
 	waist *int16
@@ -313,13 +259,11 @@ func parseBGMBWH(raw string) bgmBWH {
 		return bgmBWH{}
 	}
 	var out bgmBWH
-	// Cup: "(E)" or "Eカップ" / "E cup".
 	if m := reCupParen.FindStringSubmatch(v); m != nil {
 		out.cup = strp(strings.ToUpper(m[1]))
 	} else if m := reCupWord.FindStringSubmatch(v); m != nil {
 		out.cup = strp(strings.ToUpper(m[1]))
 	}
-	// Three measurements: labeled B../W../H.. first, then bare a/b/c.
 	var nums []string
 	if m := reBWHLabeled.FindStringSubmatch(v); m != nil {
 		nums = m[1:4]
@@ -340,46 +284,23 @@ func parseBGMBWH(raw string) bgmBWH {
 	return out
 }
 
-// --- shared parsers -----------------------------------------------------
-//
-// These wrap the per-field rules wave 81 ruled on (the width normalization, the
-// unknown-value sentinels, the range gates that keep a 200m "height" out of a
-// typed column, the blood-type vocabulary). They are exported because a second
-// source now needs the SAME rules: the Getchu lane (refs/proj/167) reads
-// 身長/スリーサイズ/血液型/誕生日 strings of the same shape, and a private copy
-// of these rules in that package would be two normalizers free to drift.
-//
-// The "BGM" in the underlying names is historical — the parsers were always
-// generic over a raw string.
-
-// ParseHeightCM parses a height, gated to the range wave 81 pinned. found is
-// true when a number was present at all, so a caller can tell "no value" from
-// "value out of range" (the latter stays raw upstream rather than being typed).
 func ParseHeightCM(raw string) (v *int16, found bool) {
 	m := parseBGMMeasure(raw, minHeight, maxHeight)
 	return m.value, m.found
 }
 
-// ParseWeightKG parses a weight under the same discipline.
 func ParseWeightKG(raw string) (v *int16, found bool) {
 	m := parseBGMMeasure(raw, minWeight, maxWeight)
 	return m.value, m.found
 }
 
-// ParseBloodType maps a blood-type string onto the model vocabulary. Values
-// outside A/B/AB/O (X型 and friends) return nil — wave 81's ruling, so the
-// column never carries a value the vocabulary cannot name.
 func ParseBloodType(raw string) *int16 { return parseBGMBlood(raw) }
 
-// ParseBWH parses a three-size string plus any embedded cup ("86/57/82",
-// "B87/W59/H88", "B85(E)/W58/H86").
 func ParseBWH(raw string) (bust, waist, hip *int16, cup *string) {
 	p := parseBGMBWH(raw)
 	return p.bust, p.waist, p.hip, p.cup
 }
 
-// ParseBirthdayMD parses a birthday to (month, day). Either may be nil when the
-// source gives only one half.
 func ParseBirthdayMD(raw string) (month, day *int16) {
 	b := parseBGMBirthday(raw)
 	return b.month, b.day

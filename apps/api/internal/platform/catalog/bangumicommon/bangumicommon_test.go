@@ -7,9 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Spot-check values are pinned to the embedded snapshot (see data/README.md);
-// they must be updated when the snapshot is refreshed and an entry changed.
-
 func TestLoadStaffPositions(t *testing.T) {
 	staffs, err := LoadStaffPositions()
 	require.NoError(t, err)
@@ -18,8 +15,6 @@ func TestLoadStaffPositions(t *testing.T) {
 	for _, positions := range staffs {
 		total += len(positions)
 	}
-	// 246 at snapshot time; assert a floor so a refreshed snapshot with a few
-	// upstream removals still passes, while a broken load fails loudly.
 	assert.GreaterOrEqual(t, total, 200)
 
 	dev := staffs[SubjectTypeGame][1001]

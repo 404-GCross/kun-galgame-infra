@@ -20,10 +20,6 @@ import (
 
 var testDB *gorm.DB
 
-// TestMain prepares the database when one is offered but NEVER exits early
-// without it: the fold, the swap mapping and the packet layout are pure
-// functions, and an os.Exit(0) here reported them as "ok" while running none of
-// them. Tests that need rows call requireDB and skip individually.
 func TestMain(m *testing.M) {
 	if dsn := os.Getenv("TEST_DATABASE_DSN"); dsn != "" {
 		db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -45,9 +41,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// requireDB skips one test when no database was supplied, so a DSN-less run is
-// honestly reported as "these N skipped" rather than as a silent whole-package
-// pass.
 func requireDB(t *testing.T) {
 	t.Helper()
 	if testDB == nil {
@@ -55,9 +48,6 @@ func requireDB(t *testing.T) {
 	}
 }
 
-// ensureSnapshot creates the rescue table the job reads. In prod it is created
-// by the wave-168 rescue SQL; the shape is mirrored here so the test exercises
-// the real query.
 func ensureSnapshot(t *testing.T) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`CREATE SCHEMA IF NOT EXISTS src_wiki`).Error)
@@ -107,8 +97,6 @@ func mkSnapshot(t *testing.T, workID int64, published bool, wikiZh, catalogJa, c
 		workID, workID, "kungal", published, wikiZh, catalogJa, catalogMT, catalogHuman).Error)
 }
 
-// TestBucketsAreDisjointAndScoped pins how the two questions are split, and the
-// three exclusions that keep the job off text it has no business touching.
 func TestBucketsAreDisjointAndScoped(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -119,13 +107,13 @@ func TestBucketsAreDisjointAndScoped(t *testing.T) {
 	wMT := mkWork(t, true)
 	mkSnapshot(t, wMT, true, "用户手写版本。", "日本語のあらすじ。", "机器翻译版本。", "")
 
-	wHuman := mkWork(t, true) // a curated zh already exists → never touched
+	wHuman := mkWork(t, true)
 	mkSnapshot(t, wHuman, true, "用户手写版本。", "日本語。", "", "后来有人写的中文。")
 
-	wDraft := mkWork(t, false) // not on the public face
+	wDraft := mkWork(t, false)
 	mkSnapshot(t, wDraft, false, "草稿海的中文。", "日本語。", "", "")
 
-	wEmpty := mkWork(t, true) // wiki column was blank
+	wEmpty := mkWork(t, true)
 	mkSnapshot(t, wEmpty, true, "   ", "日本語。", "", "")
 
 	usable, err := LoadCandidates(ctx, testDB, BucketUsable, 0)
@@ -141,15 +129,9 @@ func TestBucketsAreDisjointAndScoped(t *testing.T) {
 	assert.Equal(t, wMT, compare[0].WorkID)
 	assert.Equal(t, "机器翻译版本。", compare[0].MachineZh)
 
-	// The buckets must not overlap — a work judged twice could be written twice
-	// under contradictory verdicts.
 	assert.NotEqual(t, usable[0].WorkID, compare[0].WorkID)
 }
 
-// TestApplyIsPurelyAdditive is the wave's核心 safety property: a restore INSERTs
-// a provenance=0 row and never edits or deletes the machine row, so the read
-// face switches over while the machine text survives as a fallback and the
-// rollback is exactly the receipts.
 func TestApplyIsPurelyAdditive(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -159,7 +141,6 @@ func TestApplyIsPurelyAdditive(t *testing.T) {
 
 	w := mkWork(t, true)
 	mkSnapshot(t, w, true, "用户手写的完整中文简介。", "日本語のあらすじ。", "机器翻译版本。", "")
-	// The machine row really exists in catalog_work_intro too.
 	require.NoError(t, testDB.Create(&model.CatalogWorkIntro{
 		WorkID: w, Lang: "zh-Hans", Intro: "机器翻译版本。", SourceID: bangumi,
 		Provenance: 1, MTModel: "glm", SrcHash: "abc"}).Error)
@@ -167,7 +148,6 @@ func TestApplyIsPurelyAdditive(t *testing.T) {
 	vs := []Verdict{{Key: fmt.Sprintf("w%d", w), WorkID: w, Bucket: BucketCompare,
 		Verdict: VerdictABetter, Confidence: 0.95}}
 
-	// Dry run decides, writes nothing.
 	st, err := Apply(ctx, testDB, vs, false)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Restores)
@@ -178,25 +158,21 @@ func TestApplyIsPurelyAdditive(t *testing.T) {
 	assert.Equal(t, 1, st.Written)
 	assert.Len(t, st.ReceiptIDs, 1, "receipts identify exactly the row written")
 
-	// The machine row is untouched…
 	var mt model.CatalogWorkIntro
 	require.NoError(t, testDB.Where("work_id=? AND provenance=1", w).First(&mt).Error)
 	assert.Equal(t, "机器翻译版本。", mt.Intro)
 	assert.Equal(t, "glm", mt.MTModel)
-	// …and the restored row sits beside it as first-party source text.
 	var human model.CatalogWorkIntro
 	require.NoError(t, testDB.Where("work_id=? AND provenance=0", w).First(&human).Error)
 	assert.Equal(t, "用户手写的完整中文简介。", human.Intro)
 	assert.Equal(t, curated, human.SourceID)
 
-	// Second apply writes zero.
 	st, err = Apply(ctx, testDB, vs, true)
 	require.NoError(t, err)
 	assert.Zero(t, st.Written)
 	assert.Equal(t, 1, st.Skipped, "a human row now exists, so the work is no longer eligible")
 }
 
-// TestGateAndVocabulary pins the two ways a verdict fails to cause a write.
 func TestGateAndVocabulary(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -209,8 +185,7 @@ func TestGateAndVocabulary(t *testing.T) {
 	mkSnapshot(t, wNo, true, "残片", "日本語。", "", "")
 
 	vs := []Verdict{
-		{WorkID: wLow, Bucket: BucketUsable, Verdict: VerdictUsable, Confidence: 0.85}, // the v1 calibration's relay-MT sat here
-		// A verdict the model invented — outside the bucket's vocabulary.
+		{WorkID: wLow, Bucket: BucketUsable, Verdict: VerdictUsable, Confidence: 0.85},
 		{WorkID: wBogus, Bucket: BucketUsable, Verdict: "definitely_keep", Confidence: 0.99},
 		{WorkID: wNo, Bucket: BucketUsable, Verdict: VerdictUnusable, Confidence: 0.97},
 	}
@@ -226,9 +201,6 @@ func TestGateAndVocabulary(t *testing.T) {
 	assert.EqualValues(t, 0, n)
 }
 
-// TestSnapshotMissingIsAPrecondition pins that a missing rescue capture is
-// reported as the precondition it is, rather than silently yielding an empty
-// candidate set that reads like "nothing to do".
 func TestSnapshotMissingIsAPrecondition(t *testing.T) {
 	requireDB(t)
 	require.NoError(t, testDB.Exec(`DROP TABLE IF EXISTS src_wiki.intro_snapshot`).Error)
@@ -246,15 +218,10 @@ func TestUserPacketShape(t *testing.T) {
 	assert.Contains(t, p, "A(用户手写中文)")
 	assert.Contains(t, p, "B(机器翻译中文)")
 
-	// The usable bucket has no B side to show.
 	p = UserPacket(Candidate{WorkID: 7, Bucket: BucketUsable, Source: "原文", WikiZh: "甲"})
 	assert.NotContains(t, p, "B(机器翻译中文)")
 }
 
-// TestConsensusRequiresUnanimity pins the fold. The v2 calibration ran the
-// UNCHANGED compare prompt twice and 6 of 15 verdicts moved, two of them from
-// "unsure, no write" to "a_better, 0.90, auto-write" — so agreement across
-// rounds is the real signal and confidence is only a floor.
 func TestConsensusRequiresUnanimity(t *testing.T) {
 	r := func(id int64, v string, c float64) Verdict {
 		return Verdict{Key: fmt.Sprintf("w%d", id), WorkID: id, Bucket: BucketCompare, Verdict: v, Confidence: c}
@@ -262,7 +229,7 @@ func TestConsensusRequiresUnanimity(t *testing.T) {
 	rounds := [][]Verdict{
 		{r(1, VerdictABetter, 0.95), r(2, VerdictABetter, 0.95), r(3, VerdictABetter, 0.95), r(4, VerdictABetter, 0.95)},
 		{r(1, VerdictABetter, 0.92), r(2, VerdictBBetter, 0.90), r(3, VerdictABetter, 0.80), r(4, VerdictABetter, 0.95)},
-		{r(1, VerdictABetter, 0.99), r(2, VerdictABetter, 0.95), r(3, VerdictABetter, 0.95)}, // work 4 missing
+		{r(1, VerdictABetter, 0.99), r(2, VerdictABetter, 0.95), r(3, VerdictABetter, 0.95)},
 	}
 	got, st := Consensus(rounds)
 	assert.Equal(t, 3, st.Rounds)
@@ -275,21 +242,17 @@ func TestConsensusRequiresUnanimity(t *testing.T) {
 	for _, v := range got {
 		by[v.WorkID] = v
 	}
-	// Unanimous keeps the verdict but carries the LOWEST confidence, so an
-	// optimistic round cannot satisfy the gate on its own.
 	assert.Equal(t, VerdictABetter, by[1].Verdict)
 	assert.InDelta(t, 0.92, by[1].Confidence, 0.001)
 	assert.Equal(t, VerdictABetter, by[3].Verdict)
 	assert.InDelta(t, 0.80, by[3].Confidence, 0.001, "the 0.80 round drags it under the gate")
 
-	// Disagreement and incompleteness both become unsure — never a write.
 	for _, id := range []int64{2, 4} {
 		assert.Equal(t, VerdictUnsure, by[id].Verdict)
 		assert.Zero(t, by[id].Confidence)
 		assert.NotEmpty(t, by[id].Reason, "the review pile needs to know WHY it landed there")
 	}
 
-	// And that survives Apply: nothing here may be written.
 	clean(t)
 	for _, id := range []int64{1, 2, 3, 4} {
 		w := mkWork(t, true)
@@ -297,7 +260,7 @@ func TestConsensusRequiresUnanimity(t *testing.T) {
 		mkSnapshot(t, w, true, "候选中文。", "日本語。", "机翻。", "")
 	}
 	var folded []Verdict
-	for _, id := range []int64{2, 3, 4} { // the three that must not write
+	for _, id := range []int64{2, 3, 4} {
 		folded = append(folded, by[id])
 	}
 	stApply, err := Apply(context.Background(), testDB, folded, true)
@@ -305,20 +268,11 @@ func TestConsensusRequiresUnanimity(t *testing.T) {
 	assert.Zero(t, stApply.Written, "disagreement, incompleteness and a sub-gate fold all block the write")
 }
 
-// TestConsensusFoldsOnDirection pins the correction that took the review pile
-// from 829 to 523. The first fold compared LABELS, so "equivalent" and "unsure"
-// counted as dissent and 306 works no round had contradicted were sent to a
-// human. Agreement is on the direction; abstentions neither block nor decide.
 func TestConsensusFoldsOnDirection(t *testing.T) {
 	r := func(id int64, v string, c float64) Verdict {
 		return Verdict{Key: fmt.Sprintf("w%d", id), WorkID: id, Bucket: BucketCompare, Verdict: v, Confidence: c}
 	}
 	rounds := [][]Verdict{
-		// 1: two votes and a shrug   → decided (this is the 306)
-		// 2: one vote and two shrugs → NOT decided, a lone vote is no consensus
-		// 3: genuinely opposed       → contested, the only kind worth a human
-		// 4: nobody wanted it        → declined, no write, no human
-		// 5: everyone abstained      → abstained
 		{r(1, VerdictABetter, 0.95), r(2, VerdictABetter, 0.95), r(3, VerdictABetter, 0.95), r(4, VerdictBBetter, 0.95), r(5, VerdictUnsure, 0.5)},
 		{r(1, VerdictABetter, 0.93), r(2, VerdictEquivalent, 0.9), r(3, VerdictBBetter, 0.95), r(4, VerdictEquivalent, 0.9), r(5, VerdictEquivalent, 0.4)},
 		{r(1, VerdictEquivalent, 0.10), r(2, VerdictUnsure, 0.5), r(3, VerdictABetter, 0.95), r(4, VerdictBBetter, 0.95), r(5, VerdictUnsure, 0.5)},
@@ -334,36 +288,24 @@ func TestConsensusFoldsOnDirection(t *testing.T) {
 	for _, v := range got {
 		by[v.WorkID] = v
 	}
-	// The gate floor comes from the DECIDING rounds only. Work 1's third round
-	// abstained at 0.10; letting that in would veto the decision with a
-	// confidence in not deciding.
 	assert.Equal(t, VerdictABetter, by[1].Verdict)
 	assert.InDelta(t, 0.93, by[1].Confidence, 0.001)
-	// A lone vote is not a consensus, however sure of itself it is.
 	assert.Equal(t, VerdictUnsure, by[2].Verdict)
 	assert.Zero(t, by[2].Confidence)
-	// Declining needs no majority — not writing is the safe default.
 	assert.Equal(t, VerdictBBetter, by[4].Verdict)
 	assert.False(t, restores(BucketCompare, by[4].Verdict))
 }
 
-// TestSwapVerdictIsAnInvolution: the adversarial compare round presents the
-// texts in the opposite order, so the reply must be mapped back before it
-// reaches the verdict file. Applying the mapping twice returns the original —
-// which is what makes it safe to run over a whole round.
 func TestSwapVerdictIsAnInvolution(t *testing.T) {
 	for _, v := range []string{VerdictABetter, VerdictBBetter, VerdictEquivalent, VerdictUnsure} {
 		assert.Equal(t, v, SwapVerdict(SwapVerdict(v)), v)
 	}
 	assert.Equal(t, VerdictBBetter, SwapVerdict(VerdictABetter))
 	assert.Equal(t, VerdictABetter, SwapVerdict(VerdictBBetter))
-	// A tie or an abstention has no side, so swapping must not invent one.
 	assert.Equal(t, VerdictEquivalent, SwapVerdict(VerdictEquivalent))
 	assert.Equal(t, VerdictUnsure, SwapVerdict(VerdictUnsure))
 }
 
-// TestAdversarialPacketSwapsOnlyCompare: the usable bucket has no A/B, so its
-// re-framing lives in the prompt and its packet must be untouched.
 func TestAdversarialPacketSwapsOnlyCompare(t *testing.T) {
 	c := Candidate{WorkID: 1, Bucket: BucketCompare, Source: "原文", WikiZh: "USERTEXT", MachineZh: "MACHINETEXT"}
 	swapped := AdversarialPacket(c)
@@ -377,24 +319,19 @@ func TestAdversarialPacketSwapsOnlyCompare(t *testing.T) {
 	assert.Equal(t, UserPacket(u), AdversarialPacket(u))
 }
 
-// TestTiebreakIsScoped pins the adversarial round's authority: it decides the
-// works the ordinary rounds contested and NOTHING else. A fourth ordinary vote
-// on a 2-1 split leaves it split, which is why this is a separate mechanism
-// rather than another round — but a round that can only speak where the others
-// deadlocked must not be able to overturn the ones they settled.
 func TestTiebreakIsScoped(t *testing.T) {
 	v := func(id int64, verdict string, c float64) Verdict {
 		return Verdict{Key: fmt.Sprintf("w%d", id), WorkID: id, Bucket: BucketCompare, Verdict: verdict, Confidence: c}
 	}
 	folded := []Verdict{
-		v(1, VerdictABetter, 0.95), // decided by the rounds — off limits
-		v(2, VerdictUnsure, 0),     // contested → the tiebreak decides for
-		v(3, VerdictUnsure, 0),     // contested → the tiebreak decides against
-		v(4, VerdictUnsure, 0),     // contested, tiebreak abstains
-		v(5, VerdictUnsure, 0),     // contested, no tiebreak returned
+		v(1, VerdictABetter, 0.95),
+		v(2, VerdictUnsure, 0),
+		v(3, VerdictUnsure, 0),
+		v(4, VerdictUnsure, 0),
+		v(5, VerdictUnsure, 0),
 	}
 	tie := []Verdict{
-		v(1, VerdictBBetter, 0.99), // must be ignored
+		v(1, VerdictBBetter, 0.99),
 		v(2, VerdictABetter, 0.93),
 		v(3, VerdictBBetter, 0.91),
 		v(4, VerdictUnsure, 0.5),
@@ -408,8 +345,6 @@ func TestTiebreakIsScoped(t *testing.T) {
 	assert.InDelta(t, 0.95, by[1].Confidence, 0.001)
 	assert.Equal(t, VerdictABetter, by[2].Verdict)
 	assert.Equal(t, VerdictBBetter, by[3].Verdict)
-	// An abstaining or absent tiebreak leaves the work in the pile rather than
-	// quietly resolving it.
 	assert.Equal(t, VerdictUnsure, by[4].Verdict)
 	assert.Equal(t, VerdictUnsure, by[5].Verdict)
 

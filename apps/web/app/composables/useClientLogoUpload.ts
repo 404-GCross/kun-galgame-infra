@@ -1,12 +1,3 @@
-// Uploads an OAuth-client logo/icon to image_service and returns its CDN URL.
-//
-// `POST {apiBase}/oauth/clients/logo` (admin, multipart field `file`) is
-// decoupled from any client id — it just stores the image and hands back the
-// absolute `data.url`, which the create/edit form then saves into `logo_url`.
-// Works for both create (no id yet) and edit.
-//
-// Mirrors the auth/fetch pattern in `components/users/AvatarUploadModal.vue`
-// (Bearer access_token cookie + credentials:include + FormData).
 
 interface LogoUploadResponse {
   code: number
@@ -25,8 +16,6 @@ export const useClientLogoUpload = () => {
 
     try {
       const fd = new FormData()
-      // Blob has no filename; the multipart parser needs one to treat this
-      // part as a file rather than a plain form field.
       fd.append('file', blob, 'logo.webp')
 
       const cfg = useRuntimeConfig()

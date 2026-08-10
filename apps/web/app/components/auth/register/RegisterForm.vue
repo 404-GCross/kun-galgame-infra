@@ -1,17 +1,4 @@
 <script setup lang="ts">
-// Two-step register UI mirrors EmailChange.vue's verify-with-code pattern.
-// Step 1: user fills name + email + password, clicks "发送验证码" → the
-// "确认注册" button + code input appear, a 60s cool-down timer ticks.
-// Step 2: user pastes the 6-digit code, clicks "确认注册" → backend
-// verifies code + creates account + issues tokens (we drop straight into
-// logged-in state via useAuth.register's internal setAccessToken /
-// userStore.setUser).
-//
-// `?redirect=` chains the post-register navigation into a downstream
-// OAuth authorize URL when this page was reached via the unified
-// registration flow (kungal/moyu/wiki "注册" button → here → back to
-// origin site already logged in). Mirrors LoginForm's `redirect` query
-// param exactly so unified PKCE helpers can target either endpoint.
 const auth = useAuth()
 const router = useRouter()
 const route = useRoute()
@@ -47,10 +34,6 @@ onUnmounted(() => {
 
 const redirectUrl = computed(() => route.query.redirect as string | undefined)
 
-// Only follow a same-origin redirect: a relative path (but not a
-// protocol-relative "//evil.com") or a same-origin absolute URL. Otherwise fall
-// back to the default landing — blocks open-redirect via ?redirect= (mirrors
-// LoginForm.isSafeRedirect; a freshly-registered user is a prime phishing mark).
 const isSafeRedirect = (url: string): boolean => {
   if (url.startsWith('//')) return false
   if (url.startsWith('/')) return true
@@ -71,25 +54,12 @@ const navigateAfterRegister = () => {
   }
 }
 
-// Already-logged-in user landing here: skip the form entirely. See
-// LoginForm for the same pattern.
 onMounted(() => {
   if (auth.isLoggedIn.value) {
     navigateAfterRegister()
   }
 })
 
-// Client-side preflight before hitting the backend with send-code.
-// Backend validates the same constraints + checks uniqueness, but
-// catching trivial issues here saves a round-trip + avoids burning a
-// strict-rate-limited slot on obvious errors.
-//
-// Name rule mirrors backend `utils.IsValidName` (legacy isValidName):
-//   - 1..17 chars, Unicode letter/number + `!~_@#$%^&*()+=-`
-//   - rejects 50+ invisible / zero-width / format-control codepoints
-//     that would let an attacker register a visually-identical name.
-// If this rule drifts from backend, the backend wins — frontend
-// validation is purely UX, never a security boundary.
 const NAME_REGEX = /^[\p{L}\p{N}!~_@#$%^&*()+=-]{1,17}$/u
 const INVISIBLE_NAME_CODEPOINTS = [
   0x0009, 0x0020, 0x00a0, 0x00ad, 0x034f, 0x061c,
@@ -193,11 +163,6 @@ const handleRegister = async () => {
 
     <form @submit.prevent>
       <div class="space-y-4">
-        <!-- Step 1 fields. Locked after the code is sent so consumers
-             can't tweak the email and submit a stale code against a
-             different address. To change them: wait out the countdown,
-             click 重新发送 (which only resends; backend hashes the new
-             email under a new key). -->
         <KunInput
           v-model="name"
           label="用户名"
@@ -295,12 +260,6 @@ const handleRegister = async () => {
         >立即登录</NuxtLink>
       </p>
 
-      <!-- TODO: re-enable the "一键登录以下网站" ecosystem strip once everything
-           (downstream CORS, prod client `listed` flags, logos) is ready. Backend
-           (GET /oauth/ecosystem) stays live; this just hides the UI for now.
-           Component kept at components/auth/EcosystemStrip.vue. Moved here from
-           pages/auth/register.vue so that page keeps a single root node. -->
-      <!-- <AuthEcosystemStrip /> -->
     </div>
   </AuthShell>
 </template>

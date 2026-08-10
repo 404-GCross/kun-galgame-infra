@@ -5,32 +5,25 @@ import (
 	"io"
 )
 
-// SourceReport is the per-section tally. The dry-run numbers must reconcile with
-// the reconnaissance baseline (rating 144 / website 70 / toolset 59 locally);
-// any delta is explained in the execution report.
 type SourceReport struct {
 	Name            string
-	EntitiesTotal   int // distinct anchor entities with >=1 comment
+	EntitiesTotal   int
 	ThreadsToCreate int
 	ThreadsExisting int
 	PostsToInsert   int
-	PostsExisting   int // already mapped (or reconciled from a crashed run)
+	PostsExisting   int
 	MapRowsToWrite  int
 
-	// Anomalies.
-	DanglingParents int // tree parent pointer missing -> degraded to root
-	SelfTargets     int // rating self-directed target_user_id (expected ~30)
-	OverLenRows     int // content over the section ceiling (imported verbatim)
-	MaxRunes        int // the section ceiling used for OverLenRows
+	DanglingParents int
+	SelfTargets     int
+	OverLenRows     int
+	MaxRunes        int
 }
 
-// Report is the running tally printed at the end of both a dry run and an apply.
-// Trust seeding is global (one row per user across all three sections; the PK is
-// the global user id), so it lives outside the per-source breakdown.
 type Report struct {
 	Sources          []*SourceReport
-	TrustSeedAbsent  int // authors with no community_trust row -> inserted
-	TrustSeedPresent int // authors already holding a trust row -> untouched
+	TrustSeedAbsent  int
+	TrustSeedPresent int
 }
 
 func (r *Report) source(name string) *SourceReport {

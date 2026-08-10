@@ -7,11 +7,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// TestDevPortalFence pins the /dev/* client fence: first-party tokens (empty
-// client_id) and allow-listed clients pass; a stranger client is 403; and an
-// empty allowlist is fail-closed — it rejects every client token while still
-// admitting first-party ones. The token_client_id local is set by a preceding
-// handler here, exactly as middleware.Auth publishes it in production.
 func TestDevPortalFence(t *testing.T) {
 	portal := map[string]bool{"portal-client": true}
 	empty := map[string]bool{}
@@ -34,7 +29,6 @@ func TestDevPortalFence(t *testing.T) {
 			app := fiber.New()
 			app.Get("/dev/apps",
 				func(c fiber.Ctx) error {
-					// Simulate middleware.Auth publishing the client id local.
 					c.Locals("token_client_id", tc.clientID)
 					return c.Next()
 				},

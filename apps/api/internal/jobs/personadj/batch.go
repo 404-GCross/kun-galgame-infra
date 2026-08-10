@@ -12,26 +12,19 @@ import (
 	"time"
 )
 
-// BatchOpts configures one adjudication run.
 type BatchOpts struct {
 	PacketsPath  string
-	VerdictsPath string // appended to; existing keys are skipped (resume)
-	ErrorsPath   string // optional; one line per refused / failed packet
-	Bucket       Bucket // "" = every bucket in the packets file
+	VerdictsPath string
+	ErrorsPath   string
+	Bucket       Bucket
 	Workers      int
 	Limit        int
-	// Chunk packs several packets of one bucket into a single request. The
-	// gateway's ceiling is requests per minute, not tokens, so this is the only
-	// throughput lever that works; a chunk that comes back misaligned is
-	// recorded as an error for every packet in it and re-judged by a later run
-	// with Chunk=1.
-	Chunk int
+	Chunk        int
 }
 
-// BatchStats is the run tally.
 type BatchStats struct {
 	Packets  int
-	Skipped  int // already judged in a previous run
+	Skipped  int
 	Judged   int
 	Errors   int
 	Merge    int
@@ -40,9 +33,6 @@ type BatchStats struct {
 	Elapsed  time.Duration
 }
 
-// batchError is the errors-file line shape: enough to re-run and to explain
-// how much of the batch is missing, never the packet body (the packets file
-// already holds it).
 type batchError struct {
 	Key    string `json:"key"`
 	Bucket Bucket `json:"bucket"`
@@ -50,13 +40,6 @@ type batchError struct {
 	At     string `json:"at"`
 }
 
-// RunBatch judges every not-yet-judged packet and APPENDS each verdict to the
-// verdicts file as it lands. Append-as-you-go plus key-based resume is what
-// makes an interrupted multi-hour batch cost nothing: re-running the same
-// command completes the remainder.
-//
-// A failed packet is recorded and skipped, never guessed at — the conservative
-// direction, since an unjudged packet simply stays in the human review file.
 func RunBatch(ctx context.Context, j Judge, opts BatchOpts) (*BatchStats, error) {
 	packets, err := LoadPackets(opts.PacketsPath, opts.Bucket)
 	if err != nil {
@@ -96,7 +79,7 @@ func RunBatch(ctx context.Context, j Judge, opts BatchOpts) (*BatchStats, error)
 	if workers <= 0 {
 		workers = 8
 	}
-	var mu sync.Mutex // guards the two append streams and the counters
+	var mu sync.Mutex
 	var progressed int64
 	start := time.Now()
 
@@ -153,9 +136,6 @@ func RunBatch(ctx context.Context, j Judge, opts BatchOpts) (*BatchStats, error)
 	return st, nil
 }
 
-// judgeChunk sends a chunk through the batch seam when the judge supports one
-// and the chunk holds more than a single packet; otherwise it falls back to the
-// per-packet path, which is always available.
 func judgeChunk(ctx context.Context, j Judge, c []Packet) ([]Verdict, error) {
 	if bj, ok := j.(BatchJudge); ok && len(c) > 1 {
 		return bj.JudgeBatch(ctx, c)
@@ -171,8 +151,6 @@ func judgeChunk(ctx context.Context, j Judge, c []Packet) ([]Verdict, error) {
 	return out, nil
 }
 
-// chunkPackets groups consecutive packets of the SAME bucket, since a chunk
-// shares one system prompt. size <= 1 yields one packet per chunk.
 func chunkPackets(ps []Packet, size int) [][]Packet {
 	if size < 1 {
 		size = 1
@@ -192,8 +170,6 @@ func chunkPackets(ps []Packet, size int) [][]Packet {
 	return out
 }
 
-// writeLine appends one JSON object and flushes it to the OS immediately, so a
-// killed process keeps every verdict it already paid for.
 func writeLine(w io.Writer, v any) {
 	if w == nil {
 		return

@@ -11,14 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Unmerge reverses an executed merge (doc 10 §6.3): the source entity is
-// rebuilt from its merged_source snapshot under a NEW id, with its nested
-// children (credit names / aliases / titles); the redirect repoints at the
-// rebuilt entity (staying flat); both sides get a reverted revision.
-//
-// Not promised to be perfect — edits made to the target AFTER the merge
-// (rehung credits, later field changes) need manual triage. Promised to lose
-// nothing: the full pre-merge state is in the snapshot.
 func (s *MergeService) Unmerge(ctx context.Context, proposalID int64, actorID *int64) (int64, error) {
 	var newID int64
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -47,9 +39,6 @@ func (s *MergeService) Unmerge(ctx context.Context, proposalID int64, actorID *i
 			return fmt.Errorf("rebuild: %w", err)
 		}
 
-		// Redirect reversal: the old id now resolves to the rebuilt entity.
-		// Rows flattened onto the target during the merge stay put (their
-		// pre-merge targets are not reconstructable — and not wrong).
 		if err := repository.RepointRedirect(tx, et, p.SourceEntityID, newID); err != nil {
 			return err
 		}
@@ -75,8 +64,6 @@ func (s *MergeService) Unmerge(ctx context.Context, proposalID int64, actorID *i
 	return newID, err
 }
 
-// rebuildFromSnapshot recreates the merged-away entity from its
-// merged_source snapshot under a fresh identity id, then its children.
 func rebuildFromSnapshot(tx *gorm.DB, entityType int16, raw []byte) (int64, error) {
 	switch entityType {
 	case model.EntityTypePerson:
@@ -86,8 +73,6 @@ func rebuildFromSnapshot(tx *gorm.DB, entityType int16, raw []byte) (int64, erro
 		}
 		p := snap.Person
 		p.ID = 0
-		// The primary name pointer refers to an old credit_name id; it is
-		// restored after the names are rebuilt with fresh ids.
 		p.PrimaryCreditNameID = nil
 		if err := tx.Create(&p).Error; err != nil {
 			return 0, err
@@ -184,9 +169,6 @@ func rebuildFromSnapshot(tx *gorm.DB, entityType int16, raw []byte) (int64, erro
 		}
 		w := snap.Work
 		w.ID = 0
-		// The claim slot may have been transferred to (or still be held by)
-		// the target — the rebuilt work starts unclaimed; the product side
-		// re-claims through its anchors.
 		w.Site = nil
 		w.ProductWorkID = nil
 		if w.Status == model.WorkStatusMerged {

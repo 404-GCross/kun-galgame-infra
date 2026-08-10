@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// The portal's login UI. Primary path is OAuth SSO (redirect to the IdP with the
-// NextMoe / 未萌 account, the ecosystem standard). A password form is kept as a
-// fallback (§9.1). Opened via useLoginModal from the header/landing CTAs and the
-// /login route; on success it lands on the console (or the stored redirect).
 const auth = useAuth()
 const { startLogin, startRegister } = useOAuthLogin()
 const { isOpen, redirect, close } = useLoginModal()
@@ -84,7 +80,6 @@ const handleSubmit = async () => {
         </p>
       </div>
 
-      <!-- Primary: OAuth SSO -->
       <KunButton
         color="primary"
         size="lg"
@@ -105,14 +100,12 @@ const handleSubmit = async () => {
         {{ error }}
       </div>
 
-      <!-- Divider -->
       <div class="flex items-center gap-3 text-xs text-default-400">
         <span class="h-px flex-1 bg-default-200" />
         或使用密码登录
         <span class="h-px flex-1 bg-default-200" />
       </div>
 
-      <!-- Fallback: password form -->
       <form class="space-y-4" @submit.prevent="handleSubmit">
         <KunInput
           v-model="account"

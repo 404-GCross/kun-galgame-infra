@@ -13,22 +13,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// SelfServiceHandler serves the developer self-service face (/api/v1/dev/*):
-// the developer's own view of their applications and keys. The caller mounts it
-// under a group carrying the user-JWT auth middleware (no admin permission); the
-// per-request owner guard lives in the service (a non-owned app is 404, never
-// distinguishable from a nonexistent one — no existence leak).
 type SelfServiceHandler struct {
 	svc *SelfServiceService
 }
 
-// NewSelfServiceHandler builds the self-service handler.
 func NewSelfServiceHandler(svc *SelfServiceService) *SelfServiceHandler {
 	return &SelfServiceHandler{svc: svc}
 }
 
-// Register mounts the self-service routes on r (a group already gated by the
-// user-JWT auth middleware).
 func (h *SelfServiceHandler) Register(r fiber.Router) {
 	r.Post("/apps", h.CreateApp)
 	r.Get("/apps", h.ListApps)
@@ -43,14 +35,10 @@ func (h *SelfServiceHandler) Register(r fiber.Router) {
 	r.Get("/usage", h.OwnerUsage)
 }
 
-// --- Request / response DTOs ---
-
 type createAppRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	// UserLogin is the opt-in declaration that this app signs users in.
-	// Omitted → a key-only app, exactly as before this field existed.
-	UserLogin *userLoginRequest `json:"user_login"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	UserLogin   *userLoginRequest `json:"user_login"`
 }
 
 type updateAppRequest struct {
@@ -59,15 +47,11 @@ type updateAppRequest struct {
 	UserLogin   *userLoginRequest `json:"user_login"`
 }
 
-// userLoginRequest is the wire form of UserLoginRequest. `scopes` is what the
-// app will ask a human for on the consent screen; `openid` is added for it.
 type userLoginRequest struct {
 	RedirectURIs []string `json:"redirect_uris"`
 	Scopes       []string `json:"scopes"`
 }
 
-// toUserLogin converts the wire form, preserving "absent" as nil so an update
-// that does not mention user login leaves an app's callbacks untouched.
 func (r *userLoginRequest) toUserLogin() *UserLoginRequest {
 	if r == nil {
 		return nil
@@ -81,39 +65,25 @@ type selfMintKeyRequest struct {
 	Scopes []string `json:"scopes"`
 }
 
-// selfAppView is the developer's view of one of their apps. Tier / rate / quota
-// are read-only here (informational — set by admins); nsfw is omitted (never
-// self-service). rate_per_min / quota_daily are the EFFECTIVE limits (tier
-// default with any admin override applied); 0 = unlimited (internal tier).
 type selfAppView struct {
-	ClientID    string `json:"client_id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	DevEnabled  bool   `json:"dev_enabled"`
-	Tier        string `json:"tier"`
-	RatePerMin  int    `json:"rate_per_min"`
-	QuotaDaily  int    `json:"quota_daily"`
-	KeyCount    int64  `json:"key_count"`
-	CreatedAt   string `json:"created_at"`
-	// UserLogin echoes the app's consent configuration, null for a key-only
-	// app. A developer debugging a redirect_uri mismatch needs to see what we
-	// actually stored, not what they believe they sent.
-	UserLogin *userLoginView `json:"user_login"`
+	ClientID    string         `json:"client_id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	DevEnabled  bool           `json:"dev_enabled"`
+	Tier        string         `json:"tier"`
+	RatePerMin  int            `json:"rate_per_min"`
+	QuotaDaily  int            `json:"quota_daily"`
+	KeyCount    int64          `json:"key_count"`
+	CreatedAt   string         `json:"created_at"`
+	UserLogin   *userLoginView `json:"user_login"`
 }
 
-// userLoginView is the stored consent configuration as the owner sees it.
 type userLoginView struct {
 	RedirectURIs []string `json:"redirect_uris"`
 	Scopes       []string `json:"scopes"`
-	// PKCERequired is always true and is stated rather than implied: a native
-	// app author who does not know they must send a code_challenge will read
-	// this before they read the spec.
-	PKCERequired bool `json:"pkce_required"`
+	PKCERequired bool     `json:"pkce_required"`
 }
 
-// --- Handlers ---
-
-// CreateApp registers a new developer application for the caller.
 func (h *SelfServiceHandler) CreateApp(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -133,7 +103,6 @@ func (h *SelfServiceHandler) CreateApp(c fiber.Ctx) error {
 	return response.Success(c, toSelfAppView(app, 0))
 }
 
-// ListApps returns the caller's applications with their key counts.
 func (h *SelfServiceHandler) ListApps(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -150,7 +119,6 @@ func (h *SelfServiceHandler) ListApps(c fiber.Ctx) error {
 	return response.Success(c, out)
 }
 
-// GetApp returns one of the caller's applications.
 func (h *SelfServiceHandler) GetApp(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -166,7 +134,6 @@ func (h *SelfServiceHandler) GetApp(c fiber.Ctx) error {
 	return response.Success(c, toSelfAppView(view.Client, view.KeyCount))
 }
 
-// UpdateApp patches an owned app's name and/or description.
 func (h *SelfServiceHandler) UpdateApp(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -186,12 +153,10 @@ func (h *SelfServiceHandler) UpdateApp(c fiber.Ctx) error {
 	if err != nil {
 		return response.InternalError(c, apperr.ErrOperationFailed)
 	}
-	// Re-count keys for a consistent view shape.
 	n, _ := h.svc.repo.CountKeysByClient(c.Context(), app.ID)
 	return response.Success(c, toSelfAppView(app, n))
 }
 
-// DeactivateApp disables an owned app and revokes all its keys.
 func (h *SelfServiceHandler) DeactivateApp(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -207,7 +172,6 @@ func (h *SelfServiceHandler) DeactivateApp(c fiber.Ctx) error {
 	return response.Success(c, nil)
 }
 
-// MintKey issues a new key for an owned app and returns the plaintext ONCE.
 func (h *SelfServiceHandler) MintKey(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -234,7 +198,6 @@ func (h *SelfServiceHandler) MintKey(c fiber.Ctx) error {
 	return response.Success(c, mintedKeyView{keyView: toKeyView(key), Key: plaintext})
 }
 
-// ListKeys returns an owned app's keys (no secret material).
 func (h *SelfServiceHandler) ListKeys(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -254,7 +217,6 @@ func (h *SelfServiceHandler) ListKeys(c fiber.Ctx) error {
 	return response.Success(c, out)
 }
 
-// RotateKey mints a replacement key for an owned app (old key enters grace).
 func (h *SelfServiceHandler) RotateKey(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -271,13 +233,12 @@ func (h *SelfServiceHandler) RotateKey(c fiber.Ctx) error {
 	if err != nil {
 		return response.InternalError(c, apperr.ErrOperationFailed)
 	}
-	if key == nil { // owned app, but the key is not one of its keys
+	if key == nil {
 		return response.NotFound(c, apperr.ErrNotFound)
 	}
 	return response.Success(c, mintedKeyView{keyView: toKeyView(key), Key: plaintext})
 }
 
-// RevokeKey revokes a key of an owned app immediately.
 func (h *SelfServiceHandler) RevokeKey(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -294,14 +255,12 @@ func (h *SelfServiceHandler) RevokeKey(c fiber.Ctx) error {
 	if err != nil {
 		return response.InternalError(c, apperr.ErrOperationFailed)
 	}
-	if !found { // owned app, but the key is not one of its keys
+	if !found {
 		return response.NotFound(c, apperr.ErrNotFound)
 	}
 	return response.Success(c, nil)
 }
 
-// Usage returns the caller's app usage aggregated by (day, face). ?days=N,
-// clamped to [1, 30], default 7.
 func (h *SelfServiceHandler) Usage(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -321,9 +280,6 @@ func (h *SelfServiceHandler) Usage(c fiber.Ctx) error {
 	return response.Success(c, rows)
 }
 
-// OwnerUsage returns the caller's usage aggregated across ALL their apps: a
-// dense daily volume series + a per-app breakdown + window totals. ?days=N,
-// clamped to [1, 30], default 7.
 func (h *SelfServiceHandler) OwnerUsage(c fiber.Ctx) error {
 	ownerID, ok := ownerFromCtx(c)
 	if !ok {
@@ -336,10 +292,6 @@ func (h *SelfServiceHandler) OwnerUsage(c fiber.Ctx) error {
 	return response.Success(c, summary)
 }
 
-// --- helpers ---
-
-// ownerFromCtx reads the authenticated user id the auth middleware set as a
-// local. A missing/zero id (no auth) is treated as unauthenticated.
 func ownerFromCtx(c fiber.Ctx) (uint, bool) {
 	id, ok := c.Locals("user_id").(uint)
 	if !ok || id == 0 {
@@ -348,7 +300,6 @@ func ownerFromCtx(c fiber.Ctx) (uint, bool) {
 	return id, true
 }
 
-// clampDays parses the usage window: default 7, min 1, max 30.
 func clampDays(raw string) int {
 	days, err := strconv.Atoi(raw)
 	if err != nil || days <= 0 {
@@ -360,8 +311,6 @@ func clampDays(raw string) int {
 	return days
 }
 
-// selfServiceBadRequest maps a self-service validation/limit sentinel to its
-// client-facing 400 message; (_, false) means it is not such an error.
 func selfServiceBadRequest(err error) (string, bool) {
 	switch {
 	case err == nil:
@@ -378,8 +327,6 @@ func selfServiceBadRequest(err error) (string, bool) {
 		return "name too long (max 100)", true
 	case goerrors.Is(err, ErrDescTooLong):
 		return "description too long (max 100)", true
-	// The user-login declaration's refusals. Each says what would have to
-	// change, because the developer cannot see our policy from the outside.
 	case goerrors.Is(err, ErrRedirectURIRequired):
 		return "user_login needs at least one redirect_uri", true
 	case goerrors.Is(err, ErrTooManyRedirectURIs):
@@ -395,8 +342,6 @@ func selfServiceBadRequest(err error) (string, bool) {
 	}
 }
 
-// toSelfAppView renders an app row + key count into the developer's view, with
-// the effective (tier default + override) rate/quota resolved.
 func toSelfAppView(app *siteModel.OAuthClient, keyCount int64) selfAppView {
 	rate, quota := effectiveAppLimits(app)
 	return selfAppView{
@@ -413,9 +358,6 @@ func toSelfAppView(app *siteModel.OAuthClient, keyCount int64) selfAppView {
 	}
 }
 
-// effectiveAppLimits resolves an app's effective per-minute rate and daily quota
-// (tier default, with a positive override winning; 0 = unlimited for internal).
-// Mirrors Credential.EffectiveRate/Quota on the app row.
 func effectiveAppLimits(app *siteModel.OAuthClient) (rate, quota int) {
 	defRate, defQuota, unlimited := TierLimits(app.DevTier)
 	if unlimited {

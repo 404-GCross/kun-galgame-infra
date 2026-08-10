@@ -18,27 +18,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// logoPreset is the image-service preset these uploads use
-// (configs/image_presets.yaml). It is `inside`-fit, not `cover`: a wordmark
-// cropped to a square box loses the brand's own name. The catalog client's
-// image_allowed_presets MUST list it or every upload is 403'd.
 const logoPreset = "catalog_logo"
 
-// provField is the field_provenance key this lane writes under — the column
-// name, matching every other writer in the catalog.
 const provField = "logo_hash"
 
-// provEntry is one provenance record, R8 array shape
-// ({"<field>":[{"source","at"}, ...]}, latest first) — byte-identical to the
-// charattrs / orglabels / personmint writers.
 type provEntry struct {
 	Source string `json:"source"`
 	At     string `json:"at"`
 }
 
-// imageUploader is the slice of the image client this lane needs. Narrowing to
-// an interface (satisfied by *imageclient.Client) lets the write path be
-// exercised with a fake in tests — no image service, no network.
 type imageUploader interface {
 	UploadWithSub(ctx context.Context, r io.Reader, filename, preset, uploaderSub string) (*imageclient.UploadResult, error)
 	ReferencePing(ctx context.Context, hashes []string) (*imageclient.ReferencePingResult, error)
@@ -54,15 +42,10 @@ type runner struct {
 	pingHashes []string
 }
 
-// labelResult is one label's outcome. fill RETURNS it rather than mutating the
-// runner, which is what makes the worker pool safe: every field is private to
-// one label, so results merge serially on the driver goroutine and nothing is
-// shared while uploads are in flight. (The screenshot wave died at 8,077
-// uploads to a `concurrent map read and map write` for want of this shape.)
 type labelResult struct {
 	missing, would, uploaded, raced, rejected, errors int
 	quota                                             bool
-	hash                                              string // fresh upload, for the reference ping
+	hash                                              string
 }
 
 func (s *Stats) merge(r labelResult) {
@@ -77,15 +60,6 @@ func (s *Stats) merge(r labelResult) {
 	}
 }
 
-// fill uploads one label's mirrored logo and writes logo_hash + provenance.
-//
-// The UPDATE re-asserts an empty logo_hash even though the candidate was selected
-// on it. Between selection and here the other lane (or a human edit) may have
-// given this label a logo, and precedence says the first writer keeps it — so
-// losing that race must mean leaving the winner's logo alone, never overwriting
-// it. RowsAffected == 0 is therefore an ordinary outcome (counted as raced),
-// not an error. The bytes are already in the image service by then and are
-// pinged regardless, so a raced upload costs a duplicate image, not a leak.
 func (r *runner) fill(ctx context.Context, c candidate, apply bool) labelResult {
 	var out labelResult
 	path, ok := r.mirror.resolve(c.ExternalID)
@@ -123,8 +97,6 @@ func (r *runner) fill(ctx context.Context, c candidate, apply bool) labelResult 
 		slog.Warn("write label logo", "source", r.source.Key, "label", c.LabelID, "err", tx.Error)
 		return out
 	}
-	// Ping whether or not the row was claimed: the bytes are in the image
-	// service either way and sit at TTL from upload time.
 	out.hash = res.Hash
 	if tx.RowsAffected > 0 {
 		out.uploaded++
@@ -134,11 +106,6 @@ func (r *runner) fill(ctx context.Context, c candidate, apply bool) labelResult 
 	return out
 }
 
-// mergeProvenance prepends this run's (source, at) entry to the logo_hash
-// provenance array (latest first) inside the label's existing document, leaving
-// every other field's provenance untouched. A malformed or empty document is
-// treated as absent rather than fatal — the alternative is refusing to record
-// provenance because previous provenance is unreadable.
 func mergeProvenance(cur datatypes.JSON, source, at string) datatypes.JSON {
 	doc := map[string]json.RawMessage{}
 	if len(cur) > 0 {
@@ -158,11 +125,6 @@ func mergeProvenance(cur datatypes.JSON, source, at string) datatypes.JSON {
 
 func nowUTC() string { return time.Now().UTC().Format("2006-01-02T15:04:05Z") }
 
-// upload reads a mirrored logo and uploads it under the catalog_logo preset.
-// Bytes only ever come from the local mirror — this never dials Bangumi or
-// Ci-en. Transient failures are retried with a fresh bytes.Reader per attempt
-// (the previous one is consumed) so the run survives an image-container
-// recreation mid-sweep; quota and moderation are terminal.
 func (r *runner) upload(ctx context.Context, path string) (*imageclient.UploadResult, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -195,9 +157,6 @@ func (r *runner) upload(ctx context.Context, path string) (*imageclient.UploadRe
 	return nil, lastErr
 }
 
-// ping keeps freshly-uploaded bytes alive immediately. An image sits at TTL
-// from upload time, so waiting for the nightly refping is a real risk of
-// uploading bytes and then losing them.
 func (r *runner) ping(ctx context.Context) error {
 	if r.cli == nil || len(r.pingHashes) == 0 {
 		return nil
@@ -211,10 +170,6 @@ func (r *runner) ping(ctx context.Context) error {
 	return nil
 }
 
-// run walks the candidates through a fixed pool of workers. One label is one
-// image and one row, so labels are independent; the only shared state is the
-// result merge, which happens on the caller's goroutine, leaving Stats and
-// pingHashes single-writer and needing no mutex.
 func (r *runner) run(ctx context.Context, opts Opts, cands []candidate) {
 	workers := opts.Workers
 	if workers < 1 {
@@ -234,8 +189,6 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate) {
 		return
 	}
 
-	// Quota exhaustion is terminal for the whole run, so it cancels the shared
-	// context and every in-flight worker stops at its next label.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -277,8 +230,6 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate) {
 	}
 }
 
-// absorb folds one label's result into the run-level state. Single-writer by
-// construction — only the driver goroutine calls it.
 func (r *runner) absorb(res labelResult) {
 	r.stats.merge(res)
 	if res.hash != "" {

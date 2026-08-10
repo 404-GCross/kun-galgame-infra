@@ -58,7 +58,6 @@ func mediumID(t *testing.T) int16 {
 	return id
 }
 
-// mkWork creates a galgame work, optionally with a dated release (y=0 → none).
 func mkWork(t *testing.T, medium int16, name string, y, mo, d int16) int64 {
 	t.Helper()
 	w := &model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name}
@@ -94,17 +93,12 @@ func mkSeries(t *testing.T, sourceKey, externalID, name string, works ...int64) 
 	return s.ID
 }
 
-// TestAssignOrdersByReleaseDate pins the ordering rule: earliest dated release
-// first, fuzzy dates read at the start of their year, undated members last, and
-// work id breaking every tie.
 func TestAssignOrdersByReleaseDate(t *testing.T) {
 	clean(t)
 	med := mediumID(t)
-	// Created in an order that does NOT match the answer, so a result that
-	// merely echoes insertion order cannot pass.
 	undated := mkWork(t, med, "Undated", 0, 0, 0)
 	late := mkWork(t, med, "Late", 2010, 3, 1)
-	yearOnly := mkWork(t, med, "Year only", 2010, 0, 0) // 2010 → before 2010-03-01
+	yearOnly := mkWork(t, med, "Year only", 2010, 0, 0)
 	early := mkWork(t, med, "Early", 2004, 12, 24)
 	undated2 := mkWork(t, med, "Undated too", 0, 0, 0)
 
@@ -121,10 +115,6 @@ func TestAssignOrdersByReleaseDate(t *testing.T) {
 	}
 }
 
-// TestAssignKindFromEdges pins the kind rule: the a-side of fandisc_of/
-// side_story_of takes that role, any other participation in a series-ish edge
-// is a main entry, and a member no in-series edge touches takes the caller's
-// fallback.
 func TestAssignKindFromEdges(t *testing.T) {
 	clean(t)
 	med := mediumID(t)
@@ -138,7 +128,6 @@ func TestAssignKindFromEdges(t *testing.T) {
 	mkEdge(t, sequel, base, RelSequelOf)
 	mkEdge(t, fd, base, RelFandiscOf)
 	mkEdge(t, side, base, RelSideStoryOf)
-	// An edge that LEAVES the member set must not classify lonely.
 	mkEdge(t, lonely, outsider, RelFandiscOf)
 
 	members := []int64{base, sequel, fd, side, lonely}
@@ -154,7 +143,6 @@ func TestAssignKindFromEdges(t *testing.T) {
 	require.Equal(t, model.SeriesMemberKindSideStory, byWork[side])
 	require.Equal(t, model.SeriesMemberKindUnknown, byWork[lonely], "an out-of-series edge is no evidence")
 
-	// The derived lane's fallback classifies the same lonely member as main.
 	byWork = map[int64]int16{}
 	for _, a := range facts.Assign(members, model.SeriesMemberKindMain) {
 		byWork[a.WorkID] = a.Kind
@@ -162,8 +150,6 @@ func TestAssignKindFromEdges(t *testing.T) {
 	require.Equal(t, model.SeriesMemberKindMain, byWork[lonely])
 }
 
-// TestBackfillDryThenApplyThenZero is the acceptance shape: a dry run forecasts
-// exactly what the apply writes, and a second apply is a zero-write.
 func TestBackfillDryThenApplyThenZero(t *testing.T) {
 	clean(t)
 	med := mediumID(t)
@@ -210,9 +196,6 @@ func TestBackfillDryThenApplyThenZero(t *testing.T) {
 	require.Zero(t, second.TouchedWorks, "and touch nothing")
 }
 
-// TestBackfillSkipsTheDerivedLane pins the ownership split: the derived builder
-// assigns its own facets with its own fallback kind, so the backfill must leave
-// that lane alone.
 func TestBackfillSkipsTheDerivedLane(t *testing.T) {
 	clean(t)
 	med := mediumID(t)

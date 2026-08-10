@@ -20,19 +20,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + registry seeds) and the src_bangumi / src_vndb Silver schemas
-// co-located in ONE database, exactly as production lays them out (the
-// single-DSN premise of this job). Run drives the DSN itself, so we capture it
-// (not just the handle) to exercise the real entry point.
-//
-// erogamespace is a separate DATABASE in production. Standing up a second one
-// for the tests would buy nothing, so its `appearances` table is created in a
-// dedicated SCHEMA of the same test database and reached through a DSN whose
-// search_path points at it — the lane's SQL stays unqualified and identical to
-// what it runs against the real mirror. The dedicated schema also keeps this
-// stand-in from colliding with the differently-shaped `appearances` that the
-// catalog importer tests create in public.
 const egSchema = "entityintros_eg"
 
 var (
@@ -153,10 +140,6 @@ func charIntroCount(t *testing.T, where string, args ...any) int64 {
 	return n
 }
 
-// TestFillMissingAllLanes exercises the whole pipeline through the real Run
-// entry point: per-lane candidate selection (exact anchors, live entities),
-// fill-missing-language decisions, spoiler-span removal, CRLF normalization,
-// dry-run zero-write, apply, and second-pass idempotency.
 func TestFillMissingAllLanes(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -166,14 +149,13 @@ func TestFillMissingAllLanes(t *testing.T) {
 	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'user'`).Scan(&userSrc).Error)
 	require.NotZero(t, userSrc)
 
-	// Characters.
-	chZh := mkCharacter(t, "bgm-zh")            // bgm zh summary → zh-Hans new
-	chJaDup := mkCharacter(t, "bgm-ja-dup")     // bgm ja summary, ja intro exists → skip
-	chJaCRLF := mkCharacter(t, "bgm-ja-crlf")   // bgm ja CRLF summary → ja new, LF-normalized
-	chBlank := mkCharacter(t, "bgm-blank")      // whitespace summary → no_text
-	chSpoiler := mkCharacter(t, "vndb-spoiler") // vndb description with spoiler span → en new, span gone
+	chZh := mkCharacter(t, "bgm-zh")
+	chJaDup := mkCharacter(t, "bgm-ja-dup")
+	chJaCRLF := mkCharacter(t, "bgm-ja-crlf")
+	chBlank := mkCharacter(t, "bgm-blank")
+	chSpoiler := mkCharacter(t, "vndb-spoiler")
 	chAllSpoil := mkCharacter(t, "vndb-all-spoiler")
-	chBoth := mkCharacter(t, "both-sources") // bgm ja + vndb en → two rows, two langs
+	chBoth := mkCharacter(t, "both-sources")
 	chProbable := mkCharacter(t, "vndb-probable")
 	chDeleted := mkCharacter(t, "deleted")
 
@@ -200,13 +182,10 @@ func TestFillMissingAllLanes(t *testing.T) {
 	mkAnchor(t, model.EntityTypeCharacter, chDeleted, reg.vndbSource, "c205", model.LinkKindExact)
 	require.NoError(t, testDB.Delete(&model.CatalogCharacter{ID: chDeleted}).Error)
 
-	// The pre-existing ja intro that makes chJaDup a fill-missing skip.
 	require.NoError(t, testDB.Create(&model.CatalogCharacterIntro{
 		CharacterID: chJaDup, Lang: "ja", Intro: "既にある日本語紹介。", SourceID: userSrc,
 	}).Error)
 
-	// Persons: anchors are empty in prod today, but the lane must work
-	// end-to-end for when identity resolution lands them.
 	pZh := mkPerson(t, "person-zh")
 	pJaDup := mkPerson(t, "person-ja-dup")
 	mkSrcPerson(t, 301, "中国出身的插画家。")
@@ -217,11 +196,6 @@ func TestFillMissingAllLanes(t *testing.T) {
 		PersonID: pJaDup, Lang: "ja", Intro: "既存の人物紹介。", SourceID: userSrc,
 	}).Error)
 
-	// Host works (refs/proj/122): every character lane bumps the works that
-	// roster the characters it wrote. wBoth is rostered by a character both
-	// character lanes write, so BOTH lanes count and bump it; wQuiet's two
-	// characters are a dup-lang skip and a no_text, so it never moves; wGone is
-	// soft-deleted, so the preload drops it even though its character is written.
 	wBgm := mkWork(t, "host-bgm")
 	wVndb := mkWork(t, "host-vndb")
 	wBoth := mkWork(t, "host-both")
@@ -235,8 +209,6 @@ func TestFillMissingAllLanes(t *testing.T) {
 	mkRosterEdge(t, wGone, chJaCRLF)
 	require.NoError(t, testDB.Delete(&model.CatalogWork{ID: wGone}).Error)
 
-	// --- dry run: decides, writes nothing. char-eg runs too (its stand-in is
-	// empty here), so the all-lane run needs the erogamespace DSN.
 	st, err := Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN})
 	require.NoError(t, err)
 	assert.Equal(t, 5, st.CharBangumi.Candidates, "chZh chJaDup chJaCRLF chBlank chBoth")
@@ -263,7 +235,6 @@ func TestFillMissingAllLanes(t *testing.T) {
 		assert.Equal(t, backdated.UTC(), workUpdatedAt(t, w).UTC(), "dry run moves no watermark")
 	}
 
-	// --- apply.
 	st, err = Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.CharBangumi.ZhWritten)
@@ -273,8 +244,6 @@ func TestFillMissingAllLanes(t *testing.T) {
 	assert.Zero(t, st.CharBangumi.Errors+st.CharVNDB.Errors+st.PersonBangumi.Errors)
 	assert.Zero(t, st.CharBangumi.Conflict+st.CharVNDB.Conflict+st.PersonBangumi.Conflict)
 
-	// Touch parity: both character lanes bump their own hosts, the person lane
-	// has no touch path at all, and wQuiet/wGone stay where they were.
 	assert.Equal(t, 2, st.CharBangumi.Touched, "wBgm (chZh) + wBoth (chBoth ja); wGone is soft-deleted")
 	assert.Equal(t, 2, st.CharVNDB.Touched, "wVndb (chSpoiler) + wBoth (chBoth en)")
 	assert.Zero(t, st.PersonBangumi.Touched, "persons are not on the work read face — no touch path")
@@ -286,20 +255,17 @@ func TestFillMissingAllLanes(t *testing.T) {
 	assert.Equal(t, backdated.UTC(), workUpdatedAt(t, wQuiet).UTC(), "dup-lang skip and no_text bump nothing")
 	assert.Equal(t, backdated.UTC(), workUpdatedAt(t, wGone).UTC(), "a soft-deleted host work is never bumped")
 
-	// Spoiler-strip proof: the span content never lands; surrounding text does.
 	var spoilRow model.CatalogCharacterIntro
 	require.NoError(t, testDB.Where("character_id = ? AND source_id = ?", chSpoiler, reg.vndbSource).First(&spoilRow).Error)
 	assert.Equal(t, "en", spoilRow.Lang)
 	assert.Equal(t, "A cheerful student.\n\nLoves cats.", spoilRow.Intro)
 	assert.NotContains(t, spoilRow.Intro, "final boss")
 
-	// CRLF → LF, otherwise verbatim.
 	var crlfRow model.CatalogCharacterIntro
 	require.NoError(t, testDB.Where("character_id = ?", chJaCRLF).First(&crlfRow).Error)
 	assert.Equal(t, "ja", crlfRow.Lang)
 	assert.Equal(t, "一行目です。\n二行目です。", crlfRow.Intro)
 
-	// Two sources on one character coexist under different langs.
 	assert.EqualValues(t, 2, charIntroCount(t, "WHERE character_id = ?", chBoth), "ja(bangumi) + en(vndb)")
 	assert.EqualValues(t, 0, charIntroCount(t, "WHERE character_id = ?", chDeleted), "soft-deleted never materialises")
 	assert.EqualValues(t, 0, charIntroCount(t, "WHERE character_id = ?", chProbable), "probable tier never materialises")
@@ -308,7 +274,6 @@ func TestFillMissingAllLanes(t *testing.T) {
 	require.NoError(t, testDB.Where("person_id = ?", pZh).First(&pRow).Error)
 	assert.Equal(t, "zh-Hans", pRow.Lang)
 
-	// --- second apply: fill-missing is idempotent — zero writes everywhere.
 	st, err = Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.CharBangumi.JaWritten+st.CharBangumi.ZhWritten+st.CharVNDB.EnWritten+
@@ -322,8 +287,6 @@ func TestFillMissingAllLanes(t *testing.T) {
 	}
 }
 
-// TestOnlyLaneAndConflictBackstop covers --only lane selection, the invalid
-// lane guard, and the ON CONFLICT backstop against a stale exist map.
 func TestOnlyLaneAndConflictBackstop(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -346,8 +309,6 @@ func TestOnlyLaneAndConflictBackstop(t *testing.T) {
 	assert.Zero(t, st.PersonBangumi.Candidates)
 	assert.EqualValues(t, 1, charIntroCount(t, ""))
 
-	// Backstop: a STALE (empty) exist map cannot duplicate a row — the
-	// (character_id,lang,source_id) unique key refuses it.
 	r := &laneRunner{db: testDB, sourceID: reg.vndbSource, exist: map[int64]map[string]bool{},
 		stats: &LaneStats{}, vndb: true, lang: langEn, insert: insertCharacterIntro}
 	r.enrich(ctx, candidate{EntityID: ch, ExternalID: "c900", Text: "Only-lane description."}, true)

@@ -2,10 +2,6 @@
 import { DEV_TIER_COLORS, devTierLimitHint } from '~/constants/devapi'
 import type { DevApp, DevKey, DevKeyMinted } from '~~/shared/types/devapi'
 
-// App detail: dev config + API-key lifecycle. The management surface has no
-// single-app GET, so the app row is resolved from the dev_enabled list (find
-// by client_id) while keys load from the per-app endpoint. Mutations go
-// through useApi; reads are SSR-rendered via useApiFetch.
 const route = useRoute()
 const clientId = computed(() => String(route.params.clientId))
 
@@ -26,13 +22,10 @@ const busy = ref(false)
 const showConfigModal = ref(false)
 const showMintModal = ref(false)
 
-// Show-once plaintext lives ONLY here (component-local), handed to the reveal
-// modal and cleared on close — never store/localStorage/URL/logs.
 const mintedKey = ref<DevKeyMinted | null>(null)
 const revealRotated = ref(false)
 const revealOpen = ref(false)
 
-// Single reusable confirm dialog. `run` is the async action to execute on 确认.
 const confirmDialog = ref<{
   title: string
   body: string
@@ -143,7 +136,6 @@ const handleConfigUpdated = () => {
     </KunCard>
 
     <template v-else>
-      <!-- Config card -->
       <KunCard content-class="justify-start gap-0" class-name="p-6">
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">
@@ -196,7 +188,6 @@ const handleConfigUpdated = () => {
         </div>
       </KunCard>
 
-      <!-- Keys -->
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-foreground">API 密钥</h2>
         <KunButton color="primary" size="sm" @click="showMintModal = true">

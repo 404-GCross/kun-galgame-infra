@@ -1,9 +1,3 @@
-// import-store-refs imports Steam/DMM store-page work refs from the EG
-// mirror's typed cross-reference columns (step 91): probable work-level
-// external_refs, matched_by rule:eg-steam / rule:eg-dmm. Dry-run by default;
-// InsertRefIfAbsent semantics (never re-grade); negative knowledge honored.
-//
-//	go run ./cmd/import-store-refs --dsn "$CATALOG" --eg-dsn "$EG" [--apply]
 package main
 
 import (

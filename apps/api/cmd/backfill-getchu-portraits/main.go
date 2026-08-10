@@ -1,25 +1,3 @@
-// backfill-getchu-portraits fills a catalog character's images from the Getchu
-// crawler's mirrored character art (refs/proj/167 §10 and §11).
-//
-// --slot picks WHICH image, and has no default:
-//
-//	--slot bust     charaN.jpg   250x300 upper-body crop  -> image_hash
-//	--slot figure   charabN.jpg  500x500 full-body art    -> figure_hash
-//
-// Bytes come from a LOCAL mirror produced by kun-getchu-api (note the crawler
-// kind names are the opposite of the slot names — see the package doc):
-//
-//	getchu-crawler mirror --out DIR --kind nameplate --ids-file need-ids.txt   # bust
-//	getchu-crawler mirror --out DIR --kind portrait  --ids-file need-ids.txt   # figure
-//
-// This binary never dials getchu.com. Both DSNs are REQUIRED.
-//
-//	go run ./cmd/backfill-getchu-portraits --slot figure --dsn "$CATALOG" --getchu-dsn "$GETCHU" --mirror-dir DIR
-//	go run ./cmd/backfill-getchu-portraits --slot figure --dsn "$CATALOG" --getchu-dsn "$GETCHU" --mirror-dir DIR --apply
-//
-// A dry run needs no mirror at all: it reports how many characters resolve and
-// how many of those are still missing bytes — and --ids-out writes exactly the
-// list to mirror.
 package main
 
 import (

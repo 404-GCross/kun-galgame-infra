@@ -9,12 +9,6 @@ import (
 	srcb "api/internal/platform/catalog/srcbangumi"
 )
 
-// NextMoe open-API catalog public projection tests (step 03). Integration
-// against the real kun_catalog_test schema (service_test.go TestMain). They pin
-// the frozen public contract's load-bearing gates: exact-only lookup (probable
-// never surfaces), the galgame-non-stub-non-r18 fetchable set, r18 hiding
-// everywhere, and the hidden credit-name→person link doctrine.
-
 const (
 	srcVNDB         int16 = 2
 	srcErogamespace int16 = 5
@@ -25,7 +19,6 @@ func newPublicSvc() *PublicService {
 	return NewPublicService(testDB, NewReadService(testDB), testResolve, "")
 }
 
-// createWorkX creates a work with explicit medium / rating / status.
 func createWorkX(t *testing.T, medium, rating, status int16, name string) *model.CatalogWork {
 	t.Helper()
 	w := &model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name, ContentRating: rating, Status: status}
@@ -80,10 +73,8 @@ func TestPublicLookupExactOnly(t *testing.T) {
 	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Karenai")
 	claimWork(t, w.ID, "galgame_wiki", 1)
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcVNDB, "v19658", model.LinkKindExact)
-	// A probable anchor MUST NOT resolve on the public face.
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcVNDB, "v99999", model.LinkKindProbable)
 
-	// vndb normalization: input with and without the 'v' prefix both resolve.
 	for _, in := range []string{"v19658", "19658"} {
 		data, found, err := svc.Lookup(ctx, "vndb", in, false)
 		if err != nil || !found {
@@ -99,11 +90,9 @@ func TestPublicLookupExactOnly(t *testing.T) {
 			t.Fatalf("lookup %q: brief=%+v", in, data.Work)
 		}
 	}
-	// probable anchor → not found.
 	if _, found, _ := svc.Lookup(ctx, "vndb", "v99999", false); found {
 		t.Fatal("probable anchor must not resolve on the public face")
 	}
-	// unknown source / missing id → not found.
 	if _, found, _ := svc.Lookup(ctx, "vndb", "v00000", false); found {
 		t.Fatal("unknown external id must 404")
 	}
@@ -111,9 +100,6 @@ func TestPublicLookupExactOnly(t *testing.T) {
 		t.Fatal("unknown source key must 404")
 	}
 
-	// ErogameScape spelling contract: the public canonical "erogamescape" AND
-	// the internal registry key "erogamespace" both resolve; the projected
-	// refs always carry the public spelling.
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcErogamespace, "23956", model.LinkKindExact)
 	for _, src := range []string{"erogamescape", "erogamespace"} {
 		if _, found, err := svc.Lookup(ctx, src, "23956", false); err != nil || !found {
@@ -169,7 +155,7 @@ func TestPublicLookupBatchOrder(t *testing.T) {
 	items, err := svc.LookupBatch(ctx, []dto.PublicLookupPair{
 		{Source: "vndb", ExternalID: "v1"},
 		{Source: "vndb", ExternalID: "v404"},
-		{Source: "vndb", ExternalID: "1"}, // normalizes to v1 → same hit
+		{Source: "vndb", ExternalID: "1"},
 	}, false)
 	if err != nil {
 		t.Fatalf("batch: %v", err)
@@ -186,7 +172,6 @@ func TestPublicLookupBatchOrder(t *testing.T) {
 	if items[2].Work == nil || items[2].Work.ID != w.ID {
 		t.Fatalf("item2 (normalized) miss: %+v", items[2])
 	}
-	// The resolved type token is echoed even when the pair omitted it.
 	for i, it := range items {
 		if it.Type != "work" {
 			t.Fatalf("item%d type=%q want the resolved default \"work\"", i, it.Type)
@@ -194,15 +179,8 @@ func TestPublicLookupBatchOrder(t *testing.T) {
 	}
 }
 
-// srcBangumiPub is the seeded bangumi source id — the one registry whose id
-// spaces genuinely OVERLAP across families (subject 12345 and character 12345
-// are different things), which is why the lookup face needs `type` at all.
 const srcBangumiPub int16 = 3
 
-// TestPublicLookupTypedEntities pins the additive `type` parameter: the same
-// exact-anchor reverse-lookup answers for name / character / label too, `type`
-// (not the anchor) decides which family answers, and each hit carries ONLY its
-// own block — work/claimed_by stay null off the work lane.
 func TestPublicLookupTypedEntities(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -215,9 +193,6 @@ func TestPublicLookupTypedEntities(t *testing.T) {
 	ch := createCharacter(t, "同 id 角色")
 	addExternalRef(t, model.EntityTypeCharacter, ch.ID, srcBangumiPub, "12345", model.LinkKindExact)
 
-	// vndb staff anchors are stored as BARE numbers (characters are c123, labels
-	// p123) — the typed lane must pass the id through verbatim instead of
-	// applying the work-only "v" prefix rule, or this can never resolve.
 	n := createCreditName(t, nil, "テスト脚本家")
 	addExternalRef(t, model.EntityTypeCreditName, n.ID, srcVNDB, "54321", model.LinkKindExact)
 
@@ -226,11 +201,8 @@ func TestPublicLookupTypedEntities(t *testing.T) {
 		t.Fatalf("create label: %v", err)
 	}
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcVNDB, "p129", model.LinkKindExact)
-	// Exact-only is the red line on the typed lanes too.
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcVNDB, "p999", model.LinkKindProbable)
 
-	// An absent type is the ORIGINAL work contract, unchanged — and the colliding
-	// bangumi character anchor must not disturb it.
 	untyped, found, err := svc.Lookup(ctx, "bangumi", "12345", false)
 	if err != nil || !found || untyped.Work == nil || untyped.Work.ID != w.ID {
 		t.Fatalf("absent type must resolve the work: found=%v work=%v err=%v", found, untyped.Work, err)
@@ -242,7 +214,6 @@ func TestPublicLookupTypedEntities(t *testing.T) {
 		t.Fatalf("the work lane must leave the typed blocks empty: %+v", untyped)
 	}
 
-	// type=character on the SAME (source, external_id) answers the character.
 	got, found, err := svc.LookupTyped(ctx, "bangumi", "12345", model.EntityTypeCharacter, false)
 	if err != nil || !found || got.Character == nil || got.Character.ID != ch.ID {
 		t.Fatalf("type=character: found=%v character=%+v err=%v", found, got.Character, err)
@@ -267,8 +238,6 @@ func TestPublicLookupTypedEntities(t *testing.T) {
 		t.Fatalf("type=label must populate label only: %+v", got)
 	}
 
-	// Cross-family misses: the anchor exists, but not for THAT family. And a
-	// probable anchor never resolves, typed or not.
 	for _, c := range []struct {
 		name       string
 		source     string
@@ -287,11 +256,6 @@ func TestPublicLookupTypedEntities(t *testing.T) {
 	}
 }
 
-// TestPublicLookupTypedNSFWParity pins that a typed lookup INHERITS the entity's
-// own visibility rules instead of growing a second, drifting copy: a character
-// identity is never hidden by nsfw=false (identity is not content — only its
-// sexual traits drop), and the projected record is identical to what GET
-// /v1/catalog/characters/{id} serves with the heavy block off.
 func TestPublicLookupTypedNSFWParity(t *testing.T) {
 	cleanTables(t)
 	if err := testDB.Exec("TRUNCATE catalog_character_trait RESTART IDENTITY CASCADE").Error; err != nil {
@@ -341,9 +305,6 @@ func TestPublicLookupTypedNSFWParity(t *testing.T) {
 	}
 }
 
-// TestPublicLookupBatchMixedTypes pins per-pair types: order preserved, each
-// slot carries only its own family's block, and every item echoes the RESOLVED
-// token (work when the pair omitted it).
 func TestPublicLookupBatchMixedTypes(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -360,11 +321,11 @@ func TestPublicLookupBatchMixedTypes(t *testing.T) {
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcVNDB, "p129", model.LinkKindExact)
 
 	items, err := svc.LookupBatch(ctx, []dto.PublicLookupPair{
-		{Source: "vndb", ExternalID: "v1"},                          // omitted type → work
-		{Source: "bangumi", ExternalID: "12345", Type: "character"}, //
-		{Source: "vndb", ExternalID: "p129", Type: "label"},         //
-		{Source: "vndb", ExternalID: "p129", Type: "work"},          // wrong family → miss
-		{Source: "vndb", ExternalID: "v1", Type: "name"},            // wrong family → miss
+		{Source: "vndb", ExternalID: "v1"},
+		{Source: "bangumi", ExternalID: "12345", Type: "character"},
+		{Source: "vndb", ExternalID: "p129", Type: "label"},
+		{Source: "vndb", ExternalID: "p129", Type: "work"},
+		{Source: "vndb", ExternalID: "v1", Type: "name"},
 	}, false)
 	if err != nil {
 		t.Fatalf("batch: %v", err)
@@ -431,7 +392,7 @@ func TestPublicWorkRefsExactOnlyAndRelations(t *testing.T) {
 
 	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "main")
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcVNDB, "v42", model.LinkKindExact)
-	addExternalRef(t, model.EntityTypeWork, w.ID, 3, "555", model.LinkKindProbable) // bangumi probable
+	addExternalRef(t, model.EntityTypeWork, w.ID, 3, "555", model.LinkKindProbable)
 
 	sfwOther := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "sfw related")
 	r18Other := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "r18 related")
@@ -466,26 +427,19 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 	if len(rec.Credits) != 1 || len(rec.Credits[0].Credits) != 1 || rec.Credits[0].Credits[0].ID != name.ID {
 		t.Fatalf("credits projection: %+v", rec.Credits)
 	}
-	// A purely personal credit carries no signer — the pair stays absent rather
-	// than shipping a zero id.
 	if rec.Credits[0].Credits[0].LabelID != 0 || rec.Credits[0].Credits[0].Label != "" {
 		t.Fatalf("personal credit must carry no label: %+v", rec.Credits[0].Credits[0])
 	}
-	// A hand-entered credit has no attributing source — omitted, not "".
 	if rec.Credits[0].Credits[0].Source != "" {
 		t.Fatalf("sourceless credit must omit source: %+v", rec.Credits[0].Credits[0])
 	}
 
-	// The bare record (no include) omits credits entirely.
 	bare, _, _ := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false, 0)
 	if bare.Credits != nil {
 		t.Fatalf("bare record must omit credits: %+v", bare.Credits)
 	}
 }
 
-// TestPublicWorkCreditsLabelSigner pins the organizational signer on
-// label-natured credits: the character_id/character pair's counterpart for
-// organizations, addressable via /v1/catalog/labels/{id}.
 func TestPublicWorkCreditsLabelSigner(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -498,7 +452,6 @@ func TestPublicWorkCreditsLabelSigner(t *testing.T) {
 		t.Fatalf("create label: %v", err)
 	}
 	c := createCredit(t, w.ID, name.ID, seededRoleID(t), nil)
-	// erogamespace is the registry spelling; the wire must say erogamescape.
 	var srcID int16
 	if err := testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'erogamespace'`).Scan(&srcID).Error; err != nil || srcID == 0 {
 		t.Fatalf("erogamespace source id=%d err=%v", srcID, err)
@@ -518,25 +471,14 @@ func TestPublicWorkCreditsLabelSigner(t *testing.T) {
 	if item.LabelID != label.ID || item.Label != "Visual Arts" {
 		t.Fatalf("signer must reach the wire with its id and name: %+v", item)
 	}
-	// The credited name is NOT replaced by the signer — they coexist.
 	if item.ID != name.ID {
 		t.Fatalf("signer must not displace the credited name: %+v", item)
 	}
-	// The 裁定-7 source carve-out, in the public spelling.
 	if item.Source != "erogamescape" {
 		t.Fatalf("credit must name its attributing source, publicly spelled: %q", item.Source)
 	}
 }
 
-// TestPublicSiblingNameCarriesDisplayName pins wave 193: a sibling publishes
-// display_name + lang beside its buckets, so the one consumer of sibling names
-// can move off the buckets before they are removed.
-//
-// The two assertions that matter are that display_name equals whatever the
-// buckets already carry — a sibling row renders identically before and after a
-// consumer migrates, so adopting is a shape change and not a behaviour one —
-// and that lang survives, which the buckets cannot express: zh-Hant collapses
-// into the same `zh` bucket as zh-Hans.
 func TestPublicSiblingNameCarriesDisplayName(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -560,14 +502,11 @@ func TestPublicSiblingNameCarriesDisplayName(t *testing.T) {
 	if s.DisplayName != "織田杏子" {
 		t.Fatalf("sibling display_name = %q, want the name of record", s.DisplayName)
 	}
-	// The retired buckets could say only "Chinese"; lang says which Chinese.
 	if s.Lang != "zh-Hant" {
 		t.Fatalf("sibling lang = %q, want the tag the buckets could not carry", s.Lang)
 	}
 }
 
-// publicPhotoHash is the person photograph the public name face publishes
-// (wave 172) — the same content-hash currency as a work cover's image_hash.
 const publicPhotoHash = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
 
 func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
@@ -576,8 +515,6 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 	ctx := t.Context()
 
 	p := createPerson(t, "Key")
-	// The wave-172 person block, so the hidden-link half below is a real
-	// withholding rather than an empty row proving nothing.
 	i16 := func(v int16) *int16 { return &v }
 	if err := testDB.Model(p).Updates(map[string]any{
 		"photo_hash": publicPhotoHash, "gender": i16(1),
@@ -586,7 +523,6 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 		t.Fatalf("set person block: %v", err)
 	}
 	nPublic := createCreditName(t, &p.ID, "麻枝准")
-	// A second name of the same person, but HIDDEN-linked.
 	nHidden := &model.CatalogCreditName{
 		PersonID: &p.ID, Name: "裏名義", Kind: model.CreditNameKindDistinctPersona,
 		LinkVisibility: model.LinkVisibilityHidden,
@@ -601,8 +537,6 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 	createCredit(t, sfw.ID, nPublic.ID, role, nil)
 	createCredit(t, r18.ID, nPublic.ID, role, nil)
 
-	// Public-linked name: person grouping surfaces, but the hidden sibling never
-	// does; r18 credits are dropped.
 	got, found, err := svc.Name(ctx, nPublic.ID, true, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("person: found=%v err=%v", found, err)
@@ -616,7 +550,6 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 	if len(got.Credits) != 1 || got.Credits[0].Work.ID != sfw.ID {
 		t.Fatalf("r18 credit must be dropped: %+v", got.Credits)
 	}
-	// wave 172: the person block travels with the public link.
 	if got.PhotoHash != publicPhotoHash {
 		t.Fatalf("public link must expose photo_hash: %q", got.PhotoHash)
 	}
@@ -627,7 +560,6 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 		t.Fatalf("public link must expose the fuzzy birth date: %v/%v/%v", got.BirthY, got.BirthM, got.BirthD)
 	}
 
-	// Hidden-linked name: appears as an independent identity (no person_id).
 	h, found, err := svc.Name(ctx, nHidden.ID, false, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("hidden person: found=%v err=%v", found, err)
@@ -635,31 +567,20 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 	if h.PersonID != 0 {
 		t.Fatalf("hidden link must withhold person_id: %d", h.PersonID)
 	}
-	// …and the whole person block with it: the person genuinely has a photo, a
-	// gender and a birthday, and publishing any of them under a hidden link
-	// would leak the association the doctrine is withholding.
 	if h.PhotoHash != "" || h.Gender != nil || h.BirthY != nil || h.BirthM != nil || h.BirthD != nil {
 		t.Fatalf("hidden link must withhold the person block: %q %v %v/%v/%v",
 			h.PhotoHash, h.Gender, h.BirthY, h.BirthM, h.BirthD)
 	}
 }
 
-// TestPublicLabelIntrosLinks covers the E2c read-face addition to GET
-// /v1/catalog/labels/{id}: intros[] (per-language merge, lowest source_id wins —
-// step 65) and links[] (entity_type=3 link_kind=related refs → templated URLs),
-// including the two hard invariants: identity anchors never leak into links, and
-// a supply-less label serializes [] (never null).
 func TestPublicLabelIntrosLinks(t *testing.T) {
 	cleanTables(t)
-	// catalog_label_intro is not in cleanTables' list; truncate it explicitly
-	// (like the character-intro test) for a deterministic fixture.
 	if err := testDB.Exec("TRUNCATE catalog_label_intro RESTART IDENTITY CASCADE").Error; err != nil {
 		t.Fatalf("truncate label intro: %v", err)
 	}
 	svc := newPublicSvc()
 	ctx := t.Context()
 
-	// Seeded catalog_source ids for the E2b link sources + bangumi intro source.
 	const (
 		srcBangumi      int16 = 3
 		srcOfficialSite int16 = 9
@@ -672,24 +593,19 @@ func TestPublicLabelIntrosLinks(t *testing.T) {
 		t.Fatalf("create label: %v", err)
 	}
 
-	// Intros: en (vndb) + ja from two sources — bangumi (3) beats dlsite (4) for
-	// the ja language after the per-language merge.
 	for _, in := range []model.CatalogLabelIntro{
 		{LabelID: lbl.ID, Lang: "en", Intro: "English intro.", SourceID: srcVNDB},
 		{LabelID: lbl.ID, Lang: "ja", Intro: "勝つ紹介。", SourceID: srcBangumi},
-		{LabelID: lbl.ID, Lang: "ja", Intro: "負ける紹介。", SourceID: srcDlsite}, // higher source → merged away
+		{LabelID: lbl.ID, Lang: "ja", Intro: "負ける紹介。", SourceID: srcDlsite},
 	} {
 		if err := testDB.Create(&in).Error; err != nil {
 			t.Fatalf("create label intro: %v", err)
 		}
 	}
 
-	// Links: three related sources, one row each → three links, sorted by
-	// (source_id, external_id): official_site(9) < twitter(10) < cien(14).
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcOfficialSite, "www.alcot.biz", model.LinkKindRelated)
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcTwitter, "alcot_official", model.LinkKindRelated)
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcCien, "29601", model.LinkKindRelated)
-	// Identity anchors (exact + probable) MUST NOT surface as links.
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcVNDB, "p129", model.LinkKindExact)
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcDlsite, "VG02192", model.LinkKindProbable)
 
@@ -698,7 +614,6 @@ func TestPublicLabelIntrosLinks(t *testing.T) {
 		t.Fatalf("label: found=%v err=%v", found, err)
 	}
 
-	// intros: one element per language after the source merge, lang ASC.
 	if len(got.Intros) != 2 {
 		t.Fatalf("intros len=%d want 2: %+v", len(got.Intros), got.Intros)
 	}
@@ -709,7 +624,6 @@ func TestPublicLabelIntrosLinks(t *testing.T) {
 		t.Fatalf("intros[1] (lowest source_id must win the language)=%+v", got.Intros[1])
 	}
 
-	// links: three, URL templates asserted byte-for-byte, deterministic order.
 	wantLinks := []dto.PublicLabelLink{
 		{Source: "official_site", URL: "https://www.alcot.biz"},
 		{Source: "twitter", URL: "https://x.com/alcot_official"},
@@ -723,14 +637,12 @@ func TestPublicLabelIntrosLinks(t *testing.T) {
 			t.Fatalf("links[%d]=%+v want %+v", i, got.Links[i], w)
 		}
 	}
-	// The exact/probable identity anchors (vndb / dlsite) must be absent.
 	for _, lk := range got.Links {
 		if lk.Source == "vndb" || lk.Source == "dlsite" {
 			t.Fatalf("identity anchor leaked into links: %+v", lk)
 		}
 	}
 
-	// A label with no intro / link rows serializes [] (never null).
 	bare := &model.CatalogLabel{DisplayName: "Bare", Kind: model.LabelKindGameBrand}
 	if err := testDB.Create(bare).Error; err != nil {
 		t.Fatalf("create bare label: %v", err)
@@ -747,9 +659,6 @@ func TestPublicLabelIntrosLinks(t *testing.T) {
 	}
 }
 
-// TestPublicNSFWGate pins the wave-104 caller-controlled r18 switch: an r18
-// work 404s by default (Phase-1 bit-identical) but is served in full — facets,
-// relations, lookup — with nsfw=1; r18 relation ends follow the same switch.
 func TestPublicNSFWGate(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -766,7 +675,6 @@ func TestPublicNSFWGate(t *testing.T) {
 		t.Fatalf("tag fixture: %v", err)
 	}
 
-	// Default: hidden — detail 404, lookup miss (Phase-1 bit-identical).
 	if _, found, err := svc.WorkDetail(ctx, r18.ID, PublicInclude{}, false, 0); err != nil || found {
 		t.Fatalf("default r18 detail: found=%v err=%v (want hidden)", found, err)
 	}
@@ -774,7 +682,6 @@ func TestPublicNSFWGate(t *testing.T) {
 		t.Fatal("default r18 lookup resolved (want miss)")
 	}
 
-	// nsfw=1: served in full, facets projected to public conventions.
 	rec, found, err := svc.WorkDetail(ctx, r18.ID, PublicInclude{Relations: true}, true, 0)
 	if err != nil || !found {
 		t.Fatalf("nsfw r18 detail: found=%v err=%v", found, err)
@@ -795,7 +702,6 @@ func TestPublicNSFWGate(t *testing.T) {
 		t.Fatal("nsfw r18 lookup missed (want hit)")
 	}
 
-	// The safe work's relations: the r18 end drops by default, joins with nsfw.
 	recSafe, _, err := svc.WorkDetail(ctx, safe.ID, PublicInclude{Relations: true}, false, 0)
 	if err != nil {
 		t.Fatalf("safe detail: %v", err)
@@ -809,9 +715,6 @@ func TestPublicNSFWGate(t *testing.T) {
 	}
 }
 
-// TestPublicCharacterTraits pins the wave-104 public trait block: safe default
-// (spoilers=0, sexual dropped), the spoilers ceiling, and the nsfw switch for
-// sexual-family traits.
 func TestPublicCharacterTraits(t *testing.T) {
 	cleanTables(t)
 	if err := testDB.Exec("TRUNCATE catalog_character_trait RESTART IDENTITY CASCADE").Error; err != nil {
@@ -831,7 +734,7 @@ func TestPublicCharacterTraits(t *testing.T) {
 		}
 		return tr.ID
 	}
-	mkTrait("i0", "", "Hair", "毛发", false) // root group
+	mkTrait("i0", "", "Hair", "毛发", false)
 	tSafe := mkTrait("i1", "i0", "Long Hair", "长发", false)
 	tSexual := mkTrait("i2", "", "Sexual Trait", "", true)
 	tSpoiler := mkTrait("i3", "", "Hidden Past", "", false)
@@ -851,8 +754,6 @@ func TestPublicCharacterTraits(t *testing.T) {
 	if len(rec.Traits) != 1 || rec.Traits[0].Name != "Long Hair" {
 		t.Fatalf("default traits = %+v (want safe only)", rec.Traits)
 	}
-	// wave 176: the Chinese name and its group's Chinese name ride along, and
-	// stay empty (omitempty on the wire) where the vocabulary has none.
 	if rec.Traits[0].NameZh != "长发" || rec.Traits[0].GroupZh != "毛发" {
 		t.Fatalf("zh names = %q / %q (want 长发 / 毛发)", rec.Traits[0].NameZh, rec.Traits[0].GroupZh)
 	}
@@ -876,8 +777,6 @@ func TestPublicCharacterTraits(t *testing.T) {
 	}
 }
 
-// TestPublicCharacterIntrosImage pins the wave-107 additions: intros[] (one
-// element per language, lowest source_id wins) and the portrait CDN URL.
 func TestPublicCharacterIntrosImage(t *testing.T) {
 	cleanTables(t)
 	svc := NewPublicService(testDB, NewReadService(testDB), testResolve, "http://cdn.test/img")
@@ -917,9 +816,6 @@ func TestPublicCharacterIntrosImage(t *testing.T) {
 	}
 }
 
-// TestPublicNameIntros pins the wave-108 bridge: a credit name's description
-// reads from its OWN bangumi anchor at read time (per-name provenance, never a
-// person assertion), kana → ja heuristic, source key not id.
 func TestPublicNameIntros(t *testing.T) {
 	cleanTables(t)
 	if err := srcb.EnsureSchema(testDB); err != nil {
@@ -950,10 +846,6 @@ func TestPublicNameIntros(t *testing.T) {
 	}
 }
 
-// TestPublicNamePersonIntros pins the person intro lane on GET
-// /v1/catalog/names/{id}: catalog_person_intro reaches the wire for the first
-// time, riding the person_id gate, ahead of the wave-108 bridge per language,
-// with machine translations last and honestly flagged.
 func TestPublicNamePersonIntros(t *testing.T) {
 	cleanTables(t)
 	if err := srcb.EnsureSchema(testDB); err != nil {
@@ -975,7 +867,6 @@ func TestPublicNamePersonIntros(t *testing.T) {
 		t.Fatalf("create hidden name: %v", err)
 	}
 
-	// The person owns a ja source row and a zh-Hans machine translation.
 	for _, row := range []model.CatalogPersonIntro{
 		{PersonID: p.ID, Lang: "ja", Intro: "人物レベルの紹介。", SourceID: 3, Provenance: 0},
 		{PersonID: p.ID, Lang: "zh-Hans", Intro: "人物级简介（机翻）。", SourceID: 3, Provenance: 1, MTModel: "test-model"},
@@ -985,9 +876,6 @@ func TestPublicNamePersonIntros(t *testing.T) {
 		}
 	}
 
-	// BOTH names carry their own bangumi anchor, whose summary is kana-bearing
-	// and so lands on ja — the language the person lane already answers. That
-	// collision is the point: it proves which lane wins.
 	addExternalRef(t, model.EntityTypeCreditName, visible.ID, int16(3), "999101", model.LinkKindExact)
 	addExternalRef(t, model.EntityTypeCreditName, hidden.ID, int16(3), "999102", model.LinkKindExact)
 	if err := testDB.Exec(`INSERT INTO src_bangumi.person (id, name, type, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at)
@@ -1003,22 +891,16 @@ func TestPublicNamePersonIntros(t *testing.T) {
 	if len(got.Intros) != 2 {
 		t.Fatalf("want one intro per language, got %+v", got.Intros)
 	}
-	// ja: the person source row beats the name bridge — it declares its
-	// language where the bridge only infers one from the script.
 	if got.Intros[0].Lang != "ja" || got.Intros[0].Intro != "人物レベルの紹介。" || got.Intros[0].Machine {
 		t.Fatalf("person source row must win ja: %+v", got.Intros[0])
 	}
 	if got.Intros[0].Source != "bangumi" {
 		t.Fatalf("source must be the catalog_source key: %q", got.Intros[0].Source)
 	}
-	// zh-Hans is answered only by the machine row, and says so.
 	if got.Intros[1].Lang != "zh-Hans" || !got.Intros[1].Machine {
 		t.Fatalf("machine row must surface flagged: %+v", got.Intros[1])
 	}
 
-	// The hidden link withholds the person lane entirely — the biography is a
-	// person fact, so publishing it would leak the association being withheld.
-	// The name's OWN bridge still answers, because that asserts nothing.
 	h, found, err := svc.Name(ctx, hidden.ID, false, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("hidden name: found=%v err=%v", found, err)
@@ -1030,8 +912,6 @@ func TestPublicNamePersonIntros(t *testing.T) {
 		t.Fatalf("hidden link must withhold the person lane and keep its own bridge: %+v", h.Intros)
 	}
 
-	// An orphan name has no person at all: the bridge is its only lane, and it
-	// is the majority case (106k of 119k credit names carry no person link).
 	orphan := createCreditName(t, nil, "孤児名義")
 	addExternalRef(t, model.EntityTypeCreditName, orphan.ID, int16(3), "999103", model.LinkKindExact)
 	if err := testDB.Exec(`INSERT INTO src_bangumi.person (id, name, type, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at)
@@ -1047,11 +927,6 @@ func TestPublicNamePersonIntros(t *testing.T) {
 	}
 }
 
-// TestPublicNameAliases pins the wave-175 addition to GET
-// /v1/catalog/names/{id}: aliases[] carries THIS credit name's alternate
-// spellings — the surface that makes the bangumi zh-Hans name lane visible —
-// in the labelAliases shape (flat, deduplicated, the name itself excluded,
-// always present) and never folds a sibling's spellings in.
 func TestPublicNameAliases(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -1061,12 +936,11 @@ func TestPublicNameAliases(t *testing.T) {
 	head := createCreditName(t, &p.ID, "緒方剛志")
 	sibling := createCreditName(t, &p.ID, "Ogata Takeshi")
 
-	createNameAlias(t, head.ID, "绪方刚志", "zh-Hans") // the zh rendering the wave writes
+	createNameAlias(t, head.ID, "绪方刚志", "zh-Hans")
 	createNameAlias(t, head.ID, "绪方刚", "zh-Hans")
-	createNameAlias(t, head.ID, "绪方刚志", "")   // same spelling, other lang → renders once
-	createNameAlias(t, head.ID, "緒方剛志", "ja") // the name itself → excluded
+	createNameAlias(t, head.ID, "绪方刚志", "")
+	createNameAlias(t, head.ID, "緒方剛志", "ja")
 	createNameAlias(t, sibling.ID, "尾形武", "zh-Hans")
-	// A search hint is findability-only by its kind's contract — never displayed.
 	hint := &model.CatalogNameAlias{CreditNameID: head.ID, Name: "ogatakoji-hint",
 		Kind: model.AliasKindSearchHint}
 	if err := testDB.Create(hint).Error; err != nil {
@@ -1077,7 +951,6 @@ func TestPublicNameAliases(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("name: found=%v err=%v", found, err)
 	}
-	// Ordered by (name, id) exactly like labelAliases.
 	if len(rec.Aliases) != 2 || rec.Aliases[0] != "绪方刚" || rec.Aliases[1] != "绪方刚志" {
 		t.Fatalf("aliases = %+v (want the two zh spellings, deduped, display name excluded)", rec.Aliases)
 	}
@@ -1086,7 +959,6 @@ func TestPublicNameAliases(t *testing.T) {
 			t.Fatal("a sibling's alias must never be attributed to this name")
 		}
 	}
-	// The sibling's own record answers for the sibling's own spellings.
 	sib, found, err := svc.Name(ctx, sibling.ID, false, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("sibling: found=%v err=%v", found, err)
@@ -1095,7 +967,6 @@ func TestPublicNameAliases(t *testing.T) {
 		t.Fatalf("sibling aliases = %+v", sib.Aliases)
 	}
 
-	// A name with no aliases serializes [], never null.
 	bare := createCreditName(t, nil, "無別名")
 	rec, _, err = svc.Name(ctx, bare.ID, false, false, 50, 0)
 	if err != nil {
@@ -1106,7 +977,6 @@ func TestPublicNameAliases(t *testing.T) {
 	}
 }
 
-// createSameSeriesEdge wires a same_series (type 7) edge — the vndb series grain.
 func createSameSeriesEdge(t *testing.T, a, b int64) {
 	t.Helper()
 	if err := testDB.Create(&model.CatalogWorkRelation{AWorkID: a, BWorkID: b, RelationTypeID: 7}).Error; err != nil {
@@ -1114,10 +984,6 @@ func createSameSeriesEdge(t *testing.T, a, b int64) {
 	}
 }
 
-// TestSeriesSiblingsTransitiveClosure pins wave 113: a star-topology series
-// (hub + leaves, the shape 68.6% of vndb series nodes live in) resolves the
-// WHOLE family from any member — a leaf sees the hub AND the other leaves,
-// which the pairwise relations face alone never shows it.
 func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 	cleanTables(t)
 	ctx := t.Context()
@@ -1128,7 +994,6 @@ func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 	l2 := createWork(t, "シリーズ枝2")
 	l3 := createWork(t, "シリーズ枝3")
 	lone := createWork(t, "無関係作品")
-	// Star: hub—l1, hub—l2, hub—l3 (leaves connect ONLY to the hub).
 	createSameSeriesEdge(t, hub.ID, l1.ID)
 	createSameSeriesEdge(t, hub.ID, l2.ID)
 	createSameSeriesEdge(t, hub.ID, l3.ID)
@@ -1141,7 +1006,6 @@ func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 		return m
 	}
 
-	// A leaf sees the hub AND the two other leaves (transitive closure).
 	rec, found, err := svc.WorkDetail(ctx, l1.ID, PublicInclude{}, false, 0)
 	if err != nil || !found {
 		t.Fatalf("leaf detail: found=%v err=%v", found, err)
@@ -1151,7 +1015,6 @@ func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 		t.Fatalf("leaf l1 siblings = %v (want hub,l2,l3; not self)", got)
 	}
 
-	// The hub sees all three leaves.
 	recH, _, err := svc.WorkDetail(ctx, hub.ID, PublicInclude{}, false, 0)
 	if err != nil {
 		t.Fatalf("hub detail: %v", err)
@@ -1160,7 +1023,6 @@ func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 		t.Fatalf("hub siblings = %v (want l1,l2,l3)", gh)
 	}
 
-	// A work with no series edge has an empty (non-nil) list.
 	recL, _, err := svc.WorkDetail(ctx, lone.ID, PublicInclude{}, false, 0)
 	if err != nil {
 		t.Fatalf("lone detail: %v", err)
@@ -1170,8 +1032,6 @@ func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 	}
 }
 
-// siblingIDs runs the closure walk straight against the read service (the layer
-// wave 117 rewrote) and returns the sibling ids in the returned order.
 func siblingIDs(t *testing.T, workID int64) []int64 {
 	t.Helper()
 	rows, err := NewReadService(testDB).loadSeriesSiblings(t.Context(), workID)
@@ -1185,17 +1045,11 @@ func siblingIDs(t *testing.T, workID int64) []int64 {
 	return out
 }
 
-// TestSeriesSiblingsClosureShapes pins the wave-117 two-stage rewrite against
-// the topologies the single-statement form used to absorb implicitly: a long
-// chain (the walk must not stop at depth 1), a cycle (UNION dedup is what
-// terminates it), no edges at all (the stage-2 short circuit), and a
-// soft-deleted node (drops from the result but still bridges the component).
 func TestSeriesSiblingsClosureShapes(t *testing.T) {
 	cleanTables(t)
 
 	t.Run("multi-hop chain", func(t *testing.T) {
 		cleanTables(t)
-		// a—b—c—d—e, each work linked only to its neighbour.
 		w := make([]*model.CatalogWork, 5)
 		for i := range w {
 			w[i] = createWork(t, "鎖"+string(rune('A'+i)))
@@ -1203,13 +1057,11 @@ func TestSeriesSiblingsClosureShapes(t *testing.T) {
 		for i := 0; i < len(w)-1; i++ {
 			createSameSeriesEdge(t, w[i].ID, w[i+1].ID)
 		}
-		// The far end sees all four others, four hops away included.
 		got := siblingIDs(t, w[4].ID)
 		want := []int64{w[0].ID, w[1].ID, w[2].ID, w[3].ID}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("tail siblings = %v (want %v, ascending by id)", got, want)
 		}
-		// A middle node reaches both directions.
 		if got := siblingIDs(t, w[2].ID); len(got) != 4 {
 			t.Fatalf("middle siblings = %v (want 4)", got)
 		}
@@ -1222,8 +1074,7 @@ func TestSeriesSiblingsClosureShapes(t *testing.T) {
 		c := createWork(t, "環C")
 		createSameSeriesEdge(t, a.ID, b.ID)
 		createSameSeriesEdge(t, b.ID, c.ID)
-		createSameSeriesEdge(t, c.ID, a.ID) // closes the loop
-		// A duplicate edge in the reverse direction must not duplicate rows.
+		createSameSeriesEdge(t, c.ID, a.ID)
 		createSameSeriesEdge(t, b.ID, a.ID)
 		got := siblingIDs(t, a.ID)
 		if want := []int64{b.ID, c.ID}; !reflect.DeepEqual(got, want) {
@@ -1238,7 +1089,6 @@ func TestSeriesSiblingsClosureShapes(t *testing.T) {
 		if got := siblingIDs(t, lone.ID); len(got) != 0 {
 			t.Fatalf("lone siblings = %v (want none)", got)
 		}
-		// A work id that does not exist at all walks to nothing too.
 		if got := siblingIDs(t, lone.ID+9999); len(got) != 0 {
 			t.Fatalf("missing work siblings = %v (want none)", got)
 		}
@@ -1254,32 +1104,23 @@ func TestSeriesSiblingsClosureShapes(t *testing.T) {
 		if err := testDB.Delete(&model.CatalogWork{}, mid.ID).Error; err != nil {
 			t.Fatalf("soft delete mid: %v", err)
 		}
-		// mid is gone from the result, yet a still reaches c through it —
-		// the walk is over edges, the liveness filter is on the briefs.
 		if got := siblingIDs(t, a.ID); !reflect.DeepEqual(got, []int64{c.ID}) {
 			t.Fatalf("siblings across deleted node = %v (want [%d])", got, c.ID)
 		}
-		// Walking FROM the deleted node still sees its live neighbours: the
-		// caller's own liveness is the read face's business, not this walk's.
 		if got := siblingIDs(t, mid.ID); !reflect.DeepEqual(got, []int64{a.ID, c.ID}) {
 			t.Fatalf("deleted node's own siblings = %v (want [%d %d])", got, a.ID, c.ID)
 		}
 	})
 }
 
-// TestPublicCharacterLocalizedNames pins the wave-191 opening of the character
-// face. Until this wave the record published NO aliases at all, so the bangumi
-// zh-Hans character-name lane — the largest localized-name population in the
-// catalog — was unreachable through the public API, while name{ja:…} with no zh
-// key actively read as "this character has no Chinese name".
 func TestPublicCharacterLocalizedNames(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
 	ctx := t.Context()
 
 	ch := createCharacter(t, "美坂香里")
-	createCharacterAlias(t, ch.ID, "美坂香里", "ja") // the display name itself
-	createCharacterAlias(t, ch.ID, "美坂香裡", "ja") // a real ja variant
+	createCharacterAlias(t, ch.ID, "美坂香里", "ja")
+	createCharacterAlias(t, ch.ID, "美坂香裡", "ja")
 	primary := &model.CatalogCharacterAlias{
 		CharacterID: ch.ID, Name: "美坂香里", Lang: "zh-Hans",
 		Kind: model.AliasKindTranslation, IsPrimaryForLocale: true,
@@ -1300,21 +1141,16 @@ func TestPublicCharacterLocalizedNames(t *testing.T) {
 		t.Fatalf("character: found=%v err=%v", found, err)
 	}
 
-	// display_name + lang say plainly what name{} encodes obliquely.
 	if rec.DisplayName != "美坂香里" {
 		t.Fatalf("display_name = %q", rec.DisplayName)
 	}
-	// aliases[] is the also-known-as list: display name out, deduplicated.
 	if len(rec.Aliases) != 1 || rec.Aliases[0] != "美坂香裡" {
 		t.Fatalf("aliases = %+v (want the ja variant only)", rec.Aliases)
 	}
-	// localized{} answers the question aliases[] cannot: the zh name is known
-	// even though it is spelled identically to the display name.
 	zh, ok := rec.Localized["zh-Hans"]
 	if !ok || zh.Value != "美坂香里" || zh.Kind != "translation" {
 		t.Fatalf("localized[zh-Hans] = %+v (ok=%v), want the sourced zh name", zh, ok)
 	}
-	// A search hint is findability-only and reaches neither projection.
 	if _, leaked := rec.Localized["en"]; leaked {
 		t.Fatal("a search-hint row must never reach localized{}")
 	}
@@ -1324,7 +1160,6 @@ func TestPublicCharacterLocalizedNames(t *testing.T) {
 		}
 	}
 
-	// A character with no aliases serializes [] and {}, never null.
 	bare := createCharacter(t, "無別名")
 	rec, _, err = svc.Character(ctx, bare.ID, false, false, 0, 50, 0)
 	if err != nil {

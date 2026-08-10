@@ -2,16 +2,11 @@
 import { cn } from '@kungal/ui-core'
 import type { DocsSchemaNode } from '~~/shared/types/docs'
 
-// Recursive schema renderer. `node` is a CONTAINER (object / map) whose fields
-// this instance lists; each object/array-of-object/map field expands into a
-// nested <DocsSchemaTree> for its own fields. Single root element (a <ul>) —
-// required so the enclosing page transition attaches cleanly (CLAUDE.md §11).
 const props = withDefaults(
   defineProps<{ node: DocsSchemaNode; depth?: number }>(),
   { depth: 0 }
 )
 
-// Label for an array element / map value.
 const elementLabel = (el?: DocsSchemaNode): string => {
   if (!el) return 'any'
   if (el.type === 'array') return `${elementLabel(el.itemsOf)}[]`
@@ -25,7 +20,6 @@ const displayType = (n: DocsSchemaNode): string => {
   return n.type
 }
 
-// The nested container a field expands into, or null for a leaf.
 const containerOf = (n: DocsSchemaNode): DocsSchemaNode | null => {
   if (n.type === 'object' && n.children?.length) return n
   if (n.type === 'map' && n.itemsOf) return n
@@ -33,8 +27,6 @@ const containerOf = (n: DocsSchemaNode): DocsSchemaNode | null => {
   return null
 }
 
-// The field rows for a container: an object's properties, or a single synthetic
-// «key» row standing for a map's value schema.
 const fieldsOf = (container: DocsSchemaNode): DocsSchemaNode[] => {
   if (container.type === 'map' && container.itemsOf) {
     return [{ ...container.itemsOf, name: '«key»' }]
@@ -50,8 +42,6 @@ const rows = computed(() =>
   }))
 )
 
-// Auto-expand only the first level (the envelope's `data`); deeper objects open
-// on click so a large record stays scannable.
 const open = reactive<Record<number, boolean>>({})
 rows.value.forEach((r, i) => {
   if (r.container) open[i] = props.depth < 1

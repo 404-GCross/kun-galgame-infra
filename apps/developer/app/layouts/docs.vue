@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// Documentation shell for the whole /docs/** section. The sidebar lives HERE,
-// in the layout, so it stays mounted across in-section navigation (face → face,
-// operation → operation) — only the content column, held by <NuxtPage>, runs
-// the page transition. Two columns on lg+, stacked (sidebar disclosure on top)
-// below. Single real root element (CLAUDE.md §11).
 </script>
 
 <template>

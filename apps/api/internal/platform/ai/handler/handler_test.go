@@ -23,11 +23,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// The handler package tests the S2S auth end-to-end (Basic client credentials →
-// catalog_site tenant derivation) over a real Fiber request, plus the spec
-// smoke. TestMain provisions the ai schema (migrate.Run) AND the oauth_clients /
-// sites tables the S2S auth reads (AutoMigrate) in ONE database.
-
 var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
@@ -48,8 +43,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: ai migration failed: %v\n", err)
 		os.Exit(0)
 	}
-	// The S2S auth reads oauth_clients (+ its sites FK) from the main DB; in the
-	// shared test DB we provision just those tables so authenticateBasic works.
 	if err := db.AutoMigrate(&siteModel.Site{}, &siteModel.OAuthClient{}); err != nil {
 		release()
 		fmt.Fprintf(os.Stderr, "SKIP: oauth_clients migration failed: %v\n", err)
@@ -62,9 +55,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// TestSpecExport is the S2S spec smoke: Setup with a nil service (the
-// gen-openapi path) must produce a valid OpenAPI document with the moderate-text
-// operation.
 func TestSpecExport(t *testing.T) {
 	api := Setup(fiber.New(), nil)
 	b, err := api.OpenAPI().YAML()
@@ -84,8 +74,6 @@ func TestSpecExport(t *testing.T) {
 	}
 }
 
-// seedClient upserts an oauth_clients row with a hashed secret and a
-// catalog_site binding. SiteID is nil (nullable) so no FK row is needed.
 func seedClient(t *testing.T, id, secret, catalogSite string) {
 	t.Helper()
 	testDB.Where("id = ?", id).Delete(&siteModel.OAuthClient{})
@@ -102,14 +90,10 @@ func seedClient(t *testing.T, id, secret, catalogSite string) {
 	}
 }
 
-// basicAuth builds the "Basic <b64(id:secret)>" header value.
 func basicAuth(id, secret string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(id+":"+secret))
 }
 
-// buildApp wires a Fiber app exactly like cmd/ai: S2SAuth path-scoped before the
-// Huma moderate-text route, backed by an UNCONFIGURED upstream (degraded — so a
-// successful auth returns 200 with degraded:true without any network call).
 func buildApp() *fiber.App {
 	app := fiber.New()
 	repo := siteRepo.NewOAuthClientRepository(testDB)
@@ -119,10 +103,6 @@ func buildApp() *fiber.App {
 	return app
 }
 
-// TestS2SAuthHTTP exercises the four S2S outcomes end-to-end: correct creds on a
-// site-bound client → 200; wrong secret → 401; unknown client → 401; a client
-// bound to NO catalog_site → 403. The tenant is derived from the binding, never
-// the body.
 func TestS2SAuthHTTP(t *testing.T) {
 	if err := testDB.Exec("TRUNCATE ai_usage RESTART IDENTITY").Error; err != nil {
 		t.Fatalf("truncate ai_usage: %v", err)
@@ -131,9 +111,6 @@ func TestS2SAuthHTTP(t *testing.T) {
 	seedClient(t, "ai-test-unbound", "s3cr3t", "")
 	app := buildApp()
 
-	// A valid body carries NO site — the tenant is derived from the client
-	// binding. (Huma's strict schema also 422s an extra "site" field, so the wire
-	// simply has no way to smuggle a tenant.)
 	const body = `{"text":"hello world"}`
 
 	post := func(auth string) int {
@@ -165,8 +142,6 @@ func TestS2SAuthHTTP(t *testing.T) {
 		t.Fatalf("unbound catalog_site → %d, want 403", code)
 	}
 
-	// Site derivation: the ONE successful call metered the tenant from the client
-	// binding (letmoe), NOT the "site" the request body tried to smuggle in.
 	var rows []aiModel.AIUsage
 	if err := testDB.Order("id").Find(&rows).Error; err != nil {
 		t.Fatalf("load usage: %v", err)

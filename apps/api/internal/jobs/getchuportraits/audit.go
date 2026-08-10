@@ -13,26 +13,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// auditPair is one character that ALREADY has a portrait and also resolves to a
-// Getchu bust. This lane will never write to these — which is exactly what
-// makes them the falsification set.
-//
-// The claim under test is "the bust this lane would attach to character X is
-// really X". Nothing in the pipeline can check that from the inside: the page's
-// own <tr> pairing is taken on trust, and the name match has no image sense at
-// all. But 22,428 characters carry an independently-sourced VNDB portrait AND a
-// Getchu bust, so for those the pipeline's answer can be compared against an
-// answer it never saw. If the two pictures are the same person far more often
-// than chance, the pairing is sound; if they are not, the wave is wrong before
-// a single row is written.
 type auditPair struct {
 	CharacterID int64
-	ImageHash   string // the portrait the catalog already shows
+	ImageHash   string
 	GetchuID    string
-	File        string // the bust this lane WOULD have used
+	File        string
 }
 
-// collectAudit gathers every matched character that has both pictures.
 func collectAudit(ctx context.Context, db, gdb *gorm.DB, slot Slot, matched []getchuchars.Candidate) ([]auditPair, error) {
 	plates, err := loadPlates(ctx, gdb, slot)
 	if err != nil {
@@ -65,7 +52,6 @@ func collectAudit(ctx context.Context, db, gdb *gorm.DB, slot Slot, matched []ge
 	return out, nil
 }
 
-// loadPortraitHashes returns the existing portrait hash for the ids that have one.
 func loadPortraitHashes(ctx context.Context, db *gorm.DB, ids []int64) (map[int64]string, error) {
 	out := map[int64]string{}
 	for i := 0; i < len(ids); i += 5000 {
@@ -87,7 +73,6 @@ func loadPortraitHashes(ctx context.Context, db *gorm.DB, ids []int64) (map[int6
 	return out, nil
 }
 
-// writeAudit dumps the falsification set as CSV for an offline image compare.
 func writeAudit(path string, pairs []auditPair) error {
 	f, err := os.Create(path)
 	if err != nil {

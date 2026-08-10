@@ -1,18 +1,3 @@
-// import-work-relations lands work↔work relation edges from the Bangumi
-// game-domain subject relations (source 3), the VNDB vn↔vn relations
-// (source 2) and the erogamescape game_relations (source 5, doc 101 REL2) as
-// catalog_work_relation edges (doc 77 REL1). An edge is written
-// only when BOTH endpoints carry an exact work anchor for the lane's source.
-// Inverse pairs fold to one directed edge; symmetric types normalize a<b; a
-// pair asserted by both sources converges on one edge (ON CONFLICT DO NOTHING),
-// so existing edges are never modified.
-//
-//	go run ./cmd/import-work-relations --source all         # dry-run (default)
-//	go run ./cmd/import-work-relations --source vndb --run  # write the vndb lane
-//	go run ./cmd/import-work-relations --source bgm  --run  # (re-)write the bgm lane
-//
-// Single connection: both src_bangumi.subject_relation and src_vndb.vn_relations
-// live in the catalog DB.
 package main
 
 import (
@@ -57,8 +42,6 @@ func main() {
 	}
 	defer catalogDB.Close()
 
-	// The EG lane reads the erogamespace mirror — same postgres instance as
-	// the catalog, dbname swapped (the orglabels convention).
 	var egPool *gorm.DB
 	if *source == "eg" || *source == "all" {
 		egCfg := cfg.CatalogDatabase
@@ -74,9 +57,6 @@ func main() {
 
 	im := importer.New(catalogDB.DB(), egPool, importer.Options{DryRun: !*apply, Limit: *limit})
 
-	// Bangumi first, then VNDB — so the VNDB lane reads the Bangumi lane's
-	// freshly-written edges and reports overlapping pairs as already-in-db
-	// (cross-source convergence), never a duplicate insert.
 	if *source == "bgm" || *source == "all" {
 		st, err := im.RunBangumiRelations()
 		if err != nil {

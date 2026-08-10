@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// One domain's block of the matrix: its keys as rows, the five contract roles
-// as columns. Presentational — every verdict (granted / source / editable /
-// reason) arrives already decided from the server.
 import type {
   PermissionDomainView,
   PermissionKeyRow,
@@ -26,11 +23,9 @@ const cellOf = (row: PermissionKeyRow, role: string): PermissionCell =>
     can_restore: false
   }
 
-// Whether this square offers anything at all to this caller.
 const isActionable = (row: PermissionKeyRow, role: string) =>
   cellOp(cellOf(row, role)) !== null
 
-// The tooltip on every cell: what clicking does, or why nothing can be done.
 const cellHint = (row: PermissionKeyRow, role: string) => {
   const cell = cellOf(row, role)
   const op = cellOp(cell)

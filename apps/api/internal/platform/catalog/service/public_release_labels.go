@@ -1,20 +1,3 @@
-// public_release_labels.go — per-EDITION company attribution on the public
-// face (wave 200).
-//
-// The storage half of the wave moved the fact to where it is true
-// (catalog_release_label, see model.CatalogReleaseLabel for the worked example);
-// this is the half that lets anybody see it. Without it the table is written and
-// never read, and a work page still shows one flat pile of companies.
-//
-// Two rules it inherits rather than re-decides:
-//
-//   - l.deleted_at IS NULL. The edge is NOT the authority on whether the label
-//     still exists — read_labels.go's comment spells out why (an edge survives
-//     its label being merged away, and projecting it anyway renders the
-//     merged-away twin beside the survivor).
-//   - the collapse is publicWorkLabels, shared verbatim with the work grain, so
-//     "one entry per company, capacities in kinds[]" cannot mean two things on
-//     two faces.
 package service
 
 import (
@@ -23,13 +6,6 @@ import (
 	"api/internal/platform/catalog/dto"
 )
 
-// releaseLabelsFor loads the company chips for a set of releases in ONE query,
-// keyed by release id. A release with no attribution is absent from the map;
-// callers render [] for it.
-//
-// work_count is NOT filled here — it is a taxonomy aggregate over a different
-// edge, and the callers batch it across the whole record / page together with
-// their work-level chips (see fillWorkLabelCounts).
 func (s *PublicService) releaseLabelsFor(ctx context.Context, releaseIDs []int64) (map[int64][]dto.PublicWorkLabel, error) {
 	out := make(map[int64][]dto.PublicWorkLabel, len(releaseIDs))
 	if len(releaseIDs) == 0 {
@@ -66,9 +42,6 @@ func (s *PublicService) releaseLabelsFor(ctx context.Context, releaseIDs []int64
 	return out, nil
 }
 
-// attachReleaseLabels fills labels[] on an already-built releases[] block, in
-// one query for the whole block. Every release ends up with a non-nil slice —
-// the wire promise is [] not null.
 func (s *PublicService) attachReleaseLabels(ctx context.Context, releases []dto.PublicRelease) error {
 	if len(releases) == 0 {
 		return nil

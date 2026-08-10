@@ -10,9 +10,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// userSortColumns is the allowlist of sortable columns for FindAllPaginated.
-// Any value outside this set falls back to created_at, so an unvalidated /
-// attacker-controlled sort_by can never reach ORDER BY.
 var userSortColumns = map[string]string{
 	"created_at":  "created_at",
 	"name":        "name",
@@ -20,17 +17,14 @@ var userSortColumns = map[string]string{
 	"moemoepoint": "moemoepoint",
 }
 
-// UserRepository handles user data access
 type UserRepository struct {
 	db *gorm.DB
 }
 
-// NewUserRepository creates a new UserRepository
 func NewUserRepository(db *gorm.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-// FindByID finds a user by ID
 func (r *UserRepository) FindByID(ctx context.Context, id uint) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).First(&user, id).Error; err != nil {
@@ -39,7 +33,6 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint) (*model.User, er
 	return &user, nil
 }
 
-// FindByUUID finds a user by UUID
 func (r *UserRepository) FindByUUID(ctx context.Context, uuid string) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&user).Error; err != nil {
@@ -48,7 +41,6 @@ func (r *UserRepository) FindByUUID(ctx context.Context, uuid string) (*model.Us
 	return &user, nil
 }
 
-// FindByUUIDWithRoles finds a user by UUID and preloads their roles
 func (r *UserRepository) FindByUUIDWithRoles(ctx context.Context, uuid string) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).Preload("Roles").Where("uuid = ?", uuid).First(&user).Error; err != nil {
@@ -57,11 +49,6 @@ func (r *UserRepository) FindByUUIDWithRoles(ctx context.Context, uuid string) (
 	return &user, nil
 }
 
-// AddRole grants the named role to the user. Idempotent — a role the user
-// already holds is a no-op (ON CONFLICT DO NOTHING on the user_roles PK). The
-// name is resolved to its id from the roles table; an unknown name inserts
-// nothing (the handler validates the name first). Used by the admin
-// role-management endpoints.
 func (r *UserRepository) AddRole(ctx context.Context, userID uint, roleName string) error {
 	return r.db.WithContext(ctx).Exec(
 		`INSERT INTO user_roles (user_id, role_id)
@@ -69,8 +56,6 @@ func (r *UserRepository) AddRole(ctx context.Context, userID uint, roleName stri
 		 ON CONFLICT DO NOTHING`, userID, roleName).Error
 }
 
-// RemoveRole revokes the named role from the user. No-op if the user doesn't
-// hold it. Used by the admin role-management endpoints.
 func (r *UserRepository) RemoveRole(ctx context.Context, userID uint, roleName string) error {
 	return r.db.WithContext(ctx).Exec(
 		`DELETE FROM user_roles
@@ -78,7 +63,6 @@ func (r *UserRepository) RemoveRole(ctx context.Context, userID uint, roleName s
 		userID, roleName).Error
 }
 
-// FindByIDWithRoles finds a user by ID and preloads their roles
 func (r *UserRepository) FindByIDWithRoles(ctx context.Context, id uint) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).Preload("Roles").First(&user, id).Error; err != nil {
@@ -87,18 +71,6 @@ func (r *UserRepository) FindByIDWithRoles(ctx context.Context, id uint) (*model
 	return &user, nil
 }
 
-// SearchByName returns up to `limit` users whose name matches `query`
-// (case-insensitive substring) with roles preloaded.
-//
-// Results are ranked in-database: exact match > prefix match > substring
-// match, then alphabetical within each tier. Pushing the rank into the
-// CASE in ORDER BY (rather than re-ranking in Go after over-fetching)
-// matters here because the candidate set can be huge — for a one-char
-// query like "鲲" against 70k+ users, the exact match would otherwise be
-// buried far past any reasonable over-fetch window.
-//
-// LIKE wildcards (`%`, `_`, `\`) in the query are escaped so user input
-// like "foo_" or "50%" matches literally.
 func (r *UserRepository) SearchByName(ctx context.Context, query string, limit int) ([]model.User, error) {
 	escaped := escapeLikePattern(query)
 	substring := "%" + escaped + "%"
@@ -125,12 +97,6 @@ func (r *UserRepository) SearchByName(ctx context.Context, query string, limit i
 	return users, nil
 }
 
-// escapeLikePattern escapes the three characters PostgreSQL's LIKE/ILIKE
-// treat specially: backslash (the default escape char), percent (any-run
-// wildcard), and underscore (single-char wildcard).
-//
-// Backslash MUST be replaced first; otherwise the inserted backslashes
-// from the % and _ rules would themselves get doubled.
 func escapeLikePattern(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `%`, `\%`)
@@ -138,9 +104,6 @@ func escapeLikePattern(s string) string {
 	return s
 }
 
-// FindByIDsWithRoles batch-fetches users by IDs, preloading roles. Returned
-// slice is in arbitrary order; missing IDs are simply not in the result.
-// Caller should compute the diff to identify not-found ids.
 func (r *UserRepository) FindByIDsWithRoles(ctx context.Context, ids []uint) ([]model.User, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -155,10 +118,6 @@ func (r *UserRepository) FindByIDsWithRoles(ctx context.Context, ids []uint) ([]
 	return users, nil
 }
 
-// FindByEmail finds a user by email
-// FindByEmail looks up a user by email case-insensitively (email is
-// case-insensitive in practice). Uses LOWER(email) so legacy mixed-case rows
-// match too; backed by the idx_users_email_lower functional index.
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).Where("LOWER(email) = ?", model.NormalizeEmail(email)).First(&user).Error; err != nil {
@@ -167,7 +126,6 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.
 	return &user, nil
 }
 
-// FindByName finds a user by name
 func (r *UserRepository) FindByName(ctx context.Context, name string) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).Where("name = ?", name).First(&user).Error; err != nil {
@@ -176,20 +134,14 @@ func (r *UserRepository) FindByName(ctx context.Context, name string) (*model.Us
 	return &user, nil
 }
 
-// Create creates a new user
 func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
 	return r.db.WithContext(ctx).Create(user).Error
 }
 
-// Update updates a user
 func (r *UserRepository) Update(ctx context.Context, user *model.User) error {
 	return r.db.WithContext(ctx).Save(user).Error
 }
 
-// CountByAvatarHash counts users (other than excludeID) referencing the given
-// avatar_image_hash. Used before GC-ing an avatar on anonymize so we never
-// delete a hash another user still points at (image_service dedups content
-// and has no refcount of its own).
 func (r *UserRepository) CountByAvatarHash(ctx context.Context, hash string, excludeID uint) (int64, error) {
 	var n int64
 	err := r.db.WithContext(ctx).
@@ -199,12 +151,10 @@ func (r *UserRepository) CountByAvatarHash(ctx context.Context, hash string, exc
 	return n, err
 }
 
-// UpdatePassword updates a user's password
 func (r *UserRepository) UpdatePassword(ctx context.Context, uuid string, password string) error {
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("uuid = ?", uuid).Update("password", password).Error
 }
 
-// MigrateLegacyPassword sets the new password and clears legacy password fields
 func (r *UserRepository) MigrateLegacyPassword(ctx context.Context, userID uint, newPasswordHash string) error {
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"password":        newPasswordHash,
@@ -213,18 +163,10 @@ func (r *UserRepository) MigrateLegacyPassword(ctx context.Context, userID uint,
 	}).Error
 }
 
-// UpdateEmail updates a user's email
 func (r *UserRepository) UpdateEmail(ctx context.Context, uuid string, email string) error {
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("uuid = ?", uuid).Update("email", email).Error
 }
 
-// UpdateProfile sets the provided fields on the user with the given uuid.
-// Only fields present in `fields` are touched; this is a partial update,
-// not a full overwrite.
-//
-// Caller is responsible for uniqueness validation on `name` (the service
-// layer does this via ExistsByNameExcluding before calling) — this
-// repository method is mechanical.
 func (r *UserRepository) UpdateProfile(ctx context.Context, uuid string, fields map[string]any) error {
 	if len(fields) == 0 {
 		return nil
@@ -235,12 +177,10 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, uuid string, fields 
 		Updates(fields).Error
 }
 
-// Delete soft deletes a user
 func (r *UserRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&model.User{}, id).Error
 }
 
-// List lists users with pagination
 func (r *UserRepository) List(ctx context.Context, offset, limit int) ([]model.User, int64, error) {
 	var users []model.User
 	var total int64
@@ -256,7 +196,6 @@ func (r *UserRepository) List(ctx context.Context, offset, limit int) ([]model.U
 	return users, total, nil
 }
 
-// ExistsByEmail checks if a user exists by email
 func (r *UserRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("LOWER(email) = ?", model.NormalizeEmail(email)).Count(&count).Error; err != nil {
@@ -265,7 +204,6 @@ func (r *UserRepository) ExistsByEmail(ctx context.Context, email string) (bool,
 	return count > 0, nil
 }
 
-// ExistsByName checks if a user exists by name
 func (r *UserRepository) ExistsByName(ctx context.Context, name string) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("name = ?", name).Count(&count).Error; err != nil {
@@ -274,7 +212,6 @@ func (r *UserRepository) ExistsByName(ctx context.Context, name string) (bool, e
 	return count > 0, nil
 }
 
-// ExistsByEmailExcluding checks if email exists excluding a specific user
 func (r *UserRepository) ExistsByEmailExcluding(ctx context.Context, email, excludeUUID string) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).
@@ -285,7 +222,6 @@ func (r *UserRepository) ExistsByEmailExcluding(ctx context.Context, email, excl
 	return count > 0, nil
 }
 
-// ExistsByNameExcluding checks if name exists excluding a specific user
 func (r *UserRepository) ExistsByNameExcluding(ctx context.Context, name, excludeUUID string) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).
@@ -296,7 +232,6 @@ func (r *UserRepository) ExistsByNameExcluding(ctx context.Context, name, exclud
 	return count > 0, nil
 }
 
-// FindAllPaginated finds users with pagination, search, and sorting
 func (r *UserRepository) FindAllPaginated(
 	ctx context.Context,
 	page, limit int,
@@ -310,28 +245,19 @@ func (r *UserRepository) FindAllPaginated(
 
 	query := r.db.WithContext(ctx).Model(&model.User{})
 
-	// Apply search filter. Escape LIKE wildcards so a literal "%"/"_" in the
-	// search term matches literally (consistent with SearchByName), not as a
-	// wildcard that would broaden the match.
 	if search != "" {
 		like := "%" + escapeLikePattern(search) + "%"
 		query = query.Where("name ILIKE ? OR email ILIKE ?", like, like)
 	}
 
-	// Apply status filter
 	if status != nil {
 		query = query.Where("status = ?", *status)
 	}
 
-	// Count total
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	// Apply sorting. Whitelist the column and use a structured ORDER BY
-	// clause (GORM identifier-quotes it) so an attacker-controlled sort_by
-	// can never be interpolated raw into the ORDER BY — defense in depth even
-	// if the handler-level validator is ever bypassed.
 	col, ok := userSortColumns[sortBy]
 	if !ok {
 		col = "created_at"
@@ -341,11 +267,6 @@ func (r *UserRepository) FindAllPaginated(
 		Desc:   sortDesc,
 	})
 
-	// Apply pagination. Preload Roles so the list response carries each user's
-	// roles (RoleNames()) — the table's role chips and the role-management
-	// modal both rely on UserResponse.Roles; without this they'd be empty and
-	// every role would render as "未拥有" even when held. (GORM runs Preload as
-	// one extra IN query for the page; it's ignored by the earlier Count.)
 	offset := (page - 1) * limit
 	if err := query.Preload("Roles").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
 		return nil, 0, err

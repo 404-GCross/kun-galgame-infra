@@ -1,13 +1,4 @@
 <script setup lang="ts">
-// Permission matrix console: every live permission key by domain, the five
-// contract roles as columns, and — for the cells this caller may change — a
-// click that writes or removes an overlay row.
-//
-// The page decides NOTHING about authorization. `editable`, `can_deny`,
-// `can_restore` and `reason` all come from the server, computed by the same
-// validator the write path runs, so the button offered here is exactly the
-// write the API would accept. Each cell state admits exactly one operation, so
-// there is never a choice to present — only one door, open or closed.
 import type {
   PermissionMatrix,
   PermissionAuditEntry,
@@ -36,7 +27,6 @@ const matrix = computed(() => matrixData.value)
 const auditEntries = computed(() => auditData.value ?? [])
 const isLoading = computed(() => status.value === 'pending')
 
-// Pending toggle, held while the confirm modal is open.
 const confirmOpen = ref(false)
 const pendingRow = ref<PermissionKeyRow | null>(null)
 const pendingRole = ref('')
@@ -50,10 +40,6 @@ const askToggle = (row: PermissionKeyRow, role: string) => {
   confirmOpen.value = true
 }
 
-// What each operation sends. A deny is an INSERT carrying its effect; both
-// removals are the same DELETE, because the row that is there is the row being
-// removed — the client never asserts which one, so it can never delete a deny
-// while believing it revoked a grant.
 const SUCCESS_MESSAGES = {
   grant: '已授予',
   revoke: '已撤销叠加授权',

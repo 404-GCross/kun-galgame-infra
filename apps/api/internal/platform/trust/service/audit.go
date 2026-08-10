@@ -11,16 +11,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// auditAdvisoryKey serializes concurrent audit-chain appends across transactions
-// so the hash chain stays linear ("trua" ≈ trust-audit). It MUST differ from the
-// dbtest suite advisory-lock key (session-held for a package's whole test run),
-// or an in-test audit append would block forever on the same lock number
-// (advisory locks share one number space across session/xact variants).
 const auditAdvisoryKey int64 = 0x74727561
 
-// AuditEntry is the caller-supplied content of one audit row (everything except
-// the chain links, which AppendAudit computes). PII stays out — refs and codes
-// only (章程 ruling 10).
 type AuditEntry struct {
 	ActorID     *int64
 	Action      string
@@ -31,9 +23,6 @@ type AuditEntry struct {
 	PolicyRef   *string
 }
 
-// canonicalAudit is the deterministic serialization the hash covers. Field
-// order is fixed by struct declaration order (encoding/json preserves it), so
-// the digest is reproducible.
 type canonicalAudit struct {
 	ActorID     *int64  `json:"actor_id"`
 	Action      string  `json:"action"`
@@ -45,17 +34,12 @@ type canonicalAudit struct {
 	CreatedAt   string  `json:"created_at"`
 }
 
-// AppendAudit writes one row onto the append-only hash chain inside tx. It takes
-// a transaction advisory lock (auto-released at commit/rollback) so two
-// concurrent decision transactions cannot fork the chain, reads the current
-// head hash, and links the new row: hash = SHA256(prev_hash || canonical-row).
-// The first row's prev_hash is 32 zero bytes.
 func AppendAudit(tx *gorm.DB, e AuditEntry) error {
 	if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, auditAdvisoryKey).Error; err != nil {
 		return fmt.Errorf("audit lock: %w", err)
 	}
 
-	prev := make([]byte, 32) // genesis prev_hash = 32 zero bytes
+	prev := make([]byte, 32)
 	var last model.TrustAuditLog
 	err := tx.Order("id DESC").Limit(1).Take(&last).Error
 	if err == nil {
@@ -92,5 +76,4 @@ func AppendAudit(tx *gorm.DB, e AuditEntry) error {
 	return nil
 }
 
-// strptr is a small helper for building AuditEntry ref fields.
 func strptr(s string) *string { return &s }

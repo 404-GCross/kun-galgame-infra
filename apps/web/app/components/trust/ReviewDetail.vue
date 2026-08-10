@@ -1,10 +1,4 @@
 <script setup lang="ts">
-// Review-item detail shown inside the queue's modal: the item summary, its
-// linked reports (reason mapped from the taxonomy, note, weight, reporter,
-// time), and the decide form. A decision is either `dismissed` (no action) or
-// `actioned` — the latter carries an enforcement action, a reason_code drawn
-// from the reason taxonomy, and an optional Art.17 statement, and writes a
-// disposition server-side.
 import {
   REVIEW_STATUS,
   REVIEW_SOURCE,
@@ -34,14 +28,12 @@ const item = computed(() => props.detail.item)
 const reports = computed(() => props.detail.reports ?? [])
 const isSample = computed(() => item.value.source === REVIEW_SOURCE.aiSample)
 
-// A decision is only allowed while the item is pending or claimed.
 const canDecide = computed(
   () =>
     item.value.status === REVIEW_STATUS.pending ||
     item.value.status === REVIEW_STATUS.claimed
 )
 
-// reason_id -> label, for rendering each report's reason.
 const reasonById = computed<Record<number, TrustReason>>(() => {
   const map: Record<number, TrustReason> = {}
   for (const r of props.reasons) map[r.id] = r
@@ -49,16 +41,12 @@ const reasonById = computed<Record<number, TrustReason>>(() => {
 })
 const reasonLabel = (id: number) => reasonById.value[id]?.name_cn ?? `#${id}`
 
-// The reason_code options for the decide form: non-deprecated reasons that are
-// global (no site) or belong to this item's site.
 const reasonOptions = computed(() =>
   props.reasons.filter(
     (r) => !r.is_deprecated && (!r.site || r.site === item.value.site)
   )
 )
 
-// KunSelect option lists for the decide form (placeholder replaces the old
-// disabled "选择…" first option).
 const actionOptions = computed(() =>
   DECIDE_ACTIONS.map((a) => ({ value: a, label: ACTION_LABELS[a] ?? String(a) }))
 )
@@ -67,7 +55,6 @@ const reasonCodeOptions = computed(() =>
 )
 
 const decision = ref<'dismissed' | 'actioned'>('actioned')
-// null = nothing chosen yet (KunSelect shows the placeholder); submit guards on it.
 const action = ref<number | null>(null)
 const reasonCode = ref('')
 const statement = ref('')
@@ -109,7 +96,6 @@ const submit = async () => {
       )
       emit('decided')
     } else {
-      // 409 = illegal state transition; surface the server message verbatim.
       useKunMessage(res.message || '裁决失败', 'error')
     }
   } finally {
@@ -140,11 +126,9 @@ const submit = async () => {
       <span>站点:{{ item.site }}</span>
       <span>来源:{{ REVIEW_SOURCE_LABELS[item.source] ?? item.source }}</span>
       <span>优先级:{{ item.priority?.toFixed(2) }}</span>
-      <!-- Present only on AI-sourced items; a report-only item has no score. -->
       <span v-if="item.classifier_score != null">
         AI 分:{{ item.classifier_score.toFixed(2) }}
       </span>
-      <!-- Snapshot taken when the item opened, not a live figure. -->
       <span v-if="item.subject_reach != null">
         触达:{{ item.subject_reach.toLocaleString() }}
       </span>

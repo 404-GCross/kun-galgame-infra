@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// The per-route (optionally per-site) daily budget-fuse config. v0 stays
-// record-don't-block: a NULL cap never blocks, and setting a cap is an ops
-// choice. The form upserts one (route, site) row; a null cap clears it. Each
-// row can be cleared in place.
 import { AI_ROUTE_MODERATE_TEXT } from '~/constants/ai'
 import type { AiBudget } from '~~/shared/types/ai'
 
@@ -72,7 +68,6 @@ const clearRow = (b: AiBudget) => upsert(b.route, b.site, null)
     <h2 class="text-foreground text-lg font-semibold">预算保险丝</h2>
 
     <div class="bg-content1 space-y-4 rounded-xl p-4 shadow-sm">
-      <!-- set / clear form -->
       <div class="flex flex-wrap items-end gap-2">
         <div class="flex flex-col gap-1">
           <span class="text-default-500 text-xs">路由</span>
@@ -118,7 +113,6 @@ const clearRow = (b: AiBudget) => upsert(b.route, b.site, null)
         v0「先记不拦」:上限仅记录水位,不阻断调用;帽值留空(NULL)= 不拦。
       </p>
 
-      <!-- existing rows -->
       <div class="overflow-x-auto">
         <table class="w-full min-w-[40rem] text-sm">
           <thead class="bg-content2 text-default-500">

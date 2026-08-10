@@ -6,24 +6,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// readOnly is the shared annotation set for the M1 tools: every tool is a
-// read-only, idempotent GET against an open-world external registry.
 var readOnly = &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true}
 
-// registerTools installs the twenty-two tools on the server (M1 five surviving +
-// catalog_name_get + the canonical-W1 trio: works-list / changes / tag + the
-// eight A2 read ops: works search, the three calendar buckets, the three
-// taxonomy browse lanes and engine detail + the wave-189 trio: the series
-// browse/detail pair and catalogue stats + the wave-196 pair: the label
-// relation graph and the release-grain timeline). Names are unversioned
-// (the /v1 contract is versioned upstream); descriptions are English and written
-// for the calling LLM, with the lookup-vs-search division spelled out.
-//
-// The two galgame_* tools retired at wave 146 (2026-07-30) together with the
-// /v1/galgame face they proxied: that face now answers 410 Gone, so keeping the
-// tools registered would only hand the calling model a guaranteed error. Their
-// successors are catalog_search (type=works) and catalog_work_get on the
-// canonical /v1/catalog face.
 func registerTools(s *mcp.Server, up *Upstream) {
 	t := &tools{up: up}
 
@@ -181,8 +165,6 @@ func registerTools(s *mcp.Server, up *Upstream) {
 		Annotations: readOnly,
 	}, t.catalogReleases)
 }
-
-// ─────────────────────────── catalog face ───────────────────────────
 
 const descCatalogSearch = "Search the cross-media identity registry for entities by name. Choose the index with `type`: " +
 	"names (creator credit-names / persons), characters, labels (brands / doujin circles), or works " +
@@ -389,8 +371,6 @@ func (t *tools) catalogTagGet(ctx context.Context, req *mcp.CallToolRequest, in 
 	setInt(q, "offset", in.Offset)
 	return t.run(ctx, req, "catalog_tag_get", pathID("/v1/catalog/tags", in.ID), q)
 }
-
-// ─────────────────── catalog face: the A2 read ops ───────────────────
 
 const descCatalogWorksSearch = "PRODUCT SEARCH over catalog works: free text plus the whole works-list filter set, " +
 	"page-paginated, with five sort lanes and opt-in facet counts. Prefer this over catalog_search type=works " +

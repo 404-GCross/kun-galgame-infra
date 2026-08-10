@@ -1,8 +1,3 @@
-// public_params_test.go — wire-level parameter validation on the frozen
-// /v1/catalog public face (cleanup wave): strict positive-int id filters and
-// the clamp-high / 400-low limit semantics. Integration against
-// kun_catalog_test (openCatalogTestDB), plus pure unit coverage of the two
-// parse helpers so the arithmetic is pinned even without a database.
 package handler
 
 import (
@@ -21,9 +16,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// publicApp mounts the public projection routes bare — the devapi chain
-// (credential / rate / quota / scope) is a separate concern and would only add
-// 401s to what these cases assert.
 func publicApp(db *gorm.DB) *fiber.App {
 	resolveSvc := service.NewResolveService(repository.NewRedirectRepository(db))
 	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
@@ -40,8 +32,6 @@ func publicApp(db *gorm.DB) *fiber.App {
 	return app
 }
 
-// postJSON posts a JSON body and decodes the envelope (the GET-side getJSON
-// lives in read_test.go).
 func postJSON(t *testing.T, app *fiber.App, url, body string) (int, map[string]any) {
 	t.Helper()
 	req := httptest.NewRequest("POST", url, strings.NewReader(body))
@@ -53,8 +43,6 @@ func postJSON(t *testing.T, app *fiber.App, url, body string) (int, map[string]a
 	return resp.StatusCode, out
 }
 
-// seedPublicWorks truncates the works tables and inserts n bodyless LIVE
-// galgame works. Returns their ids in creation order.
 func seedPublicWorks(t *testing.T, db *gorm.DB, n int) []int64 {
 	t.Helper()
 	for _, tbl := range []string{
@@ -75,10 +63,6 @@ func seedPublicWorks(t *testing.T, db *gorm.DB, n int) []int64 {
 	return ids
 }
 
-// TestPublicWorksListStrictIDFilters pins the cleanup-wave rule: an id filter
-// that is present but illegal is a 400, never a silently-dropped filter (the
-// old atoiOrPub fallback returned the UNFILTERED first page, which looks like a
-// successful query with wrong data — the worst failure class).
 func TestPublicWorksListStrictIDFilters(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedPublicWorks(t, db, 3)
@@ -98,23 +82,15 @@ func TestPublicWorksListStrictIDFilters(t *testing.T) {
 		})
 	}
 
-	// Absent filters stay absent (no filter) — the unfiltered page still serves.
 	code, body := getJSON(t, app, "/v1/catalog/works")
 	require.Equal(t, 200, code)
 	assert.Len(t, body["data"].(map[string]any)["items"], 3)
 
-	// A legal id filter is accepted (200) and actually filters — no work carries
-	// label 999999, so the page is empty rather than the unfiltered 3.
 	code, body = getJSON(t, app, "/v1/catalog/works?label_id=999999")
 	require.Equal(t, 200, code)
 	assert.Empty(t, body["data"].(map[string]any)["items"])
 }
 
-// TestWorksListClaimStateVocabulary pins the works LIST claim_state= wire
-// posture (A2-R4) as the works SEARCH one verbatim: OUR closed vocabulary, so a
-// token outside it is a LOUD 400 with the shared message — a silently-ignored
-// token would answer 200 with the very draft stubs the caller asked to exclude,
-// which is the production incident this parameter closes.
 func TestWorksListClaimStateVocabulary(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedPublicWorks(t, db, 3)
@@ -128,7 +104,6 @@ func TestWorksListClaimStateVocabulary(t *testing.T) {
 		})
 	}
 
-	// The whole vocabulary is accepted, in any combination.
 	for _, raw := range []string{
 		"none", "live", "draft", "pending", "declined", "hidden",
 		"none,live,draft,pending,declined,hidden", "live,draft,pending",
@@ -140,9 +115,6 @@ func TestWorksListClaimStateVocabulary(t *testing.T) {
 		})
 	}
 
-	// NO default: absent = no gate, so the three bodyless seeds still serve —
-	// the pre-wave wire, byte for byte. Naming their state selects them; naming
-	// any other state selects none of them.
 	code, body := getJSON(t, app, "/v1/catalog/works")
 	require.Equal(t, 200, code)
 	assert.Len(t, body["data"].(map[string]any)["items"], 3)
@@ -156,8 +128,6 @@ func TestWorksListClaimStateVocabulary(t *testing.T) {
 	assert.Empty(t, body["data"].(map[string]any)["items"])
 }
 
-// TestPublicLimitSemantics pins limit on all three lanes: non-positive /
-// non-numeric = 400, above-max = clamped DOWN to max (NOT reset to default).
 func TestPublicLimitSemantics(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedPublicWorks(t, db, 25)
@@ -175,25 +145,16 @@ func TestPublicLimitSemantics(t *testing.T) {
 		})
 	}
 
-	// Clamp: 25 seeded works, default 20, max 100. limit=1000 must serve all 25
-	// (clamped to 100) — a reset-to-default would have capped the page at 20.
 	code, body := getJSON(t, app, "/v1/catalog/works?limit=1000")
 	require.Equal(t, 200, code)
 	items := body["data"].(map[string]any)["items"].([]any)
 	assert.Len(t, items, 25, "over-max limit clamps to the ceiling, never falls back to the default")
 
-	// The default is still the default when limit is absent.
 	code, body = getJSON(t, app, "/v1/catalog/works")
 	require.Equal(t, 200, code)
 	assert.Len(t, body["data"].(map[string]any)["items"], 20)
 }
 
-// TestPublicLookupTypeVocabulary pins the closed `type` vocabulary on both
-// lookup faces. A token outside work|name|character|label is a 400 — it is OUR
-// vocabulary, so an unknown one is a caller mistake — whereas an unknown SOURCE
-// stays a 404 miss because sources are an open registry. In the batch face a
-// single illegal pair fails the whole request rather than degrading that slot to
-// a silent miss.
 func TestPublicLookupTypeVocabulary(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedPublicWorks(t, db, 1)
@@ -207,8 +168,6 @@ func TestPublicLookupTypeVocabulary(t *testing.T) {
 		})
 	}
 
-	// Legal tokens (and an absent one) reach the resolver: nothing is anchored,
-	// so they 404 — a miss, never a 400.
 	for _, url := range []string{
 		"/v1/catalog/lookup?source=vndb&external_id=v1",
 		"/v1/catalog/lookup?source=vndb&external_id=v1&type=work",
@@ -228,7 +187,6 @@ func TestPublicLookupTypeVocabulary(t *testing.T) {
 	require.Equal(t, 400, code, "one illegal pair fails the whole batch")
 	assert.Equal(t, "type must be one of work, name, character, label", body["message"])
 
-	// An all-legal batch resolves normally and echoes the resolved token.
 	code, body = postJSON(t, app, "/v1/catalog/lookup/batch",
 		`{"items":[{"source":"vndb","external_id":"v1"},{"source":"vndb","external_id":"p1","type":"label"}]}`)
 	require.Equal(t, 200, code)
@@ -238,7 +196,6 @@ func TestPublicLookupTypeVocabulary(t *testing.T) {
 	assert.Equal(t, "label", items[1].(map[string]any)["type"])
 }
 
-// TestLimitPubClampArithmetic unit-pins the helper (no database needed).
 func TestLimitPubClampArithmetic(t *testing.T) {
 	cases := []struct {
 		raw      string
@@ -266,7 +223,6 @@ func TestLimitPubClampArithmetic(t *testing.T) {
 	}
 }
 
-// TestPosIntQueryPub unit-pins the strict id-filter parser.
 func TestPosIntQueryPub(t *testing.T) {
 	for _, raw := range []string{"", "   "} {
 		v, ok := posIntQueryPub(raw)

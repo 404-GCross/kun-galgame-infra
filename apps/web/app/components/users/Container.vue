@@ -6,8 +6,6 @@ const appliedSearch = ref('') // committed on submit (so we don't refetch per ke
 const currentPage = ref(1)
 const limit = 20
 
-// SSR-rendered (kungal-style). The reactive `query` makes useFetch refetch
-// when the page or the applied search changes; first page is in the SSR HTML.
 const { data, status, refresh } = await useApiFetch<{
   users: User[]
   total: number
@@ -30,8 +28,6 @@ const handleSearch = () => {
   appliedSearch.value = searchQuery.value
 }
 
-// Ban is destructive (force-logout + lockout across all OAuth clients), so
-// gate it behind a confirm modal instead of firing on the menu click.
 const banOpen = ref(false)
 const banTarget = ref<{ uuid: string; name: string } | null>(null)
 const banLoading = ref(false)
@@ -51,8 +47,6 @@ const confirmBan = async () => {
       useKunMessage('用户已封禁', 'success')
       refresh()
     } else {
-      // Surface failures instead of silently closing the modal — notably the
-      // 403 when the target is a fellow admin (server-side adminProtected).
       useKunMessage(response.message || '封禁失败', 'error')
     }
   } finally {
@@ -71,8 +65,6 @@ const handleUnban = async (uuid: string) => {
   }
 }
 
-// Anonymize is irreversible (scrubs PII) — gate behind its own confirm with
-// a stronger warning than ban. For severe spam / PII abuse.
 const anonymizeOpen = ref(false)
 const anonymizeTarget = ref<{ uuid: string; name: string } | null>(null)
 const anonymizeLoading = ref(false)

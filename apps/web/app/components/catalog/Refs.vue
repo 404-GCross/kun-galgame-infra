@@ -1,10 +1,4 @@
 <script setup lang="ts">
-// The probable-ref confirmation bucket: unverified probable assertions
-// (including the rows a merge demoted from exact — same predicate, no
-// special casing). Confirm promotes to exact; losing the exact slot answers
-// 409 whose message names the holder — shown verbatim, plus a hint to open
-// a candidate for the two entities (never auto-created). Reject requires a
-// reason (client-enforced too) and records permanent negative knowledge.
 import {
   CATALOG_FILTER_ALL,
   CATALOG_ENTITY_TYPES,
@@ -45,7 +39,6 @@ const total = computed(() => data.value?.total ?? 0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 const isLoading = computed(() => fetchStatus.value === 'pending')
 
-// Filter options for the KunSelects (FILTER_ALL + each source / entity type).
 const sourceOptions = computed(() => [
   { value: CATALOG_FILTER_ALL, label: '全部来源' },
   ...Object.entries(CATALOG_SOURCE_LABELS).map(([id, label]) => ({
@@ -71,9 +64,6 @@ const keyBody = (r: CatalogProbableRefItem) => ({
   external_id: r.external_id
 })
 
-// Full row identity — external_id alone isn't unique (two entities can share one
-// external id), so the in-flight `acting` key must be the whole tuple, else
-// confirming one row disables the button on every sibling row.
 const refKey = (r: CatalogProbableRefItem) =>
   `${r.entity_type}:${r.entity_id}:${r.source_id}:${r.external_id}`
 
@@ -92,8 +82,6 @@ const confirmRef = async (r: CatalogProbableRefItem) => {
       useKunMessage('已确认为 exact', 'success')
       await refresh()
     } else {
-      // 409: the server message names the exact-slot holder. Surface it and
-      // hint the candidate path — never auto-create the candidate.
       useKunMessage(res.message || '确认失败', 'error')
       conflictHint.value = `${res.message}。若两者可能是同一实体，请到候选桶为它们建立候选后走合并流程。`
     }

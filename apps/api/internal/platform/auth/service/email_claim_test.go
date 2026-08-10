@@ -12,9 +12,6 @@ import (
 	"api/pkg/utils"
 )
 
-// rawClaims decodes a JWS payload without verifying it. The typed round-trip
-// can't tell "" apart from an absent key, and the whole point of gating the
-// claim is that it must not be on the wire at all — so assert the wire shape.
 func rawClaims(t *testing.T, token string) map[string]any {
 	t.Helper()
 	parts := strings.Split(token, ".")
@@ -32,19 +29,10 @@ func rawClaims(t *testing.T, token string) map[string]any {
 	return m
 }
 
-// TestEmailClaimRespectsScope pins the access token's half of the email gate.
-// The claim used to ship unconditionally, so a client granted only
-// `openid profile` could base64-decode the token and read the address that
-// /oauth/userinfo withholds — the filter was bypassable without any secret.
-//
-// Both signing paths are checked: legacy HS256 (utils) and the oidctoken Signer
-// used under asymmetric / standard-wire mode. Both serialize the whole
-// TokenClaims struct, so the gate is wire-mode-independent by construction.
 func TestEmailClaimRespectsScope(t *testing.T) {
 	const secret = "test-secret"
 	const addr = "kun@kungal.com"
 
-	// Exactly how the authorization-code and refresh paths fill the claim.
 	build := func(scope string) utils.TokenClaims {
 		return utils.TokenClaims{
 			UserUUID: "u",
@@ -103,7 +91,6 @@ func TestEmailClaimRespectsScope(t *testing.T) {
 	})
 
 	t.Run("scope-less first-party token keeps the address", func(t *testing.T) {
-		// /auth/login negotiates no scope; the account center still needs it.
 		claims := build("")
 		legacy, err := utils.GenerateAccessToken(secret, claims, time.Minute)
 		if err != nil {

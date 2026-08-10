@@ -51,10 +51,6 @@ func mkChar(t *testing.T, name string) int64 {
 	return c.ID
 }
 
-// TestExecuteChainAware pins the step-98 lesson: an id-ordered execute run
-// hitting merge chains must classify (not error) — superseded pairs (both
-// endpoints already merged to one survivor) auto-close, moved-endpoint pairs
-// close as chain-residual for the next detect pass, canonical pairs execute.
 func TestExecuteChainAware(t *testing.T) {
 	for _, tbl := range []string{"catalog_merge_proposal", "catalog_redirect", "catalog_work_character", "catalog_character"} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -74,11 +70,11 @@ func TestExecuteChainAware(t *testing.T) {
 		require.NoError(t, merge.ApproveMerge(ctx, p.ID, 1))
 		return p.ID
 	}
-	p12 := mkProp(k1, k2) // executes; k1 → k2
-	p13 := mkProp(k1, k3) // k1 moved, k3 alive → chain-residual
-	p46 := mkProp(k4, k6) // executes; k4 → k6
-	p56 := mkProp(k5, k6) // executes; k5 → k6
-	p45 := mkProp(k4, k5) // both endpoints → k6 → chain-superseded
+	p12 := mkProp(k1, k2)
+	p13 := mkProp(k1, k3)
+	p46 := mkProp(k4, k6)
+	p56 := mkProp(k5, k6)
+	p45 := mkProp(k4, k5)
 	require.NoError(t, testDB.Exec(`UPDATE catalog_merge_proposal SET execute_after = now() - interval '1 hour'`).Error)
 
 	require.NoError(t, runExecute(ctx, testDB, io.Discard, merge, resolve, 1, waveTag98, 0, true))
@@ -97,11 +93,10 @@ func TestExecuteChainAware(t *testing.T) {
 	var p model.CatalogMergeProposal
 	require.NoError(t, testDB.First(&p, p13).Error)
 	assert.Contains(t, p.Note, "chain-residual")
-	p = model.CatalogMergeProposal{} // reset — a reused struct's stale PK joins the WHERE clause
+	p = model.CatalogMergeProposal{}
 	require.NoError(t, testDB.First(&p, p45).Error)
 	assert.Contains(t, p.Note, "chain-superseded")
 
-	// Fixpoint: a second run finds nothing approved.
 	require.NoError(t, runExecute(ctx, testDB, io.Discard, merge, resolve, 1, waveTag98, 0, true))
 	var left int64
 	require.NoError(t, testDB.Model(&model.CatalogMergeProposal{}).Where("status = ?", model.ProposalStatusApproved).Count(&left).Error)

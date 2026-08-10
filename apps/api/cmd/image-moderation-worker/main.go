@@ -1,11 +1,3 @@
-// image-moderation-worker is the async moderation worker. Long-running
-// process that polls the image_moderation_queue table and runs the
-// configured moderation provider on each entry.
-//
-// Flags:
-//   --provider=noop|aliyun|tencent   which provider to use (default noop)
-//   --batch=20                       rows claimed per poll
-//   --poll=15s                       interval between polls
 package main
 
 import (

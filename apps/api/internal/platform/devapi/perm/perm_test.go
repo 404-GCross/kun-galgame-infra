@@ -7,8 +7,6 @@ import (
 	"api/internal/platform/devapi/perm"
 )
 
-// goldenGrants is the authoritative role-set for every developer-platform
-// permission. Any drift between the bundles and this table fails the build.
 var goldenGrants = map[authz.Permission][]string{
 	perm.Manage: {"admin", "ren"},
 }
@@ -30,9 +28,6 @@ func TestGoldenBundles(t *testing.T) {
 	}
 }
 
-// TestNonBundleRolesGrantNothing pins the fail-closed default: any role outside
-// the bundles (implicit user, moderator, empty, or a retired alias) grants
-// nothing.
 func TestNonBundleRolesGrantNothing(t *testing.T) {
 	for _, role := range []string{"user", "moderator", "", "legacy_top_tier_alias"} {
 		for p := range goldenGrants {
@@ -43,7 +38,6 @@ func TestNonBundleRolesGrantNothing(t *testing.T) {
 	}
 }
 
-// TestManagementAxisContainment pins moderator ⊆ admin ⊆ ren.
 func TestManagementAxisContainment(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"moderator"}, p) && !perm.Resolver.Can([]string{"admin"}, p) {
@@ -55,8 +49,6 @@ func TestManagementAxisContainment(t *testing.T) {
 	}
 }
 
-// TestCreatorGrantsNothing pins that creator (the publish axis) has no authority
-// on the developer-platform surface.
 func TestCreatorGrantsNothing(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"creator"}, p) {

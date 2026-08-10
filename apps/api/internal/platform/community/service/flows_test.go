@@ -24,12 +24,10 @@ func TestGetOrCreateCommentsThread_Idempotent(t *testing.T) {
 	if a.ID != b.ID {
 		t.Fatalf("comments thread should be idempotent per anchor: %d vs %d", a.ID, b.ID)
 	}
-	// Born empty: forced participants_count=0 (not the DDL default 1).
 	if a.ParticipantsCount != 0 || a.PostsCount != 0 {
 		t.Fatalf("comments thread born empty: posts=%d participants=%d", a.PostsCount, a.ParticipantsCount)
 	}
 
-	// Tombstone → a fresh comments thread for the same anchor is allowed.
 	if err := testDB.Model(a).Update("status", model.ThreadStatusDeleted).Error; err != nil {
 		t.Fatalf("tombstone: %v", err)
 	}
@@ -53,7 +51,6 @@ func TestReply_CountersAndNumbering(t *testing.T) {
 		t.Fatalf("topic born with post #1: posts=%d highest=%d participants=%d", th.PostsCount, th.HighestPostNumber, th.ParticipantsCount)
 	}
 
-	// Reply by a different established user → post #2, participants → 2.
 	seedTrust(t, 200, model.TrustLevelBasic, 0)
 	p2, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 200, BodyRaw: "hi"})
 	if err != nil {
@@ -70,7 +67,6 @@ func TestReply_CountersAndNumbering(t *testing.T) {
 		t.Fatal("last_posted_at should advance on reply")
 	}
 
-	// A second reply by the SAME author → participants stays 2, posts → 3.
 	if _, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 200, BodyRaw: "again"}); err != nil {
 		t.Fatalf("reply2: %v", err)
 	}
@@ -115,7 +111,6 @@ func TestReply_DerivesRootAndTarget(t *testing.T) {
 	ps := NewPostService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
-	// A top-level reply (no reply_to) carries no root/target pointers.
 	seedTrust(t, 200, model.TrustLevelBasic, 0)
 	top, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 200, BodyRaw: "top"})
 	if err != nil {
@@ -125,8 +120,6 @@ func TestReply_DerivesRootAndTarget(t *testing.T) {
 		t.Fatalf("a top-level reply carries no root/target: root=%v target=%v", top.RootPostID, top.TargetUserID)
 	}
 
-	// A reply passing ONLY reply_to_post_id: the primitive derives root = the
-	// top-level ancestor and target = the parent's author (docs/proj/16 #8).
 	seedTrust(t, 300, model.TrustLevelBasic, 0)
 	child, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 300, BodyRaw: "child", ReplyToPostID: &top.ID})
 	if err != nil {
@@ -139,7 +132,6 @@ func TestReply_DerivesRootAndTarget(t *testing.T) {
 		t.Fatalf("child target_user_id: want 200, got %v", child.TargetUserID)
 	}
 
-	// A reply to the nested reply inherits the SAME root and targets the middle author.
 	seedTrust(t, 400, model.TrustLevelBasic, 0)
 	grand, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 400, BodyRaw: "grand", ReplyToPostID: &child.ID})
 	if err != nil {
@@ -166,8 +158,6 @@ func TestReactionToggle(t *testing.T) {
 	if err != nil || !added {
 		t.Fatalf("first toggle should add: added=%v err=%v", added, err)
 	}
-	// The toggle returns the post's context so a site can fan out its like
-	// notification (recipient + jump target) without a second read.
 	if pc.AuthorID != 200 || pc.ThreadID != th.ID || pc.AnchorKind != model.AnchorKindBoard || pc.AnchorID != "b1" {
 		t.Fatalf("post context: author=%d thread=%d anchor=%d/%q", pc.AuthorID, pc.ThreadID, pc.AnchorKind, pc.AnchorID)
 	}
@@ -216,7 +206,6 @@ func TestFeedbackFlow(t *testing.T) {
 		t.Fatalf("expected 1 feedback.status_changed event, got %d", sink.count(EventFeedbackStatusChanged))
 	}
 
-	// Merge (reversible) into a second feedback thread.
 	into, _, _ := ts.OpenFeedback(context.Background(), OpenThreadParams{Site: "letmoe", AuthorID: 100, AnchorKind: model.AnchorKindSiteResource, AnchorID: "r1", Title: "dup target", ContentRating: model.ContentRatingAll, BodyRaw: "x"})
 	if err := fs.Merge(context.Background(), th.ID, into.ID); err != nil {
 		t.Fatalf("merge: %v", err)
@@ -233,7 +222,6 @@ func TestFeedbackFlow(t *testing.T) {
 		t.Fatalf("unmerge should reverse: merged=%v status=%d", got.MergedIntoID, got.Status)
 	}
 
-	// SetAnswer.
 	if err := fs.SetAnswer(context.Background(), th.ID, 42); err != nil {
 		t.Fatalf("set answer: %v", err)
 	}
@@ -241,7 +229,6 @@ func TestFeedbackFlow(t *testing.T) {
 		t.Fatalf("answer not set: %v", got.AnswerPostID)
 	}
 
-	// Non-feedback thread rejects feedback ops.
 	topic := openTopic(t, ts, "letmoe", 100, "b1", "x")
 	if err := fs.SetStatus(context.Background(), topic.ID, model.FeedbackStatusOpen, 1, nil); err != ErrNotFeedback {
 		t.Fatalf("feedback op on a topic should return ErrNotFeedback, got %v", err)

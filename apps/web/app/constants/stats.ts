@@ -1,5 +1,3 @@
-// Preset day-ranges for the registration chart. Capped at 90 (server also
-// clamps to 90).
 export const REGISTRATION_RANGE_OPTIONS = [
   { label: '7 天', value: 7 },
   { label: '14 天', value: 14 },

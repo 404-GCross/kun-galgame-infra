@@ -14,18 +14,14 @@ import (
 	"api/pkg/config"
 )
 
-// Mailer handles email sending
 type Mailer struct {
 	cfg config.MailConfig
 }
 
-// NewMailer creates a new Mailer
 func NewMailer(cfg config.MailConfig) *Mailer {
 	return &Mailer{cfg: cfg}
 }
 
-// newMessageID builds an RFC 5322 Message-ID (`<random@sender-domain>`). The
-// domain is taken from the From account so DKIM/DMARC alignment isn't broken.
 func newMessageID(account string) string {
 	domain := "localhost"
 	if at := strings.LastIndex(account, "@"); at >= 0 && at+1 < len(account) {
@@ -38,16 +34,13 @@ func newMessageID(account string) string {
 	return fmt.Sprintf("<%s@%s>", hex.EncodeToString(b[:]), domain)
 }
 
-// SendEmail sends an email
 func (m *Mailer) SendEmail(to, subject, htmlBody string) error {
 	if m.cfg.Host == "" {
 		return fmt.Errorf("mail host not configured")
 	}
 
-	// Setup authentication
 	auth := smtp.PlainAuth("", m.cfg.Account, m.cfg.Password, m.cfg.Host)
 
-	// Build email headers
 	headers := make(map[string]string)
 	headers["From"] = fmt.Sprintf("%s <%s>", m.cfg.From, m.cfg.Account)
 	headers["To"] = to
@@ -60,7 +53,6 @@ func (m *Mailer) SendEmail(to, subject, htmlBody string) error {
 	headers["Date"] = time.Now().Format(time.RFC1123Z)
 	headers["Message-ID"] = newMessageID(m.cfg.Account)
 
-	// Build message
 	var msg bytes.Buffer
 	for k, v := range headers {
 		msg.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
@@ -68,28 +60,22 @@ func (m *Mailer) SendEmail(to, subject, htmlBody string) error {
 	msg.WriteString("\r\n")
 	msg.WriteString(htmlBody)
 
-	// Connect to SMTP server
 	addr := fmt.Sprintf("%s:%d", m.cfg.Host, m.cfg.Port)
 
-	// Use TLS for port 587
 	if m.cfg.Port == 587 {
 		return m.sendWithTLS(addr, auth, to, msg.Bytes())
 	}
 
-	// Plain SMTP
 	return smtp.SendMail(addr, auth, m.cfg.Account, []string{to}, msg.Bytes())
 }
 
-// sendWithTLS sends email using STARTTLS
 func (m *Mailer) sendWithTLS(addr string, auth smtp.Auth, to string, msg []byte) error {
-	// Connect
 	client, err := smtp.Dial(addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to SMTP server: %w", err)
 	}
 	defer client.Close()
 
-	// STARTTLS
 	tlsConfig := &tls.Config{
 		ServerName: m.cfg.Host,
 	}
@@ -97,22 +83,18 @@ func (m *Mailer) sendWithTLS(addr string, auth smtp.Auth, to string, msg []byte)
 		return fmt.Errorf("failed to start TLS: %w", err)
 	}
 
-	// Authenticate
 	if err := client.Auth(auth); err != nil {
 		return fmt.Errorf("failed to authenticate: %w", err)
 	}
 
-	// Set sender
 	if err := client.Mail(m.cfg.Account); err != nil {
 		return fmt.Errorf("failed to set sender: %w", err)
 	}
 
-	// Set recipient
 	if err := client.Rcpt(to); err != nil {
 		return fmt.Errorf("failed to set recipient: %w", err)
 	}
 
-	// Send message
 	w, err := client.Data()
 	if err != nil {
 		return fmt.Errorf("failed to get data writer: %w", err)
@@ -129,26 +111,11 @@ func (m *Mailer) sendWithTLS(addr string, auth smtp.Auth, to string, msg []byte)
 	return client.Quit()
 }
 
-// ──────────────────────────────────────────
-// Email layout
-// ──────────────────────────────────────────
-//
-// Brand colors come from the project design system: primary #006FEE (鲲
-// Galgame blue) for the header / CTA / code chip, and #ff4ecd (pink accent)
-// for the thin rule under the header. Deliberately NO gradients and only a
-// modest 6–8px radius so the mail matches the app's clean, flat KunUI look
-// instead of the old generic purple-gradient / big-pill template.
-//
-// Layout uses a <table> + inline styles (not flexbox / external CSS) because
-// that is the only thing rendered consistently across email clients
-// (Gmail / Outlook / Apple Mail strip <style> blocks and modern CSS).
-
 const (
 	kunBrandPrimary = "#006FEE"
 	kunBrandAccent  = "#ff4ecd"
 )
 
-// kunEmailShell wraps the per-mail inner HTML in the shared branded layout.
 func kunEmailShell(heading, inner string) string {
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="zh-CN">
@@ -173,14 +140,12 @@ func kunEmailShell(heading, inner string) string {
 </html>`, heading, kunBrandPrimary, kunBrandAccent, heading, inner)
 }
 
-// codeChip renders a centered verification-code block in the primary color.
 func codeChip(code string) string {
 	return fmt.Sprintf(`<div style="margin:24px 0; text-align:center;">
 <span style="display:inline-block; padding:14px 28px; font-size:30px; font-weight:700; letter-spacing:8px; color:%s; background-color:#eef5ff; border:1px solid #cfe2ff; border-radius:8px; font-family:'SFMono-Regular',Consolas,Menlo,monospace;">%s</span>
 </div>`, kunBrandPrimary, code)
 }
 
-// ctaButton renders a centered solid-primary call-to-action button.
 func ctaButton(href, label string) string {
 	return fmt.Sprintf(`<div style="margin:24px 0; text-align:center;">
 <a href="%s" style="display:inline-block; padding:12px 30px; background-color:%s; color:#ffffff; text-decoration:none; font-size:14px; font-weight:600; border-radius:6px;">%s</a>
@@ -192,7 +157,6 @@ const (
 	emailHintPara = `<p style="margin:0; font-size:13px; color:#7b8794;">%s</p>`
 )
 
-// SendPasswordResetEmail sends a password reset email
 func (m *Mailer) SendPasswordResetEmail(to, name, resetLink string) error {
 	subject := "重置密码 - 鲲 Galgame"
 	inner := fmt.Sprintf(emailTextPara, fmt.Sprintf("你好 <strong>%s</strong>，", name)) +
@@ -203,7 +167,6 @@ func (m *Mailer) SendPasswordResetEmail(to, name, resetLink string) error {
 	return m.SendEmail(to, subject, kunEmailShell("重置密码", inner))
 }
 
-// SendVerificationEmail sends an email verification email
 func (m *Mailer) SendVerificationEmail(to, name, verifyLink string) error {
 	subject := "验证邮箱 - 鲲 Galgame"
 	inner := fmt.Sprintf(emailTextPara, fmt.Sprintf("你好 <strong>%s</strong>，", name)) +
@@ -213,14 +176,6 @@ func (m *Mailer) SendVerificationEmail(to, name, verifyLink string) error {
 	return m.SendEmail(to, subject, kunEmailShell("验证邮箱", inner))
 }
 
-// SendRegisterCodeEmail sends a 6-digit verification code to a soon-to-be
-// registered email address. Unlike SendEmailChangeCodeEmail (which targets
-// the OLD address to defend against JWT theft), this one targets the NEW
-// address itself — the whole point is to verify ownership of the proposed
-// registration email before any account is created. `name` is the
-// requested-but-not-yet-created username, used as a salutation.
-// `ttlMinutes` is the same TTL the caller wrote into Redis, so the body
-// text matches the actual code lifetime even if config changes.
 func (m *Mailer) SendRegisterCodeEmail(to, name, code string, ttlMinutes int) error {
 	subject := "注册验证码 - 鲲 Galgame"
 	inner := fmt.Sprintf(emailTextPara, fmt.Sprintf("你好 <strong>%s</strong>，", name)) +
@@ -231,8 +186,6 @@ func (m *Mailer) SendRegisterCodeEmail(to, name, code string, ttlMinutes int) er
 	return m.SendEmail(to, subject, kunEmailShell("完成账号注册", inner))
 }
 
-// SendEmailChangeCodeEmail sends an email change verification code to the user's current email.
-// `ttlMinutes` mirrors what the caller wrote into Redis so body text == reality.
 func (m *Mailer) SendEmailChangeCodeEmail(to, name, code string, ttlMinutes int) error {
 	subject := "邮箱变更验证码 - 鲲 Galgame"
 	inner := fmt.Sprintf(emailTextPara, fmt.Sprintf("你好 <strong>%s</strong>，", name)) +
@@ -243,7 +196,6 @@ func (m *Mailer) SendEmailChangeCodeEmail(to, name, code string, ttlMinutes int)
 	return m.SendEmail(to, subject, kunEmailShell("邮箱变更验证", inner))
 }
 
-// SendWithTemplate sends an email using a custom template
 func (m *Mailer) SendWithTemplate(to, subject, tmplStr string, data any) error {
 	tmpl, err := template.New("email").Parse(tmplStr)
 	if err != nil {

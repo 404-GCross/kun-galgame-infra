@@ -1,6 +1,5 @@
 import tailwindcss from '@tailwindcss/vite'
 
-// https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
 
@@ -9,8 +8,6 @@ export default defineNuxtConfig({
   extends: ['@kungal/ui-nuxt'],
 
   app: {
-    // Favicon set — temporarily shares kungal's marks (the static files copied
-    // from apps/web/public); swap for NextMoe's own brand set once ready.
     head: {
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
@@ -31,14 +28,8 @@ export default defineNuxtConfig({
     }
   },
 
-  // This app owns its Tailwind entry. @kungal/ui-nuxt deliberately does not
-  // inject tailwindcss.css (INTEGRATION §5), so the imports + @source scan live
-  // in app/assets/css/main.css.
   css: ['~/assets/css/main.css'],
 
-  // The /explore data browser (and its work showcase) is a key-gated demo
-  // surface — keep it out of search indexes. Pages also set robots noindex
-  // via useSeoMeta; this adds the header layer (belt and suspenders).
   routeRules: {
     '/explore': { headers: { 'X-Robots-Tag': 'noindex, nofollow' } },
     '/explore/**': { headers: { 'X-Robots-Tag': 'noindex, nofollow' } },
@@ -84,36 +75,18 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    // Same-origin proxy target for /api/** (server/routes/api/[...path].ts).
-    // The browser only ever talks to developer.nextmoe.dev; Nitro forwards
-    // /api/** to the oauth service server-side so there is ZERO CORS. In
-    // production set NUXT_OAUTH_API_BASE=http://oauth:9277 (docker service
-    // name); local dev points it at the locally-running oauth binary.
-    // ALSO reused server-side for the OAuth code/refresh exchange (CORS-free).
     oauthApiBase: process.env.NUXT_OAUTH_API_BASE || 'http://127.0.0.1:19277',
 
-    // Confidential OAuth client secret — SERVER ONLY, never exposed to the
-    // browser. Used by server/routes/auth/{exchange,refresh}.post.ts on the
-    // /oauth/token calls. Empty in local dev unless you seed a dev client.
     oauthClientSecret: process.env.NUXT_OAUTH_CLIENT_SECRET || '',
 
-    // Upstream base for the /explore data-browser relay (server-side GET-only
-    // proxy to the open API; the caller's own key rides the request).
     nextmoeApiBase: process.env.NUXT_NEXTMOE_API_BASE || 'https://api.nextmoe.dev',
 
     public: {
-      // Browser-facing OAuth API base for the top-level /oauth/authorize
-      // navigation (the IdP's PUBLIC origin — distinct from the server-only,
-      // internal oauthApiBase above). Prod: https://oauth.kungal.com/api/v1.
       oauthAuthorizeBase:
         process.env.NUXT_PUBLIC_OAUTH_AUTHORIZE_BASE ||
         'http://127.0.0.1:9277/api/v1',
-      // OP frontend origin, for the seamless register redirect (/auth/register).
-      // Prod: https://oauth.kungal.com. Dev: the OP web app (:9420).
       oauthWebBase:
         process.env.NUXT_PUBLIC_OAUTH_WEB_BASE || 'http://127.0.0.1:9420',
-      // This client's id + its registered callback. redirect_uri is
-      // exact-string-matched by the IdP, so it MUST equal the registered value.
       oauthClientId: process.env.NUXT_PUBLIC_OAUTH_CLIENT_ID || '',
       oauthRedirectUri:
         process.env.NUXT_PUBLIC_OAUTH_REDIRECT_URI ||

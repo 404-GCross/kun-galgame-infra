@@ -9,23 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// Reputation-weighted reporting (doc 11 §6 layer 4). A report's weight is the
-// reporter's TL base value scaled by their historical accuracy; a post whose
-// accumulated PENDING weight crosses the threshold auto-hides and enters the
-// review queue. A TL3+ reporter against a TL0 author hides on a single vote.
 const (
-	// flagHideThreshold ≈ "3 ordinary reports" (a fresh TL0 reporter weighs 1.0).
 	flagHideThreshold float32 = 3.0
 )
 
-// flagBaseByLevel is the per-TL base report weight (index = trust level). TL3's
-// base (2.0) is deliberately below the threshold so a single TL3 report does not
-// auto-hide on weight alone — the TL3-vs-TL0 single-vote rule is the ONLY
-// single-report hide path, and it is scoped to TL0 authors.
 var flagBaseByLevel = [...]float32{1.0, 1.2, 1.5, 2.0, 2.5}
 
-// FlagService owns report submission and the auto-hide/enqueue decision. Queue
-// adjudication (approve/reject + accuracy backfill) is ReviewService.
 type FlagService struct {
 	db   *gorm.DB
 	sink EventSink
@@ -35,10 +24,6 @@ func NewFlagService(db *gorm.DB, sink EventSink) *FlagService {
 	return &FlagService{db: db, sink: sink}
 }
 
-// Submit records a weighted report and, when the post is still visible, applies
-// the auto-hide decision (threshold OR the TL3-vs-TL0 single vote). Idempotent
-// per (post, flagger). Reporting an already-hidden/tombstoned post only records
-// the flag — it is never re-enqueued.
 func (s *FlagService) Submit(ctx context.Context, postID, flaggerID int64, reason *int16, note *string) error {
 	var crossed bool
 	var enqueuedItemID int64
@@ -50,8 +35,6 @@ func (s *FlagService) Submit(ctx context.Context, postID, flaggerID int64, reaso
 		if !found {
 			return ErrPostNotFound
 		}
-		// Tenant guard on the already-loaded post context (ruling 4): a report on
-		// another site's post is answered as "post not found", recording nothing.
 		if crossTenantCtx(ctx, pc.Site, pc.AnchorKind) {
 			return ErrPostNotFound
 		}
@@ -68,7 +51,7 @@ func (s *FlagService) Submit(ctx context.Context, postID, flaggerID int64, reaso
 			return err
 		}
 		if !inserted || pc.Status != model.PostStatusVisible {
-			return nil // already flagged, or post not visible → record only
+			return nil
 		}
 
 		hide, err := s.shouldHide(tx, reporter, pc.AuthorID, postID)
@@ -97,19 +80,12 @@ func (s *FlagService) Submit(ctx context.Context, postID, flaggerID int64, reaso
 	if crossed {
 		s.sink.Emit(Event{Kind: EventFlagThreshold, PostID: postID})
 	}
-	// Best-effort forward the freshly-enqueued item to the trust inbox AFTER the
-	// transaction has committed (step 03 outbox — never HTTP inside the tx). The
-	// sink turns this into an off-request trust call when forwarding is wired; a
-	// no-op otherwise.
 	if enqueuedItemID != 0 {
 		s.sink.Emit(Event{Kind: EventReviewEnqueued, PostID: postID, ReviewItemID: enqueuedItemID})
 	}
 	return nil
 }
 
-// shouldHide decides whether this report tips the post into hidden: a TL3+
-// reporter against a TL0 author (single vote), or the accumulated pending weight
-// reaching the threshold.
 func (s *FlagService) shouldHide(tx *gorm.DB, reporter *model.CommunityTrust, authorID, postID int64) (bool, error) {
 	if reporter.Level >= model.TrustLevelRegular {
 		authorLevel := model.TrustLevelNew
@@ -136,9 +112,6 @@ func flagBase(level int16) float32 {
 	return flagBaseByLevel[len(flagBaseByLevel)-1]
 }
 
-// accuracyFactor is agreed/(agreed+disagreed); a reporter with no decided
-// history factors to 1.0 (doc 11: initial 1). A consistently-wrong reporter
-// tends to 0, neutralizing their influence.
 func accuracyFactor(t *model.CommunityTrust) float32 {
 	agreed, disagreed := nz(t.FlagsAgreed), nz(t.FlagsDisagreed)
 	denom := agreed + disagreed

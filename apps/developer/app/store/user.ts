@@ -1,7 +1,5 @@
 import type { User } from '~~/shared/types/dev'
 
-// The signed-in ecosystem account. Persisted (cookie) so a full reload keeps the
-// user while the client plugin re-validates the session.
 export const useUserStore = defineStore(
   'user',
   () => {

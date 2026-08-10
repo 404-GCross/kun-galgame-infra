@@ -9,7 +9,6 @@ import (
 	"api/pkg/config"
 )
 
-// MockUserRepository is a mock implementation of UserRepository for testing
 type MockUserRepository struct {
 	users      map[string]*model.User
 	emailIndex map[string]*model.User
@@ -73,7 +72,6 @@ func (m *MockUserRepository) UpdatePassword(ctx context.Context, uuid, password 
 	return nil
 }
 
-// MockSessionRepository is a mock implementation of SessionRepository for testing
 type MockSessionRepository struct {
 	sessions map[string]*model.Session
 }
@@ -131,11 +129,8 @@ func (m *MockSessionRepository) DeleteByUserID(ctx context.Context, userID uint)
 }
 
 func TestAuthService_Register(t *testing.T) {
-	// This is a placeholder test structure
-	// In a real implementation, you would use proper mocking libraries
 
 	t.Run("successful registration", func(t *testing.T) {
-		// Setup would go here
 		t.Skip("Requires mock repository implementation")
 	})
 
@@ -171,7 +166,6 @@ func TestAuthService_ValidateAccessToken(t *testing.T) {
 		Secret: "test-secret-key-for-testing-only",
 	}
 
-	// Create a minimal service for token validation
 	svc := NewAuthService(nil, nil, jwtCfg)
 
 	t.Run("invalid token", func(t *testing.T) {
@@ -194,10 +188,9 @@ func TestPasswordValidation(t *testing.T) {
 		req := &dto.RegisterRequest{
 			Name:     "testuser",
 			Email:    "test@example.com",
-			Password: "12345", // Too short (less than 6 chars)
+			Password: "12345",
 		}
 
-		// In real implementation, this would be validated by the validator
 		if len(req.Password) >= 6 {
 			t.Error("Expected password to be too short")
 		}

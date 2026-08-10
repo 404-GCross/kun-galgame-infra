@@ -37,9 +37,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestPlanAliasesKeepsEveryBrandFindable pins the alias plan, including the two
-// shapes the real data forced: a canonical that is NOT one of the segments
-// (label 11646), and a segment with no space after its slash (label 8791).
 func TestPlanAliasesKeepsEveryBrandFindable(t *testing.T) {
 	t.Run("canonical is a segment and is not re-aliased", func(t *testing.T) {
 		got := planAliases("POISON / POISON MOTION / POISON EXTASY", "POISON")
@@ -67,7 +64,6 @@ func TestPlanAliasesKeepsEveryBrandFindable(t *testing.T) {
 	})
 }
 
-// mkLabel inserts a label carrying a slash name and returns a case pinned to it.
 func mkLabel(t *testing.T, name, canonical string) healCase {
 	t.Helper()
 	l := model.CatalogLabel{DisplayName: name, Lang: "ja", Kind: model.LabelKindGameBrand}
@@ -75,8 +71,6 @@ func mkLabel(t *testing.T, name, canonical string) healCase {
 	return healCase{LabelID: l.ID, Expect: name, Canonical: canonical}
 }
 
-// TestApplyCaseWritesRenameAliasesAndProvenance is the happy path plus the
-// idempotence contract: the second run finds no slash and writes nothing.
 func TestApplyCaseWritesRenameAliasesAndProvenance(t *testing.T) {
 	c := mkLabel(t, "ココロリウム / ア・ラ・フィリア", "ココロリウム")
 
@@ -102,7 +96,6 @@ func TestApplyCaseWritesRenameAliasesAndProvenance(t *testing.T) {
 		assert.False(t, a.IsPrimaryForLocale, "the canonical display_name is the primary, never an alias")
 	}
 
-	// Second run: the guard sees no slash and skips; nothing is written twice.
 	res, err = applyCase(testDB, c, true, io.Discard)
 	require.NoError(t, err)
 	assert.True(t, res.skipped)
@@ -114,12 +107,9 @@ func TestApplyCaseWritesRenameAliasesAndProvenance(t *testing.T) {
 	assert.EqualValues(t, 2, after, "a second run must add no alias rows")
 }
 
-// TestApplyCaseDriftGuardRefusesAChangedRow is the guard that makes a curated
-// verdict safe to replay: the adjudication belongs to a specific string, and a
-// row that no longer carries it has not been adjudicated.
 func TestApplyCaseDriftGuardRefusesAChangedRow(t *testing.T) {
 	c := mkLabel(t, "X / Y / Z", "X")
-	c.Expect = "X / Y" // what the human saw; the row has since gained "/ Z"
+	c.Expect = "X / Y"
 
 	res, err := applyCase(testDB, c, true, io.Discard)
 	require.NoError(t, err)
@@ -135,7 +125,6 @@ func TestApplyCaseDriftGuardRefusesAChangedRow(t *testing.T) {
 	assert.Zero(t, aliases)
 }
 
-// TestApplyCaseDryRunWritesNothing pins the default posture.
 func TestApplyCaseDryRunWritesNothing(t *testing.T) {
 	c := mkLabel(t, "Omega Program / 正経同人", "Omega Program")
 

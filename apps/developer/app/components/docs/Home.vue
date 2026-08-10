@@ -2,7 +2,6 @@
 import { API_BASE_URL } from '~/constants/dev'
 import { DOCS_FACE_META } from '~/constants/docs'
 
-// /docs landing: what the API is, how to authenticate, and the face entries.
 const { faces, faceOperationCount } = useDocs()
 
 useSeoMeta({
@@ -18,7 +17,6 @@ const totalOperations = computed(() =>
 
 <template>
   <div class="space-y-10">
-    <!-- Intro -->
     <header>
       <p class="text-sm font-medium tracking-wide text-primary">API 参考</p>
       <h1 class="mt-2 text-3xl font-bold tracking-tight text-foreground">
@@ -30,7 +28,6 @@ const totalOperations = computed(() =>
       </p>
     </header>
 
-    <!-- Base URL + auth + rate limit -->
     <section class="grid gap-4 md:grid-cols-3">
       <div class="rounded-xl border border-default-200 bg-content1 p-4">
         <h2 class="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -76,7 +73,6 @@ const totalOperations = computed(() =>
       </div>
     </section>
 
-    <!-- Face entries -->
     <section>
       <h2 class="text-lg font-semibold text-foreground">公开数据面</h2>
       <p class="mt-1 text-sm text-default-500">
@@ -125,7 +121,6 @@ const totalOperations = computed(() =>
       </div>
     </section>
 
-    <!-- AI / MCP access -->
     <section>
       <h2 class="text-lg font-semibold text-foreground">实战示例</h2>
       <p class="mt-1 text-sm text-default-500">

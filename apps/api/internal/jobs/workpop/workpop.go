@@ -21,24 +21,15 @@ package workpop
 
 import "fmt"
 
-// Population names a set of catalog works.
 type Population string
 
 const (
-	// All is every work, claimed or not.
-	All Population = "all"
-	// Bodyless is the works no product has claimed — the pure catalog side.
-	Bodyless Population = "bodyless"
-	// Claimed is every work some product owns, published or still a draft.
-	Claimed Population = "claimed"
-	// Published is the subset of Claimed that the public face actually renders.
+	All       Population = "all"
+	Bodyless  Population = "bodyless"
+	Claimed   Population = "claimed"
 	Published Population = "published"
 )
 
-// Predicate renders pop as a SQL boolean over catalog_work columns. The alias
-// is the table alias used in the caller's query ("w" for `FROM catalog_work w`,
-// "" when the columns are unqualified). An empty pop means All, so a lane whose
-// flag was left blank scans everything rather than silently selecting nothing.
 func Predicate(pop Population, alias string) (string, error) {
 	q := ""
 	if alias != "" {

@@ -26,7 +26,6 @@ const imageQuotaBytesDaily = ref(0)
 const isLoading = ref(false)
 const error = ref('')
 
-// Kept mounted (v-model); (re)load the form from the client's storage each open.
 watch(open, (v) => {
   if (!v || !props.client) return
   const s = props.client.storage
@@ -93,7 +92,6 @@ const handleSubmit = async () => {
         存储配置 — {{ client?.name }}
       </h2>
 
-      <!-- Artifact -->
       <div class="border-default-200 space-y-3 rounded-lg border p-3">
         <KunCheckBox
           v-model="artifactEnabled"
@@ -144,7 +142,6 @@ const handleSubmit = async () => {
         </template>
       </div>
 
-      <!-- Image -->
       <div class="border-default-200 space-y-3 rounded-lg border p-3">
         <KunCheckBox
           v-model="imageEnabled"

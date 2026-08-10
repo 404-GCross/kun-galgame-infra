@@ -1,7 +1,3 @@
-// Package handler exposes the artifact service over Huma (code-first OpenAPI 3.1)
-// layered on the existing Fiber v3 app. ClientAuth stays a Fiber middleware; the
-// Huma operations read the authenticated site/client from the request context
-// via AuthBridge. See docs/artifact/10-openapi-and-clients.md.
 package handler
 
 import (
@@ -22,7 +18,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// ctxKey namespaces the values AuthBridge lifts from fiber.Ctx.Locals.
 type ctxKey string
 
 const (
@@ -31,11 +26,6 @@ const (
 	ctxKeyUserSub ctxKey = "artifact:user_sub"
 )
 
-// AuthBridge is a Huma middleware that lifts the values ClientAuth (a Fiber
-// middleware) wrote into fiber.Ctx.Locals up into the Huma request context, so
-// operation handlers (which only see context.Context) can read the authenticated
-// site/client/uploader. ClientAuth itself still runs at the Fiber layer and has
-// already rejected unauthenticated requests before this runs.
 func AuthBridge(ctx huma.Context, next func(huma.Context)) {
 	fc := humafiber.Unwrap(ctx)
 	ctx = huma.WithValue(ctx, ctxKeySite, artMW.SiteKeyFromCtx(fc))
@@ -58,8 +48,6 @@ func userSubFromCtx(ctx context.Context) string {
 	s, _ := ctx.Value(ctxKeyUserSub).(string)
 	return s
 }
-
-// ---- inputs / outputs (house envelope) ----
 
 type uuidInput struct {
 	UUID string `path:"uuid" doc:"Artifact UUID"`
@@ -113,18 +101,11 @@ type completeInput struct {
 	Body dto.CompleteUploadRequest
 }
 
-// ---- server ----
-
-// HumaServer holds the dependencies for the Huma artifact operations.
 type HumaServer struct {
 	svc           *service.Service
 	uploadEnabled bool
 }
 
-// Setup installs the house error envelope, builds a Huma API over the Fiber app,
-// wires AuthBridge, and registers all artifact operations. It returns the API so
-// the caller can serve its OpenAPI spec. The auto doc/openapi routes are disabled
-// (served manually at the app root, unauthenticated — see docs/artifact/10).
 func Setup(app *fiber.App, svc *service.Service, uploadEnabled bool) huma.API {
 	InstallErrorEnvelope()
 
@@ -235,8 +216,6 @@ func (s *HumaServer) resumeUpload(ctx context.Context, in *uuidInput) (*resumeOu
 		case stderrors.Is(err, service.ErrNotFound):
 			return nil, apiErr(http.StatusNotFound, errors.ErrArtifactNotFound)
 		case stderrors.Is(err, service.ErrNotResumable):
-			// Artifact exists but is already completed/failed — conflict, not a 4xx
-			// the client can fix by retrying the same way.
 			return nil, apiErr(http.StatusConflict, errors.ErrArtifactBadRequest)
 		case stderrors.Is(err, service.ErrBadRequest):
 			return nil, apiErr(http.StatusBadRequest, errors.ErrArtifactBadRequest)

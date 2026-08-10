@@ -8,13 +8,6 @@ import (
 	"gorm.io/datatypes"
 )
 
-// Staging-side loading and field mapping for the VNDB releases wave: the
-// src_vndb facet loaders (each read whole — bounded tables, the
-// loadVNDBAliasNames precedent, cheaper than a 150k-element IN clause) plus the
-// pure functions that turn one upstream release into catalog_release columns.
-// Identity lives in vndbreleases_identity.go; nothing here touches a ref.
-
-// relMeta is one src_vndb.releases row's release-level fields.
 type relMeta struct {
 	olang    string
 	released int
@@ -24,7 +17,6 @@ type relMeta struct {
 	patch    bool
 }
 
-// relTitle is one src_vndb.releases_titles row (a release's title in ONE lang).
 type relTitle struct {
 	lang  string
 	mtl   bool
@@ -32,9 +24,6 @@ type relTitle struct {
 	latin string
 }
 
-// originalTitle returns the release's title in its original language — the
-// non-MTL row for olang (title, or its latin form when the native title is
-// empty). ok=false when no such row exists (an MTL-only original language).
 func originalTitle(rows []relTitle, olang string) (string, bool) {
 	for _, t := range rows {
 		if t.lang != olang || t.mtl {
@@ -46,13 +35,11 @@ func originalTitle(rows []relTitle, olang string) (string, bool) {
 		if v := strings.TrimSpace(t.latin); v != "" {
 			return t.latin, true
 		}
-		return "", false // the olang row exists but carries no usable text
+		return "", false
 	}
 	return "", false
 }
 
-// langSet is the release's full language list (every releases_titles row's lang,
-// distinct, ascending — the rows arrive pre-sorted by the loader).
 func langSet(rows []relTitle) []string {
 	out := make([]string, 0, len(rows))
 	seen := map[string]bool{}
@@ -66,11 +53,6 @@ func langSet(rows []relTitle) []string {
 	return out
 }
 
-// buildReleaseExtra assembles the governed Extra jsonb. vndb_id stays here as
-// payload and human back-reference — catalog_external_ref, not this key, is the
-// identity index. minage is included only when known (0 = all-ages is
-// meaningful, NULL = unknown → omitted); languages/platforms only when
-// non-empty. Map marshal sorts keys → deterministic bytes.
 func buildReleaseExtra(rid string, m relMeta, langs, plats []string) datatypes.JSON {
 	extra := map[string]any{
 		"vndb_id":  rid,
@@ -90,10 +72,6 @@ func buildReleaseExtra(rid string, m relMeta, langs, plats []string) datatypes.J
 	return b
 }
 
-// parseVNDBReleased splits a VNDB `released` integer (yyyymmdd; 99999999 = TBA;
-// month|day 0 = partial) into the nullable released_y/m/d trio, gated to a sane
-// [releaseMinYear, maxYear] window (the doc-66 gate — drops TBA, whose year is
-// 9999, and any placeholder). ok=false → no usable date (leave the trio NULL).
 func parseVNDBReleased(released, maxYear int) (y int16, m, d *int16, ok bool) {
 	yy := released / 10000
 	if yy < releaseMinYear || yy > maxYear {
@@ -110,8 +88,6 @@ func parseVNDBReleased(released, maxYear int) (y int16, m, d *int16, ok bool) {
 	}
 	return y, m, d, true
 }
-
-// --- loaders ---------------------------------------------------------------
 
 func (im *Importer) loadReleaseMeta() (map[string]relMeta, error) {
 	var rows []struct {
@@ -185,8 +161,6 @@ func (im *Importer) loadReleaseVNCounts() (map[string]int, error) {
 	return m, nil
 }
 
-// capReleaseGatesByWork keeps only the gates for the first n distinct work ids
-// (ascending) — the --limit debugging aid, deterministic.
 func capReleaseGatesByWork(gates []releaseGateRow, n int) []releaseGateRow {
 	works := map[int64]bool{}
 	for _, g := range gates {

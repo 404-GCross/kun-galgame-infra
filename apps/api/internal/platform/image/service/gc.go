@@ -13,18 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// GCService implements the TTL lifecycle: transitioning images from hot
-// to cold storage to soft-deleted to physical deletion based on
-// last_referenced_at.
-//
-// Thresholds (from docs/image_service/02-storage-and-schema.md):
-//   - > 60d no ping  → (placeholder) mark for cold storage
-//   - > 365d no ping → soft-delete (set deleted_at)
-//   - deleted_at + 30d → physical delete (remove S3 objects + DELETE row)
-//
-// The "mark for cold" step is a placeholder: S3 storage-class transitions
-// aren't implemented in V1 (object storage lifecycle rules or an explicit
-// CopyObject to IA are options). This GC only logs what would transition.
 type GCService struct {
 	db      *gorm.DB
 	storage *storage.Client
@@ -35,13 +23,12 @@ func NewGCService(db *gorm.DB, s *storage.Client, imgRepo *repository.ImageRepos
 	return &GCService{db: db, storage: s, imgRepo: imgRepo}
 }
 
-// Config controls the GC thresholds. Defaults match docs.
 type GCConfig struct {
-	ColdAfter     time.Duration // default 60 * 24h
-	SoftDelAfter  time.Duration // default 365 * 24h
-	HardDelAfter  time.Duration // default 30 * 24h (after soft-delete)
-	DryRun        bool          // if true, log only, do not mutate
-	MaxPerRun     int           // max rows per phase per run (throttle)
+	ColdAfter     time.Duration
+	SoftDelAfter  time.Duration
+	HardDelAfter  time.Duration
+	DryRun        bool
+	MaxPerRun     int
 }
 
 func (c *GCConfig) defaults() {
@@ -59,7 +46,6 @@ func (c *GCConfig) defaults() {
 	}
 }
 
-// Run executes all three phases in sequence. Returns a summary.
 type GCRunSummary struct {
 	ColdCandidates int64 `json:"cold_candidates"`
 	SoftDeleted    int64 `json:"soft_deleted"`
@@ -75,7 +61,6 @@ func (g *GCService) Run(ctx context.Context, cfg GCConfig) (*GCRunSummary, error
 	softThreshold := time.Now().Add(-cfg.SoftDelAfter)
 	hardThreshold := time.Now().Add(-cfg.HardDelAfter)
 
-	// --- Phase 1: cold-storage candidates (log only, no mutation) ---
 	if err := g.db.WithContext(ctx).Model(&model.Image{}).
 		Where("deleted_at IS NULL AND last_referenced_at < ?", coldThreshold).
 		Count(&summary.ColdCandidates).Error; err != nil {
@@ -88,22 +73,18 @@ func (g *GCService) Run(ctx context.Context, cfg GCConfig) (*GCRunSummary, error
 		"dry_run", cfg.DryRun,
 	)
 
-	// --- Phase 2: soft-delete images unreferenced for > 365d ---
 	if n, err := g.softDelete(ctx, softThreshold, cfg); err != nil {
 		summary.Errors++
 	} else {
 		summary.SoftDeleted = n
 	}
 
-	// --- Phase 3: hard-delete rows soft-deleted > 30d ago ---
 	if n, err := g.hardDelete(ctx, hardThreshold, cfg); err != nil {
 		summary.Errors++
 	} else {
 		summary.HardDeleted = n
 	}
 
-	// Surface phase failures to the runner instead of always reporting
-	// success — the summary still carries the partial results + Errors count.
 	if summary.Errors > 0 {
 		return summary, fmt.Errorf("gc: %d phase(s) failed (see logs)", summary.Errors)
 	}
@@ -134,9 +115,6 @@ func (g *GCService) softDelete(ctx context.Context, threshold time.Time, cfg GCC
 	for _, r := range rows {
 		ids = append(ids, r.ID)
 	}
-	// Re-apply the candidate predicate in the UPDATE (TOCTOU guard): a hash
-	// reference-pinged between the SELECT above and here has a fresh
-	// last_referenced_at and must NOT be soft-deleted. RowsAffected may be < len(rows).
 	res := g.db.WithContext(ctx).
 		Model(&model.Image{}).
 		Where("id IN ? AND deleted_at IS NULL AND last_referenced_at < ?", ids, threshold).
@@ -168,7 +146,6 @@ func (g *GCService) hardDelete(ctx context.Context, threshold time.Time, cfg GCC
 
 	deleted := int64(0)
 	for _, r := range rows {
-		// Delete all objects from S3: main + each variant.
 		if err := g.storage.Delete(ctx, r.StorageKey); err != nil {
 			slog.Warn("gc: delete main s3 object", "hash", r.Hash, "err", err)
 		}
@@ -179,7 +156,6 @@ func (g *GCService) hardDelete(ctx context.Context, threshold time.Time, cfg GCC
 			}
 		}
 
-		// Row delete (hard).
 		if err := g.db.WithContext(ctx).Unscoped().
 			Where("id = ?", r.ID).
 			Delete(&model.Image{}).Error; err != nil {
@@ -187,8 +163,6 @@ func (g *GCService) hardDelete(ctx context.Context, threshold time.Time, cfg GCC
 			continue
 		}
 
-		// Orphan site_usage rows for this hash — remove them too, since
-		// the image is gone.
 		if err := g.db.WithContext(ctx).
 			Where("hash = ?", r.Hash).
 			Delete(&model.ImageSiteUsage{}).Error; err != nil {

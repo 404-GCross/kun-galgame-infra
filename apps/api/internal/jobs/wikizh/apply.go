@@ -11,59 +11,23 @@ import (
 	"gorm.io/gorm"
 )
 
-// curatedSourceKey is the first-party lane a restored text is attributed to.
-// It is the same source wave 164's restores used: the text was written by a
-// site user in the wiki's own editor, so it is first-party curation, not an
-// upstream import.
 const curatedSourceKey = "curated"
 
-// MinConfidence is the auto-apply gate. Anything below it is left for human
-// review rather than written — the 87/156/164 pattern, and the reason the gate
-// exists is that an unusable text published as a work's only Chinese intro is
-// visible to every reader of that page.
-//
-// 0.90, not 0.85, and the number is calibrated rather than chosen: the 30-case
-// v1 calibration put an English-relay machine translation — Latin names left
-// untranslated, one character spelled two ways, a Japanese line turned into
-// nonsense — at EXACTLY 0.85. The prompt now names that failure mode (v2), and
-// the gate sits above where it landed, so the two corrections are independent.
 const MinConfidence = 0.90
 
-// ApplyStats reports one apply pass.
 type ApplyStats struct {
 	Verdicts   int
-	Restores   int // verdicts that say "write the wiki text"
-	BelowGate  int // restoring verdicts held back by confidence
-	Invalid    int // verdict outside the bucket's vocabulary → treated as unsure
-	Written    int // new provenance=0 rows (the `usable` shape)
-	Promoted   int // machine rows turned into the human text (the `compare` shape)
-	Conflict   int // a zh row appeared between judging and applying
-	Skipped    int // no longer eligible (a human row landed meanwhile)
+	Restores   int
+	BelowGate  int
+	Invalid    int
+	Written    int
+	Promoted   int
+	Conflict   int
+	Skipped    int
 	Errors     int
-	ReceiptIDs []int64 // rows written, so a rollback is exact
+	ReceiptIDs []int64
 }
 
-// Apply writes the restorations a verdict file calls for.
-//
-// TWO SHAPES, because the two buckets meet the unique key differently.
-// catalog_work_intro is unique on (work_id, lang, source_id), and a machine
-// translation is NOT a separate row — intromt reuses the ja row's source_id and
-// marks itself provenance=1. So:
-//
-//   - `usable` (no zh at all): a plain INSERT. Nothing sits at the key.
-//   - `compare` (a machine row holds the slot): the key is TAKEN, by definition
-//     of the bucket. An insert can only conflict — the first production pass
-//     wrote 0 of 259 for exactly this reason. The restoration is a promotion of
-//     that row in place: the wiki text replaces the machine text and provenance
-//     flips 1 → 0.
-//
-// A promotion is durable rather than a thing the nightly lane undoes: intromt's
-// own upsert is guarded `WHERE provenance = 1`, so once the row is provenance=0
-// the machine lane refuses it forever.
-//
-// Nothing is destroyed. The superseded machine text is copied into
-// src_wiki.mt_superseded first, so a rollback is a DELETE of the inserted
-// ReceiptIDs plus a restore of the promoted rows from that table.
 func Apply(ctx context.Context, db *gorm.DB, vs []Verdict, apply bool) (*ApplyStats, error) {
 	st := &ApplyStats{Verdicts: len(vs)}
 	var curated int16
@@ -83,7 +47,6 @@ func Apply(ctx context.Context, db *gorm.DB, vs []Verdict, apply bool) (*ApplySt
 	var touched []int64
 	for _, v := range vs {
 		if !validVerdict(v.Bucket, v.Verdict) {
-			// A verdict the model invented cannot cause a write.
 			st.Invalid++
 			continue
 		}
@@ -99,9 +62,6 @@ func Apply(ctx context.Context, db *gorm.DB, vs []Verdict, apply bool) (*ApplySt
 			continue
 		}
 
-		// Re-read the text from the snapshot at write time rather than trusting
-		// the verdict file to carry it: the verdict is a JUDGEMENT, and the text
-		// of record lives in one place.
 		var row struct {
 			WikiZh string `gorm:"column:wiki_zh"`
 		}
@@ -117,7 +77,6 @@ func Apply(ctx context.Context, db *gorm.DB, vs []Verdict, apply bool) (*ApplySt
 			continue
 		}
 
-		// Still eligible? A human zh row may have landed since the judgement.
 		var humanZh int64
 		if err := db.WithContext(ctx).Raw(
 			`SELECT count(*) FROM catalog_work_intro
@@ -136,8 +95,6 @@ func Apply(ctx context.Context, db *gorm.DB, vs []Verdict, apply bool) (*ApplySt
 			st.Errors++
 			slog.Warn("write restored intro", "work", v.WorkID, "err", err)
 		case id == 0:
-			// The guard fired: a provenance=0 row sits at the key. Never
-			// overwrite one — a human text is not this pass's to replace.
 			st.Conflict++
 		default:
 			if promoted {
@@ -158,13 +115,8 @@ func Apply(ctx context.Context, db *gorm.DB, vs []Verdict, apply bool) (*ApplySt
 	return st, nil
 }
 
-// supersededTable keeps every machine text a promotion displaced, so the
-// destructive half of this pass is undoable without a database backup.
 const supersededTable = "src_wiki.mt_superseded"
 
-// ensureSuperseded creates the landing table for displaced machine texts. It
-// lives beside the wave-168 snapshot in src_wiki rather than in the catalog
-// schema: it is rescue scaffolding for one wave, not part of the model.
 func ensureSuperseded(ctx context.Context, db *gorm.DB) error {
 	if err := db.WithContext(ctx).Exec(`CREATE SCHEMA IF NOT EXISTS src_wiki`).Error; err != nil {
 		return err
@@ -182,18 +134,7 @@ func ensureSuperseded(ctx context.Context, db *gorm.DB) error {
 		)`).Error
 }
 
-// restore puts the wiki text at (work_id, zh-Hans, curated), whether or not a
-// machine row already holds that key, and reports which of the two happened.
-//
-// The ON CONFLICT guard is the mirror image of intromt's: that lane may only
-// touch provenance=1, and so may this one. A provenance=0 row at the key means
-// a human text landed between judging and applying, and the pass yields to it
-// (RowsAffected 0 → the caller counts a conflict).
-//
-// Returns the row id (0 = guard fired) and whether it was a promotion.
 func restore(ctx context.Context, db *gorm.DB, workID int64, curated int16, text string) (id int64, promoted bool, err error) {
-	// Copy the machine text aside BEFORE it is overwritten. A no-op when the
-	// key is free, which is the whole `usable` bucket.
 	if err = db.WithContext(ctx).Exec(`
 		INSERT INTO `+supersededTable+` (intro_id, work_id, lang, source_id, intro, src_hash, mt_model)
 		SELECT id, work_id, lang, source_id, intro, src_hash, mt_model
@@ -207,12 +148,6 @@ func restore(ctx context.Context, db *gorm.DB, workID int64, curated int16, text
 		ID       int64 `gorm:"column:id"`
 		Inserted bool  `gorm:"column:inserted"`
 	}
-	// xmax = 0 distinguishes a fresh INSERT from a DO UPDATE on the same
-	// statement — the standard Postgres idiom, and cheaper than a second query.
-	// src_hash and mt_model are NOT NULL, so the "no machine translation behind
-	// this text" value is the empty string, not NULL. Clearing them is part of
-	// the promotion: leaving intromt's hash on a human text would make the
-	// nightly lane's re-translate trigger read as if it had produced this row.
 	err = db.WithContext(ctx).Raw(`
 		INSERT INTO catalog_work_intro
 			(work_id, lang, intro, source_id, provenance, src_hash, mt_model, created_at, updated_at)
@@ -231,7 +166,6 @@ func restore(ctx context.Context, db *gorm.DB, workID int64, curated int16, text
 	return row.ID, row.ID != 0 && !row.Inserted, nil
 }
 
-// String renders the one-line summary every pass logs.
 func (s ApplyStats) String() string {
 	return fmt.Sprintf("verdicts=%d restores=%d below_gate=%d invalid=%d written=%d promoted=%d conflict=%d skipped=%d errors=%d",
 		s.Verdicts, s.Restores, s.BelowGate, s.Invalid, s.Written, s.Promoted, s.Conflict, s.Skipped, s.Errors)

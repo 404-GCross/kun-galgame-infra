@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// The T&S review inbox (doc 18 §5.2). Lists review items ordered by the
-// backend (priority DESC), filterable by site / status / source. Row actions:
-// claim a pending item (FOR UPDATE SKIP LOCKED server-side; a 409 means
-// someone else took it — surfaced as a friendly message), or open the detail
-// modal to inspect the linked reports and decide.
 import {
   TRUST_FILTER_ALL,
   REVIEW_STATUS,
@@ -49,9 +44,6 @@ const total = computed(() => data.value?.total ?? 0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 const isLoading = computed(() => fetchStatus.value === 'pending')
 
-// The reason taxonomy (global base + every site's extensions), fetched once —
-// the detail modal maps a report's reason_id to its label and feeds the
-// decide form's reason_code select.
 const { data: reasonsData } = await useApiFetch<TrustReason[]>(
   '/admin/trust/report-reasons',
   {},
@@ -74,24 +66,15 @@ const sourceOptions = computed(() => [
   }))
 ])
 
-// The classifier score reads on the same 0-1 scale the AI gateway emits. 0.4 is
-// where the cascade escalates to the LLM tier, so anything at or above it is a
-// verdict a second model already looked at; the bands here mirror that.
 const scoreColor = (score: number) => {
   if (score >= 0.8) return 'danger'
   if (score >= 0.4) return 'warning'
   return 'default'
 }
 
-// Reach is a snapshot of how many people had seen the content when the item
-// opened. It spans orders of magnitude (a 3-view reply next to a 300k-view
-// topic), so it is rendered compactly — the magnitude is the decision-relevant
-// part, not the exact figure.
 const formatReach = (reach: number) =>
   new Intl.NumberFormat('zh-CN', { notation: 'compact' }).format(reach)
 
-// A calibration draw is a question ("did we miss anything?"), not an accusation,
-// and it must not read like one in a queue full of real cases.
 const isSample = (item: TrustReviewItem) =>
   item.source === REVIEW_SOURCE.aiSample
 
@@ -104,8 +87,6 @@ const claim = async (item: TrustReviewItem) => {
       useKunMessage('已认领', 'success')
       await refresh()
     } else {
-      // 409: another reviewer already claimed it. Surface the server message
-      // plus a friendly hint.
       useKunMessage(res.message || '认领失败（可能已被他人认领）', 'warn')
       await refresh()
     }
@@ -215,9 +196,6 @@ const onDecided = async () => {
               </template>
             </td>
             <td class="px-3 py-2 text-right">
-              <!-- The classifier verdict that opened (or was merged into) this
-                   item. Only AI sources carry one, so a report-only item shows
-                   a dash rather than a misleading 0.00. -->
               <KunChip
                 v-if="item.classifier_score != null"
                 :color="scoreColor(item.classifier_score)"
@@ -229,8 +207,6 @@ const onDecided = async () => {
               <span v-else class="text-default-300">-</span>
             </td>
             <td class="text-default-500 px-3 py-2 text-right">
-              <!-- Snapshot at open time, not a live count — the queue's order
-                   would be unstable under a reviewer otherwise. -->
               {{
                 item.subject_reach != null
                   ? formatReach(item.subject_reach)

@@ -36,8 +36,6 @@ func seedVNSeiyuu(t *testing.T, vid, cid string, aid int, note string) {
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.vn_seiyuu (id, cid, aid, note) VALUES (?,?,?,?)`, vid, cid, aid, note).Error)
 }
 
-// seedVNDBCharAnchor mints a catalog character + its source-2 exact anchor (the
-// roster wave's product), so a VA credit's cid resolves.
 func seedVNDBCharAnchor(t *testing.T, cid string) int64 {
 	t.Helper()
 	var id int64
@@ -48,7 +46,6 @@ func seedVNDBCharAnchor(t *testing.T, cid string) int64 {
 	return id
 }
 
-// seedOrphanCreditName mints a bare orphan credit_name and returns its id.
 func seedOrphanCreditName(t *testing.T, name string) int64 {
 	t.Helper()
 	var id int64
@@ -57,37 +54,24 @@ func seedOrphanCreditName(t *testing.T, name string) int64 {
 	return id
 }
 
-// seedVNDBRef attaches a source-2 ref of any grade to an entity — the shape a
-// merge leaves behind when it demotes two competing exacts to probable.
 func seedVNDBRef(t *testing.T, entityType int16, entityID int64, extID string, linkKind int16) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (?, ?, 2, ?, ?, 'rule:test-seed')`, entityType, entityID, extID, linkKind).Error)
 }
 
-// TestVNDBCreditsWave_ClaimedAliasIsNotAVacancy pins the wave-200 ruling on the
-// credit_name axis: an alias id an ALIVE credit_name already answers to at
-// probable grade is not free. The importer must not mint a second body for it
-// (that would re-split the merge that produced the probable ref), must not
-// re-grade the probable ref, and must say so in its own counter. An id that also
-// carries an alive EXACT anchor is not claimed at all and resumes normally.
 func TestVNDBCreditsWave_ClaimedAliasIsNotAVacancy(t *testing.T) {
 	clean(t)
 	work := seedVNDBWork(t, "v300")
 	seedVNDBStaff(t, "s4", "ja")
 	seedVNDBAlias(t, 40, "s4", "掛谷", "Kakeya")
 	seedVNDBAlias(t, 41, "s4", "牧野", "Makino")
-	seedVNStaff(t, "v300", 40, "scenario", "") // alias 40 is claimed at probable → skipped
-	seedVNStaff(t, "v300", 41, "director", "") // alias 41 has an alive exact → resumes
+	seedVNStaff(t, "v300", 40, "scenario", "")
+	seedVNStaff(t, "v300", 41, "director", "")
 
-	// The merge survivor: one credit_name holding BOTH demoted ids (the real
-	// prod shape — 144 probable refs over 72 entities, two each).
 	survivor := seedOrphanCreditName(t, "掛谷")
 	seedVNDBRef(t, model.EntityTypeCreditName, survivor, "40", model.LinkKindProbable)
 	seedVNDBRef(t, model.EntityTypeCreditName, survivor, "99", model.LinkKindProbable)
-	// alias 41 already imported normally (exact) AND carries a stray probable on
-	// another entity — exactness decides which link resolves, not whether the id
-	// is free, so this must NOT be counted as claimed.
 	imported := seedOrphanCreditName(t, "牧野")
 	seedVNDBRef(t, model.EntityTypeCreditName, imported, "41", model.LinkKindExact)
 	other := seedOrphanCreditName(t, "牧野(別)")
@@ -105,40 +89,28 @@ func TestVNDBCreditsWave_ClaimedAliasIsNotAVacancy(t *testing.T) {
 	assert.Zero(t, st.NamesCreated)
 	assert.Zero(t, st.Errors)
 
-	// No duplicate body, and no fresh exact anchor squatting id 40.
 	assert.Equal(t, int64(3), scalarInt(t, `SELECT count(*) FROM catalog_credit_name`), "no duplicate minted")
 	assert.Zero(t, scalarInt(t, `SELECT count(*) FROM catalog_external_ref
 		WHERE entity_type=1 AND source_id=2 AND external_id='40' AND link_kind=0`), "id 40 never re-claimed as exact")
-	// The probable ref is untouched: re-grading is an adjudication, not an import.
 	assert.Equal(t, int64(1), scalarIntA(t, `SELECT count(*) FROM catalog_external_ref
 		WHERE entity_type=1 AND source_id=2 AND external_id='40' AND link_kind=? AND entity_id=?`,
 		model.LinkKindProbable, survivor))
-	// alias 40's credit is dropped whole; alias 41's resumes onto its exact holder.
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_credit`))
 	assert.Equal(t, int64(1), scalarIntA(t, `SELECT count(*) FROM catalog_credit WHERE work_id=? AND credit_name_id=?`, work, imported))
 }
 
-// TestVNDBCreditsWave_VAResolutionIsLivenessAware pins the character axis: a VA
-// credit is dropped — never mis-resolved and never crashed on — when the cid's
-// holder is alive-but-probable or retired, and each reason gets its own counter
-// so an unattended run reports which follow-up it needs.
 func TestVNDBCreditsWave_VAResolutionIsLivenessAware(t *testing.T) {
 	clean(t)
 	work := seedVNDBWork(t, "v400")
 	seedVNDBStaff(t, "s5", "ja")
 	seedVNDBAlias(t, 50, "s5", "声優", "Seiyuu")
 
-	alive := seedVNDBCharAnchor(t, "cA") // alive exact anchor → resolves
-	// cB: alive character, source-2 ref only at probable grade (merge survivor).
+	alive := seedVNDBCharAnchor(t, "cA")
 	claimed := seedVNDBCharAnchor(t, "cB")
 	require.NoError(t, testDB.Exec(`UPDATE catalog_external_ref SET link_kind = ?
 		WHERE entity_type=4 AND source_id=2 AND external_id='cB'`, model.LinkKindProbable).Error)
-	// cC: exact anchor whose holder is soft-deleted — it still squats the
-	// non-liveness-aware exact identity index.
 	retired := seedVNDBCharAnchor(t, "cC")
 	require.NoError(t, testDB.Exec(`UPDATE catalog_character SET deleted_at = now() WHERE id = ?`, retired).Error)
-	// cD: soft-deleted holder at PROBABLE grade — the id really is free again, so
-	// this is an ordinary "roster never imported it" miss, not a claim.
 	freed := seedVNDBCharAnchor(t, "cD")
 	require.NoError(t, testDB.Exec(`UPDATE catalog_external_ref SET link_kind = ?
 		WHERE entity_type=4 AND source_id=2 AND external_id='cD'`, model.LinkKindProbable).Error)
@@ -148,7 +120,7 @@ func TestVNDBCreditsWave_VAResolutionIsLivenessAware(t *testing.T) {
 	seedVNSeiyuu(t, "v400", "cB", 50, "")
 	seedVNSeiyuu(t, "v400", "cC", 50, "")
 	seedVNSeiyuu(t, "v400", "cD", 50, "")
-	seedVNSeiyuu(t, "v400", "cE", 50, "") // never imported at all
+	seedVNSeiyuu(t, "v400", "cE", 50, "")
 
 	st, err := New(testDB, nil, Options{Source: "vndb"}).Run("vndb")
 	require.NoError(t, err)
@@ -158,39 +130,28 @@ func TestVNDBCreditsWave_VAResolutionIsLivenessAware(t *testing.T) {
 	assert.Zero(t, st.SkippedClaimedProbableName, "the alias itself is unclaimed")
 	assert.Equal(t, 1, st.CreditsWritten, "only cA's VA credit survives")
 	assert.Equal(t, int64(1), scalarIntA(t, `SELECT count(*) FROM catalog_credit WHERE work_id=? AND character_id=?`, work, alive))
-	// Nothing was hung off the demoted or retired characters.
 	assert.Zero(t, scalarIntA(t, `SELECT count(*) FROM catalog_credit WHERE character_id IN (?,?,?)`, claimed, retired, freed))
 }
 
-// TestVNDBCreditsWave covers the fresh-import path: exact-work-anchor gate, the
-// seeded role map (mapped vs unmapped role), orphan credit names + self anchors,
-// eid collapse, VA credits routed through roster char anchors (with the
-// no-anchor skip), note passthrough, source_id=2, and idempotency.
 func TestVNDBCreditsWave(t *testing.T) {
 	clean(t)
-	work := seedVNDBWork(t, "v100") // in gate (source-2 exact anchor)
-	// v999 is NOT anchored → its vn_staff row is out of gate (never loaded).
+	work := seedVNDBWork(t, "v100")
 
 	seedVNDBStaff(t, "s1", "ja")
 	seedVNDBStaff(t, "s2", "en")
 	seedVNDBAlias(t, 10, "s1", "織田薫", "Oda Kaoru")
 	seedVNDBAlias(t, 20, "s2", "OdaKaoru", "")
 
-	seedVNStaff(t, "v100", 10, "scenario", "")       // → role 247
-	seedVNStaff(t, "v100", 10, "director", "")       // → role 173 (same alias, 2nd credit)
-	seedVNStaffEid(t, "v100", 10, "scenario", 5, "") // duplicate work-level credit (eid ignored) → collapses
-	// A role with no map row → skip. Every real VNDB role now maps (step 80 gave
-	// translator/editor/qa reserved-band slots 3/4/5), so this stands in for a
-	// hypothetical future role, still exercising the unmapped-skip path.
-	seedVNStaff(t, "v100", 20, "future-role", "") // UNMAPPED → skip
-	seedVNStaff(t, "v999", 10, "music", "")       // out of gate → not loaded
+	seedVNStaff(t, "v100", 10, "scenario", "")
+	seedVNStaff(t, "v100", 10, "director", "")
+	seedVNStaffEid(t, "v100", 10, "scenario", 5, "")
+	seedVNStaff(t, "v100", 20, "future-role", "")
+	seedVNStaff(t, "v999", 10, "music", "")
 
-	c50 := seedVNDBCharAnchor(t, "c50")      // anchored char → VA resolves
-	seedVNSeiyuu(t, "v100", "c50", 20, "主演") // VA credit (alias 20, note passthrough)
-	seedVNSeiyuu(t, "v100", "c999", 10, "")  // c999 has no anchor → skip
+	c50 := seedVNDBCharAnchor(t, "c50")
+	seedVNSeiyuu(t, "v100", "c50", 20, "主演")
+	seedVNSeiyuu(t, "v100", "c999", 10, "")
 
-	// Dry run: plan counts (scenario×2 + director + VA = 4 plans; the future-role
-	// row unmapped; c999 VA skipped). 2 credit names to create (aid 10 + 20).
 	dry, err := New(testDB, nil, Options{Source: "vndb", DryRun: true}).Run("vndb")
 	require.NoError(t, err)
 	assert.Equal(t, 2, dry.NamesCreated)
@@ -198,7 +159,6 @@ func TestVNDBCreditsWave(t *testing.T) {
 	assert.Equal(t, 1, dry.SkippedUnmappedRole)
 	assert.Zero(t, scalarInt(t, `SELECT count(*) FROM catalog_credit`), "dry writes nothing")
 
-	// Apply: the two eid-differing scenario rows collapse → 3 distinct credits.
 	st, err := New(testDB, nil, Options{Source: "vndb"}).Run("vndb")
 	require.NoError(t, err)
 	assert.Equal(t, 2, st.NamesCreated)
@@ -207,19 +167,15 @@ func TestVNDBCreditsWave(t *testing.T) {
 	assert.Equal(t, 1, st.SkippedUnmappedRole)
 	assert.Zero(t, st.Errors)
 
-	// All three credits are source-2, on the in-gate work.
 	assert.Equal(t, int64(3), scalarInt(t, `SELECT count(*) FROM catalog_credit WHERE source_id=2`))
 	assert.Equal(t, int64(3), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_credit WHERE work_id=%d`, work)))
 
-	// Orphan discipline: exactly 2 credit names, all person_id NULL, zero persons.
 	assert.Equal(t, int64(2), scalarInt(t, `SELECT count(*) FROM catalog_credit_name`))
 	assert.Zero(t, scalarInt(t, `SELECT count(*) FROM catalog_credit_name WHERE person_id IS NOT NULL`))
 	assert.Zero(t, scalarInt(t, `SELECT count(*) FROM catalog_person`))
 
-	// Self anchors keyed by the alias aid, with the wave's rule.
 	assert.Equal(t, int64(2), scalarInt(t, `SELECT count(*) FROM catalog_external_ref
 		WHERE entity_type=1 AND source_id=2 AND link_kind=0 AND matched_by='rule:vndb-staff-import' AND external_id IN ('10','20')`))
-	// Credit name content: native name + owning staff's language.
 	cn10 := scalarInt(t, `SELECT entity_id FROM catalog_external_ref WHERE entity_type=1 AND source_id=2 AND external_id='10'`)
 	var name10, lang10 string
 	require.NoError(t, testDB.Raw(`SELECT name, lang FROM catalog_credit_name WHERE id=?`, cn10).Row().Scan(&name10, &lang10))
@@ -232,22 +188,16 @@ func TestVNDBCreditsWave(t *testing.T) {
 		return l
 	}())
 
-	// Role mapping: scenario→247, director→173, both charcter-less.
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=247 AND character_id IS NULL`, work)))
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=173 AND character_id IS NULL`, work)))
 
-	// VA credit: voice-actor role, the resolved character, note passthrough.
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=1 AND character_id=%d`, work, c50)))
 	var vaNote string
 	require.NoError(t, testDB.Raw(fmt.Sprintf(`SELECT note FROM catalog_credit WHERE role_id=1 AND character_id=%d`, c50)).Scan(&vaNote).Error)
 	assert.Equal(t, "主演", vaNote)
 
-	// Imported revisions: one per created credit name.
 	assert.Equal(t, int64(2), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_revision WHERE action=%d AND entity_type=1`, model.RevisionActionImported)))
 
-	// Idempotency: a second apply writes nothing. Already counts every
-	// materialized plan row that conflicted (4 = the 3 distinct credits + the
-	// still-present eid duplicate), so the real signal is CreditsWritten == 0.
 	st2, err := New(testDB, nil, Options{Source: "vndb"}).Run("vndb")
 	require.NoError(t, err)
 	assert.Zero(t, st2.NamesCreated)
@@ -256,10 +206,6 @@ func TestVNDBCreditsWave(t *testing.T) {
 	assert.Equal(t, int64(3), scalarInt(t, `SELECT count(*) FROM catalog_credit WHERE source_id=2`), "still exactly 3 credits")
 }
 
-// The staff catch-all refines by note at plan time (staffnotes.go): a noted
-// engine credit lands on 程序, an unmapped note stays in 其他, and every
-// refinement target must be a seeded vocabulary row — a typo'd id here would
-// otherwise only surface as an FK error mid-import.
 func TestVNDBCreditsWave_RefinesStaffNotes(t *testing.T) {
 	clean(t)
 	work := seedVNDBWork(t, "v200")
@@ -267,9 +213,9 @@ func TestVNDBCreditsWave_RefinesStaffNotes(t *testing.T) {
 	seedVNDBAlias(t, 30, "s3", "かつらぎ", "")
 	seedVNDBAlias(t, 31, "s3", "ムービー屋", "")
 	seedVNDBAlias(t, 32, "s3", "多芸な人", "")
-	seedVNStaff(t, "v200", 30, "staff", "Programming")      // refined → 程序
-	seedVNStaff(t, "v200", 31, "staff", "Movie assistance") // unmapped note → 其他
-	seedVNStaff(t, "v200", 32, "staff", "Planning, script") // composite → 企画 + 程序
+	seedVNStaff(t, "v200", 30, "staff", "Programming")
+	seedVNStaff(t, "v200", 31, "staff", "Movie assistance")
+	seedVNStaff(t, "v200", 32, "staff", "Planning, script")
 
 	st, err := New(testDB, nil, Options{Source: "vndb"}).Run("vndb")
 	require.NoError(t, err)
@@ -280,7 +226,6 @@ func TestVNDBCreditsWave_RefinesStaffNotes(t *testing.T) {
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(
 		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND role_id=2 AND note='Movie assistance'`, work)))
 
-	// The composite row lands as two credits sharing the verbatim note.
 	assert.Equal(t, int64(2), scalarInt(t, fmt.Sprintf(
 		`SELECT count(*) FROM catalog_credit WHERE work_id=%d AND note='Planning, script' AND role_id IN (291,238)`, work)))
 

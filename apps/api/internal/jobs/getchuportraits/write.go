@@ -24,20 +24,10 @@ type runner struct {
 	pingHashes []string
 }
 
-// charResult is one character's outcome. fill RETURNS it rather than mutating
-// the runner, which is what makes the pool safe: every field is private to one
-// character, so results merge serially on the driver goroutine and nothing is
-// shared while uploads are in flight.
-//
-// The screenshot wave learned this the expensive way — a worker ranging a map
-// the driver was assigning to is `concurrent map read and map write`, which is
-// fatal, unrecoverable, and indifferent to the two touching different keys. It
-// killed a production run at 8,077 uploads. Keeping worker-visible state to
-// value types makes that unrepresentable rather than merely avoided.
 type charResult struct {
 	missing, uploaded, rejected, errors int
 	quota                               bool
-	hash                                string // fresh upload, for the reference ping
+	hash                                string
 }
 
 func (s *Stats) merge(r charResult) {
@@ -50,13 +40,6 @@ func (s *Stats) merge(r charResult) {
 	}
 }
 
-// fill uploads one character's bust and writes image_hash.
-//
-// The UPDATE re-asserts `image_hash IS NULL` even though the candidate was
-// selected on it. Between selection and here another lane may have given this
-// character a portrait, and this one is a fallback: losing that race must mean
-// leaving the winner's image alone, not overwriting it. RowsAffected == 0 is
-// therefore an ordinary outcome, not an error.
 func (r *runner) fill(ctx context.Context, dir string, c candidate, apply bool) charResult {
 	var out charResult
 	path := mirrorPath(dir, c.GetchuID, c.File)
@@ -84,7 +67,6 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, apply bool) 
 		return out
 	}
 
-	// Identifier interpolation, not user input — see loadPlates.
 	tx := r.db.WithContext(ctx).Exec(fmt.Sprintf(
 		`UPDATE catalog_character SET %[1]s = ?, updated_at = now()
 		 WHERE id = ? AND %[1]s IS NULL AND deleted_at IS NULL`, r.slot.TargetColumn),
@@ -94,8 +76,6 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, apply bool) 
 		slog.Warn("write character image", "slot", r.slot.Name, "character", c.CharacterID, "err", tx.Error)
 		return out
 	}
-	// Ping whether or not the row was claimed: the bytes are in the image
-	// service either way and sit at TTL from upload time.
 	out.hash = res.Hash
 	if tx.RowsAffected > 0 {
 		out.uploaded++
@@ -103,8 +83,6 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, apply bool) 
 	return out
 }
 
-// upload reads a mirrored image and uploads it. Bytes only ever come from the
-// local mirror — this never dials getchu.com.
 func (r *runner) upload(ctx context.Context, path, filename string) (*imageclient.UploadResult, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -118,7 +96,6 @@ func (r *runner) upload(ctx context.Context, path, filename string) (*imageclien
 		if r.gap > 0 {
 			time.Sleep(r.gap)
 		}
-		// A fresh reader per attempt — the previous one is consumed.
 		res, err := r.cli.UploadWithSub(ctx, bytes.NewReader(body), filename, r.slot.Preset, r.slot.UploaderSub)
 		if err == nil {
 			return res, nil
@@ -137,9 +114,6 @@ func (r *runner) upload(ctx context.Context, path, filename string) (*imageclien
 	return nil, lastErr
 }
 
-// ping keeps freshly-uploaded bytes alive immediately. An image sits at TTL
-// from upload time, so waiting for the nightly refping is a real risk of
-// uploading bytes and then losing them.
 func (r *runner) ping(ctx context.Context) error {
 	if r.cli == nil || len(r.pingHashes) == 0 {
 		return nil
@@ -158,12 +132,6 @@ func fileExists(path string) bool {
 	return err == nil && !fi.IsDir() && fi.Size() > 0
 }
 
-// run walks the candidates through a fixed pool of workers.
-//
-// Unlike the screenshot lane there is nothing ordered to protect here: one
-// character is one image and one row, so characters are independent and the
-// only shared state is the result merge, which happens on the caller's
-// goroutine. Stats and pingHashes stay single-writer and need no mutex.
 func (r *runner) run(ctx context.Context, opts Opts, cands []candidate) {
 	workers := opts.Workers
 	if workers < 1 {
@@ -183,8 +151,6 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate) {
 		return
 	}
 
-	// Quota exhaustion is terminal for the whole run, so it cancels the shared
-	// context and every in-flight worker stops at its next image.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -226,8 +192,6 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate) {
 	}
 }
 
-// absorb folds one character's result into the run-level state. Single-writer
-// by construction — only the driver goroutine calls it.
 func (r *runner) absorb(res charResult) {
 	r.stats.merge(res)
 	if res.hash != "" {

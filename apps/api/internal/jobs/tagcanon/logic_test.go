@@ -8,8 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestNormalize pins the grouping key: NFKC compatibility fold (fullwidth
-// parens/letters → ASCII), simple casefold, and trim. Idempotent.
 func TestNormalize(t *testing.T) {
 	assert.Equal(t, "galgame", normalize("Galgame"))
 	assert.Equal(t, "galgame", normalize("  galgame  "), "trim")
@@ -18,8 +16,6 @@ func TestNormalize(t *testing.T) {
 	assert.Equal(t, normalize("Galgame"), normalize(normalize("Galgame")), "idempotent")
 }
 
-// TestBgmJunk covers the mechanical prefilter: pure number, date, decade, disc /
-// season number, and maker/label collision.
 func TestBgmJunk(t *testing.T) {
 	labels := map[string]struct{}{"avantgarde": {}, "ディーゼルマイン": {}}
 	cases := []struct{ in, reason string }{
@@ -34,21 +30,17 @@ func TestBgmJunk(t *testing.T) {
 		{"disc 3", "disc"},
 		{"avantgarde", "label"},
 		{"ディーゼルマイン", "label"},
-		{"百合", ""},        // content — kept
-		{"r18", ""},       // meta but NOT junk (kept, stamped kind later)
-		{"18x", ""},       // not caught by number regex (has X) — meta, kept
-		{"巨乳", ""},        // content
-		{"东方project", ""}, // franchise — kept
+		{"百合", ""},
+		{"r18", ""},
+		{"18x", ""},
+		{"巨乳", ""},
+		{"东方project", ""},
 	}
 	for _, c := range cases {
 		assert.Equalf(t, c.reason, bgmJunk(c.in, labels), "bgmJunk(%q)", c.in)
 	}
 }
 
-// TestBuildGroups pins the core decision: only norms spanning ≥2 distinct
-// sources become a group; single-source and junk names are excluded; meta norms
-// are stamped kind=meta; the canonical name is the form the most sources agree
-// on; every group is tier=core.
 func TestBuildGroups(t *testing.T) {
 	const (
 		vndb = int16(2)
@@ -56,20 +48,15 @@ func TestBuildGroups(t *testing.T) {
 		dl   = int16(4)
 	)
 	vocab := []vocabEntry{
-		// cross-source content group (3 sources)
 		{SourceID: vndb, Name: "奇幻", Norm: "奇幻", Usage: 900},
 		{SourceID: bgm, Name: "奇幻", Norm: "奇幻", Usage: 40},
 		{SourceID: dl, Name: "奇幻", Norm: "奇幻", Usage: 1100},
-		// cross-source group with a casefold multi-form member (canonical pick)
 		{SourceID: vndb, Name: "galgame", Norm: "galgame", Usage: 5},
 		{SourceID: bgm, Name: "galgame", Norm: "galgame", Usage: 4},
 		{SourceID: bgm, Name: "Galgame", Norm: "galgame", Usage: 109},
-		// cross-source META group
 		{SourceID: bgm, Name: "像素", Norm: "像素", Usage: 3},
 		{SourceID: dl, Name: "像素", Norm: "像素", Usage: 8},
-		// single-source name → NO group
 		{SourceID: vndb, Name: "巨乳女主角", Norm: "巨乳女主角", Usage: 500},
-		// junk (bangumi) → excluded even though dlsite shares the norm
 		{SourceID: bgm, Name: "2024", Norm: "2024", Usage: 2, Junk: true, JunkReason: "number"},
 		{SourceID: dl, Name: "2024", Norm: "2024", Usage: 1},
 	}
@@ -96,21 +83,19 @@ func TestBuildGroups(t *testing.T) {
 	assert.NotContains(t, byNorm, "2024", "bangumi junk excluded from grouping")
 }
 
-// TestSingleSourceDist pins the cumulative usage buckets and the top-sample cap
-// over the names that did NOT converge into a cross-source group.
 func TestSingleSourceDist(t *testing.T) {
 	const vndb = int16(2)
 	vocab := []vocabEntry{
-		{SourceID: vndb, Name: "a", Norm: "a", Usage: 150}, // ge100
-		{SourceID: vndb, Name: "b", Norm: "b", Usage: 60},  // ge50
-		{SourceID: vndb, Name: "c", Norm: "c", Usage: 25},  // ge20
-		{SourceID: vndb, Name: "d", Norm: "d", Usage: 12},  // ge10
-		{SourceID: vndb, Name: "e", Norm: "e", Usage: 3},   // below all
+		{SourceID: vndb, Name: "a", Norm: "a", Usage: 150},
+		{SourceID: vndb, Name: "b", Norm: "b", Usage: 60},
+		{SourceID: vndb, Name: "c", Norm: "c", Usage: 25},
+		{SourceID: vndb, Name: "d", Norm: "d", Usage: 12},
+		{SourceID: vndb, Name: "e", Norm: "e", Usage: 3},
 		{SourceID: vndb, Name: "grouped", Norm: "shared", Usage: 999, Junk: false},
 		{SourceID: 4, Name: "grouped", Norm: "shared", Usage: 1},
 		{SourceID: vndb, Name: "junky", Norm: "junky", Usage: 999, Junk: true},
 	}
-	groups := buildGroups(vocab) // "shared" spans 2 sources → grouped, excluded from dist
+	groups := buildGroups(vocab)
 	dist := singleSourceDist(vocab, groups, map[int16]string{vndb: "vndb", 4: "dlsite"})
 
 	var v SourceDist

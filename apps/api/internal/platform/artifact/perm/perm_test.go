@@ -7,8 +7,6 @@ import (
 	"api/internal/platform/authz"
 )
 
-// goldenGrants is derived from the pre-migration in-handler ren gate. Any drift
-// between the bundles and this table fails the build.
 var goldenGrants = map[authz.Permission][]string{
 	perm.FilesManage: {"ren"},
 }
@@ -40,7 +38,6 @@ func TestNonBundleRolesGrantNothing(t *testing.T) {
 	}
 }
 
-// TestManagementAxisContainment pins moderator ⊆ admin ⊆ ren.
 func TestManagementAxisContainment(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"moderator"}, p) && !perm.Resolver.Can([]string{"admin"}, p) {
@@ -52,7 +49,6 @@ func TestManagementAxisContainment(t *testing.T) {
 	}
 }
 
-// TestCreatorGrantsNothing pins that creator has no authority on this surface.
 func TestCreatorGrantsNothing(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"creator"}, p) {

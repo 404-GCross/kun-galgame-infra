@@ -11,11 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Conformance against the bangumi/wiki-syntax-spec shared cases
-// (testdata/spec, provenance in its README): every valid case must parse to
-// the expected shape, every invalid case must error.
-
-// specExpectation mirrors the spec's yaml schema.
 type specExpectation struct {
 	Type string `yaml:"type"`
 	Data []struct {

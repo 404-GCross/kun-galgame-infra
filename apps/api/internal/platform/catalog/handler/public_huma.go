@@ -1,14 +1,3 @@
-// NextMoe open-API catalog public projection (/v1/catalog/*) — SPEC ONLY.
-//
-// Like s2s.go / admin.go, these operations are SERVED by the Fiber handlers in
-// public_handler.go; this file registers them on a Huma API purely so
-// cmd/gen-openapi -catalog-public can derive an INDEPENDENT public spec from the
-// same dto.Public* types the handlers return — the frozen v1 contract, decoupled
-// from the internal S2S spec. Never mounted on the live service.
-//
-// The runtime-reachable set MUST equal this spec exactly (02 reviewer ruling:
-// nothing reachable on the frozen /v1 face may be absent from the published
-// spec). Every route in setupPublicCatalog has an operation here and vice versa.
 package handler
 
 import (
@@ -22,7 +11,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// ─────────────── input types (query/path/body params for the public spec) ───────────────
 
 type publicWorkInput struct {
 	ID       int64  `path:"id" doc:"Catalog work id"`
@@ -120,13 +108,6 @@ type publicEntitySearchOutput struct {
 	Body Envelope[dto.PublicEntitySearchData]
 }
 
-// ── A2-1d works product search ───────────────────────────────────────────────
-//
-// A SECOND search door, disjoint from /v1/catalog/search: that one is the
-// entity autocomplete (20 flat hits, no paging), this one is the results page a
-// galgame site renders. Every filter below is the works LIST parameter of the
-// same name with the same meaning, so a query moves between the browse lane and
-// the search lane by changing the path only.
 
 type publicWorksSearchInput struct {
 	Q              string `query:"q" doc:"Free text over every indexed title / alias of a work (search hints included — findability only). A query that is EXACTLY a VNDB work id (v19658) short-circuits to that one work via its exact anchor instead of full-text, which would prefix-bleed (v1965 also matches v19650). Empty = a filter-only browse ordered by popularity"`
@@ -209,8 +190,6 @@ type publicSeriesListOutput struct {
 	Body Envelope[dto.PublicSeriesListData]
 }
 
-// publicStatsOutput has no input type at all (the payload is one global
-// aggregate with no parameters) — huma.Register takes *struct{} for that.
 type publicStatsOutput struct {
 	Body Envelope[dto.PublicCatalogStats]
 }
@@ -226,12 +205,6 @@ type publicTagOutput struct {
 	Body Envelope[dto.PublicTagDetail]
 }
 
-// ── A2-1b taxonomy browse lanes ──────────────────────────────────────────────
-//
-// The three lanes share the works-list paging posture verbatim (keyset id ASC,
-// limit 1-100 default 20, clamp-high / 400-low) and every item carries an
-// NSFW-AWARE work_count — the number of works the SAME caller would page
-// through via the matching works?<filter>= call.
 
 type publicLabelsListInput struct {
 	Kind     string `query:"kind" enum:"game_brand,bunko,publisher,anime_studio,doujin_circle,group" doc:"Filter by label kind; a token outside this closed set is a 400"`
@@ -273,13 +246,6 @@ type publicEngineOutput struct {
 	Body Envelope[dto.PublicEngine]
 }
 
-// ── A2-1c release-calendar buckets ───────────────────────────────────────────
-//
-// The three buckets partition the works whose earliest dated release is known
-// to a month (month bucket), to a year only (pending) or not at all (tba). They
-// share the works-list paging posture, the works-list population predicate, the
-// works-list item shape and its full include= vocabulary; what they add is the
-// olang population gate and a bucket-level ETag.
 
 type publicCalendarInput struct {
 	Month        string `query:"month" doc:"ISO month YYYY-MM; default = the CURRENT Asia/Tokyo month, echoed back in the response. A malformed value is a 400"`
@@ -319,13 +285,6 @@ type publicCalendarTBAOutput struct {
 	Body Envelope[dto.PublicCalendarData]
 }
 
-// ── wave 174: the release-grain new-releases timeline ───────────────────────
-//
-// The calendar's sibling, one grain down. Every parameter it shares with the
-// calendar (olang / content_limit / nsfw / limit / cursor / include) means the
-// same thing here, word for word; the four it adds (kind / lang / official /
-// the date window) are release-level facts the work-grain buckets cannot ask
-// about at all.
 
 type publicReleasesInput struct {
 	Sort         string `query:"sort" enum:"date_desc,date_asc" doc:"date_desc (default) = newest first, the feed reading; date_asc walks forwards from the earliest release. The tiebreak inside one date is id ASC in BOTH directions. Keyset-paged over (date, id) — a cursor minted in one direction is refused in the other"`
@@ -346,19 +305,7 @@ type publicReleasesOutput struct {
 	Body Envelope[dto.PublicReleaseFeedData]
 }
 
-// SetupCatalogPublicSpec registers the /v1/catalog public projection operations
-// to derive the frozen public OpenAPI. Handlers are stubs (Fiber serves the live
-// paths); this only shapes the spec.
 func SetupCatalogPublicSpec(app *fiber.App) huma.API {
-	// huma.NewError is a package-level var, and huma derives every operation's
-	// error schema + content type from whatever it returns AT REGISTRATION TIME.
-	// Every runtime mount of this service swaps it for the house envelope
-	// (admin.go, s2s.go, user_cover_votes.go), so a binary answers errors with
-	// {code,message,data} as application/json. This spec-only path used to be the
-	// one caller that skipped the swap, and so froze Huma's stock RFC7807
-	// ErrorModel as application/problem+json into the published contract — a
-	// document that disagreed with the service on all 27 error responses, and
-	// with it every SDK generated from it. Install before the Registers below.
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("NextMoe Open API — Catalog", "1.0.0")
@@ -600,13 +547,6 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 		return &publicCalendarTBAOutput{}, nil
 	})
 
-	// The playtime face rides this document rather than the S2S one: it is a
-	// PRODUCT surface a third-party app author discovers in the developer
-	// portal, and the portal's docs model is projected from this file's output
-	// alone. It is the one face here that authenticates with a user access
-	// token instead of an API key — see its own Summary text and
-	// playtime_gate.go for why a key beside the token would be a second
-	// registry holding the same word.
 	RegisterPlaytimeOps(api, nil)
 	return api
 }

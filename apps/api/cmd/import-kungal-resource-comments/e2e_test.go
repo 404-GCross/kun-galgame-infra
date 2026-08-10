@@ -15,24 +15,14 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Hermetic end-to-end against a real Postgres (the community convention):
-// TEST_DATABASE_DSN or a local default; a missing/unreachable database SKIPS the
-// whole package. The target community tables live in `public`; the source
-// scratch tables (galgame_*) live in a dedicated `res_import_e2e_src` schema
-// reached through a SECOND connection whose search_path is pinned to it — so
-// `src` and `tgt` are genuinely two handles (the cross-database code path) and
-// the source table names never collide with the sibling importer's scratch
-// schema. The suite advisory lock serializes against the community test packages
-// that TRUNCATE the same target tables.
-
 const (
 	e2eSite      = "kungal_res_e2e"
 	e2eSrcSchema = "res_import_e2e_src"
 )
 
 var (
-	testDB *gorm.DB // target (public)
-	srcDB  *gorm.DB // source (search_path = res_import_e2e_src)
+	testDB *gorm.DB
+	srcDB  *gorm.DB
 )
 
 func TestMain(m *testing.M) {
@@ -77,8 +67,6 @@ func TestMain(m *testing.M) {
 
 func createSourceTables(db *gorm.DB) error {
 	stmts := []string{
-		// Entity tables carrying comment_count: galgame_rating proves ruling 21
-		// (its counter is NEVER touched); galgame_website is the one that resets.
 		`CREATE TABLE IF NOT EXISTS galgame_rating (id int PRIMARY KEY, comment_count int NOT NULL DEFAULT 0)`,
 		`CREATE TABLE IF NOT EXISTS galgame_website (id int PRIMARY KEY, comment_count int NOT NULL DEFAULT 0)`,
 		`CREATE TABLE IF NOT EXISTS galgame_rating_comment (
@@ -120,16 +108,6 @@ var e2eBase = time.Date(2023, 5, 1, 12, 0, 0, 0, time.UTC)
 
 func at(sec int) time.Time { return e2eBase.Add(time.Duration(sec) * time.Second) }
 
-// seedFixture plants one anchor per source:
-//   - rating 100: 3 flat comments, one self-targeted (author == target).
-//   - website 200: a depth-4 chain (root <- reply <- reply-of-reply <- reply),
-//     with an edited row.
-//   - toolset 300: a root with two sibling replies (author 2001 shared with
-//     website 200, proving trust dedup across sources).
-//
-// galgame_rating(100).comment_count starts stale (999) and must survive; only
-// galgame_website(200).comment_count is reset. Author 1002 is pre-seeded in
-// community_trust to prove insert-if-absent never mutates it.
 func seedFixture(t *testing.T) {
 	t.Helper()
 	srcExec := func(q string, args ...any) {
@@ -142,19 +120,19 @@ func seedFixture(t *testing.T) {
 
 	rc := `INSERT INTO galgame_rating_comment (id, content, galgame_rating_id, user_id, target_user_id, created, updated) VALUES (?,?,?,?,?,?,?)`
 	srcExec(rc, 1, "r-one", 100, 1001, 1002, at(1), at(1))
-	srcExec(rc, 2, "r-self", 100, 1002, 1002, at(2), at(2)) // self-target
+	srcExec(rc, 2, "r-self", 100, 1002, 1002, at(2), at(2))
 	srcExec(rc, 3, "r-three", 100, 1003, 1001, at(3), at(3))
 
 	wc := `INSERT INTO galgame_website_comment (id, content, edited, user_id, website_id, parent_id, created, updated) VALUES (?,?,?,?,?,?,?,?)`
 	srcExec(wc, 1, "w-root", nil, 2001, 200, nil, at(1), at(1))
-	srcExec(wc, 2, "w-d2", at(20), 2002, 200, 1, at(2), at(20)) // edited
+	srcExec(wc, 2, "w-d2", at(20), 2002, 200, 1, at(2), at(20))
 	srcExec(wc, 3, "w-d3", nil, 2003, 200, 2, at(3), at(3))
-	srcExec(wc, 4, "w-d4", nil, 2001, 200, 3, at(4), at(4)) // depth 4
+	srcExec(wc, 4, "w-d4", nil, 2001, 200, 3, at(4), at(4))
 
 	tc := `INSERT INTO galgame_toolset_comment (id, content, edited, user_id, toolset_id, parent_id, created, updated) VALUES (?,?,?,?,?,?,?,?)`
 	srcExec(tc, 1, "t-root", nil, 2001, 300, nil, at(1), at(1))
 	srcExec(tc, 2, "t-r1", nil, 3002, 300, 1, at(2), at(2))
-	srcExec(tc, 3, "t-r2", nil, 3003, 300, 1, at(3), at(3)) // sibling reply to root
+	srcExec(tc, 3, "t-r2", nil, 3003, 300, 1, at(3), at(3))
 
 	if err := testDB.Exec(`INSERT INTO community_trust (user_id, level, first_posts_held_remaining, updated_at) VALUES (1002, 3, 5, now())`).Error; err != nil {
 		t.Fatalf("seed trust: %v", err)
@@ -165,7 +143,6 @@ func TestEndToEnd(t *testing.T) {
 	resetFixtureTables(t)
 	seedFixture(t)
 
-	// ── dry run first: nothing written, numbers match the fixture ──
 	dry, err := run(srcDB, testDB, e2eSite, false)
 	if err != nil {
 		t.Fatalf("dry run: %v", err)
@@ -177,12 +154,11 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("dry run wrote %d posts", postCountAfterDry)
 	}
 
-	// ── apply ──
 	rep, err := run(srcDB, testDB, e2eSite, true)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	assertDry(t, rep) // apply reports the same to-do numbers on a clean target
+	assertDry(t, rep)
 
 	assertRating(t)
 	assertWebsiteDeepChain(t)
@@ -190,7 +166,6 @@ func TestEndToEnd(t *testing.T) {
 	assertCountersAndTrust(t)
 	assertMap(t)
 
-	// ── idempotent rerun: zero new rows ──
 	rep2, err := run(srcDB, testDB, e2eSite, true)
 	if err != nil {
 		t.Fatalf("rerun: %v", err)
@@ -205,7 +180,6 @@ func TestEndToEnd(t *testing.T) {
 	}
 	assertRowCounts(t, 3, 10, 10)
 
-	// ── resume: drop the website ledger tail; posts remain, rerun reconciles ──
 	if err := srcDB.Exec(`DELETE FROM resource_comment_community_map WHERE source = 'website' AND old_id IN (3, 4)`).Error; err != nil {
 		t.Fatalf("truncate ledger tail: %v", err)
 	}
@@ -220,7 +194,7 @@ func TestEndToEnd(t *testing.T) {
 	if web.MapRowsToWrite != 2 {
 		t.Fatalf("resume should backfill 2 ledger rows, got %d", web.MapRowsToWrite)
 	}
-	assertRowCounts(t, 3, 10, 10) // still exactly 10 posts, 10 ledger rows
+	assertRowCounts(t, 3, 10, 10)
 }
 
 func assertDry(t *testing.T, r *Report) {
@@ -256,7 +230,6 @@ func assertRating(t *testing.T) {
 		t.Fatalf("rating backdating: createdBy=%d createdAt=%v last=%v", th.CreatedBy, th.CreatedAt.UTC(), th.LastPostedAt)
 	}
 	byNum := postsByNumber(t, th.ID)
-	// Flat: all reply/root NULL; target copied verbatim (self-target kept).
 	for n, wantTarget := range map[int32]int64{1: 1002, 2: 1002, 3: 1001} {
 		p := byNum[n]
 		if p.ReplyToPostID != nil || p.RootPostID != nil {
@@ -280,11 +253,9 @@ func assertWebsiteDeepChain(t *testing.T) {
 	if p1.ReplyToPostID != nil || p1.RootPostID != nil {
 		t.Fatalf("website root: reply=%v root=%v want nil/nil", p1.ReplyToPostID, p1.RootPostID)
 	}
-	// Every descendant re-roots to p1 (the top ancestor).
 	if deref64(p2.RootPostID) != p1.ID || deref64(p3.RootPostID) != p1.ID || deref64(p4.RootPostID) != p1.ID {
 		t.Fatalf("website re-root: p2=%v p3=%v p4=%v want all %d", p2.RootPostID, p3.RootPostID, p4.RootPostID, p1.ID)
 	}
-	// reply_to is the immediate parent; target is the parent's author.
 	if deref64(p2.ReplyToPostID) != p1.ID || deref64(p2.TargetUserID) != 2001 {
 		t.Fatalf("website p2: reply=%v target=%v want %d/2001", p2.ReplyToPostID, p2.TargetUserID, p1.ID)
 	}
@@ -307,7 +278,6 @@ func assertToolset(t *testing.T) {
 	if p1.ReplyToPostID != nil || p1.RootPostID != nil {
 		t.Fatalf("toolset root pointers not nil: %+v", p1)
 	}
-	// Two siblings reply to the same root; both re-root to p1, target its author.
 	for _, sib := range []model.CommunityPost{p2, p3} {
 		if deref64(sib.ReplyToPostID) != p1.ID || deref64(sib.RootPostID) != p1.ID || deref64(sib.TargetUserID) != 2001 {
 			t.Fatalf("toolset sibling reply=%v root=%v target=%v want %d/%d/2001", sib.ReplyToPostID, sib.RootPostID, sib.TargetUserID, p1.ID, p1.ID)
@@ -317,7 +287,6 @@ func assertToolset(t *testing.T) {
 
 func assertCountersAndTrust(t *testing.T) {
 	t.Helper()
-	// Only galgame_website reset; galgame_rating left stale (ruling 21).
 	var ccWebsite, ccRating int
 	srcDB.Raw("SELECT comment_count FROM galgame_website WHERE id = 200").Scan(&ccWebsite)
 	srcDB.Raw("SELECT comment_count FROM galgame_rating WHERE id = 100").Scan(&ccRating)
@@ -328,7 +297,6 @@ func assertCountersAndTrust(t *testing.T) {
 		t.Fatalf("galgame_rating.comment_count=%d want 999 (must NOT be touched)", ccRating)
 	}
 
-	// Pre-existing trust row (1002) untouched.
 	var pre model.CommunityTrust
 	if err := testDB.Where("user_id = 1002").First(&pre).Error; err != nil {
 		t.Fatalf("load trust 1002: %v", err)
@@ -336,7 +304,6 @@ func assertCountersAndTrust(t *testing.T) {
 	if pre.Level != 3 || pre.FirstPostsHeldRemaining != 5 {
 		t.Fatalf("pre-existing trust MUTATED: level=%d hold=%d want 3/5", pre.Level, pre.FirstPostsHeldRemaining)
 	}
-	// Seeded author (2001, shared across website+toolset) gets level=1, hold=0 once.
 	var seeded model.CommunityTrust
 	if err := testDB.Where("user_id = 2001").First(&seeded).Error; err != nil {
 		t.Fatalf("load trust 2001: %v", err)
@@ -346,7 +313,7 @@ func assertCountersAndTrust(t *testing.T) {
 	}
 	var n int64
 	testDB.Model(&model.CommunityTrust{}).Count(&n)
-	if n != 8 { // 1001,1002,1003,2001,2002,2003,3002,3003
+	if n != 8 {
 		t.Fatalf("trust rows=%d want 8", n)
 	}
 }
@@ -363,7 +330,6 @@ func assertMap(t *testing.T) {
 			t.Fatalf("map[%s]=%d want %d", tc.source, n, tc.want)
 		}
 	}
-	// A specific website ledger row points at the right thread + post.
 	th := loadThread(t, "website:200")
 	byNum := postsByNumber(t, th.ID)
 	var mrow resourceMap

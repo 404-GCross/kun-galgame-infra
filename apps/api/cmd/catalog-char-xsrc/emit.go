@@ -11,8 +11,6 @@ import (
 	"api/internal/jobs/personadj"
 )
 
-// autoConfidence is the automatic-lane gate, the wave-156 character_cv
-// calibration (measured 0.988 at ≥0.95).
 const autoConfidence = 0.95
 
 type emitStats struct {
@@ -21,12 +19,6 @@ type emitStats struct {
 	Groups, SameSourceDeferred, GroupsFinal int
 }
 
-// runEmit joins verdicts back onto pairs and writes the worklist for
-// catalog-dedup-batch plus a review file for the human tail. Auto lane:
-// verdict merge AND confidence ≥ 0.95 AND neither side an instance row. A
-// group that would contain two characters anchored to the SAME source is
-// deferred whole — one source keeping two rows is a claim the source itself
-// distinguishes them.
 func runEmit(pairsPath, verdictsPath, worklistPath, reviewPath string, out io.Writer) error {
 	pairs, err := loadPairs(pairsPath)
 	if err != nil {
@@ -170,9 +162,6 @@ type sideInfo struct {
 	Name    string
 }
 
-// pickSurvivor applies the detector's character survivor rule (portrait first,
-// then alias count, then the older id) using the richness signals captured at
-// packets time.
 func pickSurvivor(ids []int64, rich map[int64]richness) (int64, []int64) {
 	sorted := append([]int64(nil), ids...)
 	sort.Slice(sorted, func(i, j int) bool {

@@ -23,7 +23,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// S2SServer holds the dependencies of the S2S operations.
 type S2SServer struct {
 	resolve *service.ResolveService
 	work    *service.WorkService
@@ -32,12 +31,6 @@ type S2SServer struct {
 	stats   *service.StatsService
 }
 
-// Setup builds the S2S Huma API (resolve / redirect feed / work claim + the
-// read surface: by-anchor / credits / entity search) over the Fiber app. Auth
-// (S2SAuth) is applied by the caller as path-scoped Fiber middleware BEFORE
-// this — Huma registers on the app, so the caller must gate the
-// /api/v1/catalog prefix. Callable with nil services for spec export (handlers
-// are never invoked then).
 func Setup(app *fiber.App, resolve *service.ResolveService, work *service.WorkService, read *service.ReadService, searcher *catsearch.Indexer, stats *service.StatsService) huma.API {
 	InstallErrorEnvelope()
 
@@ -71,8 +64,6 @@ func (s *S2SServer) register(api huma.API) {
 	}, s.claim)
 }
 
-// ---- resolve ----
-
 type resolveInput struct {
 	Body dto.ResolveRequest
 }
@@ -97,10 +88,7 @@ func (s *S2SServer) resolveBatch(ctx context.Context, in *resolveInput) (*resolv
 	return &resolveOutput{Body: okEnvelope(out)}, nil
 }
 
-// ---- redirect feed ----
-
 type redirectsInput struct {
-	// -1 = no filter (Huma cannot express optional scalars as pointers).
 	EntityType int16  `query:"entity_type" default:"-1" doc:"Filter to one entity type; -1 = all"`
 	Cursor     string `query:"cursor" doc:"Opaque cursor from the previous page's next_cursor"`
 	Limit      int    `query:"limit" doc:"Page size (max 1000)"`
@@ -119,8 +107,6 @@ func (s *S2SServer) redirects(ctx context.Context, in *redirectsInput) (*redirec
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
-	// The feed orders by merged_at (always set by the merge path — manual
-	// redirect inserts are not a thing; see repository.RedirectCursor).
 	items, next, err := s.resolve.RedirectsSince(ctx, optionalFilter(in.EntityType), cursor, limit)
 	if err != nil {
 		slog.Error("catalog redirects feed", "err", err)
@@ -138,9 +124,6 @@ func (s *S2SServer) redirects(ctx context.Context, in *redirectsInput) (*redirec
 	}
 	return &redirectsOutput{Body: okEnvelope(out)}, nil
 }
-
-// Cursor wire format: base64("<merged_at unixnano>:<entity_type>:<old_id>").
-// Opaque to clients; only ever produced and parsed here.
 
 func encodeRedirectCursor(c repository.RedirectCursor) string {
 	raw := fmt.Sprintf("%d:%d:%d", c.MergedAt.UnixNano(), c.EntityType, c.OldID)
@@ -167,8 +150,6 @@ func decodeRedirectCursor(s string) (repository.RedirectCursor, error) {
 	}
 	return repository.RedirectCursor{MergedAt: time.Unix(0, nano), EntityType: int16(et), OldID: old}, nil
 }
-
-// ---- work claim ----
 
 type claimInput struct {
 	Body dto.ClaimWorkRequest

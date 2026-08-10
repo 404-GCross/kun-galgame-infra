@@ -14,7 +14,6 @@ import (
 	"gorm.io/datatypes"
 )
 
-// writeFile creates a non-empty file, making its directory.
 func writeFile(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -26,7 +25,6 @@ func writeFile(t *testing.T, path string) {
 }
 
 func TestLoadMirrorNoRootAndNoManifest(t *testing.T) {
-	// An empty root is the pre-crawl dry run: it must load, and resolve nothing.
 	m, err := loadMirror("")
 	if err != nil {
 		t.Fatalf("loadMirror(\"\"): %v", err)
@@ -35,7 +33,6 @@ func TestLoadMirrorNoRootAndNoManifest(t *testing.T) {
 		t.Fatal("empty root resolved bytes")
 	}
 
-	// A mirror with bytes but no dims.jsonl must still work by probing.
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "123", "logo.png"))
 	m, err = loadMirror(root)
@@ -48,15 +45,11 @@ func TestLoadMirrorNoRootAndNoManifest(t *testing.T) {
 	}
 }
 
-// TestMirrorResolveManifestAndStem is also the compatibility pin: this lane
-// reads the mirror the same crawler command writes for the label-logo lane, so
-// the file stem is "logo", not "photo". Renaming it would silently stop
-// resolving bytes already on disk.
 func TestMirrorResolveManifestAndStem(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "7", "logo.webp"))
 	writeFile(t, filepath.Join(root, "9", "shot.gif"))
-	writeFile(t, filepath.Join(root, "8", "photo.png")) // wrong stem — invisible
+	writeFile(t, filepath.Join(root, "8", "photo.png"))
 	manifest := `{"id":"9","file":"9/shot.gif","w":100,"h":100,"url":"https://example.test/9.gif"}
 {"id":"404","file":"404/logo.jpg","w":1,"h":1,"url":""}
 
@@ -69,19 +62,15 @@ func TestMirrorResolveManifestAndStem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMirror: %v", err)
 	}
-	// Probed by the crawler's stem, even though no manifest row names it.
 	if got, ok := m.resolve("7"); !ok || filepath.Base(got) != "logo.webp" {
 		t.Fatalf("resolve(7) = %q, %v", got, ok)
 	}
-	// The manifest's file wins over the stem probe.
 	if got, ok := m.resolve("9"); !ok || filepath.Base(got) != "shot.gif" {
 		t.Fatalf("resolve(9) = %q, %v", got, ok)
 	}
-	// A manifest row whose bytes are absent is not a resolution.
 	if _, ok := m.resolve("404"); ok {
 		t.Fatal("resolve(404): manifest row without bytes must not resolve")
 	}
-	// A file under any other stem is not this lane's artefact.
 	if m.has("8") {
 		t.Fatal("resolve(8): only the crawler's logo.<ext> stem counts")
 	}
@@ -146,9 +135,9 @@ func TestWriteIDsOnlyListsIDsWithoutBytes(t *testing.T) {
 	}
 	cands := []candidate{
 		{PersonID: 1, ExternalID: "30"},
-		{PersonID: 2, ExternalID: "20"}, // already mirrored — omitted
+		{PersonID: 2, ExternalID: "20"},
 		{PersonID: 3, ExternalID: "10"},
-		{PersonID: 4, ExternalID: "30"}, // duplicate id — emitted once
+		{PersonID: 4, ExternalID: "30"},
 	}
 	out := filepath.Join(t.TempDir(), "ids.txt")
 	n, err := writeIDs(out, cands, m)
@@ -177,8 +166,6 @@ func TestWindow(t *testing.T) {
 	}
 }
 
-// fakeUploader stands in for the image client so the write path can be exercised
-// without an image service or a network.
 type fakeUploader struct {
 	hash    string
 	err     error
@@ -199,9 +186,6 @@ func (f *fakeUploader) ReferencePing(_ context.Context, hashes []string) (*image
 	return &imageclient.ReferencePingResult{Updated: int64(len(hashes))}, nil
 }
 
-// TestFillDryRunNeverUploads is the guarantee the default mode rests on: a dry
-// run reads no bytes into the image service and touches no row, whether or not
-// the mirror has the file.
 func TestFillDryRunNeverUploads(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "5", "logo.jpg"))
@@ -216,7 +200,6 @@ func TestFillDryRunNeverUploads(t *testing.T) {
 	if got.would != 1 || got.uploaded != 0 || got.hash != "" {
 		t.Fatalf("dry run = %+v, want would=1 and nothing else", got)
 	}
-	// A candidate with no mirrored bytes is missing, in dry run and apply alike.
 	got = r.fill(context.Background(), candidate{PersonID: 2, ExternalID: "404"}, true)
 	if got.missing != 1 || got.uploaded != 0 {
 		t.Fatalf("absent bytes = %+v, want missing=1", got)
@@ -226,9 +209,6 @@ func TestFillDryRunNeverUploads(t *testing.T) {
 	}
 }
 
-// TestUploadUsesTheCatalogLogoPreset pins the preset: it is the one the catalog
-// image client's image_allowed_presets lists for this scope, and a preset it
-// does not list 403s every single upload.
 func TestUploadUsesTheCatalogLogoPreset(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "1", "logo.jpg")
@@ -244,9 +224,6 @@ func TestUploadUsesTheCatalogLogoPreset(t *testing.T) {
 	}
 }
 
-// TestUploadRetriesTransientButNotTerminal pins the retry policy: quota and
-// moderation are terminal (retrying them is pointless and costs the whole run),
-// anything else is retried.
 func TestUploadRetriesTransientButNotTerminal(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "1", "logo.jpg")
@@ -263,8 +240,6 @@ func TestUploadRetriesTransientButNotTerminal(t *testing.T) {
 		}
 	}
 
-	// A transient error retries; the context is cancelled so the test does not
-	// sit through the backoff schedule.
 	counting := &countingUploader{err: errors.New("connection refused")}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -277,7 +252,6 @@ func TestUploadRetriesTransientButNotTerminal(t *testing.T) {
 	}
 }
 
-// countingUploader always fails, counting attempts.
 type countingUploader struct {
 	err   error
 	calls int

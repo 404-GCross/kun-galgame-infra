@@ -1,10 +1,3 @@
-// import-release-labels materialises release-level attribution (wave 200):
-// vndb releases_producers dev/pub flags → catalog_release_label. No language
-// gate — a release states its own edition, so the localisation and port
-// publishers land here instead of being flattened onto the work. Dry-run by
-// default; ON CONFLICT DO NOTHING — re-runs are no-ops.
-//
-//	go run ./cmd/import-release-labels --dsn "$CATALOG" [--apply]
 package main
 
 import (

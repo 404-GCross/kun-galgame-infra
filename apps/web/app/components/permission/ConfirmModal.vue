@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// Confirmation for one matrix operation. A permission change is invisible once
-// made — the operator sees a tick change, not a consequence — so the modal
-// spells out the state change, who it lands on and how fast, before the write
-// goes out. Since the ruling added deny, "how far down" also matters: two of
-// the four operations leave a role with LESS than its compiled-in bundle.
 import type {
   PermissionKeyRow,
   PermissionCell
@@ -36,7 +31,6 @@ const actionLabel = computed(() =>
   op.value ? CELL_OP_LABELS[op.value] : '变更'
 )
 
-// What the role ends up with, in the operator's terms.
 const OUTCOMES: Record<PermissionCellOp, string> = {
   grant: '该角色的每一位持有者立即获得此能力。',
   revoke: '删除这条叠加授权后，该角色回到代码捆（地板），不会低于地板。',
@@ -75,8 +69,6 @@ const confirmColor = computed(() =>
         </p>
         <p class="text-default-400">{{ row.desc_zh }}</p>
 
-        <!-- Only the deny leaves a role below its compiled-in bundle, so only
-             the deny gets called out rather than stated. -->
         <KunInfo
           v-if="op === 'deny'"
           color="danger"

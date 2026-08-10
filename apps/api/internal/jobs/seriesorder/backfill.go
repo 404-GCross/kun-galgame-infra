@@ -13,32 +13,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// BackfillSources are the lanes whose membership rows predate wave 184 and
-// therefore sit at position/kind 0. The derived lane is deliberately absent:
-// its builder assigns the facets as it materializes a series, with its own
-// fallback kind, and a backfill pass over it would fight that owner every run.
 var BackfillSources = []string{"dlsite", "curated"}
 
-// BackfillOpts configures a backfill run. Apply=false is the repo's dry-run
-// default; DSN is REQUIRED and never guessed.
 type BackfillOpts struct {
 	Apply    bool
 	DSN      string
 	Receipts string
 }
 
-// BackfillStats reports a run. In a dry run MembersChanged is the forecast; in
-// an apply it is what was written. A second apply pass over unchanged data
-// reports zeros for both it and TouchedWorks.
 type BackfillStats struct {
 	Series          int
-	SeriesWithOrder int // series that had at least one row to move
+	SeriesWithOrder int
 	Members         int
 	MembersChanged  int
 	TouchedWorks    int
 }
 
-// backfillReceipt is one series' decision.
 type backfillReceipt struct {
 	SeriesID    int64        `json:"series_id"`
 	Source      string       `json:"source"`
@@ -48,9 +38,6 @@ type backfillReceipt struct {
 	Changed     []int64      `json:"changed_work_ids,omitempty"`
 }
 
-// Backfill gives every pre-184 dlsite / curated membership row its position and
-// kind. It is a plain reconcile, not a one-shot: re-running it is safe and
-// writes nothing once the facets agree with the works' release dates and edges.
 func Backfill(ctx context.Context, opts BackfillOpts) (*BackfillStats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess")
@@ -65,7 +52,6 @@ func Backfill(ctx context.Context, opts BackfillOpts) (*BackfillStats, error) {
 	return BackfillWithDB(ctx, db, opts)
 }
 
-// BackfillWithDB is Backfill against an already-open pool (the tests' entry).
 func BackfillWithDB(ctx context.Context, db *gorm.DB, opts BackfillOpts) (*BackfillStats, error) {
 	var series []struct {
 		ID          int64  `gorm:"column:id"`
@@ -82,8 +68,6 @@ func BackfillWithDB(ctx context.Context, db *gorm.DB, opts BackfillOpts) (*Backf
 		return nil, fmt.Errorf("load series: %w", err)
 	}
 
-	// Membership for every series in one query, then one facts load for every
-	// work: the whole backfill is three reads plus the UPDATEs it really needs.
 	membersBySeries := map[int64][]int64{}
 	var allWorks []int64
 	{
@@ -126,9 +110,6 @@ func BackfillWithDB(ctx context.Context, db *gorm.DB, opts BackfillOpts) (*Backf
 			continue
 		}
 		st.Members += len(members)
-		// The pre-existing lanes get SeriesMemberKindUnknown as the fallback:
-		// a dlsite series groups works its source declared related without
-		// saying how, and inventing "main" for them would publish a guess.
 		want := facts.Assign(members, model.SeriesMemberKindUnknown)
 		have, err := LoadCurrent(ctx, db, s.ID)
 		if err != nil {
@@ -154,8 +135,6 @@ func BackfillWithDB(ctx context.Context, db *gorm.DB, opts BackfillOpts) (*Backf
 		}
 	}
 
-	// A member's position/kind is part of what the series block renders, so a
-	// work whose row moved is a work the changes feed must re-emit.
 	if opts.Apply && len(touched) > 0 {
 		if err := repository.TouchWorks(ctx, db, touched); err != nil {
 			return nil, fmt.Errorf("touch works: %w", err)

@@ -5,15 +5,9 @@ import {
 } from '~/utils/oauth-pkce'
 import { isSafeInternalPath } from '~/utils/safe-path'
 
-// Kicks off the OAuth Authorization Code + PKCE flow against our IdP (the SSO
-// login the ecosystem sites use). Stashes code_verifier + state + the post-login
-// redirect in sessionStorage (validated on /auth/callback), then does a
-// TOP-LEVEL navigation to the IdP. Client-only (PKCE uses Web Crypto).
-// Contract: docs/integration/oauth/oauth-integration-guide.md.
 export const useOAuthLogin = () => {
   const config = useRuntimeConfig()
 
-  // Build the authorize URL and persist the PKCE/state/redirect for the callback.
   const buildAuthorizeUrl = async (redirect?: string): Promise<string> => {
     const verifier = generateCodeVerifier()
     const challenge = await generateCodeChallenge(verifier)
@@ -37,13 +31,10 @@ export const useOAuthLogin = () => {
     return `${config.public.oauthAuthorizeBase}/oauth/authorize?${params.toString()}`
   }
 
-  // Log in: navigate straight to the IdP authorize endpoint.
   const startLogin = async (redirect?: string) => {
     window.location.href = await buildAuthorizeUrl(redirect)
   }
 
-  // Register: route through the OP register page, which forwards to authorize on
-  // success (first-party auto_consent → back to us logged in). Same PKCE code.
   const startRegister = async (redirect?: string) => {
     const authorizeUrl = await buildAuthorizeUrl(redirect)
     window.location.href = `${config.public.oauthWebBase}/auth/register?redirect=${encodeURIComponent(authorizeUrl)}`

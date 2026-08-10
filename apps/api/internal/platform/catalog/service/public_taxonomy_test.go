@@ -1,7 +1,3 @@
-// public_taxonomy_test.go — A2-1b: the labels / tags / engines browse lanes,
-// the engine detail record, the works-list engine_id filter, the tag intro
-// channel and the screenshot metadata enrichment. Integration against
-// kun_catalog_test (service_test.go TestMain).
 package service
 
 import (
@@ -11,8 +7,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// cleanTaxonomyTables truncates the facet tables this suite writes that
-// cleanTables / cleanTagTables do not cover.
 func cleanTaxonomyTables(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
@@ -25,7 +19,6 @@ func cleanTaxonomyTables(t *testing.T) {
 	}
 }
 
-// createEngine inserts one engine row and returns its id.
 func createEngine(t *testing.T, name string) int64 {
 	t.Helper()
 	e := &model.CatalogEngine{Name: name, Description: "", Aliases: []byte("[]")}
@@ -44,7 +37,6 @@ func attachEngine(t *testing.T, workID, engineID int64) {
 	}
 }
 
-// createCanonicalTag inserts a canonical tag and returns its id.
 func createCanonicalTag(t *testing.T, name string, tier, kind int16) int64 {
 	t.Helper()
 	tag := &model.CatalogTag{Name: name, Tier: tier, Kind: kind}
@@ -54,10 +46,6 @@ func createCanonicalTag(t *testing.T, name string, tier, kind int16) int64 {
 	return tag.ID
 }
 
-// TestTaxonomyListsKeysetAndCounts is the wave's core case: all three lanes
-// walk their pages by keyset, close on a short page, reject a cross-lane
-// cursor — and every work_count agrees with what the matching works?<filter>=
-// call actually returns for the SAME nsfw setting.
 func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -65,9 +53,6 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	svc := newPublicSvc()
 	ctx := t.Context()
 
-	// One all-ages work and one r18 work, both LIVE galgame carrying a LIVE
-	// claim — the only rows work_count counts (146). Plus a stub work and an
-	// ASMR work that must never be counted anywhere.
 	wSafe := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "SafeWork")
 	wR18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "R18Work")
 	wStub := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusStub, "StubWork")
@@ -76,17 +61,12 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 		claimLive(t, id, int64(9300+i))
 	}
 
-	// ── labels ───────────────────────────────────────────────────────────────
-	// brandID gets all four works (so the count must drop the stub + asmr);
-	// circleID gets none.
 	brandID := addWorkLabel(t, wSafe.ID, "Alcot", model.LabelKindGameBrand, model.WorkLabelKindBrand)
 	for _, w := range []int64{wR18.ID, wStub.ID, wASMR.ID} {
 		if err := testDB.Create(&model.CatalogWorkLabel{WorkID: w, LabelID: brandID, Kind: model.WorkLabelKindBrand}).Error; err != nil {
 			t.Fatalf("extra label edge: %v", err)
 		}
 	}
-	// A SECOND edge kind on the same (work, label) pair — catalog_work_label is
-	// keyed (work_id, label_id, kind), so a naive count(*) would double-count.
 	if err := testDB.Create(&model.CatalogWorkLabel{WorkID: wSafe.ID, LabelID: brandID, Kind: model.WorkLabelKindPublisher}).Error; err != nil {
 		t.Fatalf("second-kind label edge: %v", err)
 	}
@@ -120,14 +100,9 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 		t.Fatalf("nsfw brand work_count = %d, want 2 (r18 now counted)", labelsNSFW.Items[0].WorkCount)
 	}
 
-	// The count IS the member list: works?label_id= returns exactly work_count
-	// rows for the same caller. This equality is the whole contract.
 	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", LabelID: brandID}, labels.Items[0].WorkCount)
 	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", LabelID: brandID, NSFW: true}, labelsNSFW.Items[0].WorkCount)
 
-	// has_works drops the +0 rows, total converges with the filter, and the
-	// existence gate follows the SAME nsfw arm as the count: a label whose only
-	// work is r18 exists for an nsfw caller and vanishes for an sfw one.
 	r18OnlyID := addWorkLabel(t, wR18.ID, "R18 Only Brand", model.LabelKindGameBrand, model.WorkLabelKindBrand)
 	attached, err := svc.LabelsList(ctx, LabelsListFilter{HasWorks: true}, "", 50)
 	if err != nil {
@@ -153,7 +128,6 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 		t.Fatalf("drop r18-only label: %v", err)
 	}
 
-	// kind filter.
 	kind := model.LabelKindDoujinCircle
 	filtered, err := svc.LabelsList(ctx, LabelsListFilter{Kind: &kind}, "", 50)
 	if err != nil {
@@ -163,7 +137,6 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 		t.Fatalf("kind=doujin_circle = %+v, want only %d", filtered.Items, circleID)
 	}
 
-	// A soft-deleted (merged-away) label leaves the lane.
 	if err := testDB.Exec(`UPDATE catalog_label SET deleted_at = now() WHERE id = ?`, circleID).Error; err != nil {
 		t.Fatalf("soft delete label: %v", err)
 	}
@@ -175,9 +148,6 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 		t.Fatalf("soft-deleted label still listed: %+v", afterDelete.Items)
 	}
 
-	// ── tags ─────────────────────────────────────────────────────────────────
-	// TWO source tags mapping onto ONE canonical tag, both on wSafe — the
-	// canonical count must still be 1.
 	coreTagID := createCanonicalTag(t, "fantasy", model.TagTierCore, model.TagKindContent)
 	metaTagID := createCanonicalTag(t, "PC", model.TagTierHidden, model.TagKindMeta)
 	const srcBangumi int16 = 3
@@ -215,8 +185,6 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagIDs: []int64{coreTagID}}, tagPage.Items[0].WorkCount)
 	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagIDs: []int64{coreTagID}, NSFW: true}, tagPageNSFW.Items[0].WorkCount)
 
-	// has_works on the tags lane: the unmapped "PC" meta tag (+0) leaves the
-	// page and the total, through the same source-name-map edge the count uses.
 	attachedTags, err := svc.TagsList(ctx, TagsListFilter{HasWorks: true}, "", 50)
 	if err != nil {
 		t.Fatalf("TagsList has_works: %v", err)
@@ -235,12 +203,11 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 		t.Fatalf("tier=hidden&kind=meta = %+v, want only %d", onlyMeta.Items, metaTagID)
 	}
 
-	// ── engines ──────────────────────────────────────────────────────────────
 	kirikiri := createEngine(t, "KiriKiri")
 	renpy := createEngine(t, "Ren'Py")
 	attachEngine(t, wSafe.ID, kirikiri)
 	attachEngine(t, wR18.ID, kirikiri)
-	attachEngine(t, wStub.ID, kirikiri) // stub: never counted
+	attachEngine(t, wStub.ID, kirikiri)
 
 	engines, err := svc.EnginesList(ctx, EnginesListFilter{}, "", 50)
 	if err != nil {
@@ -264,8 +231,6 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	_ = renpy
 	_ = wASMR
 
-	// ── keyset walk + cursor lane pinning (engines lane stands for all three,
-	// they share the codec) ──────────────────────────────────────────────────
 	p1, err := svc.EnginesList(ctx, EnginesListFilter{}, "", 1)
 	if err != nil {
 		t.Fatalf("engines p1: %v", err)
@@ -280,27 +245,18 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	if len(p2.Items) != 1 || p2.Items[0].ID != renpy {
 		t.Fatalf("engines p2 = %+v, want [%d]", p2.Items, renpy)
 	}
-	// p2 is the last page, so the walk ENDS here — there is no empty terminal
-	// page to fetch. This used to assert the opposite, and the two halves of the
-	// codebase disagreed: the series lane's test (the fourth member of this
-	// family) pinned "a full last page ends the walk" and failed for it, because
-	// the shared helper minted a cursor whenever a page came back exactly full
-	// and could not tell that from "there is more". The lanes now over-fetch by
-	// one, so a cursor means a further page really exists.
 	if p2.NextCursor != nil {
 		t.Fatalf("engines p2 is the last page and must end the walk, got cursor=%v", *p2.NextCursor)
 	}
 	if _, err := svc.EnginesList(ctx, EnginesListFilter{}, "!!!not-base64!!!", 50); err != ErrBadCursor {
 		t.Fatalf("malformed engines cursor = %v, want ErrBadCursor", err)
 	}
-	// A cursor minted on one taxonomy lane must not replay on another.
 	if _, err := svc.LabelsList(ctx, LabelsListFilter{}, *p1.NextCursor, 50); err != ErrBadCursor {
 		t.Fatalf("engines cursor on the labels lane = %v, want ErrBadCursor", err)
 	}
 	if _, err := svc.TagsList(ctx, TagsListFilter{}, *p1.NextCursor, 50); err != ErrBadCursor {
 		t.Fatalf("engines cursor on the tags lane = %v, want ErrBadCursor", err)
 	}
-	// ...nor on the works lane, and vice versa.
 	worksPage, err := svc.WorksList(ctx, WorksListFilter{Sort: "id"}, "", 1)
 	if err != nil {
 		t.Fatalf("works p1: %v", err)
@@ -310,14 +266,6 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	}
 }
 
-// assertCountMatchesWorksList walks the works list under the given filter and
-// checks the row count equals the work_count the taxonomy lane advertised.
-//
-// The claim gate is applied HERE, not by the callers: work_count's promise is
-// "what you get by following this chip", and what an entity page follows it with
-// is claim_state=live (A2-R4). Injecting it in the assertion is what makes every
-// case below a statement about THAT member call, and not about some other query
-// that merely happens to agree.
 func assertCountMatchesWorksList(t *testing.T, svc *PublicService, f WorksListFilter, want int) {
 	t.Helper()
 	f.ClaimStates = taxonomyLiveClaim
@@ -331,18 +279,12 @@ func assertCountMatchesWorksList(t *testing.T, svc *PublicService, f WorksListFi
 	}
 }
 
-// claimLive marks a fixture work as a LIVE galgame_wiki claim — the only state
-// work_count counts since wave 146. productWorkID must be unique per work
-// ((medium_id, site, product_work_id) is a unique key).
 func claimLive(t *testing.T, workID, productWorkID int64) {
 	t.Helper()
 	claimWork(t, workID, "galgame_wiki", productWorkID)
 	setClaimState(t, workID, i16(model.ClaimStateLive))
 }
 
-// TestEngineDetailRefsExactOnly pins the engine record: refs ride the generic
-// exact-only loader (A2-0's wiki eid anchors surface, a probable one never
-// does), an unknown id is a miss, and work_count follows the nsfw switch.
 func TestEngineDetailRefsExactOnly(t *testing.T) {
 	cleanTables(t)
 	cleanTaxonomyTables(t)
@@ -358,7 +300,7 @@ func TestEngineDetailRefsExactOnly(t *testing.T) {
 	attachEngine(t, wSafe.ID, eng)
 	attachEngine(t, wR18.ID, eng)
 
-	const srcWiki int16 = 12 // the curated lane (`galgame_wiki` before wave 161)
+	const srcWiki int16 = 12
 	addExternalRef(t, model.EntityTypeEngine, eng, srcWiki, "1001", model.LinkKindExact)
 	addExternalRef(t, model.EntityTypeEngine, eng, srcVNDB, "e999", model.LinkKindProbable)
 	addExternalRef(t, model.EntityTypeEngine, eng, srcDlsite, "https://example.test", model.LinkKindRelated)
@@ -387,9 +329,6 @@ func TestEngineDetailRefsExactOnly(t *testing.T) {
 	}
 }
 
-// TestTagDetailIntrosAlwaysPresent pins the A2-1b intro channel: the block is
-// ALWAYS present (empty → [], never null), merges to one row per language with
-// the lowest source_id winning, and renders the public source key.
 func TestTagDetailIntrosAlwaysPresent(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -408,7 +347,7 @@ func TestTagDetailIntrosAlwaysPresent(t *testing.T) {
 		t.Fatalf("intros must be an empty slice (serialized []), got %#v", rec.Intros)
 	}
 
-	const srcWiki int16 = 12 // the curated lane — higher id, so it loses the merge
+	const srcWiki int16 = 12
 	for _, in := range []struct {
 		lang, body string
 		src        int16
@@ -436,16 +375,11 @@ func TestTagDetailIntrosAlwaysPresent(t *testing.T) {
 	if rec.Intros[1].Lang != "zh-Hans" || rec.Intros[1].Intro != "低位来源胜出" {
 		t.Fatalf("intros[1] = %+v, want the lowest source_id to win the language", rec.Intros[1])
 	}
-	// The registry spells this source "erogamespace"; the public wire must
-	// always carry the site's real spelling.
 	if rec.Intros[1].Source != "erogamescape" {
 		t.Fatalf("intro source = %q, want the PUBLIC source key", rec.Intros[1].Source)
 	}
 }
 
-// TestScreenshotMetaEnrichment closes the A2-1a carry-over: screenshots carry
-// width/height/thumbhash from the same batched image_service lookup covers use,
-// and degrade gracefully — unknown hash, and the lookup unwired entirely.
 func TestScreenshotMetaEnrichment(t *testing.T) {
 	cleanTables(t)
 	cleanTaxonomyTables(t)
@@ -461,7 +395,6 @@ func TestScreenshotMetaEnrichment(t *testing.T) {
 		}
 	}
 
-	// Enrichment unwired: the URLs still render, the three keys stay zero.
 	bare := newPublicSvcCDN()
 	rec, found, err := bare.WorkDetail(ctx, w.ID, PublicInclude{}, false, 0)
 	if err != nil || !found {
@@ -479,7 +412,6 @@ func TestScreenshotMetaEnrichment(t *testing.T) {
 		}
 	}
 
-	// Wired: the known hash lights up, the unknown one degrades to skeleton.
 	svc := newPublicSvcCDN().WithImageMeta(stubMeta(map[string]ImageMeta{
 		known: {Width: 1280, Height: 720, Thumbhash: "shot-hash"},
 	}))
@@ -495,9 +427,6 @@ func TestScreenshotMetaEnrichment(t *testing.T) {
 	}
 }
 
-// TestWorkMediaMetaBatchesCoversAndScreenshots pins that the detail face makes
-// ONE image_service call for the whole record — covers and screenshots share
-// the batch, never a round-trip each.
 func TestWorkMediaMetaBatchesCoversAndScreenshots(t *testing.T) {
 	cleanTables(t)
 	cleanTaxonomyTables(t)

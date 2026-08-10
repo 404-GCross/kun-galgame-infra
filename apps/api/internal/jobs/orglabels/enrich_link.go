@@ -11,12 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Link facet (refs/proj/83 裁定3/6): NON-IDENTITY external_ref rows
-// (link_kind=related) on the anchored label. EG contributes official site /
-// twitter / cien; Bangumi contributes official site / twitter parsed from the
-// infobox. external_id is a normalized URL or handle so protocol- and
-// trailing-slash-only differences dedup.
-
 const (
 	ruleEGOfficial  = "rule:eg-official-site"
 	ruleEGTwitter   = "rule:eg-twitter"
@@ -32,7 +26,6 @@ type linkPlan struct {
 	rule       string
 }
 
-// enrichLink writes the EG + Bangumi web-presence links onto anchored labels.
 func enrichLink(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats, error) {
 	var st EnrichStats
 	var plans []linkPlan
@@ -70,7 +63,6 @@ func enrichLink(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats, 
 		}
 	}
 
-	// Bangumi infobox website / twitter keys.
 	bgmLabels, err := anchoredLabels(db, sourceBangumi)
 	if err != nil {
 		return st, err
@@ -105,7 +97,6 @@ func enrichLink(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats, 
 		}
 	}
 
-	// Collect (dedup identical plans — a brand may repeat a link) then batch.
 	seen := make(map[string]bool, len(plans))
 	var refs []model.CatalogExternalRef
 	for _, p := range plans {
@@ -138,8 +129,6 @@ func planKey(p linkPlan) string {
 	return strconv.FormatInt(p.labelID, 10) + "|" + strconv.Itoa(int(p.source)) + "|" + p.externalID
 }
 
-// ── BGM infobox key classification ──────────────────────────────────────────
-
 type bgmKeyClass int
 
 const (
@@ -154,8 +143,6 @@ var (
 	reTwitterKey = regexp.MustCompile(`(?i)twitter|^x\b|x\s*\(twitter\)|x\(twitter\)`)
 )
 
-// classifyBGMKey buckets an infobox key. Website keys exclude store/social
-// aliases (weibo/blog/steam/dlsite/…) that also carry a URL.
 func classifyBGMKey(key string) bgmKeyClass {
 	k := strings.TrimSpace(key)
 	if reWebExclude.MatchString(k) {
@@ -173,8 +160,6 @@ func classifyBGMKey(key string) bgmKeyClass {
 	return bgmKeyNone
 }
 
-// ── normalizers ─────────────────────────────────────────────────────────────
-
 var (
 	reArchiveWrap = regexp.MustCompile(`(?i)web\.archive\.org/web/[^/]+/(https?://.+)$`)
 	reScheme      = regexp.MustCompile(`(?i)^(https?:)?//`)
@@ -183,8 +168,6 @@ var (
 	reDigits      = regexp.MustCompile(`^[0-9]+$`)
 )
 
-// normalizeURL strips the archive wrapper, the scheme and any trailing slash so
-// only protocol / trailing-slash differences dedup. Requires a dotted host.
 func normalizeURL(u string) (string, bool) {
 	u = strings.TrimSpace(u)
 	if u == "" {
@@ -202,7 +185,6 @@ func normalizeURL(u string) (string, bool) {
 	return u, true
 }
 
-// normalizeTwitter reduces a handle or profile URL to the bare lowercase handle.
 func normalizeTwitter(v string) (string, bool) {
 	v = strings.TrimSpace(v)
 	v = reTwitterHost.ReplaceAllString(v, "")
@@ -217,7 +199,6 @@ func normalizeTwitter(v string) (string, bool) {
 	return v, true
 }
 
-// normalizeCien keeps the numeric ci-en creator id (the EG raw value).
 func normalizeCien(v string) (string, bool) {
 	v = strings.TrimSpace(v)
 	if !reDigits.MatchString(v) {

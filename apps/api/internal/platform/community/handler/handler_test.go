@@ -32,7 +32,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
 		os.Exit(0)
 	}
-	// Serialize against the sibling community test packages sharing this DB.
 	sqlDB, _ := db.DB()
 	release := dbtest.AcquireSuiteLock(sqlDB)
 	if err := migrate.Run(db); err != nil {
@@ -59,9 +58,6 @@ func cleanTables(t *testing.T) {
 	}
 }
 
-// TestSpecExport is the spec smoke: Setup with nil deps (the gen-openapi path)
-// must produce a valid OpenAPI document with the embed face operations. This is
-// exactly what cmd/gen-openapi -community serializes.
 func TestSpecExport(t *testing.T) {
 	api := Setup(fiber.New(), nil, nil, nil, nil, nil, nil, nil)
 	b, err := api.OpenAPI().YAML()
@@ -89,15 +85,10 @@ func TestSpecExport(t *testing.T) {
 	}
 }
 
-// clientCtx returns a context carrying an authenticated client bound to a site,
-// as S2SBridge would set it — so the handler methods can be exercised directly
-// without booting the Fiber/auth stack.
 func clientCtx(site string) context.Context {
 	return context.WithValue(context.Background(), ctxKeyClient, &siteModel.OAuthClient{ID: site, CatalogSite: site})
 }
 
-// TestHandlerFlow exercises the handler → service → DB path and the envelope
-// mapping for the core embed capabilities.
 func TestHandlerFlow(t *testing.T) {
 	cleanTables(t)
 	sink := service.NoopSink{}
@@ -112,7 +103,6 @@ func TestHandlerFlow(t *testing.T) {
 	}
 	ctx := clientCtx("letmoe")
 
-	// Open a topic.
 	topicOut, err := s.openTopic(ctx, &openTopicInput{Body: dto.OpenTopicRequest{
 		AuthorID: 100, AnchorID: "1", Title: "hello", ContentRating: 0, Body: "opening **post**",
 	}})
@@ -124,7 +114,6 @@ func TestHandlerFlow(t *testing.T) {
 	}
 	threadID := topicOut.Body.Data.Thread.ID
 
-	// Reply, then read the thread back with its posts.
 	if _, err := s.reply(ctx, &replyInput{ID: threadID, Body: dto.ReplyRequest{AuthorID: 200, Body: "a reply"}}); err != nil {
 		t.Fatalf("reply: %v", err)
 	}
@@ -135,12 +124,10 @@ func TestHandlerFlow(t *testing.T) {
 	if detail.Body.Data.Thread.PostsCount != 2 || len(detail.Body.Data.Posts) != 2 {
 		t.Fatalf("thread should have 2 posts: count=%d len=%d", detail.Body.Data.Thread.PostsCount, len(detail.Body.Data.Posts))
 	}
-	// Cooked HTML is what the embed renders; raw markdown is preserved.
 	if !strings.Contains(detail.Body.Data.Posts[0].ContentHTML, "<strong>post</strong>") {
 		t.Fatalf("opening post should be cooked: %s", detail.Body.Data.Posts[0].ContentHTML)
 	}
 
-	// Comments resolve is idempotent per anchor.
 	c1, err := s.resolveComments(ctx, &resolveCommentsInput{Body: dto.CommentsResolveRequest{AnchorKind: 1, AnchorID: "g9"}})
 	if err != nil {
 		t.Fatalf("resolveComments: %v", err)
@@ -150,7 +137,6 @@ func TestHandlerFlow(t *testing.T) {
 		t.Fatalf("comments resolve not idempotent: %d vs %d", c1.Body.Data.Thread.ID, c2.Body.Data.Thread.ID)
 	}
 
-	// The topic shows up in the per-site list.
 	list, err := s.listThreads(ctx, &listThreadsInput{Kind: 0})
 	if err != nil {
 		t.Fatalf("listThreads: %v", err)
@@ -159,14 +145,11 @@ func TestHandlerFlow(t *testing.T) {
 		t.Fatalf("expected the topic in the site list, got %+v", list.Body.Data.Threads)
 	}
 
-	// A client with no site binding is refused on a write.
 	if _, err := s.openTopic(context.Background(), &openTopicInput{Body: dto.OpenTopicRequest{AuthorID: 1, AnchorID: "1", Body: "x"}}); err == nil {
 		t.Fatal("unbound client should be refused")
 	}
 }
 
-// TestHandlerGapfill exercises the step-05c ops through the handler → service →
-// DB path: author edit, author self-delete, and the feedback anchor-filter read.
 func TestHandlerGapfill(t *testing.T) {
 	cleanTables(t)
 	sink := service.NoopSink{}
@@ -178,14 +161,11 @@ func TestHandlerGapfill(t *testing.T) {
 	}
 	ctx := clientCtx("letmoe")
 
-	// Open a topic, reply as an established author.
 	topicOut, err := s.openTopic(ctx, &openTopicInput{Body: dto.OpenTopicRequest{AuthorID: 100, AnchorID: "1", Title: "t", Body: "opening"}})
 	if err != nil {
 		t.Fatalf("openTopic: %v", err)
 	}
 	threadID := topicOut.Body.Data.Thread.ID
-	// Establish the reply author (TL1, no holds) so the reply is visible and thus
-	// editable — a fresh author's first posts are held (default hold budget 2).
 	if err := testDB.Exec(
 		`INSERT INTO community_trust (user_id, level, first_posts_held_remaining) VALUES (200, 1, 0)
 		 ON CONFLICT (user_id) DO UPDATE SET level = 1, first_posts_held_remaining = 0`,
@@ -198,7 +178,6 @@ func TestHandlerGapfill(t *testing.T) {
 	}
 	postID := replyOut.Body.Data.Post.ID
 
-	// Author edits it → cooked HTML updated, edited_at present.
 	editOut, err := s.editPost(ctx, &editPostInput{ID: postID, Body: dto.EditPostRequest{AuthorID: 200, Body: "edited **body**"}})
 	if err != nil {
 		t.Fatalf("editPost: %v", err)
@@ -207,23 +186,18 @@ func TestHandlerGapfill(t *testing.T) {
 		t.Fatalf("edit not applied: %+v", editOut.Body.Data.Post)
 	}
 
-	// A non-author edit is refused (envelope error).
 	if _, err := s.editPost(ctx, &editPostInput{ID: postID, Body: dto.EditPostRequest{AuthorID: 999, Body: "hijack"}}); err == nil {
 		t.Fatal("a non-author edit should be refused")
 	}
 
-	// Author self-deletes it via the query-param actor.
 	if _, err := s.deletePost(ctx, &deletePostInput{ID: postID, AuthorID: 200}); err != nil {
 		t.Fatalf("deletePost: %v", err)
 	}
 	detail, _ := s.getThread(ctx, &threadPostsInput{ID: threadID})
-	// Both posts still listed (tombstone preserved, no collapse); the reply is now
-	// tombstoned.
 	if detail.Body.Data.Thread.PostsCount != 2 {
 		t.Fatalf("posts_count must not decrement on self-delete: %d", detail.Body.Data.Thread.PostsCount)
 	}
 
-	// Feedback anchor-filter read: two anchors, filter returns only the match.
 	if _, err := s.openFeedback(ctx, &openFeedbackInput{Body: dto.OpenFeedbackRequest{AuthorID: 100, AnchorKind: 2, AnchorID: "r1", Title: "fb1", Body: "x"}}); err != nil {
 		t.Fatalf("openFeedback r1: %v", err)
 	}
@@ -243,9 +217,6 @@ func TestHandlerGapfill(t *testing.T) {
 	}
 }
 
-// TestListThreads_OpeningStatusProjected verifies the finding-fix wire: the
-// per-site thread list projects each thread's opening-post status + author so
-// an embed can hide a held/deleted opening post that must not leak its title.
 func TestListThreads_OpeningStatusProjected(t *testing.T) {
 	cleanTables(t)
 	sink := service.NoopSink{}
@@ -256,8 +227,6 @@ func TestListThreads_OpeningStatusProjected(t *testing.T) {
 	}
 	ctx := clientCtx("letmoe")
 
-	// Establish TL1 authors (no hold budget) so their opening posts are visible —
-	// a fresh author's first post is held.
 	if err := testDB.Exec(
 		`INSERT INTO community_trust (user_id, level, first_posts_held_remaining) VALUES (100,1,0),(300,1,0)
 		 ON CONFLICT (user_id) DO UPDATE SET level = 1, first_posts_held_remaining = 0`,
@@ -271,9 +240,6 @@ func TestListThreads_OpeningStatusProjected(t *testing.T) {
 	}
 	visID := visOut.Body.Data.Thread.ID
 
-	// An author on hold opens a topic → the opening post is held. Wave 07 retired
-	// the blanket newcomer hold, so the budget is stated rather than inherited;
-	// what this test projects is the STATUS, not who gets held.
 	if err := testDB.Exec(
 		`INSERT INTO community_trust (user_id, level, first_posts_held_remaining) VALUES (700, 0, 2)
 		 ON CONFLICT (user_id) DO UPDATE SET level = 0, first_posts_held_remaining = 2`,
@@ -289,7 +255,6 @@ func TestListThreads_OpeningStatusProjected(t *testing.T) {
 		t.Fatalf("newcomer opening should be held: %d", heldOut.Body.Data.Post.Status)
 	}
 
-	// A TL1 author opens then self-deletes the opening post → tombstone.
 	delOut, err := s.openTopic(ctx, &openTopicInput{Body: dto.OpenTopicRequest{AuthorID: 300, AnchorID: "b1", Title: "del", Body: "z"}})
 	if err != nil {
 		t.Fatalf("openTopic del: %v", err)

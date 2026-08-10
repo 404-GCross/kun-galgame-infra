@@ -1,40 +1,3 @@
-// ingest-trait-zh gives catalog_character_trait its Simplified-Chinese names
-// (wave 176). The 3,327-row VNDB trait vocabulary is English-only, so every
-// character page renders "Ahoge" and "Kuudere" raw; this tool fills name_zh
-// from two sources, in strict priority order:
-//
-//   - CURATED (name_zh_provenance=0): the community dictionary below, ~2.6k of
-//     the 3,094 distinct names, hand-written by galgame readers.
-//   - MACHINE (name_zh_provenance=1): an LLM proposal for the residue, emitted
-//     as a review CSV and written back only after a human has read it.
-//
-// Attribution — the curated dictionary is not ours:
-//
-//	VNDBTranslatorLib v5.0.0 · author aotmd · MIT licence
-//	https://greasyfork.org/ (userscript; the trait blocks additionally credit
-//	the contributor https://greasyfork.org/zh-CN/users/1210764-railguns)
-//
-// The script is a Tampermonkey userscript translating the VNDB web UI. Only its
-// (标签与特征) rule's CHARACTER-TRAIT sections are read — the VN-tag sections of
-// the same map are a different vocabulary (--include-tag-vocab, off by default)
-// — and every key must additionally exist in catalog_character_trait.name, so a
-// UI string can never be mistaken for a trait name.
-//
-//	# dry: parse + match + per-decision counts + samples (no writes)
-//	go run ./cmd/ingest-trait-zh --dsn "$DSN" --script /path/vndbtranslatorlib.js
-//
-//	# write the curated renderings (provenance 0)
-//	go run ./cmd/ingest-trait-zh --dsn "$DSN" --script /path/vndbtranslatorlib.js --apply
-//
-//	# residue lane: LLM-propose the names still empty → review sheet, NO writes
-//	go run ./cmd/ingest-trait-zh --dsn "$DSN" --mt --out /tmp/trait-zh-review.csv
-//
-//	# write back the REVIEWED sheet (provenance 1)
-//	go run ./cmd/ingest-trait-zh --dsn "$DSN" --apply-csv /tmp/trait-zh-review.csv
-//
-// --dsn is ALWAYS explicit (a bare run cannot touch a live database), and the
-// gateway config comes from flags or env (KUN_INTRO_MT_LLM_BASE/_TOKEN/_MODEL,
-// falling back to KUN_AI_UPSTREAM_BASE_URL/_TOKEN/_MODEL) — never hardcoded.
 package main
 
 import (
@@ -109,7 +72,6 @@ func main() {
 	}
 }
 
-// source yields the proposed renderings plus a label for the report.
 type source struct {
 	label string
 	load  func() ([]pair, error)
@@ -123,9 +85,6 @@ func csvSource(path string) source {
 	return source{label: "reviewed CSV " + path, load: func() ([]pair, error) { return readReviewCSV(path) }}
 }
 
-// runIngest is the shared plan/report/write path of both write lanes: the only
-// thing that differs is where the pairs came from and which provenance they
-// carry. Dry is the default everywhere, and the guard lives in plan().
 func runIngest(ctx context.Context, db *gorm.DB, src source, prov int16, apply bool, samples int) error {
 	pairs, err := src.load()
 	if err != nil {
@@ -157,9 +116,6 @@ func runIngest(ctx context.Context, db *gorm.DB, src source, prov int16, apply b
 	return nil
 }
 
-// runMT proposes a Chinese name for every trait still without one and writes
-// the review sheet. It deliberately has no --apply: machine output enters the
-// database only through --apply-csv, after review.
 func runMT(ctx context.Context, db *gorm.DB, tr translator, out string, limit int, delay time.Duration) error {
 	cands, err := loadMTCandidates(ctx, db, limit)
 	if err != nil {
@@ -176,7 +132,7 @@ func runMT(ctx context.Context, db *gorm.DB, tr translator, out string, limit in
 		if err != nil {
 			errs++
 			slog.Warn("translate failed", "trait", c.Name, "error", err)
-			zh = "" // an empty proposal is a reviewer prompt, not a silent skip
+			zh = ""
 		}
 		rows = append(rows, csvRow{
 			TraitID: c.ID, VndbTID: c.VndbTID, Name: c.Name, Group: c.GroupName,
@@ -193,8 +149,6 @@ func runMT(ctx context.Context, db *gorm.DB, tr translator, out string, limit in
 	return nil
 }
 
-// withoutZhAfter counts the vocabulary rows that would STILL have no Chinese
-// name once this run's writes land — the number the residue lane has to close.
 func withoutZhAfter(rows []traitRow, writes []plannedWrite) int {
 	filled := map[int64]bool{}
 	for _, w := range writes {

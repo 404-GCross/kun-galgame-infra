@@ -8,18 +8,8 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// The submission mint (wave 162). What is worth pinning is not that the row
-// appears — it is that ONE transaction produced the row, its content, its
-// curated release, its registry revision and its birth event, and that a
-// refusal anywhere leaves none of them.
-
-// submitSite is the post-re-site tenant key; TestSubmitWorkOnTheFormerMirrorSite
-// covers the legacy `galgame_wiki` spelling separately.
 const submitSite = "kungal"
 
-// submitFields carries an identity link on purpose: it is both content AND, on
-// the registry-issued path, the idempotency key. submitFieldsNoAnchor is the
-// variant that has neither.
 func submitFields(name string) map[string]any {
 	return map[string]any{
 		editspec.FieldWorkDisplayName:   name,
@@ -36,8 +26,6 @@ func submitFields(name string) map[string]any {
 	}
 }
 
-// submitFieldsNoAnchor is a submission of a game nothing upstream knows yet —
-// the case with no natural idempotency key at all.
 func submitFieldsNoAnchor(name string) map[string]any {
 	f := submitFields(name)
 	delete(f, editspec.FieldWorkLinks)
@@ -74,13 +62,9 @@ func TestSubmitWorkMintsPendingClaim(t *testing.T) {
 	if work.ClaimState == nil || *work.ClaimState != model.ClaimStatePending {
 		t.Fatalf("claim_state: %v", work.ClaimState)
 	}
-	// The registry row's own status is live — that axis says "this identity is
-	// real", while pending says "the submission is unreviewed". Conflating them
-	// is what the wiki's single status column did.
 	if work.Status != model.WorkStatusLive {
 		t.Fatalf("registry status: %d", work.Status)
 	}
-	// The scalar payload landed through the field table, not a second writer.
 	if work.DisplayName != "新作ゲーム" || work.OLang != "ja" || work.ContentRating != model.ContentRatingR18 {
 		t.Fatalf("scalars: %+v", work)
 	}
@@ -95,8 +79,6 @@ func TestSubmitWorkMintsPendingClaim(t *testing.T) {
 	if intros != 1 {
 		t.Fatalf("intros: %d", intros)
 	}
-	// A submitted identity URL is a CANDIDATE, never an anchor: a mistyped id
-	// must not hijack another work on the spot (work_links.go's two grades).
 	var linkKind int16
 	if err := testDB.Raw(`SELECT link_kind FROM catalog_external_ref
 	                      WHERE entity_id = ? AND entity_type = ? AND matched_by = 'curated'`,
@@ -107,8 +89,6 @@ func TestSubmitWorkMintsPendingClaim(t *testing.T) {
 		t.Fatalf("submitted vndb link must be a candidate, got link_kind %d", linkKind)
 	}
 
-	// The date is a curated release row with a nullable tail for precision —
-	// month known, day not.
 	var rel model.CatalogRelease
 	if err := testDB.First(&rel, res.ReleaseID).Error; err != nil {
 		t.Fatal(err)
@@ -118,7 +98,6 @@ func TestSubmitWorkMintsPendingClaim(t *testing.T) {
 		t.Fatalf("release: %+v", rel)
 	}
 
-	// The registry's machine snapshot log records the birth, same as ClaimWork.
 	var revisions int64
 	testDB.Raw(`SELECT count(*) FROM catalog_revision WHERE entity_type = ? AND entity_id = ? AND action = ?`,
 		model.EntityTypeWork, res.WorkID, model.RevisionActionCreated).Scan(&revisions)
@@ -126,8 +105,6 @@ func TestSubmitWorkMintsPendingClaim(t *testing.T) {
 		t.Fatalf("registry revisions: %d", revisions)
 	}
 
-	// And exactly one claim event: the birth, with a NULL from_state, landing
-	// straight on pending.
 	events, err := s.EventsSince(ctx, 0, 10, "", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -142,8 +119,6 @@ func TestSubmitWorkMintsPendingClaim(t *testing.T) {
 	}
 }
 
-// TestSubmitWorkIsIdempotent: a retrying wizard must never mint a second
-// identity for the same product id (the 147/148 duplicate-label shape).
 func TestSubmitWorkIsIdempotent(t *testing.T) {
 	s := newLifecycle(t)
 	ctx := t.Context()
@@ -162,8 +137,6 @@ func TestSubmitWorkIsIdempotent(t *testing.T) {
 	if exists.WorkID != first.WorkID || exists.CurrentState != model.ClaimStateKeyPending {
 		t.Fatalf("conflict echo: %+v", exists)
 	}
-	// Approving it and submitting again still conflicts — and now echoes the
-	// state the wizard should render instead of a retry.
 	act(t, s, first.WorkID, ClaimActionApprove, ClaimActionParams{ActorUID: 99})
 	_, err = s.SubmitWork(ctx, params)
 	if !errors.As(err, &exists) || exists.CurrentState != model.ClaimStateKeyLive {
@@ -177,17 +150,6 @@ func TestSubmitWorkIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestSubmitWorkOnTheFormerMirrorSite: the mint used to be refused outright on
-// the site the duty chain mirrored, because five of its facets had a second
-// persistent writer that would have reaped them (wave 162 §2-5). Wave 161
-// retired those steps, so the SAME payload that was a 409 now lands whole —
-// this is the pinning that the gate's removal actually opened the lane, rather
-// than merely deleting the error.
-// TestSubmitWorkIssuesTheIdentity is the charter §6.P4-verdict 1 path: a wizard
-// that has nothing to name the work by omits product_work_id and the registry
-// issues one. The claim must be complete the moment the row exists — a work
-// with a site and no product id projects as unclaimed, which is a state no
-// reader has a name for.
 func TestSubmitWorkIssuesTheIdentity(t *testing.T) {
 	s := newLifecycle(t)
 	ctx := t.Context()
@@ -212,14 +174,10 @@ func TestSubmitWorkIssuesTheIdentity(t *testing.T) {
 	if work.ProductWorkID == nil || *work.ProductWorkID != res.WorkID {
 		t.Fatalf("stored claim: %+v", work.ProductWorkID)
 	}
-	// The row projects as a CLAIMED, pending work — claimed_by is (site,
-	// product_work_id) together, so this is the assertion that the adoption
-	// actually took effect on the contract and not just on a column.
 	if got := model.ClaimStateKey(work.Site, work.ProductWorkID, work.ClaimState); got != model.ClaimStateKeyPending {
 		t.Fatalf("projection: %s", got)
 	}
 
-	// The birth event exists exactly as on the supplied-id path.
 	events, err := s.EventsSince(ctx, 0, 10, "", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -228,12 +186,9 @@ func TestSubmitWorkIssuesTheIdentity(t *testing.T) {
 		events[0].ToState != model.ClaimStateKeyPending || events[0].WorkID != res.WorkID {
 		t.Fatalf("birth event: %+v", events)
 	}
-	// And the feed's identity snapshot carries the issued id, so a consumer
-	// routes to the product row it is about to create.
 	if events[0].ProductWorkID == nil || *events[0].ProductWorkID != res.WorkID {
 		t.Fatalf("feed snapshot: %+v", events[0])
 	}
-	// It reaches the review queue like any other submission.
 	items, total, err := s.PendingClaims(ctx, submitSite, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -243,9 +198,6 @@ func TestSubmitWorkIssuesTheIdentity(t *testing.T) {
 	}
 }
 
-// TestSubmitWorkIssuedIdempotency pins the two halves of the idempotency
-// answer on the registry-issued path: an identity anchor in the payload IS the
-// key, and its absence is an honest gap rather than a silent one.
 func TestSubmitWorkIssuedIdempotency(t *testing.T) {
 	s := newLifecycle(t)
 	ctx := t.Context()
@@ -255,7 +207,6 @@ func TestSubmitWorkIssuedIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	// A retry carries the same VNDB link and is recognized by it.
 	_, err = s.SubmitWork(ctx, anchored)
 	var exists *ClaimExistsError
 	if !errors.As(err, &exists) {
@@ -269,35 +220,24 @@ func TestSubmitWorkIssuedIdempotency(t *testing.T) {
 		t.Fatalf("the conflict must carry the issued product id: %+v", exists)
 	}
 
-	// A DIFFERENT user submitting the same game for the same site hits the same
-	// rule — which is the answer that page wants anyway (point them at the
-	// entry that exists instead of minting a rival identity for it).
 	other := anchored
 	other.ActorUID = 8
 	if _, err := s.SubmitWork(ctx, other); !errors.As(err, &exists) {
 		t.Fatalf("second submitter: %v", err)
 	}
 
-	// The anchor is scoped to the caller's own tenant: another site claiming the
-	// same VNDB id is not a duplicate, the registry is multi-tenant.
 	foreign := anchored
 	foreign.Site = "moyu"
 	if _, err := s.SubmitWork(ctx, foreign); err != nil {
 		t.Fatalf("another tenant must still be able to submit: %v", err)
 	}
 
-	// A supplied product id keeps the exact key and is NOT diverted by the
-	// anchor — behaviour unchanged for the stub flows.
 	supplied := anchored
 	supplied.ProductWorkID = 90777
 	if _, err := s.SubmitWork(ctx, supplied); err != nil {
 		t.Fatalf("a supplied id must not be diverted by the anchor: %v", err)
 	}
 
-	// And the documented gap: no id AND no identity anchor = no key to match
-	// on, so a retry mints a second work. Pinned so the contract cannot change
-	// by accident — if this ever starts failing, the endpoint gained an
-	// idempotency key and its documentation must say so.
 	bare := SubmitWorkParams{Site: submitSite, ActorUID: 7, Fields: submitFieldsNoAnchor("锚なし")}
 	a, err := s.SubmitWork(ctx, bare)
 	if err != nil {
@@ -336,8 +276,6 @@ func TestSubmitWorkOnTheFormerMirrorSite(t *testing.T) {
 	}
 }
 
-// TestSubmitWorkRejectsPayloads pins the closed payload vocabulary and the
-// validation the field table already owns.
 func TestSubmitWorkRejectsPayloads(t *testing.T) {
 	s := newLifecycle(t)
 	ctx := t.Context()
@@ -351,8 +289,6 @@ func TestSubmitWorkRejectsPayloads(t *testing.T) {
 		wantErr error
 	}{
 		{"no site", func(p *SubmitWorkParams) { p.Site = "" }, ErrSubmitTargetRequired},
-		// A missing product id is now LEGAL (the registry issues one); a
-		// negative one is still a malformed request.
 		{"negative product id", func(p *SubmitWorkParams) { p.ProductWorkID = -1 }, ErrSubmitTargetRequired},
 		{"no display name", func(p *SubmitWorkParams) {
 			delete(p.Fields, editspec.FieldWorkDisplayName)
@@ -374,8 +310,6 @@ func TestSubmitWorkRejectsPayloads(t *testing.T) {
 		})
 	}
 
-	// Covers are in the matrix but NOT submittable: the bytes have to exist
-	// before a facet can reference them.
 	t.Run("covers are not submittable", func(t *testing.T) {
 		p := base()
 		p.Fields[editspec.FieldWorkCovers] = []any{}
@@ -403,7 +337,6 @@ func TestSubmitWorkRejectsPayloads(t *testing.T) {
 		}
 	})
 
-	// None of the refusals minted anything.
 	var works int64
 	testDB.Raw(`SELECT count(*) FROM catalog_work WHERE product_work_id = ?`, 90004).Scan(&works)
 	if works != 0 {
@@ -411,9 +344,6 @@ func TestSubmitWorkRejectsPayloads(t *testing.T) {
 	}
 }
 
-// TestSubmitWorkFeedsTheReviewQueue closes the loop the endpoint exists for:
-// a submission is immediately visible to the staff queue and can be approved
-// through the ordinary state machine, with no special case for "born pending".
 func TestSubmitWorkFeedsTheReviewQueue(t *testing.T) {
 	s := newLifecycle(t)
 	ctx := t.Context()

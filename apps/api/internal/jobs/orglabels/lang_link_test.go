@@ -16,11 +16,11 @@ func TestNormalizeURL(t *testing.T) {
 		{"http://www.illusion.jp/", "www.illusion.jp", true},
 		{"https://www.eukleia.co.jp/eushully/", "www.eukleia.co.jp/eushully", true},
 		{"https://web.archive.org/web/20130208192839/http://www.ivory.co.jp/", "www.ivory.co.jp", true},
-		{"http://a.com", "a.com", true},   // dedup-equal to below
-		{"https://a.com/", "a.com", true}, // …same normalized id
+		{"http://a.com", "a.com", true},
+		{"https://a.com/", "a.com", true},
 		{"", "", false},
-		{"notaurl", "", false},       // no dot
-		{"has space.com", "", false}, // whitespace rejected
+		{"notaurl", "", false},
+		{"has space.com", "", false},
 	}
 	for _, c := range cases {
 		got, ok := normalizeURL(c.in)
@@ -68,9 +68,9 @@ func TestClassifyBGMKey(t *testing.T) {
 	assert.Equal(t, bgmKeyWebsite, classifyBGMKey("主页"))
 	assert.Equal(t, bgmKeyTwitter, classifyBGMKey("Twitter"))
 	assert.Equal(t, bgmKeyTwitter, classifyBGMKey("X (Twitter)"))
-	assert.Equal(t, bgmKeyNone, classifyBGMKey("官方微博"))     // weibo excluded
-	assert.Equal(t, bgmKeyNone, classifyBGMKey("DLsite官网")) // store excluded
-	assert.Equal(t, bgmKeyNone, classifyBGMKey("Steam主页"))  // store excluded
+	assert.Equal(t, bgmKeyNone, classifyBGMKey("官方微博"))
+	assert.Equal(t, bgmKeyNone, classifyBGMKey("DLsite官网"))
+	assert.Equal(t, bgmKeyNone, classifyBGMKey("Steam主页"))
 	assert.Equal(t, bgmKeyNone, classifyBGMKey("别名"))
 }
 

@@ -1,7 +1,3 @@
-// Package handler implements the HTTP surface of the image service:
-// - POST /image/upload
-// - GET  /image/:hash
-// - POST /image/reference-ping
 package handler
 
 import (
@@ -22,7 +18,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Handler bundles the image service handlers.
 type Handler struct {
 	svc       *service.Service
 	quota     *quota.Checker
@@ -33,10 +28,6 @@ func New(svc *service.Service, q *quota.Checker, statsRepo *repository.StatsRepo
 	return &Handler{svc: svc, quota: q, statsRepo: statsRepo}
 }
 
-// ---- POST /image/upload ----
-
-// Upload handles the multipart upload flow. Auth middleware has already
-// validated the client and written OAuthClient + SiteKey to Locals.
 func (h *Handler) Upload(c fiber.Ctx) error {
 	client := imgMW.ClientFromCtx(c)
 	site := imgMW.SiteKeyFromCtx(c)
@@ -59,13 +50,10 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrImageBadRequest)
 	}
 
-	// Per-site single-file size limit enforced before we read the body.
 	if client.ImageMaxFileSize > 0 && fileHeader.Size > client.ImageMaxFileSize {
 		return response.Error(c, fiber.StatusRequestEntityTooLarge, errors.ErrImageFileTooLarge, errors.GetMessage(errors.ErrImageFileTooLarge))
 	}
 
-	// Read the multipart body into memory. Bounded by ImageMaxFileSize
-	// check above (and Fiber's global body limit — configured at app level).
 	fh, err := fileHeader.Open()
 	if err != nil {
 		return response.InternalError(c, errors.ErrImageBadRequest)
@@ -76,7 +64,6 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrImageBadRequest)
 	}
 
-	// Quota reservation. Both count and bytes must fit.
 	if h.quota != nil {
 		usage, qerr := h.quota.Reserve(c.Context(), site, int64(len(body)), client.ImageQuotaDaily, client.ImageQuotaBytesDaily)
 		if qerr != nil {
@@ -99,13 +86,9 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 				slog.Error("quota reserve", "err", qerr)
 				return response.InternalError(c, errors.ErrImageStoreFailed)
 			}
-			// Redis not configured: skip quota in dev.
 		}
 	}
 
-	// Resolve uploader identity. If the JWT path was used, the sub comes
-	// from the JWT claims; for backend Basic path, callers may pass an
-	// explicit uploader_sub form field for audit purposes.
 	uploaderSub := imgMW.UserSubFromCtx(c)
 	if uploaderSub == "" {
 		uploaderSub = c.FormValue("uploader_sub")
@@ -117,9 +100,7 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 		UploaderSub:    uploaderSub,
 		UploaderClient: client.ID,
 		UploaderIP:     c.IP(),
-		// Per-site CDN base so the response URLs are under the client's own
-		// domain (e.g. img.letmoe.com) instead of the global galgame CDN.
-		CDNBase: client.ImageCDNBase,
+		CDNBase:        client.ImageCDNBase,
 	}
 	result, err := h.svc.Upload(c.Context(), req)
 	if err != nil {
@@ -156,17 +137,6 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 	return response.Success(c, result)
 }
 
-// ---- GET /image/:hash ----
-
-// ---- DELETE /image/:hash ----
-
-// SoftDelete retires the caller's site's use of an image: its usage rows go
-// away, and the image itself is only marked deleted (then GC'd after the TTL)
-// once no other site still references the hash. Site-scoped on the WRITE, not
-// just the permission check, so under content dedup one client deleting a
-// shared hash cannot take the bytes away from every other referrer. Used by
-// the OAuth backend to GC a user's avatar on anonymization. For irreversible
-// compliance deletes use the admin force path.
 func (h *Handler) SoftDelete(c fiber.Ctx) error {
 	site := imgMW.SiteKeyFromCtx(c)
 	if site == "" {
@@ -183,17 +153,11 @@ func (h *Handler) SoftDelete(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrImageStoreFailed)
 	}
 	if !ok {
-		// Either the hash doesn't exist or this site never used it — same
-		// response either way (don't leak existence across sites).
 		return response.NotFound(c, errors.ErrImageNotFound)
 	}
 	return response.Success(c, fiber.Map{"hash": hash, "soft_deleted": true})
 }
 
-// Meta returns the full metadata for a hash. The `sites` usage list is scoped
-// to the CALLER's own site so one image client can't probe which OTHER sites
-// reference a hash (cross-site metadata leak); the admin list endpoint exposes
-// full usage separately.
 func (h *Handler) Meta(c fiber.Ctx) error {
 	hash := c.Params("hash")
 	if len(hash) != 64 {
@@ -209,7 +173,6 @@ func (h *Handler) Meta(c fiber.Ctx) error {
 		return response.NotFound(c, errors.ErrImageNotFound)
 	}
 
-	// Cross-site scope: only reveal whether the caller's OWN site used the hash.
 	callerSite := imgMW.SiteKeyFromCtx(c)
 	scoped := sites[:0]
 	for _, s := range sites {
@@ -219,9 +182,6 @@ func (h *Handler) Meta(c fiber.Ctx) error {
 	}
 	sites = scoped
 
-	// Build URLs under the CALLER's own CDN base (per-site domain) so e.g.
-	// letmoe gets img.letmoe.com URLs, not the global galgame CDN. Empty →
-	// global default.
 	clientBase := ""
 	if cl := imgMW.ClientFromCtx(c); cl != nil {
 		clientBase = cl.ImageCDNBase
@@ -248,21 +208,10 @@ func (h *Handler) Meta(c fiber.Ctx) error {
 	})
 }
 
-// ---- POST /image/meta-batch ----
-
-// metaBatchRequest is accepted as JSON.
 type metaBatchRequest struct {
 	Hashes []string `json:"hashes"`
 }
 
-// MetaBatch returns {hash: {width,height,thumbhash}} for the given hashes —
-// the batch form of GET /image/:hash's intrinsic metadata, so a consumer can
-// fetch placeholders + dimensions for a whole page of images in one roundtrip
-// (eliminating per-image lookups and layout shift). Metadata is immutable per
-// hash, so callers may cache it forever. Authenticated like every /image
-// route; intentionally NOT site-scoped — dimensions and the thumbhash are not
-// sensitive (GET /image/:hash already returns width/height regardless of site).
-// Unknown hashes are simply absent from the result.
 func (h *Handler) MetaBatch(c fiber.Ctx) error {
 	var req metaBatchRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -285,14 +234,10 @@ func (h *Handler) MetaBatch(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"metas": metas})
 }
 
-// ---- POST /image/reference-ping ----
-
-// referencePingRequest is accepted as JSON.
 type referencePingRequest struct {
 	Hashes []string `json:"hashes"`
 }
 
-// Ping refreshes last_referenced_at for a batch of hashes.
 func (h *Handler) Ping(c fiber.Ctx) error {
 	var req referencePingRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -304,7 +249,6 @@ func (h *Handler) Ping(c fiber.Ctx) error {
 	if len(req.Hashes) > 1000 {
 		return response.BadRequest(c, errors.ErrImageBadRequest)
 	}
-	// Filter out obviously bad hashes.
 	cleaned := make([]string, 0, len(req.Hashes))
 	for _, h := range req.Hashes {
 		if len(h) == 64 {
@@ -323,9 +267,6 @@ func (h *Handler) Ping(c fiber.Ctx) error {
 	})
 }
 
-// ---- GET /stats ----
-
-// Stats returns aggregate counters scoped to the authenticated site.
 func (h *Handler) Stats(c fiber.Ctx) error {
 	site := imgMW.SiteKeyFromCtx(c)
 	if site == "" {
@@ -338,8 +279,6 @@ func (h *Handler) Stats(c fiber.Ctx) error {
 	}
 	return response.Success(c, res)
 }
-
-// ---- helpers ----
 
 func reviewStatusLabel(s int16) string {
 	switch s {

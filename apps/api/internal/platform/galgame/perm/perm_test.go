@@ -7,12 +7,6 @@ import (
 	"api/internal/platform/galgame/perm"
 )
 
-// goldenGrants is the authoritative role-set for every galgame permission. It
-// is derived from the pre-migration role checks with the two contract-driven
-// corrections applied (step-01 workflow §1): `ren` added to every set that
-// contained `admin` (the management-axis containment the old role checks
-// omitted), and the retired top-tier alias dropped everywhere (the IdP never
-// issues it). Any drift between the bundles and this table fails the build.
 var goldenGrants = map[authz.Permission][]string{
 	perm.PublishDirect:   {"creator", "moderator", "admin", "ren"},
 	perm.Review:          {"moderator", "admin", "ren"},
@@ -23,20 +17,13 @@ var goldenGrants = map[authz.Permission][]string{
 	perm.TaxonomyReview:  {"moderator", "admin", "ren"},
 	perm.SearchAllStates: {"moderator", "admin", "ren"},
 	perm.OwnerOverride:   {"admin", "ren"},
-	// Editing-engine keys (E2a): review follows the OwnerOverride axis,
-	// status/vndb_id follow the management (moderator+) axis.
-	perm.EditGameReview: {"admin", "ren"},
-	perm.EditGameStatus: {"moderator", "admin", "ren"},
-	perm.EditGameVNDBID: {"moderator", "admin", "ren"},
+	perm.EditGameReview:  {"admin", "ren"},
+	perm.EditGameStatus:  {"moderator", "admin", "ren"},
+	perm.EditGameVNDBID:  {"moderator", "admin", "ren"},
 }
 
-// allRoles is every role name the golden table is asserted against. It includes
-// the four grantable roles plus the implicit `user` — which, being absent from
-// the bundles, must grant nothing for every permission.
 var allRoles = []string{"user", "creator", "moderator", "admin", "ren"}
 
-// TestGoldenBundles pins the exact role → permission mapping: for every
-// permission, each role either grants it or does not, matching goldenGrants.
 func TestGoldenBundles(t *testing.T) {
 	for p, granted := range goldenGrants {
 		grantedSet := make(map[string]bool, len(granted))
@@ -53,10 +40,6 @@ func TestGoldenBundles(t *testing.T) {
 	}
 }
 
-// TestNonBundleRolesGrantNothing pins the fail-closed default: any role that is
-// not one of the four grantable bundle roles — the implicit `user`, an empty
-// string, or a retired top-tier alias — grants no galgame permission. This is
-// what makes dropping the legacy alias safe: it is now just an unknown role.
 func TestNonBundleRolesGrantNothing(t *testing.T) {
 	nonBundle := []string{"user", "", "legacy_top_tier_alias"}
 	for p := range goldenGrants {
@@ -68,9 +51,6 @@ func TestNonBundleRolesGrantNothing(t *testing.T) {
 	}
 }
 
-// TestManagementAxisContainment is the property test for the contract's
-// management-axis containment: anything moderator can do, admin can do;
-// anything admin can do, ren can do (moderator ⊆ admin ⊆ ren).
 func TestManagementAxisContainment(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"moderator"}, p) && !perm.Resolver.Can([]string{"admin"}, p) {
@@ -82,8 +62,6 @@ func TestManagementAxisContainment(t *testing.T) {
 	}
 }
 
-// TestCreatorOrthogonal is the property test for the publish axis: creator
-// grants exactly {publish_direct} and no management/review capability.
 func TestCreatorOrthogonal(t *testing.T) {
 	for p := range goldenGrants {
 		got := perm.Resolver.Can([]string{"creator"}, p)

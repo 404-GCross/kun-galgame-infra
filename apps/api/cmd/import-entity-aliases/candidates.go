@@ -10,20 +10,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Leg B — a source-side alias that folds to ANOTHER source's credit_name whole
-// name suggests the two are the same person (the person self-declared the other
-// name). It becomes a match_candidate (reason=alias_declared, always pending —
-// NEVER auto-linked: unlike the 1,155 shared-handle candidates there is no
-// cross-source structural anchor here, only community declaration). A strict
-// uniqueness guard (the alias must resolve to exactly one credit_name on a
-// different source) keeps common names out.
-
 type candStats struct {
 	Generated     int
-	Bidirectional int // the other side ALSO declares this side's name — future-batch intel
-	Ambiguous     int // alias resolves to >1 cross-source credit_name
-	AlreadyCand   int // a candidate for the pair already exists
-	AlreadySame   int // both names already on the same person
+	Bidirectional int
+	Ambiguous     int
+	AlreadyCand   int
+	AlreadySame   int
 }
 
 type cnInfo struct {
@@ -32,7 +24,6 @@ type cnInfo struct {
 	personID *int64
 }
 
-// aliasDecl is one folded alias with its owner credit_name and source.
 type aliasDecl struct {
 	owner  int64
 	source int16
@@ -42,18 +33,14 @@ type aliasDecl struct {
 func runCandidates(db *gorm.DB, w io.Writer, apply bool) (candStats, error) {
 	var st candStats
 
-	// (1) every credit_name: fold(name), origin source, person.
 	info, nameIndex, err := loadCreditNames(db)
 	if err != nil {
 		return st, err
 	}
-	// (2) declared aliases (bangumi Items + EG parens), role-filtered, + the
-	// per-owner fold set for the bidirectional check.
 	decls, ownerFolds, err := loadAliasDecls(db)
 	if err != nil {
 		return st, err
 	}
-	// (3) existing candidate pairs (any status) — never re-propose.
 	existing, err := loadCandidatePairs(db)
 	if err != nil {
 		return st, err
@@ -62,7 +49,6 @@ func runCandidates(db *gorm.DB, w io.Writer, apply bool) (candStats, error) {
 	seen := map[[2]int64]struct{}{}
 	var toWrite []model.CatalogMatchCandidate
 	for _, d := range decls {
-		// Cross-source credit_names whose whole name folds to this alias.
 		var target int64
 		hits := 0
 		for _, c := range nameIndex[d.fold] {
@@ -98,7 +84,6 @@ func runCandidates(db *gorm.DB, w io.Writer, apply bool) (candStats, error) {
 		}
 		seen[pair] = struct{}{}
 		st.Generated++
-		// Bidirectional: does the target ALSO declare the owner's whole name?
 		if ownerFolds[target][xi.fold] {
 			st.Bidirectional++
 		}
@@ -163,7 +148,6 @@ func loadCreditNames(db *gorm.DB) (map[int64]cnInfo, map[string][]struct {
 	return info, index, nil
 }
 
-// loadAliasDecls gathers the folded declared aliases from both sides.
 func loadAliasDecls(db *gorm.DB) ([]aliasDecl, map[int64]map[string]bool, error) {
 	var decls []aliasDecl
 	ownerFolds := map[int64]map[string]bool{}
@@ -178,15 +162,11 @@ func loadAliasDecls(db *gorm.DB) ([]aliasDecl, map[int64]map[string]bool, error)
 		ownerFolds[owner][fold] = true
 	}
 
-	// Bangumi credit_name aliases (别名 Items).
 	var brows []struct {
 		Owner int64  `gorm:"column:owner"`
 		Alias string `gorm:"column:alias"`
 		Raw   string `gorm:"column:raw"`
 	}
-	// The cast is CASE-guarded: external_id is text and the table holds
-	// non-numeric ids from other sources; a bare ::bigint in the JOIN blows
-	// up whenever the planner evaluates it before the WHERE filter.
 	if err := db.Raw(`SELECT r.entity_id AS owner, normalize(it->>'Value', NFKC) AS alias, it->>'Value' AS raw
 		FROM catalog_external_ref r
 		JOIN src_bangumi.person p ON p.id = CASE WHEN r.external_id ~ '^[0-9]+$' THEN r.external_id::bigint END
@@ -205,7 +185,6 @@ func loadAliasDecls(db *gorm.DB) ([]aliasDecl, map[int64]map[string]bool, error)
 		}
 	}
 
-	// EG credit_name aliases (name parentheses).
 	var erows []struct {
 		Owner int64  `gorm:"column:owner"`
 		Name  string `gorm:"column:name"`

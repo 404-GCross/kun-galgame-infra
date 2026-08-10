@@ -9,14 +9,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// DispositionService owns the dead-letter operator surface: listing callbacks by
-// status and replaying a dead-lettered one (章程 ruling 9, invariant 13).
 type DispositionService struct{ db *gorm.DB }
 
 func NewDispositionService(db *gorm.DB) *DispositionService { return &DispositionService{db: db} }
 
-// List returns dispositions filtered by callback_status (nil = all), newest
-// first, with the total for pagination.
 func (s *DispositionService) List(ctx context.Context, callbackStatus *int16, page, limit int) ([]model.TrustDisposition, int64, error) {
 	q := s.db.WithContext(ctx).Model(&model.TrustDisposition{})
 	if callbackStatus != nil {
@@ -38,8 +34,6 @@ func (s *DispositionService) List(ctx context.Context, callbackStatus *int16, pa
 	return items, total, nil
 }
 
-// Redeliver resets a dead-lettered disposition to pending (attempts=0, due now)
-// so the dispatch worker retries it. Only dead_letter rows are eligible.
 func (s *DispositionService) Redeliver(ctx context.Context, actorID, id int64) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var disp model.TrustDisposition

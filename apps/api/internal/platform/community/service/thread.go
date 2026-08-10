@@ -13,20 +13,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// ThreadService owns thread creation (the three shapes) and thread reads.
 type ThreadService struct {
 	db      *gorm.DB
 	threads *repository.ThreadRepository
 	trusts  *repository.TrustRepository
 	sink    EventSink
-	check   *CheckService // nil = the pre-write word-list gate is off (default)
+	check   *CheckService
 }
 
-// ThreadOption configures optional ThreadService collaborators (step 06: the
-// synchronous pre-write word-list gate). Existing callers pass none.
 type ThreadOption func(*ThreadService)
 
-// WithThreadChecker installs the synchronous Tier0 word-list gate.
 func WithThreadChecker(c *CheckService) ThreadOption {
 	return func(s *ThreadService) { s.check = c }
 }
@@ -44,8 +40,6 @@ func NewThreadService(db *gorm.DB, sink EventSink, opts ...ThreadOption) *Thread
 	return s
 }
 
-// OpenThreadParams describes a topic/feedback thread being opened with its
-// opening post (#1).
 type OpenThreadParams struct {
 	Site              string
 	AuthorID          int64
@@ -54,16 +48,13 @@ type OpenThreadParams struct {
 	Title             string
 	ContentRating     int16
 	BodyRaw           string
-	HeaderImageHashes datatypes.JSON // optional; nil for none
+	HeaderImageHashes datatypes.JSON
 }
 
-// OpenTopic opens a board topic (kind=0) with its opening post.
 func (s *ThreadService) OpenTopic(ctx context.Context, p OpenThreadParams) (*model.CommunityThread, *model.CommunityPost, error) {
 	return s.openWithFirstPost(ctx, model.ThreadKindTopic, p)
 }
 
-// OpenFeedback opens a feedback thread (kind=2, fb_status=open) with its
-// opening post.
 func (s *ThreadService) OpenFeedback(ctx context.Context, p OpenThreadParams) (*model.CommunityThread, *model.CommunityPost, error) {
 	return s.openWithFirstPost(ctx, model.ThreadKindFeedback, p)
 }
@@ -87,9 +78,6 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 		}
 	}
 
-	// Synchronous Tier0 word-list gate (step 06), strictly BEFORE the tx. The
-	// first-post check text mirrors scan: `title + "\n\n" + raw` (the title only
-	// when present). deny blocks the create; hold publishes normally + enqueues.
 	checkText := p.BodyRaw
 	if p.Title != "" {
 		checkText = p.Title + "\n\n" + p.BodyRaw
@@ -121,8 +109,6 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 			Site: p.Site, Kind: kind, AnchorKind: p.AnchorKind, AnchorID: p.AnchorID,
 			Title: title, HeaderImageHashes: p.HeaderImageHashes,
 			ContentRating: p.ContentRating, Status: model.ThreadStatusOpen,
-			// Born WITH the opening post: all counters reflect post #1, so no
-			// default-tag fighting (every value here is non-zero → written).
 			PostsCount: 1, ParticipantsCount: 1, HighestPostNumber: 1, LastPostedAt: &now,
 			CreatedBy: p.AuthorID,
 		}
@@ -143,7 +129,6 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 			return err
 		}
 		if held {
-			// A held opening post by a newcomer enters the review queue too.
 			itemID, created, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceFirstPostHold)
 			if err != nil {
 				return err
@@ -154,9 +139,6 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 			return repository.DecrementHoldTx(tx, p.AuthorID)
 		}
 		if suspectHold {
-			// hold (suspect-only): the opening post stays visible but enters the
-			// review queue (source=suspect_words). IfAbsent converges with the
-			// first-post hold above to a single item.
 			itemID, created, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceSuspectWords)
 			if err != nil {
 				return err
@@ -171,16 +153,12 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 		return nil, nil, err
 	}
 	s.sink.Emit(Event{Kind: EventPostCreated, ThreadID: thread.ID, PostID: post.ID, ActorID: p.AuthorID})
-	// Best-effort forward a held opening-post review item to the trust inbox after
-	// commit (step 03 outbox).
 	if enqueuedItemID != 0 {
 		s.sink.Emit(Event{Kind: EventReviewEnqueued, ThreadID: thread.ID, PostID: post.ID, ReviewItemID: enqueuedItemID})
 	}
 	return &thread, &post, nil
 }
 
-// CommentsThreadParams describes the anchor a comments thread is (lazily)
-// created for (Coral story model: first access/comment auto-creates it).
 type CommentsThreadParams struct {
 	Site          string
 	AnchorKind    int16
@@ -189,9 +167,6 @@ type CommentsThreadParams struct {
 	ActorID       int64
 }
 
-// GetOrCreateCommentsThread returns the single live comments thread for an
-// anchor, creating an empty one when none exists (invariant 4). Idempotent and
-// race-safe: a concurrent create loses the partial-unique and re-reads.
 func (s *ThreadService) GetOrCreateCommentsThread(ctx context.Context, p CommentsThreadParams) (*model.CommunityThread, error) {
 	if t, err := s.threads.GetLiveCommentsThread(p.Site, p.AnchorKind, p.AnchorID); err != nil {
 		return nil, err
@@ -201,7 +176,6 @@ func (s *ThreadService) GetOrCreateCommentsThread(ctx context.Context, p Comment
 	thread := model.CommunityThread{
 		Site: p.Site, Kind: model.ThreadKindComments, AnchorKind: p.AnchorKind, AnchorID: p.AnchorID,
 		ContentRating: p.ContentRating, Status: model.ThreadStatusOpen,
-		// Born empty: CreateThreadTx forces participants_count to 0.
 		PostsCount: 0, ParticipantsCount: 0, HighestPostNumber: 0,
 		CreatedBy: p.ActorID,
 	}
@@ -212,8 +186,6 @@ func (s *ThreadService) GetOrCreateCommentsThread(ctx context.Context, p Comment
 		return &thread, nil
 	}
 	if isDuplicate(err) {
-		// A sibling call created it first — return the winner (same site scope as
-		// the initial lookup, so a site-local anchor re-reads within its tenant).
 		if t, e := s.threads.GetLiveCommentsThread(p.Site, p.AnchorKind, p.AnchorID); e == nil && t != nil {
 			return t, nil
 		}
@@ -221,14 +193,10 @@ func (s *ThreadService) GetOrCreateCommentsThread(ctx context.Context, p Comment
 	return nil, err
 }
 
-// Get returns a thread by id, or nil when absent.
 func (s *ThreadService) Get(id int64) (*model.CommunityThread, error) {
 	return s.threads.GetByID(id)
 }
 
-// ListBySite / ListByAnchor expose the two invariant-7 read dimensions.
-// anchorID != "" additionally narrows the per-site page to a single anchor (the
-// resource-detail feedback-wall read path); "" lists the whole site.
 func (s *ThreadService) ListBySite(site string, kind int16, anchorKind int16, anchorID string, cursor repository.ThreadCursor, limit int) ([]model.CommunityThread, error) {
 	return s.threads.ListBySite(site, kind, anchorKind, anchorID, cursor, clampLimit(limit))
 }
@@ -237,10 +205,6 @@ func (s *ThreadService) ListByAnchor(site string, anchorKind int16, anchorID str
 	return s.threads.ListByAnchor(site, anchorKind, anchorID, kind)
 }
 
-// OpeningPostMeta returns the opening-post (post_number=1) status + author for
-// the given threads — the per-site list projection that lets an embed hide a
-// held/deleted opening post without a per-thread fetch (finding: a held/deleted
-// opening post must not leak its title into the thread list).
 func (s *ThreadService) OpeningPostMeta(threadIDs []int64) (map[int64]repository.OpeningPostMeta, error) {
 	return s.threads.OpeningPostMetaByThreadIDs(threadIDs)
 }
@@ -259,8 +223,6 @@ func clampLimit(limit int) int {
 	return limit
 }
 
-// isDuplicate reports whether err is a Postgres unique-violation (used for the
-// comments-thread get-or-create race).
 func isDuplicate(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "duplicate key")
 }

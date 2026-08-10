@@ -12,10 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// entityTypeOf maps a class label to its EntityType* constant. Both the
-// person-anchored (step 49) and the orphan (step 50) credit-name classes are
-// credit_name entities; step 156's worklist-only person class is the person
-// entity, and step 175's worklist-only label class is the label entity.
 func entityTypeOf(class string) int16 {
 	switch class {
 	case classCreditName, classOrphanCreditName, classMixedCreditName:
@@ -39,8 +35,6 @@ var executableEntityTypes = []int16{
 	model.EntityTypePerson, model.EntityTypeLabel,
 }
 
-// runDetect is the dry report: every class's group counts, the guard counters,
-// and a handful of samples (with the trigger groups called out explicitly).
 func runDetect(db *gorm.DB, w io.Writer) error {
 	charGroups, cs, err := detectCharacters(db)
 	if err != nil {
@@ -74,13 +68,10 @@ func runDetect(db *gorm.DB, w io.Writer) error {
 	printSamples(w, orphanGroups, 5)
 	fmt.Fprintln(w, "  mixed-creditname samples:")
 	printSamples(w, mixedGroups, 5)
-	// The step-50 trigger group must be visibly in the candidate set.
 	printOrphanGroupContaining(w, orphanGroups, 14695, 47429)
 	return nil
 }
 
-// printOrphanGroupContaining surfaces the group that unifies two known credit
-// name ids (the 藤咲ウサ EG↔DLsite trigger), proving it is a candidate.
 func printOrphanGroupContaining(w io.Writer, groups []mergeGroup, a, b int64) {
 	for _, g := range groups {
 		ids := append([]int64{g.survivor}, g.sources...)
@@ -106,17 +97,10 @@ func printSamples(w io.Writer, groups []mergeGroup, n int) {
 	}
 }
 
-// proposeStats is the write-side tally.
 type proposeStats struct {
 	groups, pairs, proposals, approved, skipped, errs int
 }
 
-// runPropose detects, then for every (survivor, source) opens a merge proposal
-// and approves it — starting the mandatory 48h cooling clock. It NEVER shortens
-// that window (invariant 4): execution is a separate cooled pass. -limit caps
-// the number of GROUPS (a canary), -class filters which class to drive. Each
-// proposal is tagged with its class's wave note (noteTagFor) so -mode execute
-// addresses exactly one wave.
 func runPropose(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.MergeService,
 	actor int64, class, worklist, noteOverride string, limit int, run bool) error {
 	groups, err := collectGroups(db, class, worklist)
@@ -140,8 +124,6 @@ func runPropose(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.Me
 			}
 			p, err := merge.ProposeMerge(ctx, et, src, g.survivor, actor, note)
 			if err != nil {
-				// Already merged (resolves to target) or already proposed: the
-				// idempotent no-op path, not an error.
 				if errors.Is(err, service.ErrSameEntity) || errors.Is(err, service.ErrDuplicateOpenProposal) {
 					st.skipped++
 					continue
@@ -175,14 +157,7 @@ func runPropose(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.Me
 	return nil
 }
 
-// collectGroups returns the requested class(es) of dedup groups. "both" is the
-// step-49 pair (character + person-anchored credit_name); the step-50 orphan
-// class is a deliberately separate wave (its own note tag) reached only by
-// -class orphan-creditname.
 func collectGroups(db *gorm.DB, class, worklist string) ([]mergeGroup, error) {
-	// A worklist replaces detection entirely: the wave that produced it already
-	// applied its own rules and guards and picked the survivor, and this binary
-	// contributes only the execution path.
 	if worklist != "" {
 		return loadWorklist(worklist)
 	}
@@ -218,25 +193,6 @@ func collectGroups(db *gorm.DB, class, worklist string) ([]mergeGroup, error) {
 	return out, nil
 }
 
-// runExecute executes this batch's cooled, approved proposals (addressed by the
-// note tag, both classes). The cooling window is enforced by ExecuteMerge —
-// this only selects rows already past execute_after. -limit 1 first (canary).
-// runExecute executes the cooled proposals of this wave in id order,
-// resolving both endpoints through catalog_redirect first (step-98 lesson:
-// execute order is id-ascending, not topological — an earlier merge this
-// wave may consume an endpoint of a later proposal; 1,012/24,009 hit that in
-// the first full run). Classification per proposal:
-//   - both endpoints resolve to the SAME survivor → merged by proxy earlier
-//     this wave — auto-close as rejected "chain-superseded" (no data motion
-//     left to do).
-//   - an endpoint moved and the resolutions differ → possibly still a live
-//     duplicate, but between DIFFERENT entities than the approved pair —
-//     reject as "chain-residual"; the next detect pass re-covers it on live
-//     rows (never silently execute a merge nobody approved).
-//   - both canonical → execute through MergeService as before.
-//
-// Dry-run classifies against the PRE-run redirect state — chains created by
-// this very run only materialize under -run.
 func runExecute(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.MergeService,
 	resolve *service.ResolveService, actor int64, note string, limit int, run bool) error {
 	var props []model.CatalogMergeProposal
@@ -309,25 +265,12 @@ func runExecute(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.Me
 	return nil
 }
 
-// cleanupScope is the class-B predicate (step 50): a voice-actor credit with
-// NO character that shares its (work, credit_name, role) with a
-// character-BEARING credit — the empty one is strictly-less information, a
-// byproduct of step 13 importing EG's two lists (staff 声優 + appearance 出演).
-// The EXISTS clause is also the preservation boundary: a voice actor credited
-// on a work with ONLY an empty-role credit (no character-bearing peer) is a
-// sole attribution and is left alone. Must run AFTER class A so the two source
-// lists are already unified under one credit_name.
 const cleanupScope = `e.character_id IS NULL
 	AND e.role_id = (SELECT id FROM catalog_role WHERE key = 'voice-actor')
 	AND EXISTS (SELECT 1 FROM catalog_credit d
 	             WHERE d.work_id = e.work_id AND d.credit_name_id = e.credit_name_id
 	               AND d.role_id = e.role_id AND d.character_id IS NOT NULL)`
 
-// runCleanup performs class B: it DELETEs the redundant empty-role voice
-// credits (not a merge — the row is not an entity). It follows the merge
-// machine's own credit-dedup path, a plain DELETE with no per-row revision
-// (catalog credit deletes are not versioned). Dry (default) reports the count
-// and samples; -run deletes.
 func runCleanup(db *gorm.DB, w io.Writer, run bool) error {
 	var redundant int64
 	if err := db.Raw(`SELECT count(*) FROM catalog_credit e WHERE ` + cleanupScope).Row().Scan(&redundant); err != nil {

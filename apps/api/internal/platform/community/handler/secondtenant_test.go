@@ -9,12 +9,6 @@ import (
 	"api/internal/platform/community/service"
 )
 
-// Cross-tenant probes for the second-tenant hardening (step 01 deliverable D).
-// Two fake clients bind different sites; the guard must (1) decouple site-local
-// anchor collisions, (2) keep catalog anchors shared, and (3/4) answer every
-// cross-tenant id-addressed access as 404 — indistinguishable from "not found".
-
-// newTenantServer builds a Server wired to every service (the production shape).
 func newTenantServer() *Server {
 	sink := service.NoopSink{}
 	return &Server{
@@ -28,8 +22,6 @@ func newTenantServer() *Server {
 	}
 }
 
-// wantStatus asserts an operation returned a house error with the given HTTP
-// status (the community handler returns *houseError, which carries GetStatus).
 func wantStatus(t *testing.T, err error, want int) {
 	t.Helper()
 	if err == nil {
@@ -44,8 +36,6 @@ func wantStatus(t *testing.T, err error, want int) {
 	}
 }
 
-// seedTL1 makes a user an established author (TL1, no first-post holds) so their
-// replies land visible instead of held.
 func seedTL1(t *testing.T, userID int64) {
 	t.Helper()
 	if err := testDB.Exec(
@@ -87,16 +77,12 @@ func callerOf(ctx context.Context) string {
 	return "?"
 }
 
-// TestSecondTenant_AnchorScoping covers probes 1 & 2: a site-local anchor id
-// resolves to a DISTINCT thread per tenant (and is idempotent within a tenant),
-// while a catalog anchor resolves to ONE shared cross-site thread.
 func TestSecondTenant_AnchorScoping(t *testing.T) {
 	cleanTables(t)
 	s := newTenantServer()
 	ctxA := clientCtx("siteA")
 	ctxB := clientCtx("siteB")
 
-	// Probe 1: site_game "123" is a tenant-local id → one thread each.
 	tA := resolve(t, s, ctxA, model.AnchorKindSiteGame, "123")
 	tB := resolve(t, s, ctxB, model.AnchorKindSiteGame, "123")
 	if tA == tB {
@@ -106,24 +92,17 @@ func TestSecondTenant_AnchorScoping(t *testing.T) {
 		t.Fatalf("same-site resolve must be idempotent: %d vs %d", again, tA)
 	}
 
-	// Probe 2: catalog_work "w345" is a network-global id → one shared thread.
 	wA := resolve(t, s, ctxA, model.AnchorKindCatalogWork, "w345")
 	wB := resolve(t, s, ctxB, model.AnchorKindCatalogWork, "w345")
 	if wA != wB {
 		t.Fatalf("catalog anchor w345 must be ONE shared thread cross-site: %d vs %d", wA, wB)
 	}
 
-	// Catalog exemption on an id-addressed read: the shared thread is owned by
-	// whichever site created it first (siteA), yet siteB may still getThread it —
-	// the tenant guard exempts catalog anchors (invariant 1, cross-site shared).
 	if _, err := s.getThread(ctxB, &threadPostsInput{ID: wB}); err != nil {
 		t.Fatalf("siteB must be able to read the shared catalog thread (guard exempt): %v", err)
 	}
 }
 
-// TestSecondTenant_CrossTenantGuard covers probes 3 & 4: every id-addressed S2S
-// op by site B against site A's content answers 404, while site A's own access
-// succeeds. Feedback status is checked too (cross-tenant rejected, no mutation).
 func TestSecondTenant_CrossTenantGuard(t *testing.T) {
 	cleanTables(t)
 	s := newTenantServer()
@@ -131,7 +110,6 @@ func TestSecondTenant_CrossTenantGuard(t *testing.T) {
 	ctxB := clientCtx("siteB")
 	seedTL1(t, 100)
 
-	// A's site-local comments thread with one visible post by author 100.
 	tA := resolve(t, s, ctxA, model.AnchorKindSiteGame, "500")
 	replyOut, err := s.reply(ctxA, &replyInput{ID: tA, Body: dto.ReplyRequest{AuthorID: 100, Body: "hello from A"}})
 	if err != nil {
@@ -139,8 +117,6 @@ func TestSecondTenant_CrossTenantGuard(t *testing.T) {
 	}
 	postID := replyOut.Body.Data.Post.ID
 
-	// Probe 3: B is refused (404) on every id-addressed op — reads, reply, edit,
-	// delete, reaction, flag — against A's thread/post. None of these mutate A.
 	_, e := s.getThread(ctxB, &threadPostsInput{ID: tA})
 	wantStatus(t, e, 404)
 	_, e = s.listPosts(ctxB, &threadPostsInput{ID: tA})
@@ -156,7 +132,6 @@ func TestSecondTenant_CrossTenantGuard(t *testing.T) {
 	_, e = s.deletePost(ctxB, &deletePostInput{ID: postID, AuthorID: 100})
 	wantStatus(t, e, 404)
 
-	// The intruder left no trace: the post is still visible and un-flagged.
 	if p := getPostRow(t, postID); p.Status != model.PostStatusVisible {
 		t.Fatalf("post must stay visible after cross-tenant probes, status=%d", p.Status)
 	}
@@ -164,7 +139,6 @@ func TestSecondTenant_CrossTenantGuard(t *testing.T) {
 		t.Fatalf("cross-tenant flag must not be recorded, got %d flags", n)
 	}
 
-	// A itself passes on the same targets.
 	if _, err := s.getThread(ctxA, &threadPostsInput{ID: tA}); err != nil {
 		t.Fatalf("A getThread own: %v", err)
 	}
@@ -181,9 +155,6 @@ func TestSecondTenant_CrossTenantGuard(t *testing.T) {
 		t.Fatalf("A delete own: %v", err)
 	}
 
-	// Probe 4: review queue. A held post enqueues a site-A item. The hold budget is
-	// seeded explicitly (wave 07 retired the blanket newcomer hold); this probe is
-	// about the item's TENANT, not about what caused the hold.
 	if err := testDB.Exec(
 		`INSERT INTO community_trust (user_id, level, first_posts_held_remaining) VALUES (700, 0, 2)
 		 ON CONFLICT (user_id) DO UPDATE SET level = 0, first_posts_held_remaining = 2`,
@@ -202,8 +173,6 @@ func TestSecondTenant_CrossTenantGuard(t *testing.T) {
 		t.Fatalf("A approve own: %v", err)
 	}
 
-	// Feedback guard (coverage): B cannot change A's feedback thread, and the
-	// state stays put; A can.
 	fbOut, err := s.openFeedback(ctxA, &openFeedbackInput{Body: dto.OpenFeedbackRequest{AuthorID: 100, AnchorKind: model.AnchorKindSiteResource, AnchorID: "fb1", Title: "bug", Body: "x"}})
 	if err != nil {
 		t.Fatalf("A openFeedback: %v", err)

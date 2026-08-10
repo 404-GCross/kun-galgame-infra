@@ -13,33 +13,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// orgRec is one source organization, as loaded by a per-source adapter. works
-// is W(O) (distinct catalog work ids); nameNorms are the NFKC folds used for
-// name equality. displayName/latin/lang/newKind describe the label to mint if
-// the org has no matching label; canCreate is false for VNDB persons (type=in),
-// which may anchor an existing label but never mint one.
 type orgRec struct {
-	extID string
-	// works is EVIDENCE: every work this org touched through any edition, in
-	// any language. Breadth is what makes the co-occurrence grader able to
-	// recognise a label, so this set stays wide.
-	works []int64
-	// attribWorks is the subset an ATTRIBUTION may be minted for — the works
-	// this org is responsible for as the source states it, not merely ones it
-	// appears next to (wave 200). For vndb: the original-language, non-patch
-	// releases.
-	//
-	// Splitting the two is the whole point. Before, minting reused the evidence
-	// set, so an English localisation publisher became a co-author of the
-	// Japanese work — and anything deleted downstream came straight back on the
-	// next mint, because the rule that proposed it was never changed.
-	attribWorks []int64
-	// editionAware says whether attribWorks is MEANINGFUL for this source, and
-	// it must be a flag rather than a nil check on the slice above. A
-	// localisation-only publisher legitimately has an EMPTY attributable set —
-	// that is the whole point of the gate — and "empty" is indistinguishable
-	// from "unset" in a slice. Falling back on emptiness would hand exactly
-	// those orgs the full evidence set and quietly restore the bug.
+	extID        string
+	works        []int64
+	attribWorks  []int64
 	editionAware bool
 	nameNorms    []string
 	displayName  string
@@ -49,45 +26,37 @@ type orgRec struct {
 	canCreate    bool
 }
 
-// resKind is the outcome of grading one org.
 type resKind int
 
 const (
-	resAnchorExisting  resKind = iota // anchor to an existing label (tier decides exact/probable)
-	resNewLabel                       // mint a new label + edges
-	resSkipNoMatch                    // no gradeable label, no name match, cannot mint
-	resSkipAmbiguous                  // name matches several distinct labels (name-only)
-	resSkipUngradeable                // shares exactly one work with label(s) but no name — not gradeable
+	resAnchorExisting resKind = iota
+	resNewLabel
+	resSkipNoMatch
+	resSkipAmbiguous
+	resSkipUngradeable
 )
 
-// gradeResult is the per-org decision, before the one-anchor-per-label pass.
 type gradeResult struct {
 	kind    resKind
-	labelID int64  // target for resAnchorExisting
-	tier    int16  // LinkKindExact(0) / LinkKindProbable(1) for resAnchorExisting
-	rule    string // matched_by
-	share   int    // |W(O)∩W(target)| — sort key for the greedy claim
+	labelID int64
+	tier    int16
+	rule    string
+	share   int
 }
 
-// grader carries the source-agnostic indices + this source's rule strings.
 type grader struct {
 	workLabels map[int64][]int64
 	labelNorms map[string][]int64
 	rules      ruleSet
 }
 
-// grade applies the refs/proj/83 裁定4/5 rules to one org. It is pure (no
-// writes, no claim state); the one-anchor-per-label enforcement is a later
-// greedy pass over the results.
 func (g *grader) grade(o *orgRec) gradeResult {
-	// Co-occurrence tally: label → shared work count.
 	share := make(map[int64]int)
 	for _, w := range o.works {
 		for _, l := range g.workLabels[w] {
 			share[l]++
 		}
 	}
-	// Name-matched labels (dedup).
 	nameHit := make(map[int64]bool)
 	for _, n := range o.nameNorms {
 		if n == "" {
@@ -98,8 +67,6 @@ func (g *grader) grade(o *orgRec) gradeResult {
 		}
 	}
 
-	// Exact-eligible: s>=2, or s==1 with a name match. Pick the best by
-	// (share desc, name-match, id asc) so the strongest signal wins.
 	bestLabel := int64(0)
 	bestShare := 0
 	bestName := false
@@ -120,8 +87,6 @@ func (g *grader) grade(o *orgRec) gradeResult {
 		return gradeResult{kind: resAnchorExisting, labelID: bestLabel, tier: 0, rule: rule, share: bestShare}
 	}
 
-	// Name-only probable: a name match with NO shared work (s==0). Require a
-	// single distinct label — several equal-named labels are ambiguous.
 	var nameOnly []int64
 	for l := range nameHit {
 		if share[l] == 0 {
@@ -135,9 +100,6 @@ func (g *grader) grade(o *orgRec) gradeResult {
 		return gradeResult{kind: resSkipAmbiguous}
 	}
 
-	// No gradeable label and no name match. If the org shares works with some
-	// label (all s==1, no name), it is ungradeable — do NOT mint (the works are
-	// already attributed). Otherwise mint a fresh label when allowed + non-empty.
 	if len(share) > 0 {
 		return gradeResult{kind: resSkipUngradeable}
 	}
@@ -147,19 +109,16 @@ func (g *grader) grade(o *orgRec) gradeResult {
 	return gradeResult{kind: resSkipNoMatch}
 }
 
-// better reports whether candidate (s,name,id) beats the current best.
 func better(s int, name bool, id int64, bestS int, bestName bool, bestID int64) bool {
 	if s != bestS {
 		return s > bestS
 	}
 	if name != bestName {
-		return name // name match wins ties
+		return name
 	}
 	return bestID == 0 || id < bestID
 }
 
-// AnchorStats is the per-run tally (dry and apply produce the same plan; the
-// *_written fields count actual inserts, apply only).
 type AnchorStats struct {
 	Orgs            int
 	Already         int
@@ -171,12 +130,10 @@ type AnchorStats struct {
 	SkipNoMatch     int
 	SkipAmbiguous   int
 	SkipUngradeable int
-	SkipRejected    int // a human rejection blocks this (label, external id)
-	VNDBInAnchored  int // VNDB type=in orgs that anchored an existing label
+	SkipRejected    int
+	VNDBInAnchored  int
 	Errors          int
-	// Spine is the corporate-graph pass — the producers this grader cannot
-	// reach because they publish nothing under their own name. See spine.go.
-	Spine SpineStats
+	Spine           SpineStats
 }
 
 func (s *AnchorStats) add(o AnchorStats) {
@@ -193,12 +150,8 @@ func (s *AnchorStats) add(o AnchorStats) {
 	s.SkipRejected += o.SkipRejected
 	s.VNDBInAnchored += o.VNDBInAnchored
 	s.Errors += o.Errors
-	// Spine is deliberately untouched: it runs once per PASS, outside the
-	// per-source loop this method folds, and anchorAll composes it directly.
 }
 
-// RunAnchor opens the pools and executes the E2a anchoring wave for the
-// requested source(s).
 func RunAnchor(ctx context.Context, opts Opts) (AnchorStats, error) {
 	needEG := opts.Source == "eg" || opts.Source == "all"
 	catalog, eg, err := openPools(opts, needEG)
@@ -208,19 +161,8 @@ func RunAnchor(ctx context.Context, opts Opts) (AnchorStats, error) {
 	return anchorAll(ctx, catalog, eg, opts.Source, opts.Limit, opts.Apply)
 }
 
-// maxAnchorPasses caps the fixpoint loop (safety; convergence is normally 2).
 const maxAnchorPasses = 6
 
-// anchorAll is the pool-agnostic core (tests inject the catalog handle as eg
-// too, since the EG stand-in tables live in the same test database).
-//
-// It runs the per-source pass to a FIXPOINT: a label minted by one source
-// becomes a name-match target for a later source, so a single pass leaves a
-// cross-source tail. Reloading the label indices and repeating until a pass
-// writes nothing makes ONE --apply converge, so a second invocation is a true
-// no-op (the 二遍零写 guarantee). The reported write counters are the converged
-// totals; the skip/already/conflict breakdown is the first pass (the plan that
-// matches the dry run). A dry run makes no writes, so it never loops.
 func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit int, apply bool) (AnchorStats, error) {
 	var total AnchorStats
 	for pass := 1; pass <= maxAnchorPasses; pass++ {
@@ -253,10 +195,6 @@ func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit i
 			pt.add(st)
 		}
 
-		// The spine runs LAST in the iteration, over what the co-work grader
-		// could not reach — see spine.go. It is a VNDB-only lane (it is the only
-		// upstream that publishes company structure at all), so a run scoped to
-		// another source skips it.
 		if slices.Contains(wantedSources(source), "vndb") {
 			sp, err := runSpine(ctx, catalog, labelNorms, limit, apply)
 			if err != nil {
@@ -271,9 +209,8 @@ func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit i
 		}
 
 		if pass == 1 {
-			total = pt // the first pass is the plan (matches the dry run)
+			total = pt
 		} else {
-			// Later passes contribute only their (small) additional writes.
 			total.AnchorsExact += pt.AnchorsExact
 			total.AnchorsProbable += pt.AnchorsProbable
 			total.NewLabels += pt.NewLabels
@@ -282,13 +219,7 @@ func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit i
 			total.Errors += pt.Errors
 			total.Spine.addWrites(pt.Spine)
 		}
-		// The spine's skip buckets describe what is STILL unresolved, not events —
-		// summing them across passes would report 77 pending candidates as 154.
-		// The last pass is the settled state, so it replaces rather than adds.
 		total.Spine.setState(pt.Spine)
-		// Dry runs never write, so the fixpoint is a single pass by construction.
-		// The spine's writes count towards convergence too: a label it mints is a
-		// name-match target for the next iteration's co-work pass.
 		if !apply || pt.AnchorsExact+pt.AnchorsProbable+pt.NewLabels+pt.Spine.writes() == 0 {
 			break
 		}
@@ -296,7 +227,6 @@ func anchorAll(ctx context.Context, catalog, eg *gorm.DB, source string, limit i
 	return total, nil
 }
 
-// wantedSources expands the --source selector into the ordered source list.
 func wantedSources(sel string) []string {
 	if sel == "all" {
 		return []string{"vndb", "bangumi", "eg"}
@@ -304,8 +234,6 @@ func wantedSources(sel string) []string {
 	return []string{sel}
 }
 
-// anchorSource grades every org, resolves the one-anchor-per-label claim
-// greedily (strongest share first), then writes.
 func anchorSource(ctx context.Context, db *gorm.DB, g *grader, orgs []orgRec, source int16, apply bool) (AnchorStats, error) {
 	ea, err := loadExistingAnchors(db, source)
 	if err != nil {
@@ -331,11 +259,6 @@ func anchorSource(ctx context.Context, db *gorm.DB, g *grader, orgs []orgRec, so
 		res := g.grade(o)
 		switch res.kind {
 		case resAnchorExisting:
-			// A human already ruled on exactly this (label, external id). Skip
-			// the org rather than falling through to the runner-up label: the
-			// ruling says this pairing is wrong, not that some other label is
-			// right, and inventing a second guess is how a rejection turns
-			// into a different bad anchor.
 			if _, no := rejected[rejKey(res.labelID, o.extID)]; no {
 				st.SkipRejected++
 				continue
@@ -352,16 +275,13 @@ func anchorSource(ctx context.Context, db *gorm.DB, g *grader, orgs []orgRec, so
 		}
 	}
 
-	// Greedy one-anchor-per-label: strongest share first, then exact before
-	// probable, then external_id for stability. claimedLabels is seeded with the
-	// labels this source already exact-anchored so re-runs never double-claim.
 	sort.Slice(anchors, func(i, j int) bool {
 		a, b := anchors[i].res, anchors[j].res
 		if a.share != b.share {
 			return a.share > b.share
 		}
 		if a.tier != b.tier {
-			return a.tier < b.tier // exact(0) before probable(1)
+			return a.tier < b.tier
 		}
 		return anchors[i].org.extID < anchors[j].org.extID
 	})
@@ -393,8 +313,6 @@ func anchorSource(ctx context.Context, db *gorm.DB, g *grader, orgs []orgRec, so
 		}
 	}
 	if apply && len(refs) > 0 {
-		// Batch insert; ON CONFLICT DO NOTHING is the idempotency backstop (the
-		// exact-tier anti-squat index + the composite PK).
 		res := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(refs, 1000)
 		if res.Error != nil {
 			return st, fmt.Errorf("batch insert anchors: %w", res.Error)

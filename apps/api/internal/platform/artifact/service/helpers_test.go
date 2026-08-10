@@ -34,10 +34,10 @@ func TestExtForKey(t *testing.T) {
 		{"normal.zip", ".zip"},
 		{"GAME.RAR", ".rar"},
 		{"archive.7z", ".7z"},
-		{"战国兰斯.zip", ".zip"},        // CJK basename, clean ext
-		{"no-extension", ""},          // no dot
-		{"weird. zip", ""},            // space in ext → opaque
-		{"trailingdot.", ""},          // empty ext after dot
+		{"战国兰斯.zip", ".zip"},
+		{"no-extension", ""},
+		{"weird. zip", ""},
+		{"trailingdot.", ""},
 		{"", ""},
 	}
 	for _, c := range cases {

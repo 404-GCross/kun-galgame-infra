@@ -16,9 +16,6 @@ func writeFile(t *testing.T, name, body string) string {
 	return path
 }
 
-// TestLoadClusters pins the three things the loader owes the mint: only
-// tier=auto is consumed, the order is deterministic, and total counts EVERY
-// line so the run can be reconciled against the wave-152 headline.
 func TestLoadClusters(t *testing.T) {
 	path := writeFile(t, "clusters.jsonl", `{"cluster_id":"C000002","credit_name_ids":[9,4],"names":["b","a"],"tier":"auto"}
 {"cluster_id":"C000001","credit_name_ids":[2,1],"names":["x","y"],"tier":"auto"}
@@ -34,9 +31,6 @@ func TestLoadClusters(t *testing.T) {
 	assert.Equal(t, []int64{4, 9}, clusters[1].CreditNameIDs)
 }
 
-// TestLoadClustersRejectsOverlap pins the partition premise: a credit name in
-// two clusters would fork one identity across two persons, so the input is
-// refused rather than half-written.
 func TestLoadClustersRejectsOverlap(t *testing.T) {
 	path := writeFile(t, "clusters.jsonl", `{"cluster_id":"C1","credit_name_ids":[1,2],"tier":"auto"}
 {"cluster_id":"C2","credit_name_ids":[2,3],"tier":"auto"}`)
@@ -45,8 +39,6 @@ func TestLoadClustersRejectsOverlap(t *testing.T) {
 	assert.Contains(t, err.Error(), "not a partition")
 }
 
-// TestLoadClustersRejectsSingleton — a one-member "cluster" is not an
-// equivalence class and would mint a person out of a single unlinked name.
 func TestLoadClustersRejectsSingleton(t *testing.T) {
 	path := writeFile(t, "clusters.jsonl", `{"cluster_id":"C1","credit_name_ids":[1],"tier":"auto"}`)
 	_, _, err := LoadClusters(path)
@@ -66,8 +58,6 @@ func TestLoadSplitWorklist(t *testing.T) {
 	require.Error(t, err, "a row without a credit_name_id would silently shrink the exclusion list")
 }
 
-// TestRunRequiresInputs pins the "never guess" discipline on all three
-// required inputs.
 func TestRunRequiresInputs(t *testing.T) {
 	_, err := Run(t.Context(), Opts{})
 	require.Error(t, err)

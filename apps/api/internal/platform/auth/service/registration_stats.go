@@ -8,19 +8,12 @@ import (
 	"api/internal/platform/auth/dto"
 )
 
-// statsTimezone is the calendar timezone used to bucket registrations by
-// day/hour. China observes no DST, so a fixed +8 offset matches Postgres'
-// 'Asia/Shanghai' for every date — we use FixedZone in Go (no tzdata
-// dependency at runtime) and pass the same name to SQL.
 const statsTimezone = "Asia/Shanghai"
 
 func statsLocation() *time.Location { return time.FixedZone(statsTimezone, 8*3600) }
 
 func round1(x float64) float64 { return math.Round(x*10) / 10 }
 
-// RegistrationStats returns the daily registration series for the last `days`
-// days (1-90, in statsTimezone), 0-filled and ordered oldest→newest, plus
-// summary figures including a comparison against the preceding equal window.
 func (s *AdminService) RegistrationStats(ctx context.Context, days int) (*dto.RegistrationStatsResponse, error) {
 	if days < 1 {
 		days = 30
@@ -33,13 +26,13 @@ func (s *AdminService) RegistrationStats(ctx context.Context, days int) (*dto.Re
 	nowSh := time.Now().In(loc)
 	today := time.Date(nowSh.Year(), nowSh.Month(), nowSh.Day(), 0, 0, 0, 0, loc)
 	startCurrent := today.AddDate(0, 0, -(days - 1))
-	startPrev := today.AddDate(0, 0, -(2*days - 1)) // covers prev window too
+	startPrev := today.AddDate(0, 0, -(2*days - 1))
 
 	counts, err := s.userRepo.RegistrationCountsByDay(ctx, startPrev, statsTimezone)
 	if err != nil {
 		return nil, err
 	}
-	totalAllTime, _ := s.userRepo.CountAll(ctx) // best-effort headline number
+	totalAllTime, _ := s.userRepo.CountAll(ctx)
 
 	todayKey := today.Format("2006-01-02")
 	series := make([]dto.DailyRegistration, 0, days)
@@ -84,8 +77,6 @@ func (s *AdminService) RegistrationStats(ctx context.Context, days int) (*dto.Re
 	}, nil
 }
 
-// HourlyRegistrations returns the 24-hour (0-filled) registration series for a
-// single calendar day (YYYY-MM-DD, interpreted in statsTimezone).
 func (s *AdminService) HourlyRegistrations(ctx context.Context, date string) (*dto.HourlyStatsResponse, error) {
 	loc := statsLocation()
 	day, err := time.ParseInLocation("2006-01-02", date, loc)

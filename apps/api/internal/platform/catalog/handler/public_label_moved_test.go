@@ -1,13 +1,3 @@
-// public_label_moved_test.go — the merged-id posture of the label detail lane
-// (wave 148). A merge soft-deletes the losing label and writes a
-// catalog_redirect; before this wave the detail lane's raw head query ignored
-// deleted_at, so the dead id kept answering 200 with the old name and an empty
-// member list — a ghost page that both product sites rendered under
-// /galgame/official/{deadId}.
-//
-// The three outcomes pinned here are the whole contract: live → 200, merged →
-// 301 carrying current_id (never the survivor's CONTENT under the dead id),
-// absent → 404.
 package handler
 
 import (
@@ -26,9 +16,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// getRaw is getJSON's sibling for cases that must inspect HEADERS as well as
-// the envelope (Location on a 301). fiber's app.Test does not follow redirects,
-// which is exactly what a redirect assertion needs.
 func getRaw(t *testing.T, app *fiber.App, url string) (*http.Response, map[string]any) {
 	t.Helper()
 	resp, err := app.Test(httptest.NewRequest("GET", url, nil))
@@ -38,9 +25,6 @@ func getRaw(t *testing.T, app *fiber.App, url string) (*http.Response, map[strin
 	return resp, out
 }
 
-// seedMergedLabels builds one live label plus a two-step merge history:
-// gone -> mid -> live, flattened the way the merge path flattens it (doc 10
-// invariant 3), so the chain case asserts the FINAL id and not the middle one.
 func seedMergedLabels(t *testing.T, db *gorm.DB) (live, mid, gone int64) {
 	t.Helper()
 	for _, tbl := range []string{"catalog_redirect", "catalog_work_label", "catalog_label"} {
@@ -53,10 +37,8 @@ func seedMergedLabels(t *testing.T, db *gorm.DB) (live, mid, gone int64) {
 	}
 	live, mid, gone = mk("生存ブランド"), mk("中間ブランド"), mk("ももいろたんざく")
 
-	// First merge: gone -> mid.
 	require.NoError(t, repository.InsertRedirect(db, model.EntityTypeLabel, gone, mid, nil, "test merge 1"))
 	require.NoError(t, db.Delete(&model.CatalogLabel{}, gone).Error)
-	// Second merge: mid -> live, re-pointing everything that aimed at mid.
 	require.NoError(t, repository.FlattenRedirectsTo(db, model.EntityTypeLabel, mid, live))
 	require.NoError(t, repository.InsertRedirect(db, model.EntityTypeLabel, mid, live, nil, "test merge 2"))
 	require.NoError(t, db.Delete(&model.CatalogLabel{}, mid).Error)
@@ -85,7 +67,6 @@ func TestPublicLabelDetailMergedRedirects(t *testing.T) {
 		assert.Equal(t, "label", data["entity_type"])
 		assert.EqualValues(t, mid, data["id"])
 		assert.EqualValues(t, live, data["current_id"])
-		// The survivor's CONTENT must never travel this path.
 		assert.NotContains(t, data, "display_name")
 	})
 

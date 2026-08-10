@@ -7,21 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSanitizeQueryOperators pins the operator neutralization, fullwidth forms
-// included. Meilisearch normalizes '－' (U+FF0D) and '＂' (U+FF02) to the ASCII
-// operators BEFORE parsing them, so a Japanese title using the fullwidth dash as
-// a subtitle delimiter used to exclude itself from its own search.
 func TestSanitizeQueryOperators(t *testing.T) {
 	cases := map[string]string{
-		// wave 158's 60th title: the fullwidth dash was read as negation.
 		"アヘ顔アクメ中毒 －人体改造で狂ってイク私を見ないで－": "アヘ顔アクメ中毒  人体改造で狂ってイク私を見ないで",
-		"－人体改造":     "人体改造",
-		"＂CLANNAD＂": "CLANNAD",
-		// the ASCII forms this guard already covered
+		"－人体改造":                "人体改造",
+		"＂CLANNAD＂":            "CLANNAD",
 		"CRAZY CHA!N -エルピスの鎖-": "CRAZY CHA!N  エルピスの鎖",
 		`"CLANNAD"`:            "CLANNAD",
-		// letters that merely LOOK like operators must survive: the wave dash
-		// and the long-vowel mark carry meaning in Japanese titles.
 		"色仕掛け学園～思春期男子誘惑作戦～": "色仕掛け学園～思春期男子誘惑作戦～",
 		"ソードアート":     "ソードアート",
 		"":           "",
@@ -32,20 +24,14 @@ func TestSanitizeQueryOperators(t *testing.T) {
 	}
 }
 
-// TestLocalesForUIPairsWithTheIndex pins wave 158's rule: a query locale is only
-// correct when the index pinned the same one at write time.
 func TestLocalesForUIPairsWithTheIndex(t *testing.T) {
 	assert.Equal(t, []string{"cmn"}, LocalesForUI(IndexCharacters, "zh"))
 	assert.Equal(t, []string{"jpn"}, LocalesForUI(IndexCreditNames, "ja"))
 	assert.Nil(t, LocalesForUI(IndexLabels, "en"))
-	// The works index pins nothing, so no caller may pin the query either.
 	assert.Nil(t, LocalesForUI(IndexWorks, "zh"))
 	assert.Nil(t, LocalesForUI(IndexWorks, "ja"))
 }
 
-// TestEnsureIndexesResetsWorksLocalePins guards the omitempty trap: a Settings
-// field left nil PATCHes nothing, so an index created under the old spec would
-// keep its pins forever unless EnsureIndexes resets them explicitly.
 func TestEnsureIndexesResetsWorksLocalePins(t *testing.T) {
 	require.NoError(t, EnsureIndexes(testClient))
 	t.Cleanup(func() { _, _ = testClient.Svc().DeleteIndex(testClient.IndexUID(IndexWorks)) })
@@ -64,13 +50,6 @@ func TestEnsureIndexesResetsWorksLocalePins(t *testing.T) {
 	assert.Empty(t, got, "EnsureIndexes must clear pins it no longer declares")
 }
 
-// TestWorksCJKTitleRecall is the wave-158 regression, reduced to four
-// documents. Every query here is a work's OWN title (or a word out of its
-// middle) — the search a kungal user runs after copying a title from anywhere.
-// With `localizedAttributes` back on the index, the first two cases return
-// nothing: the index segments kanji with the Japanese pipeline while the query,
-// whose language Meilisearch autodetects as Chinese, is segmented with the
-// Chinese one, and matchingStrategy=all then finds no common term.
 func TestWorksCJKTitleRecall(t *testing.T) {
 	require.NoError(t, EnsureIndexes(testClient))
 	t.Cleanup(func() { _, _ = testClient.Svc().DeleteIndex(testClient.IndexUID(IndexWorks)) })

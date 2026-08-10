@@ -9,18 +9,12 @@ import (
 	"strings"
 )
 
-// Row is one worklist line. Extra keys (the adjudication evidence, the model's
-// reason, confidences) are ignored on purpose: the worklist doubles as the
-// wave's durable artefact, so it carries more than this tool needs.
 type Row struct {
 	CreditNameID  int64    `json:"credit_name_id"`
 	DetachSources []string `json:"detach_sources"`
 	Reason        string   `json:"reason,omitempty"`
 }
 
-// LoadWorklist reads and validates the split worklist. A credit name listed
-// twice is refused: the second row would decide against a state the first one
-// already changed.
 func LoadWorklist(path string) ([]Row, error) {
 	if path == "" {
 		return nil, fmt.Errorf("--worklist is required")
@@ -69,7 +63,6 @@ func LoadWorklist(path string) ([]Row, error) {
 	return out, nil
 }
 
-// WriteReceipts persists the per-row receipts (what was, or would be, removed).
 func WriteReceipts(path string, receipts []Receipt) error {
 	if path == "" {
 		return nil

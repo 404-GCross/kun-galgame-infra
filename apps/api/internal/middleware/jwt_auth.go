@@ -10,10 +10,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// keyUnavailable writes the 503 for a key-store outage (JWKS unreachable):
-// the service's failure, not the caller's — a 401 would make RPs kill live
-// sessions, and OptionalJWT would silently serve logged-in users anonymous
-// responses.
 func keyUnavailable(c fiber.Ctx) error {
 	return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
 		"code":    errors.ErrOperationFailed,
@@ -21,9 +17,6 @@ func keyUnavailable(c fiber.Ctx) error {
 	})
 }
 
-// JWTAuth is a lightweight JWT middleware backed by an accept-both verifier
-// (ES256/RS256 via JWKS + legacy HS256). Unlike Auth(), it does not depend on
-// AuthService — suitable for services that only need to verify tokens.
 func JWTAuth(verifier *oidctoken.Verifier) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -35,7 +28,6 @@ func JWTAuth(verifier *oidctoken.Verifier) fiber.Handler {
 			})
 		}
 
-		// Case-INSENSITIVE scheme per RFC 7235 §2.1 — see splitBearer.
 		token, ok := splitBearer(authHeader)
 		if !ok || token == "" {
 			bearerChallenge(c, "invalid_request", "Authorization header must use the Bearer scheme")
@@ -63,17 +55,6 @@ func JWTAuth(verifier *oidctoken.Verifier) fiber.Handler {
 	}
 }
 
-// setIdentityLocals populates the request-scoped identity locals from verified
-// token claims. All three JWT fill sites (JWTAuth, OptionalJWT, Auth) route
-// through it, so the local set they publish stays identical.
-//
-// user_roles keeps its established meaning — the union of the global `roles`
-// claim with the token's `site_roles` (see unionRoles) — the value every
-// existing consumer reads; it is untouched. user_global_roles and
-// token_client_id are ADDITIVE locals for the trust admin face, which must tell
-// platform staff from a site-granted moderator: the GLOBAL roles alone (never
-// unioned) discriminate the tier, and the client id derives the site scope.
-// Nothing that reads user_roles is affected.
 func setIdentityLocals(c fiber.Ctx, claims *utils.TokenClaims) {
 	c.Locals("user_uuid", claims.UserUUID)
 	c.Locals("user_id", claims.ID)
@@ -84,18 +65,6 @@ func setIdentityLocals(c fiber.Ctx, claims *utils.TokenClaims) {
 	c.Locals("token_client_id", claims.ClientID)
 }
 
-// unionRoles merges the caller's global `roles` claim with its `site_roles`
-// claim (already scoped by the JWT signer to the token's client site) into one
-// effective role set for permission resolution — this is the whole of the
-// site-scoped-roles wiring on the infra consumer side, so no call site changes.
-//
-// Safety: site_roles can NEVER contain user/admin/ren (the grant API rejects
-// those names), so this union only ever ADDS site-local moderator/creator/
-// custom-bundle names. It can never let a site grant reach an admin/ren-only
-// permission — the catalog / oauth-console / artifact bundles key only on
-// admin/ren, which site_roles structurally cannot carry. A site "moderator"
-// thus gains moderator capabilities, but only via a token issued to that site's
-// client. See docs/integration/oauth/12-site-roles.md.
 func unionRoles(global, site []string) []string {
 	if len(site) == 0 {
 		return global
@@ -117,14 +86,6 @@ func unionRoles(global, site []string) []string {
 	return out
 }
 
-// OptionalJWT is like JWTAuth but never blocks the request: when the
-// Authorization header is missing or invalid, the request proceeds with
-// no user_id in Locals. When valid, it populates the same locals as JWTAuth.
-//
-// Useful for endpoints whose response shape changes for authenticated
-// callers (e.g. /galgame/search ?include_pending=true,
-// /galgame/batch returning the caller's pending drafts) without forcing
-// every anonymous caller to authenticate.
 func OptionalJWT(verifier *oidctoken.Verifier) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -137,9 +98,6 @@ func OptionalJWT(verifier *oidctoken.Verifier) fiber.Handler {
 		}
 		claims, err := verifier.Parse(c.Context(), token)
 		if err != nil {
-			// A key-store outage must not demote a presented token to anonymous
-			// (users would see their own pending drafts silently vanish) — fail
-			// loud so the caller retries.
 			if stderrors.Is(err, oidctoken.ErrKeyUnavailable) {
 				return keyUnavailable(c)
 			}

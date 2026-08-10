@@ -15,34 +15,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// Runner executes a single job with all the cross-cutting concerns:
-// cross-instance single-flight (PG advisory lock), job_run lifecycle,
-// panic isolation. The advisory lock + job_run rows live in the OAuth
-// core DB; the job itself talks to whatever DB it needs via cfg.
 type Runner struct {
 	cfg *config.Config
-	db  *gorm.DB // OAuth core DB
+	db  *gorm.DB
 }
 
-// NewRunner builds a Runner. db must be the OAuth core gorm handle.
 func NewRunner(cfg *config.Config, db *gorm.DB) *Runner {
 	return &Runner{cfg: cfg, db: db}
 }
 
-// advisoryKey maps a job name to a stable int64 for pg_advisory_lock.
-// fnv64a is deterministic; the uint64→int64 wrap is fine (we only need a
-// stable, collision-unlikely key, not arithmetic meaning).
 func advisoryKey(name string) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(name))
 	return int64(h.Sum64())
 }
 
-// ReapStale marks long-orphaned `running` rows as failed. A run still
-// `running` past maxAge is almost certainly from a crashed/restarted
-// process (our longest job, full sync-vndb, is ~20min). maxAge is well
-// above that so a legitimately in-flight run on another replica is never
-// mis-reaped. Call once at startup.
 func (r *Runner) ReapStale(ctx context.Context, maxAge time.Duration) {
 	cutoff := time.Now().Add(-maxAge)
 	res := r.db.WithContext(ctx).Model(&jobmodel.JobRun{}).
@@ -61,17 +48,12 @@ func (r *Runner) ReapStale(ctx context.Context, maxAge time.Duration) {
 	}
 }
 
-// Run executes job once. trigger is "schedule" or "admin". It returns the
-// job_run id and the terminal status. It never panics out and never
-// returns an error to the caller — outcomes are recorded in job_run and
-// logged; this is a fire-and-record boundary.
 func (r *Runner) Run(ctx context.Context, job Job, trigger string) (runID uint, status string) {
 	sqlDB, err := r.db.DB()
 	if err != nil {
 		slog.Error("jobs: get sql.DB", "job", job.Name, "err", err)
 		return 0, jobmodel.StatusFailed
 	}
-	// Dedicated connection for the session-scoped advisory lock.
 	conn, err := sqlDB.Conn(ctx)
 	if err != nil {
 		slog.Error("jobs: acquire conn", "job", job.Name, "err", err)
@@ -86,15 +68,11 @@ func (r *Runner) Run(ctx context.Context, job Job, trigger string) (runID uint, 
 		return 0, jobmodel.StatusFailed
 	}
 	if !locked {
-		// Another instance/run holds it. Record a visible skip, don't error.
 		slog.Info("jobs: skipped, lock held", "job", job.Name, "trigger", trigger)
 		id := r.record(ctx, job.Name, trigger, jobmodel.StatusSkipped,
 			Summary{"reason": "locked"}, "")
 		return id, jobmodel.StatusSkipped
 	}
-	// Best-effort unlock on a background ctx so cancellation still releases
-	// it. If this ever fails the lock leaks on the pooled conn until the
-	// backend session ends — acceptable for 3 daily single-process jobs.
 	defer func() {
 		if _, uerr := conn.ExecContext(context.Background(),
 			"SELECT pg_advisory_unlock($1)", key); uerr != nil {
@@ -134,7 +112,6 @@ func (r *Runner) Run(ctx context.Context, job Job, trigger string) (runID uint, 
 	return runID, status
 }
 
-// LatestRun returns the most recent run for a job, or nil if none.
 func (r *Runner) LatestRun(ctx context.Context, name string) (*jobmodel.JobRun, error) {
 	var row jobmodel.JobRun
 	err := r.db.WithContext(ctx).
@@ -151,7 +128,6 @@ func (r *Runner) LatestRun(ctx context.Context, name string) (*jobmodel.JobRun, 
 	return &row, nil
 }
 
-// ListRuns returns the most recent runs for a job, newest first.
 func (r *Runner) ListRuns(ctx context.Context, name string, limit int) ([]jobmodel.JobRun, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 20
@@ -165,16 +141,10 @@ func (r *Runner) ListRuns(ctx context.Context, name string, limit int) ([]jobmod
 	return rows, err
 }
 
-// RunAsync triggers a job in the background (detached ctx) for the admin
-// manual-trigger path — long jobs (full sync-vndb ~20min) must never
-// block the HTTP handler. Single-flight is still enforced by Run's
-// advisory lock (a clash is recorded as skipped:locked).
 func (r *Runner) RunAsync(job Job, trigger string) {
 	go r.Run(context.Background(), job, trigger)
 }
 
-// safeRun isolates job panics — a panicking job must never crash the
-// hosting (oauth) process.
 func safeRun(ctx context.Context, job Job, cfg *config.Config) (s Summary, err error) {
 	defer func() {
 		if p := recover(); p != nil {
@@ -184,7 +154,6 @@ func safeRun(ctx context.Context, job Job, cfg *config.Config) (s Summary, err e
 	return job.Run(ctx, cfg)
 }
 
-// record inserts a job_run row and returns its id (0 on failure — logged).
 func (r *Runner) record(ctx context.Context, name, trigger, status string, summary Summary, errMsg string) uint {
 	row := &jobmodel.JobRun{
 		JobName:   name,

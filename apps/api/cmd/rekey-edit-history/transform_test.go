@@ -9,10 +9,6 @@ import (
 	"api/internal/platform/editing"
 )
 
-// newTestTransformer builds the real thing: the catalog.work spec is registered
-// exactly as the service registers it, so every assertion below is made against
-// the validators production enforces. The nil pool is safe — Validate closures
-// never touch the database (only Apply and LoadSnapshot do).
 func newTestTransformer(t *testing.T) *transformer {
 	t.Helper()
 	reg := editing.NewRegistry()
@@ -32,8 +28,6 @@ func newTestTransformer(t *testing.T) *transformer {
 	return tr
 }
 
-// fullWikiSnapshot is a realistic wiki snapshot: all 26 keys, shapes copied
-// from the live corpus (a jsonb_pretty of edit_revision.snapshot).
 func fullWikiSnapshot() map[string]any {
 	return map[string]any{
 		wikiNameJaJP: "ちっちゃいお姉ちゃん", wikiNameEnUS: "", wikiNameZhCN: "小巧的姐姐", wikiNameZhTW: "小巧的姐姐",
@@ -62,13 +56,10 @@ func TestSnapshotFoldsAndRetiresTheWholeVocabulary(t *testing.T) {
 	tr := newTestTransformer(t)
 	out, route := tr.document(fullWikiSnapshot(), modeSnapshot)
 
-	// The nine catalog keys the corpus can reach, with their folded values.
 	wantTitles := []any{
 		map[string]any{"lang": "ja", "title": "ちっちゃいお姉ちゃん", "kind": float64(0)},
 		map[string]any{"lang": "zh-Hans", "title": "小巧的姐姐", "kind": float64(0)},
 		map[string]any{"lang": "zh-Hant", "title": "小巧的姐姐", "kind": float64(0)},
-		// Aliases fold in as lang-less alias rows, after the officials, in
-		// mirror step p's own order.
 		map[string]any{"lang": "", "title": "alias one", "kind": float64(aliasesFoldKind)},
 	}
 	if got := out[editspec.FieldWorkTitles]; !reflect.DeepEqual(got, wantTitles) {
@@ -105,7 +96,6 @@ func TestSnapshotFoldsAndRetiresTheWholeVocabulary(t *testing.T) {
 		t.Errorf("covers = %#v, want %#v (source/source_key/sort_order dropped)", got, wantCovers)
 	}
 
-	// The nine retired keys survive verbatim under their wiki spelling.
 	for _, key := range []string{
 		wikiBanner, wikiVNDBID, wikiBID,
 		wikiReleaseDate, wikiReleaseDateTBA, wikiReleasePrecision, wikiStatus, wikiSeriesID,
@@ -117,7 +107,6 @@ func TestSnapshotFoldsAndRetiresTheWholeVocabulary(t *testing.T) {
 			t.Errorf("retired key %q was routed onto a catalog key", key)
 		}
 	}
-	// Nothing invented: every output key is either a catalog key or a wiki key.
 	for key := range out {
 		if _, retired := retiredKeys[key]; retired {
 			continue
@@ -143,8 +132,6 @@ func TestPatchRetiresFoldKeysButMapsOneToOneKeys(t *testing.T) {
 	}
 	out, _ := tr.document(patch, modePatch)
 
-	// The fold keys stay: a full-replace titles/intros value built from one
-	// language would state something the proposer never proposed.
 	if out[wikiIntroZhCN] != "a new synopsis" || out[wikiNameZhCN] != "a new name" {
 		t.Errorf("fold keys must survive a patch verbatim, got %#v", out)
 	}
@@ -154,7 +141,6 @@ func TestPatchRetiresFoldKeysButMapsOneToOneKeys(t *testing.T) {
 	if _, folded := out[editspec.FieldWorkIntros]; folded {
 		t.Error("a partial patch must not be folded into catalog.work.intros")
 	}
-	// The 1:1 keys map exactly as in a snapshot.
 	if out[editspec.FieldWorkDisplayNSFW] != false {
 		t.Errorf("display_nsfw = %v, want false", out[editspec.FieldWorkDisplayNSFW])
 	}
@@ -188,8 +174,6 @@ func TestUnmappableValuesKeepTheWikiKey(t *testing.T) {
 	}
 }
 
-// An unmapped id must not produce a SHORTENED list: half a full-replace edge
-// list is the silent data loss this rule exists to prevent.
 func TestPartialIDListIsNeverWritten(t *testing.T) {
 	tr := newTestTransformer(t)
 	out, _ := tr.document(map[string]any{wikiTagIDs: []any{float64(7), float64(999)}}, modeSnapshot)
@@ -241,9 +225,9 @@ func TestChangedFieldsFollowTheSnapshotRouting(t *testing.T) {
 	tr := newTestTransformer(t)
 	_, route := tr.document(fullWikiSnapshot(), modeSnapshot)
 	got := rekeyChangedFields([]string{
-		wikiNameJaJP, wikiNameZhCN, // both fold onto titles → one entry
-		wikiReleaseDate, // retired → survives
-		wikiTagIDs,      // mapped
+		wikiNameJaJP, wikiNameZhCN,
+		wikiReleaseDate,
+		wikiTagIDs,
 	}, route)
 	want := []string{editspec.FieldWorkTitles, wikiReleaseDate, editspec.FieldWorkTagIDs}
 	if !reflect.DeepEqual(got, want) {
@@ -271,9 +255,6 @@ func TestPatchDeltaRekeysBothHalves(t *testing.T) {
 	}
 }
 
-// Running the transform over its own output must change nothing. This is what
-// makes a re-run of the migration safe even on a document that somehow got
-// transformed twice.
 func TestTransformIsIdempotent(t *testing.T) {
 	tr := newTestTransformer(t)
 	once, _ := tr.document(fullWikiSnapshot(), modeSnapshot)
@@ -285,8 +266,6 @@ func TestTransformIsIdempotent(t *testing.T) {
 	}
 }
 
-// Every mapped value must be one the live field would accept — the property the
-// migration relies on so that a revert of a migrated revision cannot 422.
 func TestEveryMappedValuePassesTheLiveValidator(t *testing.T) {
 	tr := newTestTransformer(t)
 	out, route := tr.document(fullWikiSnapshot(), modeSnapshot)
@@ -304,11 +283,6 @@ func TestEveryMappedValuePassesTheLiveValidator(t *testing.T) {
 	}
 }
 
-// The alias fold is the wave-161 correction to the first draft, which retired
-// aliases in place. Retiring them meant a revert of a migrated revision wrote a
-// titles value holding officials only — and applyTitles full-replaces kinds
-// 0..2, so it would have deleted every alias row the work had. Folding them in
-// (now that a lang-less alias is legal) makes the revert restore them instead.
 func TestAliasesFoldIntoTitlesWithNoLanguage(t *testing.T) {
 	tr := newTestTransformer(t)
 	out, route := tr.document(map[string]any{
@@ -336,8 +310,6 @@ func TestAliasesFoldIntoTitlesWithNoLanguage(t *testing.T) {
 	}
 }
 
-// An alias-only work cannot be expressed: titles requires an official, and the
-// migration will not fabricate one. Both keys stay in the wiki vocabulary.
 func TestAliasOnlyWorkKeepsTheWikiKeys(t *testing.T) {
 	tr := newTestTransformer(t)
 	in := map[string]any{wikiNameJaJP: "", wikiAliases: []any{"only an alias"}}

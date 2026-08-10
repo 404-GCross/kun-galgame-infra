@@ -9,24 +9,6 @@ import (
 	"api/internal/platform/editing"
 )
 
-// docMode says which of the three JSONB documents is being transformed. It
-// exists for ONE reason: the many→one folds (four name columns → titles, four
-// intro columns → intros) are only true of a document that carries the
-// entity's whole state.
-//
-//   - modeSnapshot: edit_revision.snapshot — full state. The fold is total, so
-//     it is performed.
-//   - modePatch: edit_proposal.patch and edit_proposal_amendment.patch_delta —
-//     a SUBSET of fields. catalog.work.titles is a full-replace field, so
-//     folding a patch that touched only the zh title would record the intent
-//     "this work's only title is <zh>", which the proposer never expressed.
-//     Fold keys are therefore retired in place here; every 1:1 key still maps.
-//
-// The asymmetry is safe by fact as well as by argument: the corpus holds ZERO
-// open proposals (848 rows: 832 merged, 11 declined, 5 withdrawn), so no patch
-// is ever replayed — a patch is a record, and the record stays in the
-// vocabulary the proposer actually used. The tool refuses to migrate any
-// proposal still OPEN at run time for exactly this reason (see main.go).
 type docMode int
 
 const (
@@ -34,22 +16,16 @@ const (
 	modePatch
 )
 
-// transformer turns one wiki JSONB document into its catalog counterpart.
-// Every mapped value is validated with the catalog field's own Validate
-// closure before it is accepted; a value that fails is demoted to
-// "retired in place" rather than written (keymap.go, class 3).
 type transformer struct {
 	ids      *idMaps
 	validate map[string]func(any) error
 	stats    *keyStats
 }
 
-// keyStats is the per-key ledger: what landed on which catalog key, and what
-// stayed behind with which reason.
 type keyStats struct {
-	Mapped  map[string]int // catalog key → documents carrying it
-	Retired map[string]int // wiki key → documents that kept it
-	Reasons map[string]int // "wiki key: reason" → count
+	Mapped  map[string]int
+	Retired map[string]int
+	Reasons map[string]int
 }
 
 func newKeyStats() *keyStats {
@@ -63,9 +39,6 @@ func (s *keyStats) retired(key, reason string) {
 	s.Reasons[key+": "+reason]++
 }
 
-// newTransformer wires the catalog.work field validators off a live registry —
-// the same closures the running service enforces, so "spec-valid" here means
-// the same thing it means at merge time.
 func newTransformer(ids *idMaps, reg *editing.Registry) (*transformer, error) {
 	spec, ok := reg.Type(editspec.TypeWork)
 	if !ok {
@@ -87,10 +60,6 @@ func newTransformer(ids *idMaps, reg *editing.Registry) (*transformer, error) {
 	return &transformer{ids: ids, validate: validate, stats: newKeyStats()}, nil
 }
 
-// document transforms one wiki document. It returns the new document and the
-// routing table (wiki key → catalog key) for the keys that were mapped; every
-// wiki key NOT in the routing table survives verbatim in the output under its
-// original spelling.
 func (t *transformer) document(in map[string]any, mode docMode) (map[string]any, map[string]string) {
 	out := make(map[string]any, len(in))
 	route := make(map[string]string, len(in))
@@ -110,7 +79,6 @@ func (t *transformer) document(in map[string]any, mode docMode) (map[string]any,
 		return true
 	}
 
-	// ── the two folds (snapshot documents only) ──────────────────────────────
 	if mode == modeSnapshot {
 		if titles, sources, ok := t.foldTitles(in); ok {
 			emit(editspec.FieldWorkTitles, titles, sources...)
@@ -120,7 +88,6 @@ func (t *transformer) document(in map[string]any, mode docMode) (map[string]any,
 		}
 	}
 
-	// ── the 1:1 keys ─────────────────────────────────────────────────────────
 	for key, value := range in {
 		if _, done := route[key]; done {
 			continue
@@ -133,14 +100,13 @@ func (t *transformer) document(in map[string]any, mode docMode) (map[string]any,
 			if mode == modePatch {
 				t.stats.retired(key, "fold key in a partial document: a full-replace value built from a subset would misstate the patch")
 			}
-			continue // snapshot mode already routed it, or the fold failed
+			continue
 		}
 		if newValue, target, ok := t.scalarOrList(key, value); ok {
 			emit(target, newValue, key)
 		}
 	}
 
-	// Everything not routed survives under its own key.
 	for key, value := range in {
 		if _, moved := route[key]; !moved {
 			out[key] = value
@@ -149,8 +115,6 @@ func (t *transformer) document(in map[string]any, mode docMode) (map[string]any,
 	return out, route
 }
 
-// scalarOrList transforms the 1:1 keys. ok=false means the value could not be
-// transformed faithfully; the reason has already been counted.
 func (t *transformer) scalarOrList(key string, value any) (any, string, bool) {
 	switch key {
 	case wikiContentLimit:
@@ -225,22 +189,10 @@ func (t *transformer) scalarOrList(key string, value any) (any, string, bool) {
 		}
 		return shots, editspec.FieldWorkScreenshots, true
 	}
-	// An unknown key is not silently dropped: it survives under its own name
-	// and shows up in the ledger, so a vocabulary the survey missed is loud.
 	t.stats.retired(key, "key is not in the migration's wiki vocabulary")
 	return nil, "", false
 }
 
-// foldTitles builds catalog.work.titles from the four name columns plus the
-// alias list. Empty names are skipped (the wiki stores "" for "no name in this
-// language", which is the absence of a title row, not an empty one); aliases
-// become kind=alias rows with NO language, which is what they are and what the
-// mirror has always written.
-//
-// Nothing to fold = no titles value: the source keys stay put rather than
-// produce a value the validator would reject anyway (titles requires at least
-// one official, so an alias-only work cannot be expressed here — it is counted
-// and left in the wiki vocabulary rather than given a fabricated official).
 func (t *transformer) foldTitles(in map[string]any) ([]any, []string, bool) {
 	var titles []any
 	var sources []string
@@ -269,8 +221,6 @@ func (t *transformer) foldTitles(in map[string]any) ([]any, []string, bool) {
 		name, _ := raw.(string)
 		add(p.Lang, name, 0)
 	}
-	// Aliases are appended after the officials, mirroring step p's own order
-	// (it writes the official rows first, then the alias rows).
 	aliasesOK := true
 	if raw, present := in[wikiAliases]; present {
 		sources = append(sources, wikiAliases)
@@ -304,9 +254,6 @@ func (t *transformer) foldTitles(in map[string]any) ([]any, []string, bool) {
 	return titles, sources, true
 }
 
-// foldIntros builds catalog.work.intros. An all-empty fold is legal here (the
-// empty list is a valid intros value meaning "no curated synopsis") — unlike
-// titles, which requires an official.
 func (t *transformer) foldIntros(in map[string]any) ([]any, []string, bool) {
 	intros := []any{}
 	var sources []string
@@ -328,11 +275,6 @@ func (t *transformer) foldIntros(in map[string]any) ([]any, []string, bool) {
 	return intros, sources, true
 }
 
-// mapIDList translates a wiki id list through an id space. ALL OR NOTHING: one
-// unmapped id retires the whole key. A partial list is silent data loss the
-// moment a reader treats the snapshot as the state of the work — and a
-// catastrophic one the moment somebody reverts to it, because these are
-// full-replace fields.
 func (t *transformer) mapIDList(key string, value any, space map[int64]int64, what string) ([]any, bool) {
 	if value == nil {
 		return []any{}, true
@@ -356,7 +298,7 @@ func (t *transformer) mapIDList(key string, value any, space map[int64]int64, wh
 			return nil, false
 		}
 		if seen[target] {
-			continue // two wiki rows folded onto one catalog row
+			continue
 		}
 		seen[target] = true
 		out = append(out, float64(target))
@@ -364,11 +306,6 @@ func (t *transformer) mapIDList(key string, value any, space map[int64]int64, wh
 	return out, true
 }
 
-// mapLinks reduces the wiki's {name, link, source, source_key} objects to the
-// catalog field's bare canonical URLs. Names are dropped by 03 §6-2. The
-// canonicalization is the catalog spec's OWN (editspec.CanonicalWorkLinks), so
-// a migrated value is byte-identical to what re-reading the curated lane would
-// return — the property that keeps a later diff from showing a phantom change.
 func (t *transformer) mapLinks(key string, value any) ([]any, bool) {
 	if value == nil {
 		return []any{}, true
@@ -378,13 +315,6 @@ func (t *transformer) mapLinks(key string, value any) ([]any, bool) {
 		t.stats.retired(key, "value is not an array")
 		return nil, false
 	}
-	// Canonicalized ONE AT A TIME, then deduplicated. The wiki's link list was
-	// not keyed, so it happily held the same target twice (an http and an https
-	// spelling, a mobile host, a web.archive.org wrapper) — forms that collapse
-	// onto one URL here. Handing the whole list to the field's parser at once
-	// would reject the row over a duplicate that only exists after
-	// canonicalization; folding first keeps the row and loses nothing a reader
-	// could see.
 	out := make([]any, 0, len(arr))
 	seen := map[string]bool{}
 	for _, el := range arr {
@@ -408,11 +338,6 @@ func (t *transformer) mapLinks(key string, value any) ([]any, bool) {
 	return out, true
 }
 
-// mapCovers recodes cover elements. Dropped: source / source_key (the curated
-// lane is the editing face's own source by construction) and sort_order (array
-// position IS the order in the catalog field, which round-trips through
-// LoadSnapshot's ORDER BY id). Added: portrait_pinned=false — the wiki had no
-// such concept, and false is its absence, not a guess.
 func (t *transformer) mapCovers(key string, value any) ([]any, bool) {
 	return t.mapMedia(key, value, func(obj map[string]any) map[string]any {
 		return map[string]any{
@@ -436,9 +361,6 @@ func (t *transformer) mapScreenshots(key string, value any) ([]any, bool) {
 	})
 }
 
-// mapMedia is the shared media recode. JSON null becomes the empty list: the
-// wiki wrote null for "this revision has no media rows", and the catalog field
-// has no null — [] is the same statement in the vocabulary that survives.
 func (t *transformer) mapMedia(key string, value any, recode func(map[string]any) map[string]any) ([]any, bool) {
 	if value == nil {
 		return []any{}, true
@@ -458,7 +380,7 @@ func (t *transformer) mapMedia(key string, value any, recode func(map[string]any
 		}
 		hash, _ := obj["image_hash"].(string)
 		if seen[hash] {
-			continue // the catalog field is keyed by hash; the wiki was not
+			continue
 		}
 		seen[hash] = true
 		out = append(out, recode(obj))
@@ -480,10 +402,6 @@ func numberOr(v any, fallback float64) float64 {
 	return fallback
 }
 
-// rekeyChangedFields translates a revision's changed_fields list through the
-// SAME routing table the row's snapshot produced, so the two can never
-// disagree about whether a key moved. Order is preserved and a fold's
-// collapsed members are deduplicated.
 func rekeyChangedFields(fields []string, route map[string]string) []string {
 	out := make([]string, 0, len(fields))
 	seen := map[string]bool{}
@@ -501,9 +419,6 @@ func rekeyChangedFields(fields []string, route map[string]string) []string {
 	return out
 }
 
-// rekeyPatchDelta rewrites an amendment's {"set":{...},"unset":[...]} document.
-// The set half goes through the value transform; the unset half is a bare key
-// list routed by the same decisions.
 func (t *transformer) patchDelta(delta map[string]any) map[string]any {
 	out := make(map[string]any, len(delta))
 	for k, v := range delta {
@@ -514,8 +429,6 @@ func (t *transformer) patchDelta(delta map[string]any) map[string]any {
 		out["set"] = newSet
 	}
 	if unset, ok := delta["unset"].([]any); ok {
-		// Route an unset key by transforming a probe document holding it: the
-		// decision must be the same one the set half would make.
 		keys := make([]string, 0, len(unset))
 		for _, el := range unset {
 			if s, ok := el.(string); ok {
@@ -526,9 +439,6 @@ func (t *transformer) patchDelta(delta map[string]any) map[string]any {
 		newUnset := make([]any, 0, len(keys))
 		seen := map[string]bool{}
 		for _, k := range keys {
-			// A fold key stays in the wiki vocabulary here for the same reason
-			// it does in the set half: an amendment that unsets one language's
-			// title did not unset the whole titles field.
 			target := k
 			if _, retired := retiredKeys[k]; !retired && !foldKeys[k] {
 				if mapped, ok := mappedTargets[k]; ok {

@@ -13,28 +13,19 @@ import (
 	"gorm.io/datatypes"
 )
 
-// rotateGrace is how long a rotated-out key stays valid after rotation so a
-// deploy can swap keys without downtime (design §4.1: 24–72h grace).
 const rotateGrace = 72 * time.Hour
 
-// ErrInvalidTier is returned when an app is set to an unknown tier.
 var ErrInvalidTier = errors.New("devapi: invalid tier (want free|trusted|internal)")
 
-// AdminService orchestrates the developer-platform management surface: app
-// dev-config and API-key lifecycle. It buses revocations through the resolve
-// cache so a revoke takes effect immediately, not after the 60s TTL.
 type AdminService struct {
 	repo  *Repository
 	store Store
 }
 
-// NewAdminService builds the management service.
 func NewAdminService(repo *Repository, store Store) *AdminService {
 	return &AdminService{repo: repo, store: store}
 }
 
-// AppConfig is a PATCH over an app's dev_* fields — nil fields are left
-// unchanged.
 type AppConfig struct {
 	OwnerUserID    *uint
 	DevEnabled     *bool
@@ -44,14 +35,11 @@ type AppConfig struct {
 	DevQuotaDaily  *int
 }
 
-// AppView is an app row plus its live key count, for the management list.
 type AppView struct {
 	Client   *siteModel.OAuthClient
 	KeyCount int64
 }
 
-// UpdateAppConfig applies a PATCH to an app's dev configuration. An unknown
-// tier is rejected. Returns the refreshed app row.
 func (s *AdminService) UpdateAppConfig(ctx context.Context, clientID string, cfg AppConfig) (*siteModel.OAuthClient, error) {
 	fields := map[string]any{}
 	if cfg.OwnerUserID != nil {
@@ -81,7 +69,6 @@ func (s *AdminService) UpdateAppConfig(ctx context.Context, clientID string, cfg
 	return s.repo.GetApp(ctx, clientID)
 }
 
-// ListApps returns every dev_enabled app with its live key count.
 func (s *AdminService) ListApps(ctx context.Context) ([]AppView, error) {
 	apps, err := s.repo.ListDevApps(ctx)
 	if err != nil {
@@ -98,16 +85,12 @@ func (s *AdminService) ListApps(ctx context.Context) ([]AppView, error) {
 	return out, nil
 }
 
-// MintKeyInput is the payload for minting a key.
 type MintKeyInput struct {
 	Name   string
-	Test   bool     // nm_test_ instead of nm_live_
-	Scopes []string // defaults to the public read scopes when empty
+	Test   bool
+	Scopes []string
 }
 
-// MintKey generates a new key for an app, persists only its hash, and returns
-// the plaintext ONCE (never stored, never logged). Phase 1 forces the key's
-// nsfw_allowed off (裁定 6). The owning app is validated to exist.
 func (s *AdminService) MintKey(ctx context.Context, clientID string, in MintKeyInput, createdBy uint) (*DeveloperAPIKey, string, error) {
 	if _, err := s.repo.GetApp(ctx, clientID); err != nil {
 		return nil, "", err
@@ -127,14 +110,10 @@ func (s *AdminService) MintKey(ctx context.Context, clientID string, in MintKeyI
 	return key, plaintext, nil
 }
 
-// ListKeys returns an app's keys (no plaintext, no hash — KeyHash is json:"-").
 func (s *AdminService) ListKeys(ctx context.Context, clientID string) ([]DeveloperAPIKey, error) {
 	return s.repo.ListKeysByClient(ctx, clientID)
 }
 
-// RotateKey mints a replacement for an existing key (same app/scopes/nsfw) and
-// puts the old key into a grace window (expires_at = now + rotateGrace) so both
-// work during the swap. Returns the NEW key's plaintext once.
 func (s *AdminService) RotateKey(ctx context.Context, keyID, createdBy uint) (*DeveloperAPIKey, string, error) {
 	old, err := s.repo.GetKey(ctx, keyID)
 	if err != nil {
@@ -158,8 +137,6 @@ func (s *AdminService) RotateKey(ctx context.Context, keyID, createdBy uint) (*D
 	return newKey, plaintext, nil
 }
 
-// RevokeKey revokes a key immediately and actively busts its resolve cache so
-// it stops working now, not after the 60s TTL.
 func (s *AdminService) RevokeKey(ctx context.Context, keyID uint) error {
 	key, err := s.repo.GetKey(ctx, keyID)
 	if err != nil {
@@ -168,7 +145,6 @@ func (s *AdminService) RevokeKey(ctx context.Context, keyID uint) error {
 	if err := s.repo.RevokeKey(ctx, key.ID, time.Now()); err != nil {
 		return err
 	}
-	// The resolve cache is keyed by the bare hash hex; KeyHash is "sha256:<hex>".
 	if hexPart, ok := strings.CutPrefix(key.KeyHash, keyHashPrefix); ok {
 		_ = s.store.Del(ctx, "devkey:"+hexPart)
 	}
@@ -176,8 +152,6 @@ func (s *AdminService) RevokeKey(ctx context.Context, keyID uint) error {
 	return nil
 }
 
-// GetKeyForClient loads a key and verifies it belongs to clientID (route
-// nesting guard). Returns nil when it doesn't match.
 func (s *AdminService) GetKeyForClient(ctx context.Context, clientID string, keyID uint) (*DeveloperAPIKey, error) {
 	key, err := s.repo.GetKey(ctx, keyID)
 	if err != nil {
@@ -189,12 +163,10 @@ func (s *AdminService) GetKeyForClient(ctx context.Context, clientID string, key
 	return key, nil
 }
 
-// buildKey is buildKeyWithNSFW with nsfw forced off (Phase 1 mint path).
 func (s *AdminService) buildKey(clientID, name string, test bool, scopes []string, createdBy uint) (*DeveloperAPIKey, string, error) {
 	return s.buildKeyWithNSFW(clientID, name, test, scopes, false, createdBy)
 }
 
-// buildKeyWithNSFW assembles a key row + plaintext.
 func (s *AdminService) buildKeyWithNSFW(clientID, name string, test bool, scopes []string, nsfw bool, createdBy uint) (*DeveloperAPIKey, string, error) {
 	prefix := LivePrefix
 	if test {

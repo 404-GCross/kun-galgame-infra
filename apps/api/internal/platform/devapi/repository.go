@@ -13,19 +13,14 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Repository is the developer-platform data access layer over the main DB
-// (kun_galgame_infra): API-key resolution + lifecycle, app dev-config, and
-// usage upserts.
 type Repository struct {
 	db *gorm.DB
 }
 
-// NewRepository builds a Repository over the given main-DB handle.
 func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// resolveRow is the flat join result for credential resolution.
 type resolveRow struct {
 	KeyID         uint
 	ClientID      string
@@ -42,11 +37,6 @@ type resolveRow struct {
 	DevQuotaDaily int
 }
 
-// ResolveByHash loads the active credential for a stored key hash ("sha256:<hex>"),
-// joining the owning application. Returns (nil, nil) — resolve to 401 — when no
-// row matches, the key is revoked/expired, or the app has dev_enabled=false. A
-// real error (DB down) is returned so the caller can reject WITHOUT failing open
-// (裁定 5: the DB credential check never fails open).
 func (r *Repository) ResolveByHash(ctx context.Context, hash string, now time.Time) (*Credential, error) {
 	var row resolveRow
 	err := r.db.WithContext(ctx).
@@ -66,8 +56,6 @@ func (r *Repository) ResolveByHash(ctx context.Context, hash string, now time.Ti
 	if err != nil {
 		return nil, err
 	}
-	// Constant-time re-check of the hash (defence in depth over the indexed
-	// equality lookup) + active gates.
 	if subtle.ConstantTimeCompare([]byte(row.KeyHash), []byte(hash)) != 1 {
 		return nil, nil
 	}
@@ -94,12 +82,10 @@ func (r *Repository) ResolveByHash(ctx context.Context, hash string, now time.Ti
 	}, nil
 }
 
-// CreateKey inserts a new API key row.
 func (r *Repository) CreateKey(ctx context.Context, key *DeveloperAPIKey) error {
 	return r.db.WithContext(ctx).Create(key).Error
 }
 
-// ListKeysByClient returns an app's keys, newest first.
 func (r *Repository) ListKeysByClient(ctx context.Context, clientID string) ([]DeveloperAPIKey, error) {
 	var keys []DeveloperAPIKey
 	err := r.db.WithContext(ctx).
@@ -109,7 +95,6 @@ func (r *Repository) ListKeysByClient(ctx context.Context, clientID string) ([]D
 	return keys, err
 }
 
-// CountKeysByClient returns the live (non-revoked) key count for an app.
 func (r *Repository) CountKeysByClient(ctx context.Context, clientID string) (int64, error) {
 	var n int64
 	err := r.db.WithContext(ctx).
@@ -119,7 +104,6 @@ func (r *Repository) CountKeysByClient(ctx context.Context, clientID string) (in
 	return n, err
 }
 
-// GetKey loads a single key by id.
 func (r *Repository) GetKey(ctx context.Context, id uint) (*DeveloperAPIKey, error) {
 	var key DeveloperAPIKey
 	if err := r.db.WithContext(ctx).First(&key, id).Error; err != nil {
@@ -128,7 +112,6 @@ func (r *Repository) GetKey(ctx context.Context, id uint) (*DeveloperAPIKey, err
 	return &key, nil
 }
 
-// SetKeyExpiry sets a key's expiry (rotation grace window).
 func (r *Repository) SetKeyExpiry(ctx context.Context, id uint, expiresAt time.Time) error {
 	return r.db.WithContext(ctx).
 		Model(&DeveloperAPIKey{}).
@@ -136,7 +119,6 @@ func (r *Repository) SetKeyExpiry(ctx context.Context, id uint, expiresAt time.T
 		Update("expires_at", expiresAt).Error
 }
 
-// RevokeKey marks a key revoked (rejected on the next request).
 func (r *Repository) RevokeKey(ctx context.Context, id uint, now time.Time) error {
 	return r.db.WithContext(ctx).
 		Model(&DeveloperAPIKey{}).
@@ -144,7 +126,6 @@ func (r *Repository) RevokeKey(ctx context.Context, id uint, now time.Time) erro
 		Update("revoked_at", now).Error
 }
 
-// TouchLastUsed writes last_used_at (throttled by the caller).
 func (r *Repository) TouchLastUsed(ctx context.Context, id uint, now time.Time) error {
 	return r.db.WithContext(ctx).
 		Model(&DeveloperAPIKey{}).
@@ -152,7 +133,6 @@ func (r *Repository) TouchLastUsed(ctx context.Context, id uint, now time.Time) 
 		Update("last_used_at", now).Error
 }
 
-// GetApp loads an oauth_clients row by client_id.
 func (r *Repository) GetApp(ctx context.Context, clientID string) (*siteModel.OAuthClient, error) {
 	var app siteModel.OAuthClient
 	if err := r.db.WithContext(ctx).Where("id = ?", clientID).First(&app).Error; err != nil {
@@ -161,7 +141,6 @@ func (r *Repository) GetApp(ctx context.Context, clientID string) (*siteModel.OA
 	return &app, nil
 }
 
-// ListDevApps returns every dev_enabled application, name-ordered.
 func (r *Repository) ListDevApps(ctx context.Context) ([]siteModel.OAuthClient, error) {
 	var apps []siteModel.OAuthClient
 	err := r.db.WithContext(ctx).
@@ -171,16 +150,10 @@ func (r *Repository) ListDevApps(ctx context.Context) ([]siteModel.OAuthClient, 
 	return apps, err
 }
 
-// UpdateAppDevConfig sets the dev_* columns on an app. Takes a field map so
-// zero values (disable, override 0) are written explicitly — a struct Updates
-// would silently skip them.
 func (r *Repository) UpdateAppDevConfig(ctx context.Context, clientID string, fields map[string]any) error {
 	return r.UpdateAppFields(ctx, clientID, fields)
 }
 
-// UpdateAppFields is the generic column updater for an oauth_clients row (id +
-// arbitrary field map). Both the admin dev-config PATCH and the self-service
-// name/description PATCH route through it; an empty map is a no-op.
 func (r *Repository) UpdateAppFields(ctx context.Context, clientID string, fields map[string]any) error {
 	if len(fields) == 0 {
 		return nil
@@ -191,17 +164,10 @@ func (r *Repository) UpdateAppFields(ctx context.Context, clientID string, field
 		Updates(fields).Error
 }
 
-// --- Self-service (owner-scoped) data access ---
-
-// CreateApp inserts a new developer application (oauth_clients row). The caller
-// (SelfServiceService) sets the id/secret/owner/dev_* fields explicitly.
 func (r *Repository) CreateApp(ctx context.Context, app *siteModel.OAuthClient) error {
 	return r.db.WithContext(ctx).Create(app).Error
 }
 
-// ListAppsByOwner returns every application owned by ownerUserID, newest first.
-// First-party site clients (owner_user_id NULL) are structurally excluded, so a
-// developer only ever sees their own apps.
 func (r *Repository) ListAppsByOwner(ctx context.Context, ownerUserID uint) ([]siteModel.OAuthClient, error) {
 	var apps []siteModel.OAuthClient
 	err := r.db.WithContext(ctx).
@@ -211,10 +177,6 @@ func (r *Repository) ListAppsByOwner(ctx context.Context, ownerUserID uint) ([]s
 	return apps, err
 }
 
-// GetAppByOwner loads an application only when it is owned by ownerUserID. A
-// row that doesn't exist OR isn't owned by the caller returns
-// gorm.ErrRecordNotFound identically — the owner guard: a non-owner cannot tell
-// a foreign app apart from a nonexistent one (404, no existence leak).
 func (r *Repository) GetAppByOwner(ctx context.Context, clientID string, ownerUserID uint) (*siteModel.OAuthClient, error) {
 	var app siteModel.OAuthClient
 	if err := r.db.WithContext(ctx).
@@ -225,7 +187,6 @@ func (r *Repository) GetAppByOwner(ctx context.Context, clientID string, ownerUs
 	return &app, nil
 }
 
-// CountAppsByOwner counts a user's applications (the per-user app cap).
 func (r *Repository) CountAppsByOwner(ctx context.Context, ownerUserID uint) (int64, error) {
 	var n int64
 	err := r.db.WithContext(ctx).
@@ -235,10 +196,6 @@ func (r *Repository) CountAppsByOwner(ctx context.Context, ownerUserID uint) (in
 	return n, err
 }
 
-// CountActiveKeysByClient counts an app's currently-usable keys (not revoked and
-// not past expiry) — the per-app active-key cap. A key in a rotation grace
-// window (expires_at in the future) still counts; a fully-expired key frees its
-// slot.
 func (r *Repository) CountActiveKeysByClient(ctx context.Context, clientID string, now time.Time) (int64, error) {
 	var n int64
 	err := r.db.WithContext(ctx).
@@ -248,10 +205,6 @@ func (r *Repository) CountActiveKeysByClient(ctx context.Context, clientID strin
 	return n, err
 }
 
-// OwnerActiveKey is one currently-usable key of an owner (across ALL their
-// dev-enabled apps), carrying the owning app's name + effective-limit inputs.
-// It feeds the account-level live-remaining view (per-key rate/quota read from
-// the Redis enforcement counters).
 type OwnerActiveKey struct {
 	KeyID         uint   `gorm:"column:key_id"`
 	AppName       string `gorm:"column:app_name"`
@@ -260,10 +213,6 @@ type OwnerActiveKey struct {
 	DevQuotaDaily int    `gorm:"column:dev_quota_daily"`
 }
 
-// ListOwnerActiveKeys returns every currently-usable key across an owner's
-// dev-enabled apps (not revoked, not past expiry) joined to its app's name and
-// dev-limit columns — the same activeness predicate ResolveByHash enforces.
-// Ordered by app name then key id for a stable render.
 func (r *Repository) ListOwnerActiveKeys(ctx context.Context, ownerUserID uint, now time.Time) ([]OwnerActiveKey, error) {
 	var rows []OwnerActiveKey
 	err := r.db.WithContext(ctx).
@@ -278,9 +227,6 @@ func (r *Repository) ListOwnerActiveKeys(ctx context.Context, ownerUserID uint, 
 	return rows, err
 }
 
-// UsageFaceTotal is one face's total usage over the window (all days/clients
-// folded), for the account-level per-face breakdown. Same status_4xx/5xx column
-// aliases as the sibling aggregates (dodge GORM's acronym/digit naming).
 type UsageFaceTotal struct {
 	Face      string `gorm:"column:face" json:"face"`
 	Count     int64  `gorm:"column:count" json:"count"`
@@ -288,9 +234,6 @@ type UsageFaceTotal struct {
 	Status5xx int64  `gorm:"column:status_5xx" json:"status_5xx"`
 }
 
-// SumUsageByFace sums usage across the given clients grouped by face (all
-// days/keys folded), for days on/after sinceDay. Highest-volume face first.
-// Empty clientIDs → no rows (never emits `IN ()`).
 func (r *Repository) SumUsageByFace(ctx context.Context, clientIDs []string, sinceDay string) ([]UsageFaceTotal, error) {
 	var rows []UsageFaceTotal
 	if len(clientIDs) == 0 {
@@ -306,8 +249,6 @@ func (r *Repository) SumUsageByFace(ctx context.Context, clientIDs []string, sin
 	return rows, err
 }
 
-// CountUsageBefore counts developer_api_usage rows strictly older than beforeDay
-// (YYYY-MM-DD). Used by the retention job's dry-run.
 func (r *Repository) CountUsageBefore(ctx context.Context, beforeDay string) (int64, error) {
 	var n int64
 	err := r.db.WithContext(ctx).
@@ -317,9 +258,6 @@ func (r *Repository) CountUsageBefore(ctx context.Context, beforeDay string) (in
 	return n, err
 }
 
-// PruneUsageBefore deletes developer_api_usage rows strictly older than
-// beforeDay (YYYY-MM-DD, UTC) and returns the number removed. day is a
-// zero-padded fixed-width string, so the lexicographic `<` is chronological.
 func (r *Repository) PruneUsageBefore(ctx context.Context, beforeDay string) (int64, error) {
 	res := r.db.WithContext(ctx).
 		Where("day < ?", beforeDay).
@@ -327,8 +265,6 @@ func (r *Repository) PruneUsageBefore(ctx context.Context, beforeDay string) (in
 	return res.RowsAffected, res.Error
 }
 
-// UsageDayFace is one aggregated usage row for the self-service usage panel:
-// a client's counters summed across all its keys, grouped by (day, face).
 type UsageDayFace struct {
 	Day       string `gorm:"column:day" json:"day"`
 	Face      string `gorm:"column:face" json:"face"`
@@ -337,10 +273,6 @@ type UsageDayFace struct {
 	Status5xx int64  `gorm:"column:status_5xx" json:"status_5xx"`
 }
 
-// AggregateUsageByClient sums a client's usage across all its keys, grouped by
-// (day, face), for days on/after sinceDay (YYYY-MM-DD, UTC). Newest day first.
-// The explicit status_4xx/status_5xx column aliases dodge GORM's acronym/digit
-// naming (Status4xx → status4xx) so the SUM columns bind to the struct fields.
 func (r *Repository) AggregateUsageByClient(ctx context.Context, clientID, sinceDay string) ([]UsageDayFace, error) {
 	var rows []UsageDayFace
 	err := r.db.WithContext(ctx).
@@ -353,9 +285,6 @@ func (r *Repository) AggregateUsageByClient(ctx context.Context, clientID, since
 	return rows, err
 }
 
-// UsageDayTotal is one day's usage summed across a set of clients (all faces
-// folded together), for the account-level usage panel. Same status_4xx/5xx
-// column aliases as UsageDayFace (dodge GORM's acronym/digit naming).
 type UsageDayTotal struct {
 	Day       string `gorm:"column:day" json:"day"`
 	Count     int64  `gorm:"column:count" json:"count"`
@@ -363,8 +292,6 @@ type UsageDayTotal struct {
 	Status5xx int64  `gorm:"column:status_5xx" json:"status_5xx"`
 }
 
-// UsageClientTotal is one client's total usage over the window (all days/faces
-// folded), for the per-app breakdown.
 type UsageClientTotal struct {
 	ClientID  string `gorm:"column:client_id" json:"client_id"`
 	Count     int64  `gorm:"column:count" json:"count"`
@@ -372,9 +299,6 @@ type UsageClientTotal struct {
 	Status5xx int64  `gorm:"column:status_5xx" json:"status_5xx"`
 }
 
-// SumUsageByDay sums usage across the given clients grouped by day (all faces
-// folded), for days on/after sinceDay (YYYY-MM-DD, UTC). Oldest day first (chart
-// order). Empty clientIDs → no rows (never emits `IN ()`).
 func (r *Repository) SumUsageByDay(ctx context.Context, clientIDs []string, sinceDay string) ([]UsageDayTotal, error) {
 	var rows []UsageDayTotal
 	if len(clientIDs) == 0 {
@@ -390,8 +314,6 @@ func (r *Repository) SumUsageByDay(ctx context.Context, clientIDs []string, sinc
 	return rows, err
 }
 
-// SumUsageByClient sums usage across the given clients grouped by client_id (all
-// days/faces folded), for days on/after sinceDay. Empty clientIDs → no rows.
 func (r *Repository) SumUsageByClient(ctx context.Context, clientIDs []string, sinceDay string) ([]UsageClientTotal, error) {
 	var rows []UsageClientTotal
 	if len(clientIDs) == 0 {
@@ -406,10 +328,6 @@ func (r *Repository) SumUsageByClient(ctx context.Context, clientIDs []string, s
 	return rows, err
 }
 
-// UpsertUsage accumulates a batch of usage rollups into developer_api_usage:
-// ON CONFLICT (client_id, key_id, face, day) the counters ADD (not replace), so
-// each instance's periodic flush contributes its delta and re-flushing an empty
-// batch is a no-op.
 func (r *Repository) UpsertUsage(ctx context.Context, rows []DeveloperAPIUsage) error {
 	if len(rows) == 0 {
 		return nil

@@ -9,10 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// RunSanity samples parse-OK subject infoboxes, runs the extraction prompt on
-// them, and measures the field-KEY overlap against the deterministic parser's
-// output — a free-ground-truth read on the extraction task's baseline quality
-// (T3 sanity; pure diagnostic, nothing persisted).
 func RunSanity(ctx context.Context, db *gorm.DB, c *Client, n int) (meanOverlap float64, sampled int, err error) {
 	if n <= 0 {
 		n = 100
@@ -22,7 +18,6 @@ func RunSanity(ctx context.Context, db *gorm.DB, c *Client, n int) (meanOverlap 
 		Raw    string         `gorm:"column:infobox_raw"`
 		Parsed datatypes.JSON `gorm:"column:infobox_parsed"`
 	}
-	// Deterministic spread across the id space.
 	if err := db.Raw(`SELECT id, infobox_raw, infobox_parsed FROM src_bangumi.subject
 		WHERE parse_error='' AND jsonb_typeof(infobox_parsed->'Fields')='array' AND id % 6000 = 0
 		ORDER BY id LIMIT ?`, n).Scan(&rows).Error; err != nil {
@@ -83,20 +78,16 @@ func extractedKeys(content []byte) map[string]bool {
 	return out
 }
 
-// LayerMetrics is same/different confusion + P/R for one gold source_rule (or
-// the overall aggregate), reported both raw and with unsure-excluded.
 type LayerMetrics struct {
 	Layer              string
 	N                  int
-	TP, FP, FN, TN     int // same = positive
+	TP, FP, FN, TN     int
 	Unsure             int
 	Precision, Recall  float64
 	Accuracy           float64
 	AccuracyExclUnsure float64
 }
 
-// Calibrate computes per-layer + overall metrics from the persisted goldset
-// verdicts — the trust baseline every future name task reads.
 func Calibrate(db *gorm.DB, model, promptVersion string) ([]LayerMetrics, error) {
 	var rows []NamePairJudgment
 	if err := db.Where("task = ? AND model = ? AND prompt_version = ?", "goldset", model, promptVersion).
@@ -126,7 +117,7 @@ func computeMetrics(layer string, rows []NamePairJudgment) LayerMetrics {
 	correct, correctDecided := 0, 0
 	for _, r := range rows {
 		if r.Error != "" || r.Verdict == VerdictUnsure {
-			m.Unsure++ // treat error rows as unsure for metrics
+			m.Unsure++
 			continue
 		}
 		decided++

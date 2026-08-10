@@ -1,10 +1,4 @@
 <script setup lang="ts">
-// Showcase work-detail page: what a real product page looks like when rendered
-// straight off the public API. Exactly two calls — the catalog work (aggregate
-// facets + per-source attribution, include=relations,credits) and, when the
-// work is claimed, the galgame aggregate (banner / localized names / long
-// intro / cross-source score links). Same sessionStorage key as /explore;
-// client-side fetch, so SSR serves a loading shell.
 useSeoMeta({ title: '作品预览', robots: 'noindex' })
 
 interface Img {
@@ -132,9 +126,6 @@ const load = async () => {
       }).catch(() => null)
       gal.value = (g?.data as GalAggregate) ?? null
     }
-    // Per-character traits: one call per DISPLAYED character (cap 12,
-    // concurrent, failures silent). spoilers=0 keeps the page spoiler-safe;
-    // sexual-family traits only appear when the nsfw gate is on (server-side).
     const visible = (work.value?.characters ?? [])
       .filter((c) => (c.spoiler ?? 0) === 0)
       .slice(0, 12)
@@ -166,9 +157,6 @@ onMounted(() => {
   else loading.value = false
 })
 
-// Relation cards / modal rows navigate to another /explore/work/{id}; Nuxt
-// REUSES the component (same route record), so onMounted won't re-fire —
-// reload whenever the path (or the nsfw query) changes.
 watch(
   () => route.fullPath,
   () => {
@@ -211,9 +199,6 @@ const banner = computed(
 )
 const portrait = computed(() => gal.value?.images?.portrait?.url ?? null)
 
-// Every intro variant from BOTH faces, language-labeled and provenance-tagged.
-// work.intro[] carries an honest `machine` flag (MT provenance); the galgame
-// face intro map is wiki-curated. Literal backslash+newline pairs normalized.
 const LOCALE_LABEL: Record<string, string> = {
   'zh-cn': '中文',
   zh_cn: '中文',
@@ -232,13 +217,6 @@ interface IntroVariant {
   source?: string
 }
 const normalizeIntro = (s: string) => s.replace(/\\\n/g, '\n').trim()
-// For a CLAIMED work the catalog face bridges the galgame face's four intro
-// columns into intro[], so the union of both faces repeats every wiki language
-// (two 中文 chips, two 日本語 chips…). Dedupe on the normalized TEXT, first
-// writer wins — never on language alone, since two genuinely different texts in
-// one language are honest multi-source display and must both survive. Catalog
-// rows are inserted first so they win any tie: only they carry the `machine` MT
-// flag and the `source` chip.
 const introVariants = computed<IntroVariant[]>(() => {
   const byText = new Map<string, IntroVariant>()
   for (const i of work.value?.intro ?? []) {
@@ -323,14 +301,9 @@ const refLink = (source: string) => {
 
 const fmt = (n: number) => n.toLocaleString()
 
-// Normalize a source-native score to 0-100 for the bar: EG is already 0-100,
-// vndb / bangumi are 10-point scales.
 const scorePct = (r: { score: number }) =>
   Math.max(0, Math.min(100, r.score > 10 ? r.score : r.score * 10))
 
-// Popularity rows grouped per source, bar-scaled to the group max — bgm's five
-// collection buckets (wish/collect/doing/hold/drop) become a real distribution
-// chart; dlsite counters chart the same way.
 const METRIC_LABEL: Record<string, string> = {
   wish: '想玩',
   collect: '玩过',
@@ -398,7 +371,6 @@ const popGroups = computed(() => {
           loading="eager"
           class-name="max-h-96 min-h-56 w-full object-cover"
         />
-        <!-- Solid-color scrim (palette color + opacity, no gradients). -->
         <div
           class="absolute inset-x-0 bottom-0 flex items-end gap-4 bg-background/85 p-4 backdrop-blur md:p-5"
         >

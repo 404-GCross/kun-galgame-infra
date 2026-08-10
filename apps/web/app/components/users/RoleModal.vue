@@ -1,10 +1,4 @@
 <script setup lang="ts">
-// Role management. WHO may toggle WHICH role mirrors the server matrix
-// (admin_handler.callerCanManageRole):
-//   - ren   → user / creator / moderator / admin
-//   - admin → creator / moderator
-// `ren` itself is DB-provisioned and never toggleable here (shown read-only
-// when present). The server re-checks every call — this UI only hides controls.
 import { roleColor } from '~/constants/roles'
 
 const open = defineModel<boolean>('open', { required: true })
@@ -16,7 +10,6 @@ const emit = defineEmits<{ success: [] }>()
 const api = useApi()
 const { isRen, isAdmin } = useAuth()
 
-// Manageable roles, low → high. `ren` is excluded (DB-only).
 const MANAGEABLE_ROLES = ['user', 'creator', 'moderator', 'admin'] as const
 
 const canManage = (role: string) => {
@@ -25,7 +18,6 @@ const canManage = (role: string) => {
   return false
 }
 
-// Local copy so the chips update immediately from each call's response.
 const roles = ref<string[]>([])
 watch(
   () => props.user,
@@ -105,7 +97,6 @@ const toggle = async (role: string) => {
           <span v-else class="text-default-300 text-xs">无权限</span>
         </div>
 
-        <!-- ren is DB-provisioned only; surface it read-only when present. -->
         <div
           v-if="has('ren')"
           class="border-secondary-200 bg-secondary-50 flex items-center justify-between rounded-lg border p-3"

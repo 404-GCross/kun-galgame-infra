@@ -10,45 +10,18 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// LinkService is the second half of the orphan doctrine (doc 10 §10, step 22).
-// Step 13 deliberately imported credit names WITHOUT persons; a reviewer
-// approving a shared-handle structural candidate is what finally asserts "these
-// two names are the same real person". This service creates/attaches the person
-// grouping (never destructively — the two names both survive) and can fully
-// reverse it (DetachName), because person rows here are pure grouping artifacts.
 type LinkService struct {
 	db *gorm.DB
 }
 
 func NewLinkService(db *gorm.DB) *LinkService { return &LinkService{db: db} }
 
-// PersonLinkResult reports the outcome of approving a person-link candidate.
 type PersonLinkResult struct {
-	// PersonID is the person both names now share; 0 when NeedsManual.
-	PersonID int64 `json:"person_id"`
-	// Created is true when a brand-new person row was minted (double-orphan
-	// case), false when a name was attached into an already-existing person.
-	Created bool `json:"created"`
-	// NeedsManual is true when both names already belong to DIFFERENT persons:
-	// nothing is written and the caller flags the candidate for manual handling
-	// (person merge is future work — doc 10 §10).
-	NeedsManual bool `json:"needs_manual"`
+	PersonID    int64 `json:"person_id"`
+	Created     bool  `json:"created"`
+	NeedsManual bool  `json:"needs_manual"`
 }
 
-// linkCreditsTx applies the three-state person-linking rule to a credit_name
-// pair inside the caller's transaction (symmetric in a/b):
-//
-//   - both orphan          → create a person, attach both, revision each
-//   - exactly one attached  → attach the orphan into that person
-//   - both attached, same   → no-op (idempotent re-approval)
-//   - both attached, diff.   → NeedsManual, write nothing
-//
-// The credit_name→person link defaults to PUBLIC (link_visibility=public, the
-// column's zero value): a shared_external_id candidate's evidence is the person
-// having attached the same public handle (twitter/pixiv) at two sources — a
-// self-declared public association, so public grouping is justified (doc 10
-// §10). A future sensitive lane (裏名義 / R18↔all-ages) that defaults hidden
-// would carry a visibility parameter; it is intentionally not surfaced here.
 func (s *LinkService) linkCreditsTx(tx *gorm.DB, aID, bID int64, actorID *int64) (PersonLinkResult, error) {
 	a, err := lockCreditName(tx, aID)
 	if err != nil {
@@ -62,9 +35,9 @@ func (s *LinkService) linkCreditsTx(tx *gorm.DB, aID, bID int64, actorID *int64)
 	switch {
 	case a.PersonID != nil && b.PersonID != nil:
 		if *a.PersonID == *b.PersonID {
-			return PersonLinkResult{PersonID: *a.PersonID}, nil // already the same person
+			return PersonLinkResult{PersonID: *a.PersonID}, nil
 		}
-		return PersonLinkResult{NeedsManual: true}, nil // different persons → manual
+		return PersonLinkResult{NeedsManual: true}, nil
 	case a.PersonID != nil:
 		return s.attachOrphan(tx, *a.PersonID, b, actorID)
 	case b.PersonID != nil:
@@ -74,10 +47,6 @@ func (s *LinkService) linkCreditsTx(tx *gorm.DB, aID, bID int64, actorID *int64)
 	}
 }
 
-// createAndAttach mints a person from a double-orphan pair. The display name of
-// record is derived deterministically — the better-established name (more
-// credits; ties broken toward the lower id, which is `a` since candidate pairs
-// are normalized a<b) — and pinned as primary_credit_name_id.
 func (s *LinkService) createAndAttach(tx *gorm.DB, a, b *model.CatalogCreditName, actorID *int64) (PersonLinkResult, error) {
 	primary := a
 	aCredits, err := creditCount(tx, a.ID)
@@ -105,8 +74,6 @@ func (s *LinkService) createAndAttach(tx *gorm.DB, a, b *model.CatalogCreditName
 		return PersonLinkResult{}, err
 	}
 
-	// Person 'created' revision — snapshot AFTER attach so it captures both
-	// names — plus a person_id-change revision on each name (doc 10 §9).
 	if err := revisionOf(tx, model.EntityTypePerson, p.ID, model.RevisionActionCreated, nil, actorID,
 		"person created by linking candidate names"); err != nil {
 		return PersonLinkResult{}, err
@@ -119,8 +86,6 @@ func (s *LinkService) createAndAttach(tx *gorm.DB, a, b *model.CatalogCreditName
 	return PersonLinkResult{PersonID: p.ID, Created: true}, nil
 }
 
-// attachOrphan folds a single orphan name into an existing person: the name
-// gets a person_id-change revision, the person a roster-change revision.
 func (s *LinkService) attachOrphan(tx *gorm.DB, personID int64, orphan *model.CatalogCreditName, actorID *int64) (PersonLinkResult, error) {
 	if err := tx.Model(&model.CatalogCreditName{}).Where("id = ?", orphan.ID).
 		Update("person_id", personID).Error; err != nil {
@@ -136,13 +101,6 @@ func (s *LinkService) attachOrphan(tx *gorm.DB, personID int64, orphan *model.Ca
 	return PersonLinkResult{PersonID: personID}, nil
 }
 
-// DetachName reverses a link one name at a time (doc 10 §10 reversibility): it
-// nulls the name's person_id and, when that leaves the person with zero names,
-// DELETES the person. The delete is safe because credits reference
-// credit_name.id, never person.id (invariant 1), and an auto-linked person
-// carries no external refs or usage rows of its own — nothing is orphaned. A
-// surviving person whose primary name was the one detached has its primary (and
-// display name) re-derived from the remaining names.
 func (s *LinkService) DetachName(ctx context.Context, creditNameID int64, actorID *int64) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		n, err := lockCreditName(tx, creditNameID)
@@ -168,7 +126,6 @@ func (s *LinkService) DetachName(ctx context.Context, creditNameID int64, actorI
 			return err
 		}
 		if remaining == 0 {
-			// Tombstone the empty person, then hard-delete it (see doc comment).
 			if err := revisionOf(tx, model.EntityTypePerson, personID, model.RevisionActionDeleted, nil, actorID,
 				"empty person removed after detach"); err != nil {
 				return err
@@ -179,10 +136,6 @@ func (s *LinkService) DetachName(ctx context.Context, creditNameID int64, actorI
 	})
 }
 
-// repointPrimaryIfDetached keeps the surviving person's primary_credit_name_id
-// (and denormalized display name) pointing at one of its OWN names after a
-// detach. When the detached name was not the primary, only a roster-change
-// revision is written.
 func (s *LinkService) repointPrimaryIfDetached(tx *gorm.DB, personID, detachedID int64, actorID *int64) error {
 	var p model.CatalogPerson
 	if err := tx.First(&p, personID).Error; err != nil {
@@ -202,10 +155,6 @@ func (s *LinkService) repointPrimaryIfDetached(tx *gorm.DB, personID, detachedID
 		"credit name detached")
 }
 
-// --- helpers ---------------------------------------------------------------
-
-// lockCreditName loads a credit_name FOR UPDATE (serializes concurrent links
-// and detaches on the same name).
 func lockCreditName(tx *gorm.DB, id int64) (*model.CatalogCreditName, error) {
 	var n model.CatalogCreditName
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&n, id).Error; err != nil {
@@ -217,8 +166,6 @@ func lockCreditName(tx *gorm.DB, id int64) (*model.CatalogCreditName, error) {
 	return &n, nil
 }
 
-// primaryOfPerson picks the best-established remaining name of a person (most
-// credits, ties toward the lower id) — the same rule createAndAttach uses.
 func primaryOfPerson(tx *gorm.DB, personID int64) (*model.CatalogCreditName, error) {
 	var names []model.CatalogCreditName
 	if err := tx.Where("person_id = ?", personID).Order("id").Find(&names).Error; err != nil {
@@ -250,7 +197,6 @@ func creditCount(tx *gorm.DB, creditNameID int64) (int64, error) {
 	return n, err
 }
 
-// revisionOf snapshots an entity and appends a revision in one call.
 func revisionOf(tx *gorm.DB, entityType int16, entityID int64, action int16, changed map[string]any, actorID *int64, note string) error {
 	snap, err := takeSnapshot(tx, entityType, entityID)
 	if err != nil {

@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// Interactive data browser: paste your own nm_ key (kept in sessionStorage,
-// sent ONLY as the Authorization header through our GET-only relay — never
-// persisted server-side), search works by title, click into the full detail.
-// Search hits render typed (their shape is frozen); the detail renders a facet
-// summary + the raw JSON, so the page never lies about fields it doesn't know.
 useSeoMeta({ title: '数据浏览', robots: 'noindex' })
 
 interface SearchHit {
@@ -26,12 +21,6 @@ const total = ref(0)
 const detail = ref<Record<string, unknown> | null>(null)
 const showRaw = ref(false)
 
-// ── Entity panorama (fan-out) ──
-// From ONE work, pull every linked entity's own full record — labels,
-// characters, credited names, related works — each through its own public
-// read face. This is the entity-centric read model made visible: one
-// consistent archive per entity kind, aggregates + per-source attribution
-// on every one of them.
 interface ExpandedEntity {
   group: string
   id: number
@@ -44,7 +33,6 @@ const expandNote = ref('')
 const expanding = ref(false)
 const EXPAND_CAP = 6
 
-// Click an expanded entity card → its full record in the reusable modal.
 const GROUP_KIND: Record<string, 'characters' | 'names' | 'labels' | 'works'> = {
   '厂牌 / 社团': 'labels',
   '角色': 'characters',
@@ -96,8 +84,6 @@ const expandAll = async () => {
     jobs.push({ group, id, path: path(id), query })
   }
 
-  // Each entity kind is pulled with ITS OWN heaviest include set — the point
-  // is the fullest single-entity record each face can serve.
   for (const l of arr('labels'))
     push('厂牌 / 社团', idOf(l), (i) => `v1/catalog/labels/${i}`, {
       include: 'works',
@@ -127,8 +113,6 @@ const expandAll = async () => {
       (i) => `v1/catalog/works/${i}`,
       { include: 'relations,credits', ...gate() }
     )
-  // Cross-face: the claimed galgame aggregate is the richest single record
-  // in the system — intro/scores/covers/taxonomy/links/screenshots/series/meta.
   const cb = d.claimed_by as { site?: string; work_id?: number } | null
   if (cb && typeof cb.work_id === 'number' && String(cb.site ?? '').includes('galgame'))
     push('跨面 · Galgame 聚合', cb.work_id, (i) => `v1/galgame/${i}`, {
@@ -189,7 +173,6 @@ const expandedGroups = computed(() => {
   return [...m.entries()]
 })
 
-// Chip-sized facet overview of any entity record (arrays show their length).
 const facetsOf = (obj: Record<string, unknown>) =>
   Object.entries(obj)
     .filter(([, v]) => (Array.isArray(v) ? v.length > 0 : v !== null && v !== ''))
@@ -253,8 +236,6 @@ const openDetail = async (id: number) => {
   }
 }
 
-// Facet summary: for each key of the detail, how much is in it — an honest
-// overview that works whatever shape the block has.
 const facetSummary = computed(() => {
   if (!detail.value) return []
   return Object.entries(detail.value)

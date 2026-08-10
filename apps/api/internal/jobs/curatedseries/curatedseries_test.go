@@ -43,8 +43,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestParseSeriesKeepsMultilineDescriptions pins the record rule the frozen
-// artifact forces: a wiki description is hand-written prose and spans lines.
 func TestParseSeriesKeepsMultilineDescriptions(t *testing.T) {
 	rows, err := parseSeries("testdata")
 	require.NoError(t, err)
@@ -54,9 +52,6 @@ func TestParseSeriesKeepsMultilineDescriptions(t *testing.T) {
 	assert.Equal(t, int64(9003), rows[2].ID)
 }
 
-// fixture writes the static series fixture plus a generated member file into a
-// temp directory. The member rows carry live catalog work ids, which only exist
-// once the test has created them — hence generated rather than checked in.
 func fixture(t *testing.T, members []memberRow) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -72,7 +67,6 @@ func fixture(t *testing.T, members []memberRow) string {
 	return dir
 }
 
-// mkWork creates a bare catalog work to hang memberships off.
 func mkWork(t *testing.T) int64 {
 	t.Helper()
 	w := model.CatalogWork{MediumID: 1}
@@ -84,8 +78,6 @@ func mkWork(t *testing.T) int64 {
 	return w.ID
 }
 
-// resetCurated drops whatever a previous case left on the fixture ids, so the
-// suite is order-independent against a shared database.
 func resetCurated(t *testing.T) {
 	t.Helper()
 	clean := func() {
@@ -116,9 +108,6 @@ func curatedSeriesID(t *testing.T, wikiID int64) int64 {
 	return id
 }
 
-// TestSeedCreatesCuratedLane: the dry run forecasts exactly what the apply
-// writes, a series nobody maps onto is never created, and a non-empty wiki
-// description lands as a zh-Hans curated intro.
 func TestSeedCreatesCuratedLane(t *testing.T) {
 	resetCurated(t)
 	w1, w2, w3 := mkWork(t), mkWork(t), mkWork(t)
@@ -129,11 +118,11 @@ func TestSeedCreatesCuratedLane(t *testing.T) {
 
 	dry := run(t, dir, false)
 	assert.Equal(t, 3, dry.SeriesInFile)
-	assert.Equal(t, 2, dry.SeriesWithMembers) // 9003 maps onto nobody
+	assert.Equal(t, 2, dry.SeriesWithMembers)
 	assert.Equal(t, 2, dry.SeriesSeeded)
 	assert.Equal(t, 3, dry.MembersInserted)
-	assert.Equal(t, 1, dry.IntrosInserted) // only 9001 has a description
-	assert.Equal(t, 0, dry.TouchedWorks)   // a dry run bumps nothing
+	assert.Equal(t, 1, dry.IntrosInserted)
+	assert.Equal(t, 0, dry.TouchedWorks)
 
 	var before int64
 	require.NoError(t, testDB.Model(&model.CatalogSeries{}).
@@ -168,14 +157,11 @@ func TestSeedCreatesCuratedLane(t *testing.T) {
 	assert.Equal(t, "zh-Hans", intro.Lang)
 	assert.Equal(t, curated, intro.SourceID)
 
-	// The empty-description series gets a row but no intro.
 	beta := curatedSeriesID(t, 9002)
 	require.NotZero(t, beta)
 	assert.ErrorIs(t, testDB.Where("series_id = ?", beta).First(&intro).Error, gorm.ErrRecordNotFound)
 }
 
-// TestSecondApplyIsAZeroWrite is the acceptance proof: the curated lane's
-// long-term writer is the human edit face, so a rerun must add nothing.
 func TestSecondApplyIsAZeroWrite(t *testing.T) {
 	resetCurated(t)
 	w1, w2 := mkWork(t), mkWork(t)
@@ -196,8 +182,6 @@ func TestSecondApplyIsAZeroWrite(t *testing.T) {
 	assert.Equal(t, 1, second.IntrosExisting)
 }
 
-// TestExistingDisplayNameSurvives: a curator renamed the series after the seed;
-// a rerun must not put the wiki's spelling back.
 func TestExistingDisplayNameSurvives(t *testing.T) {
 	resetCurated(t)
 	w1 := mkWork(t)
@@ -214,9 +198,6 @@ func TestExistingDisplayNameSurvives(t *testing.T) {
 	assert.Equal(t, "Renamed By A Human", row.DisplayName)
 }
 
-// TestDlsiteCoveredSeriesIsSkipped: the grouping already exists upstream, so a
-// curated duplicate would show the same works twice — and nothing may be
-// attached to the dlsite series itself, whose importer reaps foreign members.
 func TestDlsiteCoveredSeriesIsSkipped(t *testing.T) {
 	resetCurated(t)
 	w1, w2, w3 := mkWork(t), mkWork(t), mkWork(t)
@@ -230,7 +211,6 @@ func TestDlsiteCoveredSeriesIsSkipped(t *testing.T) {
 		testDB.Exec(`DELETE FROM catalog_series_member WHERE series_id = ?`, up.ID)
 		testDB.Exec(`DELETE FROM catalog_series WHERE id = ?`, up.ID)
 	})
-	// The dlsite series holds a superset of 9001's members — subset, so covered.
 	for _, w := range []int64{w1, w2, w3} {
 		require.NoError(t, testDB.Create(&model.CatalogSeriesMember{SeriesID: up.ID, WorkID: w}).Error)
 	}
@@ -248,8 +228,6 @@ func TestDlsiteCoveredSeriesIsSkipped(t *testing.T) {
 	assert.EqualValues(t, 3, n, "the dlsite series must be left exactly as found")
 }
 
-// TestPartialDlsiteOverlapStillSeeds: covered means EVERY member is in ONE
-// upstream series. A partial overlap is a different grouping and must survive.
 func TestPartialDlsiteOverlapStillSeeds(t *testing.T) {
 	resetCurated(t)
 	w1, w2 := mkWork(t), mkWork(t)
@@ -272,8 +250,6 @@ func TestPartialDlsiteOverlapStillSeeds(t *testing.T) {
 	assert.Equal(t, 2, st.MembersInserted)
 }
 
-// TestUnmappedWorkIsDropped: a work id the catalog no longer has would make a
-// membership pointing nowhere.
 func TestUnmappedWorkIsDropped(t *testing.T) {
 	resetCurated(t)
 	w1 := mkWork(t)

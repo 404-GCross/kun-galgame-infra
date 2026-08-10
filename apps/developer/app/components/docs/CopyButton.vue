@@ -2,10 +2,6 @@
 import { cn } from '@kungal/ui-core'
 import { useKunCopy } from '@kungal/ui-vue'
 
-// Icon-only copy affordance. KunCopy renders its `text` as a visible pill, which
-// is wrong for long / multi-line values (a curl example, a full URL) — so those
-// show the value in an adjacent <code>/<pre> and copy through this button, which
-// wraps KunUI's own useKunCopy composable + KunButton. Flips to a check briefly.
 const props = defineProps<{ text: string; label?: string }>()
 
 const copied = ref(false)

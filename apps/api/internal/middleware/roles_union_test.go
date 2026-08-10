@@ -9,9 +9,6 @@ import (
 	siteperm "api/internal/platform/site/perm"
 )
 
-// TestUnionRoles pins the merge of global roles with the token's site_roles: the
-// empty-site fast path returns global unchanged, site names are added, and
-// overlaps dedupe.
 func TestUnionRoles(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -31,16 +28,7 @@ func TestUnionRoles(t *testing.T) {
 	}
 }
 
-// TestSiteRolesCannotReachAdminBundles is the constructive safety assertion for
-// the union-resolution design (docs 12 §5): because site_roles can never contain
-// admin/ren (the grant API rejects those names), a unioned site-role set cannot
-// grant any admin/ren-only permission — the catalog / oauth-console bundles key
-// only on admin/ren, which a site role set structurally can't carry — while it
-// DOES still grant the moderator-keyed capabilities (the intended effect).
 func TestSiteRolesCannotReachAdminBundles(t *testing.T) {
-	// A realistic site-role set: the grant policy guarantees it never contains
-	// admin/ren. The union with an empty global set models a plain user who
-	// only holds site roles.
 	roles := unionRoles(nil, []string{"moderator", "event_organizer"})
 
 	if catalogperm.Resolver.Can(roles, catalogperm.Review) {
@@ -52,7 +40,6 @@ func TestSiteRolesCannotReachAdminBundles(t *testing.T) {
 	if siteperm.Resolver.Can(roles, siteperm.RolesGrantSite) {
 		t.Error("site roles must not grant oauth.roles.grant_site (admin/ren)")
 	}
-	// The intended effect: a site "moderator" DOES grant galgame moderation.
 	if !galgameperm.Resolver.Can(roles, galgameperm.Review) {
 		t.Error("a site moderator should grant galgame.review")
 	}

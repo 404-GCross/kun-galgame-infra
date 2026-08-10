@@ -14,10 +14,6 @@ import (
 	"gorm.io/datatypes"
 )
 
-// The person and label lanes share the character lane's TestMain (one real
-// Postgres carrying the catalog Gold schema and the src_bangumi Silver schema),
-// so these tests only add the fixtures their own tables need.
-
 func cleanEntities(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
@@ -29,9 +25,6 @@ func cleanEntities(t *testing.T) {
 	}
 }
 
-// mkBGMPerson creates one src_bangumi.person row. Bangumi files companies and
-// groups in this same table, so the label lane uses it too — kind 1=individual,
-// 2=company, 3=group.
 func mkBGMPerson(t *testing.T, id int64, kind int, name, infobox string) {
 	t.Helper()
 	require.NoError(t, testDB.Create(&srcb.Person{
@@ -55,9 +48,6 @@ func mkLabel(t *testing.T, name string) int64 {
 	return l.ID
 }
 
-// mkPerson creates a credit name and the person it is the primary name of.
-// primaryName == "" leaves primary_credit_name_id NULL — the person the lane
-// must count and skip.
 func mkPerson(t *testing.T, display, primaryName string) (personID int64, creditNameID int64) {
 	t.Helper()
 	p := model.CatalogPerson{DisplayName: display}
@@ -74,7 +64,6 @@ func mkPerson(t *testing.T, display, primaryName string) (personID int64, credit
 	return p.ID, creditNameID
 }
 
-// zhOnly keeps the zh-Hans rows of a scanned alias set, in id order.
 func zhOnly[T any](rows []T, lang func(T) string) []T {
 	var out []T
 	for _, r := range rows {
@@ -99,25 +88,21 @@ func nameAliasesOf(t *testing.T, creditNameID int64) []model.CatalogNameAlias {
 	return rows
 }
 
-// TestRunLabelLane drives the label lane end to end: the company/group staging
-// join, the infobox guard, the drop of a name that IS the display name, the uq
-// absorption, the never-steal-a-primary rule, the probable-anchor exclusion, the
-// deliberate absence of any work touch, and second-pass idempotency.
 func TestRunLabelLane(t *testing.T) {
 	cleanEntities(t)
 	ctx := context.Background()
 	src := bangumiSource(t)
 
-	whirlpool := mkLabel(t, "Whirlpool")  // company, two Chinese names
-	circle := mkLabel(t, "チーム暗黒媒体")       // group (bangumi type 3)
-	sameName := mkLabel(t, "型月")          // display_name IS the Chinese name
-	dup := mkLabel(t, "AUGUST")           // already carries the projected name
-	hasPrimary := mkLabel(t, "Key")       // already has a human zh primary
-	guard := mkLabel(t, "scalar-fields")  // dirty infobox
-	latinOnly := mkLabel(t, "genDESIGN")  // 简体中文名 holds a Latin string
-	probable := mkLabel(t, "probable")    // non-exact anchor
-	unanchored := mkLabel(t, "no-anchor") // no anchor at all
-	deleted := mkLabel(t, "soft-deleted") // out of the universe
+	whirlpool := mkLabel(t, "Whirlpool")
+	circle := mkLabel(t, "チーム暗黒媒体")
+	sameName := mkLabel(t, "型月")
+	dup := mkLabel(t, "AUGUST")
+	hasPrimary := mkLabel(t, "Key")
+	guard := mkLabel(t, "scalar-fields")
+	latinOnly := mkLabel(t, "genDESIGN")
+	probable := mkLabel(t, "probable")
+	unanchored := mkLabel(t, "no-anchor")
+	deleted := mkLabel(t, "soft-deleted")
 
 	infoboxes := map[int64]struct {
 		bgm     int64
@@ -158,13 +143,10 @@ func TestRunLabelLane(t *testing.T) {
 		LabelID: hasPrimary, Name: "钥匙社", Lang: LangZhHans,
 		Kind: model.AliasKindTranslation, IsPrimaryForLocale: true,
 	}).Error)
-	// The same text under the label's existing '' lang: a different language, so
-	// the unique key does not absorb the zh-Hans row.
 	require.NoError(t, testDB.Create(&model.CatalogLabelAlias{
 		LabelID: whirlpool, Name: "漩涡社", Lang: "", Kind: model.AliasKindTranslation,
 	}).Error)
 
-	// --- dry run: decides, writes nothing.
 	st, err := Run(ctx, Opts{DSN: testDSN, Lane: LaneLabel})
 	require.NoError(t, err)
 	assert.Equal(t, 7, st.Anchored, "probable / unanchored / soft-deleted labels are out of the universe")
@@ -181,7 +163,6 @@ func TestRunLabelLane(t *testing.T) {
 	require.NoError(t, testDB.Model(&model.CatalogLabelAlias{}).Count(&before).Error)
 	require.EqualValues(t, 3, before, "a dry run writes nothing")
 
-	// --- apply.
 	st, err = Run(ctx, Opts{DSN: testDSN, Lane: LaneLabel, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 4, st.Inserted)
@@ -214,7 +195,6 @@ func TestRunLabelLane(t *testing.T) {
 		Where("lang <> ? AND lang <> ?", LangZhHans, "").Count(&offLang).Error)
 	assert.Zero(t, offLang, "every written row is zh-Hans")
 
-	// --- second apply: zero writes, and the skip is the preload, not the backstop.
 	st, err = Run(ctx, Opts{DSN: testDSN, Lane: LaneLabel, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.Inserted)
@@ -223,16 +203,13 @@ func TestRunLabelLane(t *testing.T) {
 	assert.Equal(t, 5, st.SkippedDup, "every projected name is now present")
 }
 
-// TestRunPersonLane drives the person lane: the alias hangs off the PRIMARY
-// credit name, a person without one is counted and skipped, and no work is
-// touched.
 func TestRunPersonLane(t *testing.T) {
 	cleanEntities(t)
 	ctx := context.Background()
 	src := bangumiSource(t)
 
 	pOgata, cnOgata := mkPerson(t, "緒方剛志", "緒方剛志")
-	pSame, cnSame := mkPerson(t, "田中貴之", "田中贵之") // the credit name IS the Chinese name
+	pSame, cnSame := mkPerson(t, "田中貴之", "田中贵之")
 	pDup, cnDup := mkPerson(t, "鈴平ひろ", "鈴平ひろ")
 	pNoPrimary, _ := mkPerson(t, "no-primary", "")
 	pCompanyKind, cnCompany := mkPerson(t, "company-typed", "ワールプール")
@@ -257,8 +234,6 @@ func TestRunPersonLane(t *testing.T) {
 		mkBGMPerson(t, f.bgm, f.kind, fmt.Sprintf("bgm-%d", f.bgm), f.infobox)
 		mkEntityAnchor(t, model.EntityTypePerson, personID, src, fmt.Sprintf("%d", f.bgm), model.LinkKindExact)
 	}
-	// A CREDIT-NAME anchor must never be followed: it would smuggle in the
-	// deferred identity judgement.
 	mkEntityAnchor(t, model.EntityTypeCreditName, cnOgata, src, "999", model.LinkKindExact)
 	mkBGMPerson(t, 999, 1, "credit-name-anchor", `{"Fields":[{"Key":"简体中文名","Value":"不该跟随","Items":null}]}`)
 
@@ -303,8 +278,6 @@ func TestRunPersonLane(t *testing.T) {
 	assert.Zero(t, st.Errors+st.Conflict)
 }
 
-// TestUnknownLane pins the lane switch: an unknown value is refused before any
-// connection is opened.
 func TestUnknownLane(t *testing.T) {
 	_, err := Run(context.Background(), Opts{DSN: testDSN, Lane: "org"})
 	require.ErrorContains(t, err, "unknown lane")

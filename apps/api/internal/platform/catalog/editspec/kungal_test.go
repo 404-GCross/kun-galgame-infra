@@ -11,9 +11,6 @@ import (
 	"api/internal/platform/editing"
 )
 
-// kungalActor mirrors realActor but files under the kungal tenant: permissions
-// still resolve through the REAL catalog perm bundles — exactly what the edit
-// face's per-family resolver does for the kungal BFF's asserted actor.
 func kungalActor(uid int64, roles ...string) editing.PolicyContext {
 	return editing.PolicyContext{
 		UserID: uid, Site: "kungal", TrustTier: 0,
@@ -23,19 +20,10 @@ func kungalActor(uid int64, roles ...string) editing.PolicyContext {
 	}
 }
 
-// TestKungalSiteOverlay pins the kungal posture over the real catalog
-// vocabulary — the posture the N5 re-anchoring lost when kungal's edits moved
-// from galgame.game to catalog.work: any logged-in user proposes (open); a
-// reviewer's own edit direct-merges (automerge=review) — admin/ren via
-// edit.catalog.work.review, while a moderator (no review perm) still queues —
-// and the default tenant stays perm-gated with no automerge.
 func TestKungalSiteOverlay(t *testing.T) {
 	e := newEngine(t)
 	work := createWork(t, "初期名")
 
-	// 1. A plain logged-in user (no roles) proposes — open, no merge. On the
-	//    default tenant the same actor cannot propose at all (pinned by
-	//    TestWorkPilotEndToEnd).
 	prop, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkDisplayName: "用户提案标题"},
@@ -52,8 +40,6 @@ func TestKungalSiteOverlay(t *testing.T) {
 		t.Fatalf("status = %d, want open", prop.Status)
 	}
 
-	// 2. Direct edit keys on REVIEW capability (automerge=review): admin holds
-	//    edit.catalog.work.review, so their own edit applies immediately.
 	_, rev, err = e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkOLang: "en"},
@@ -65,9 +51,6 @@ func TestKungalSiteOverlay(t *testing.T) {
 	if rev == nil || rev.Action != editing.ActionDirect {
 		t.Fatalf("admin (review perm) must direct-edit on kungal: %+v", rev)
 	}
-	//    A moderator holds NO work review perm, so their edit still files an
-	//    open proposal — automerge keys on the review perm, not on staff
-	//    standing.
 	modProp, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkDisplayName: "モデレーター改題"},
@@ -83,14 +66,11 @@ func TestKungalSiteOverlay(t *testing.T) {
 		t.Fatalf("decline: %v", err)
 	}
 
-	// 3. A moderator cannot adjudicate the queue either.
 	var permErr *editing.PermissionError
 	if _, err := e.MergeProposal(testCtx, prop.ID, kungalActor(103, "moderator"), ""); !errors.As(err, &permErr) {
 		t.Fatalf("moderator merge: %v, want PermissionError", err)
 	}
 
-	// 4. Admin amends then merges — corrected value lands with double
-	//    attribution.
 	if _, err := e.AmendProposal(testCtx, prop.ID, editing.AmendInput{
 		Set:   map[string]any{editspec.FieldWorkDisplayName: "修正后标题"},
 		Note:  "typo fixed in review",
@@ -117,11 +97,6 @@ func TestKungalSiteOverlay(t *testing.T) {
 	}
 }
 
-// TestKungalOwnerReview pins the E3b owner posture on catalog.work: the
-// BFF-asserted entry creator (a plain user, no roles) direct-edits their own
-// game and adjudicates others' proposals on it — the reported regression was
-// exactly this capability going missing — while the same assertion grants
-// nothing outside the kungal overlay.
 func TestKungalOwnerReview(t *testing.T) {
 	e := newEngine(t)
 	work := createWork(t, "初期名")
@@ -132,9 +107,6 @@ func TestKungalOwnerReview(t *testing.T) {
 	}
 	owner := asOwner(kungalActor(200))
 
-	// 1. The owner's OWN edit direct-merges (automerge=review via OwnerReview):
-	//    the creator edits their claimed game without queuing a proposal to
-	//    adjudicate against themselves.
 	_, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkDisplayName: "创建者直接改名"},
@@ -150,8 +122,6 @@ func TestKungalOwnerReview(t *testing.T) {
 		t.Fatalf("owner direct-edit actor = %d, want the owner 200", rev.ActorUID)
 	}
 
-	// 2. Owner (no perms) amends and merges another user's proposal on their
-	//    game — double attribution.
 	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkOLang: "en"},
@@ -175,8 +145,6 @@ func TestKungalOwnerReview(t *testing.T) {
 		t.Fatalf("double signature: actor=%d amender=%v", merged.ActorUID, merged.AmenderUID)
 	}
 
-	// 3. The same owner assertion grants nothing on the default tenant (no
-	//    overlay there): the perm gate still decides.
 	var permErr *editing.PermissionError
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,

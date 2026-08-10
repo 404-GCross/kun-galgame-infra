@@ -14,19 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPersonWorklistMergesAndTouchesNoWork is the wave-156 survey turned into a
-// test. The person class is worklist-only, and what a person merge must do is
-// narrow and testable:
-//
-//   - every credit_name of the loser repoints at the survivor;
-//   - the loser's et=0 anchors move, and two EXACT anchors of one source
-//     landing on the survivor both demote to probable (uq_catalog_external_ref_exact
-//     makes an et=0 (source, external_id) globally unique, so "two silent
-//     exacts" can never survive a merge — they become the review queue);
-//   - the loser row is soft-deleted and a redirect resolves its id forever;
-//   - NO work is touched — person hangs one level below the credited name and
-//     never reaches a work's read face (the wave-118 touch matrix). A person
-//     merge that bumped catalog_work.updated_at would be a read-face drift.
 func TestPersonWorklistMergesAndTouchesNoWork(t *testing.T) {
 	for _, tbl := range []string{
 		"catalog_merge_proposal", "catalog_redirect", "catalog_external_ref",
@@ -49,8 +36,6 @@ func TestPersonWorklistMergesAndTouchesNoWork(t *testing.T) {
 	require.NoError(t, testDB.Create(&kept).Error)
 	require.NoError(t, testDB.Create(&moved).Error)
 
-	// Anchors: a bangumi one that simply moves, and two COMPETING vndb staff ids
-	// (one per side) that must both end up probable on the survivor.
 	for _, ref := range []model.CatalogExternalRef{
 		{EntityType: model.EntityTypePerson, EntityID: host.ID, SourceID: 2, ExternalID: "s1", LinkKind: model.LinkKindExact},
 		{EntityType: model.EntityTypePerson, EntityID: loser.ID, SourceID: 2, ExternalID: "s2", LinkKind: model.LinkKindExact},
@@ -75,7 +60,6 @@ func TestPersonWorklistMergesAndTouchesNoWork(t *testing.T) {
 	assert.Equal(t, model.EntityTypePerson, opened[0].EntityType,
 		"the person class must open a PERSON-typed proposal, not the character default")
 
-	// Wave 154's tag must not see this wave's proposal, and vice versa.
 	require.NoError(t, runExecute(ctx, testDB, io.Discard, merge, resolve, 1, waveTag154, 0, true))
 	require.NoError(t, testDB.First(&opened[0], opened[0].ID).Error)
 	assert.Equal(t, model.ProposalStatusApproved, opened[0].Status)

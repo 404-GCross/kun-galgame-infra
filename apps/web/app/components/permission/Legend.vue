@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Reading key for the matrix. Without it the cell states are a handful of
-// similar ticks, and the operator cannot tell "this is compiled in" from
-// "someone granted this last week" — or, since the ruling, from "someone took
-// this away last week", which is the state that most needs to be legible.
 defineProps<{ managesPermissions: boolean }>()
 </script>
 

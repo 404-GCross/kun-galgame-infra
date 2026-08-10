@@ -1,10 +1,3 @@
-// public_moderation_test.go — the works-list review-queue gate (wave 186a).
-//
-// Every row here is a different way of not being this tenant's moderator, and
-// none of them may receive a queue page. The one thing the suite refuses to
-// tolerate is a QUIET refusal: a 200 carrying the live set instead of the queue
-// would read, to the moderator on the other end, as "there is nothing to
-// review".
 package handler
 
 import (
@@ -25,11 +18,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// queueApp mounts GET /v1/catalog/works exactly as cmd/catalog does for the
-// dual-credential transport: OptionalJWT in front (never blocking), the client
-// registry installed on the handler. The devapi key chain is a separate concern
-// and is deliberately absent — it would only add 401s to what these cases
-// assert.
 func queueApp(db *gorm.DB, clients fakeClientLookup) *fiber.App {
 	resolveSvc := service.NewResolveService(repository.NewRedirectRepository(db))
 	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
@@ -40,8 +28,6 @@ func queueApp(db *gorm.DB, clients fakeClientLookup) *fiber.App {
 	return app
 }
 
-// queueGet issues a works-list call with an optional end-user token in the
-// Authorization slot — the second credential.
 func queueGet(t *testing.T, app *fiber.App, url, token string) (int, []int64) {
 	t.Helper()
 	req := httptest.NewRequest("GET", url, nil)
@@ -105,9 +91,6 @@ func queueClients() fakeClientLookup {
 	}
 }
 
-// TestWorksListStatusDefaultUnchanged: absent and live are the same query, and
-// neither reads the Authorization header at all — the pre-186 wire, byte for
-// byte, with or without a token present.
 func TestWorksListStatusDefaultUnchanged(t *testing.T) {
 	db := openCatalogTestDB(t)
 	f := seedQueueWorks(t, db)
@@ -122,16 +105,11 @@ func TestWorksListStatusDefaultUnchanged(t *testing.T) {
 				"%s must return the whole LIVE set regardless of any token", url)
 		}
 	}
-	// A token in the LEGACY single-credential transport (the API key itself in
-	// the Bearer slot) must not disturb the lane: OptionalJWT cannot parse it
-	// and falls through instead of 401ing.
 	status, ids := queueGet(t, app, "/v1/catalog/works", "nm_live_notajwtatall")
 	assert.Equal(t, fiber.StatusOK, status)
 	assert.Len(t, ids, 3)
 }
 
-// TestWorksListPendingRefusals walks the gate from the outside in. Each row is
-// a different missing half of "this person, through this product, may review".
 func TestWorksListPendingRefusals(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedQueueWorks(t, db)
@@ -156,9 +134,6 @@ func TestWorksListPendingRefusals(t *testing.T) {
 	}
 }
 
-// TestWorksListPendingServesThePinnedTenant: the happy path, plus the pin. The
-// moderator sees their OWN tenant's submissions and nobody else's, and asking
-// for someone else's queue is refused rather than silently re-pointed.
 func TestWorksListPendingServesThePinnedTenant(t *testing.T) {
 	db := openCatalogTestDB(t)
 	f := seedQueueWorks(t, db)
@@ -171,12 +146,10 @@ func TestWorksListPendingServesThePinnedTenant(t *testing.T) {
 	assert.Equal(t, []int64{f.minePending}, ids,
 		"the queue is this tenant's pending claims only — not another tenant's, not its own live ones")
 
-	// Each tenant's moderator sees their own queue through the same URL.
 	status, ids = queueGet(t, app, "/v1/catalog/works?status=pending", moyuMod)
 	require.Equal(t, fiber.StatusOK, status)
 	assert.Equal(t, []int64{f.theirPending}, ids)
 
-	// Naming one's own site is redundant but legal; naming another's is a 403.
 	status, ids = queueGet(t, app, "/v1/catalog/works?status=pending&site=kungal", kungalMod)
 	require.Equal(t, fiber.StatusOK, status)
 	assert.Equal(t, []int64{f.minePending}, ids)
@@ -186,8 +159,6 @@ func TestWorksListPendingServesThePinnedTenant(t *testing.T) {
 	assert.Empty(t, ids)
 }
 
-// TestWorksListStatusVocabulary: the parameter is a CLOSED vocabulary, and it
-// cannot be combined with the claim_state gate it already is.
 func TestWorksListStatusVocabulary(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedQueueWorks(t, db)
@@ -202,8 +173,6 @@ func TestWorksListStatusVocabulary(t *testing.T) {
 	assert.Equal(t, fiber.StatusBadRequest, status, "status=pending IS the claim gate; asking for both is a caller mistake")
 }
 
-// TestPendingQueueSite covers the gate as pure logic, so the ordering of its
-// four doors is pinned without a database or an HTTP round trip.
 func TestPendingQueueSite(t *testing.T) {
 	owner := uint(9)
 	clients := fakeClientLookup{
@@ -237,7 +206,6 @@ func TestPendingQueueSite(t *testing.T) {
 		assert.Emptyf(t, site, "%s must yield no tenant to serve", tc.name)
 	}
 
-	// isThirdPartyClient is the wave-186b cap's single reading of the column.
 	assert.False(t, isThirdPartyClient(nil))
 	assert.False(t, isThirdPartyClient(&siteModel.OAuthClient{ID: "first-party"}))
 	assert.True(t, isThirdPartyClient(&siteModel.OAuthClient{ID: "app", OwnerUserID: &owner}))

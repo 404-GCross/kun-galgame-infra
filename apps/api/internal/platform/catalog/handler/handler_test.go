@@ -27,8 +27,6 @@ import (
 	glogger "gorm.io/gorm/logger"
 )
 
-// TestSetup_RegistersS2SOperations: spec smoke — all three S2S operations
-// register with nil services (what cmd/gen-openapi -catalog exports).
 func TestSetup_RegistersS2SOperations(t *testing.T) {
 	api := Setup(fiber.New(), nil, nil, nil, nil, nil)
 	paths := api.OpenAPI().Paths
@@ -41,8 +39,6 @@ func TestSetup_RegistersS2SOperations(t *testing.T) {
 	}
 }
 
-// TestSetupAdmin_RegistersQueueOperations: spec smoke for the three review
-// buckets (what cmd/gen-openapi -catalog-admin exports).
 func TestSetupAdmin_RegistersQueueOperations(t *testing.T) {
 	api := SetupAdmin(fiber.New(), nil, nil, nil, nil)
 	paths := api.OpenAPI().Paths
@@ -60,9 +56,6 @@ func TestSetupAdmin_RegistersQueueOperations(t *testing.T) {
 	}
 }
 
-// TestS2SAuth_Unauthenticated401: the S2S face rejects requests without
-// Basic credentials before any handler runs (nil repo is never reached —
-// header parsing fails first).
 func TestS2SAuth_Unauthenticated401(t *testing.T) {
 	app := fiber.New()
 	app.Use("/api/v1/catalog", S2SAuth(nil))
@@ -79,13 +72,9 @@ func TestS2SAuth_Unauthenticated401(t *testing.T) {
 	}
 }
 
-// TestAdminGate_403WithoutRole: the admin prefix is gated by catalog.review
-// (ren) at the Fiber layer — the catalog review surface is ren-only, so even an
-// ordinary admin must 403 before any catalog handler runs.
 func TestAdminGate_403WithoutRole(t *testing.T) {
 	for _, roles := range [][]string{{"user"}, {"admin", "moderator"}} {
 		app := fiber.New()
-		// Stand-in for JWTAuth that authenticates a non-ren user.
 		app.Use("/api/v1/admin/catalog", func(c fiber.Ctx) error {
 			c.Locals("user_id", uint(42))
 			c.Locals("user_roles", roles)
@@ -99,8 +88,6 @@ func TestAdminGate_403WithoutRole(t *testing.T) {
 	}
 }
 
-// TestEnforceSiteBinding covers the three binding states as pure logic
-// (unbound / mismatch / match) plus the nil-client guard.
 func TestEnforceSiteBinding(t *testing.T) {
 	assert.NotNil(t, enforceSiteBinding(nil, "galgame_wiki"), "nil client → forbidden")
 	assert.NotNil(t, enforceSiteBinding(&siteModel.OAuthClient{CatalogSite: ""}, "galgame_wiki"), "unbound → forbidden")
@@ -112,9 +99,6 @@ func TestEnforceSiteBinding(t *testing.T) {
 	}
 }
 
-// claimApp builds a Fiber app whose /api/v1/catalog prefix injects the given
-// client into Locals (standing in for S2SAuth) so S2SBridge lifts it into the
-// Huma context, then registers the S2S handlers over the supplied work service.
 func claimApp(client *siteModel.OAuthClient, work *service.WorkService) *fiber.App {
 	app := fiber.New()
 	app.Use("/api/v1/catalog", func(c fiber.Ctx) error {
@@ -136,9 +120,6 @@ func postClaim(t *testing.T, app *fiber.App, body string) int {
 	return resp.StatusCode
 }
 
-// TestClaimSiteBinding_Forbidden: an unbound or mismatched client is rejected
-// at the claim endpoint before any work service call (nil work is never
-// reached — enforcement returns first).
 func TestClaimSiteBinding_Forbidden(t *testing.T) {
 	body := `{"medium_id":1,"site":"galgame_wiki","product_work_id":1,"display_name":"X"}`
 	for _, tc := range []struct {
@@ -152,7 +133,6 @@ func TestClaimSiteBinding_Forbidden(t *testing.T) {
 		assert.Equalf(t, fiber.StatusForbidden, postClaim(t, app, body), "%s must 403", tc.name)
 	}
 
-	// Read faces impose no binding: resolve with an unbound client is NOT 403.
 	app := claimApp(&siteModel.OAuthClient{ID: "c3", CatalogSite: ""}, nil)
 	req := httptest.NewRequest("POST", "/api/v1/catalog/resolve", strings.NewReader(`{"items":[]}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -161,8 +141,6 @@ func TestClaimSiteBinding_Forbidden(t *testing.T) {
 	assert.NotEqual(t, fiber.StatusForbidden, resp.StatusCode, "resolve is unaffected by site binding")
 }
 
-// TestClaimSiteBinding_Allowed: a correctly-bound client claims successfully
-// (200). DB-backed — skips if the catalog test database is unreachable.
 func TestClaimSiteBinding_Allowed(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := service.NewWorkService(db, service.NewResolveService(repository.NewRedirectRepository(db)))
@@ -172,10 +150,6 @@ func TestClaimSiteBinding_Allowed(t *testing.T) {
 	assert.Equal(t, fiber.StatusOK, postClaim(t, app, body), "bound client claims for its own site → 200")
 }
 
-// TestClaimConflict_StructuredBody: a 409 claim conflict returns the owning
-// identity in the house envelope's data field (work_id + owning_site +
-// owning_product_work_id) so the caller records the link instead of retrying.
-// It also exercises the release-anchor adopt path end-to-end over HTTP.
 func TestClaimConflict_StructuredBody(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"catalog_external_ref", "catalog_release", "catalog_work"} {
@@ -193,11 +167,9 @@ func TestClaimConflict_StructuredBody(t *testing.T) {
 	svc := service.NewWorkService(db, service.NewResolveService(repository.NewRedirectRepository(db)))
 	app := claimApp(&siteModel.OAuthClient{ID: "letmoe-client", CatalogSite: "letmoe"}, svc)
 
-	// First claim adopts the work through its release anchor.
 	assert.Equal(t, fiber.StatusOK, postClaim(t, app,
 		`{"medium_id":1,"site":"letmoe","product_work_id":9001,"display_name":"同人音声","anchors":[{"source_id":4,"external_id":"RJWIRE","level":"release"}]}`))
 
-	// A different product work claiming the same anchor conflicts with structure.
 	req := httptest.NewRequest("POST", "/api/v1/catalog/works/claim", strings.NewReader(
 		`{"medium_id":1,"site":"letmoe","product_work_id":9002,"display_name":"別行","anchors":[{"source_id":4,"external_id":"RJWIRE","level":"release"}]}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -219,12 +191,6 @@ func TestClaimConflict_StructuredBody(t *testing.T) {
 	assert.Equal(t, int64(9001), envelope.Data.OwningProductWorkID)
 }
 
-// catalogTestDB memoizes the package's single connection pool + migrate/seed
-// run. Opening one pool PER TEST (the original shape) leaked ~30 pools into one
-// binary and the tail of the suite started tripping Postgres' max_connections —
-// which surfaces as t.Skipf, i.e. a SILENTLY GREEN suite whose last cases never
-// ran. One pool per binary removes the ceiling entirely; the tests already
-// share the same database and truncate what they own.
 var (
 	catalogTestOnce sync.Once
 	catalogTestDBH  *gorm.DB
@@ -259,7 +225,6 @@ func openCatalogTestDB(t *testing.T) *gorm.DB {
 	return catalogTestDBH
 }
 
-// TestRedirectCursorRoundTrip pins the opaque cursor encoding.
 func TestRedirectCursorRoundTrip(t *testing.T) {
 	c, err := decodeRedirectCursor("")
 	require.NoError(t, err)

@@ -6,10 +6,6 @@ import {
 } from '~/constants/devapi'
 import type { DevApp } from '~~/shared/types/devapi'
 
-// Edits an app's dev configuration (tier / nsfw / rate + quota overrides /
-// owner). Shared by the list row edit and the detail page. Phase 1 forbids
-// granting NSFW (裁定 6) so the nsfw switch is surfaced read-off with a note —
-// the field/wire path exists but stays off.
 const props = defineProps<{ app: DevApp | null }>()
 const emit = defineEmits<{ updated: [] }>()
 
@@ -23,7 +19,6 @@ const ownerUserId = ref<number | null>(null)
 const error = ref('')
 const isLoading = ref(false)
 
-// Kept mounted (v-model); (re)load the form from the app each time it opens.
 watch(open, (v) => {
   if (!v || !props.app) return
   tier.value = (props.app.dev_tier as DevTier) ?? 'free'
@@ -39,7 +34,6 @@ const handleSubmit = async () => {
   error.value = ''
   isLoading.value = true
   try {
-    // Wire body mirrors handler.go patchAppRequest (field-for-field).
     const body: Record<string, unknown> = {
       dev_tier: tier.value,
       dev_rate_per_min: ratePerMin.value ?? 0,

@@ -10,8 +10,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// TestRateLimitBoundary pins the 60th request passing and the 61st being
-// blocked within one minute bucket (free tier = 60/min).
 func TestRateLimitBoundary(t *testing.T) {
 	m := NewMiddleware(nil, newMemStore())
 	cred := &Credential{KeyID: 1, Tier: TierFree}
@@ -33,7 +31,6 @@ func TestRateLimitBoundary(t *testing.T) {
 	}
 }
 
-// TestRateLimitFailOpen: a store outage fails open (裁定 5).
 func TestRateLimitFailOpen(t *testing.T) {
 	store := newMemStore()
 	store.failing = true
@@ -45,7 +42,6 @@ func TestRateLimitFailOpen(t *testing.T) {
 	}
 }
 
-// TestRateLimitUnlimited: internal tier is never rate-limited.
 func TestRateLimitUnlimited(t *testing.T) {
 	m := NewMiddleware(nil, newMemStore())
 	cred := &Credential{KeyID: 1, Tier: TierInternal}
@@ -55,8 +51,6 @@ func TestRateLimitUnlimited(t *testing.T) {
 	}
 }
 
-// TestQuotaRollover: the daily counter resets at the day boundary (a new day is
-// a distinct key). Uses a small override to exhaust cheaply.
 func TestQuotaRollover(t *testing.T) {
 	m := NewMiddleware(nil, newMemStore())
 	cred := &Credential{KeyID: 2, Tier: TierFree, QuotaOverride: 2}
@@ -69,14 +63,11 @@ func TestQuotaRollover(t *testing.T) {
 			t.Fatalf("day1 req %d: allowed = %v, want %v", i, allowed, want)
 		}
 	}
-	// New day → counter resets → first request allowed again.
 	if _, _, allowed, _ := m.quotaResult(context.Background(), cred, day2); !allowed {
 		t.Fatalf("day2 first request should be allowed (rollover reset)")
 	}
 }
 
-// TestRateLimitHeadersAnd429 drives the full RateLimit handler through Fiber to
-// pin the response headers + Retry-After on overflow.
 func TestRateLimitHeadersAnd429(t *testing.T) {
 	m := NewMiddleware(nil, newMemStore())
 	cred := &Credential{KeyID: 3, Tier: TierFree}
@@ -111,7 +102,6 @@ func TestRateLimitHeadersAnd429(t *testing.T) {
 	}
 }
 
-// TestRequireScope: a missing scope yields 403, a present one passes.
 func TestRequireScope(t *testing.T) {
 	build := func(scopes []string) *fiber.App {
 		app := fiber.New()
@@ -134,21 +124,14 @@ func TestRequireScope(t *testing.T) {
 	}
 }
 
-// TestExtractKeyQuadrants pins the dual-credential transport rule (裁定 6): the
-// key is taken from Authorization: Bearer ONLY when it carries our nm_ prefix,
-// otherwise the request falls through to X-API-Key. Covers all four credential
-// quadrants (key only / JWT only / both / neither) plus the bearer-key-wins
-// precedence — proving existing single-credential behavior is unchanged and the
-// only new path is the dual-credential one.
 func TestExtractKeyQuadrants(t *testing.T) {
 	const key = "nm_live_ABC123def456"
-	// A representative non-key Bearer value (a user JWT). No nm_ prefix.
 	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig"
 
 	cases := []struct {
 		name string
-		auth string // Authorization header value ("" = unset)
-		xkey string // X-API-Key header value ("" = unset)
+		auth string
+		xkey string
 		want string
 	}{
 		{"key in bearer only (legacy)", "Bearer " + key, "", key},
@@ -183,8 +166,6 @@ func TestExtractKeyQuadrants(t *testing.T) {
 	}
 }
 
-// TestRequireTier: a missing credential is 401, a wrong tier is 403, a matching
-// tier passes (mirrors RequireScope). Fences the /internal face to internal tier.
 func TestRequireTier(t *testing.T) {
 	build := func(setCred func(c fiber.Ctx)) *fiber.App {
 		app := fiber.New()
@@ -215,9 +196,6 @@ func TestRequireTier(t *testing.T) {
 	}
 }
 
-// TestContentLimitGate: nsfw requires both the scope and the nsfw_allowed flag;
-// anything short downgrades to sfw (Phase 1 has no nsfw key, so this is the
-// inert-but-wired default-safe path).
 func TestContentLimitGate(t *testing.T) {
 	run := func(cred *Credential, requested string) string {
 		app := fiber.New()
@@ -244,28 +222,23 @@ func TestContentLimitGate(t *testing.T) {
 		t.Errorf("requested sfw: content_limit = %q, want sfw", cl)
 	}
 
-	// W1a three-state (P5): `all` is gated identically to `nsfw`.
 	authorized := &Credential{NSFWAllowed: true, Scopes: []string{ScopeGalgameNSFW}}
 	if cl := run(authorized, "all"); cl != "all" {
 		t.Errorf("scope+flag requesting all: content_limit = %q, want all", cl)
 	}
-	// A no-scope key must resolve to sfw for EVERY requested value — so its
-	// projection is byte-identical across sfw/nsfw/all (G3 no-scope invariant).
 	for _, req := range []string{"sfw", "nsfw", "all", ""} {
 		if cl := run(&Credential{}, req); cl != "sfw" {
 			t.Errorf("no-scope key requesting %q: content_limit = %q, want sfw", req, cl)
 		}
 	}
-	// flag-but-no-scope requesting all → still sfw.
 	if cl := run(&Credential{NSFWAllowed: true}, "all"); cl != "sfw" {
 		t.Errorf("flag but no scope requesting all: content_limit = %q, want sfw", cl)
 	}
 }
 
-// TestResolveCacheHit: a positive cache entry short-circuits the DB (repo nil).
 func TestResolveCacheHit(t *testing.T) {
 	store := newMemStore()
-	m := NewMiddleware(nil, store) // nil repo — a cache hit must not reach it
+	m := NewMiddleware(nil, store)
 	raw := "nm_live_cachehit"
 	want := &Credential{KeyID: 7, ClientID: "c1", Tier: TierTrusted, Scopes: []string{ScopeCatalogRead}}
 	b, _ := json.Marshal(want)
@@ -280,8 +253,6 @@ func TestResolveCacheHit(t *testing.T) {
 	}
 }
 
-// TestResolveCacheNegative: a negative cache entry resolves to 401 (nil,nil)
-// without touching the DB.
 func TestResolveCacheNegative(t *testing.T) {
 	store := newMemStore()
 	m := NewMiddleware(nil, store)

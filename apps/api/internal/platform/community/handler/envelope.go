@@ -1,8 +1,3 @@
-// Package handler exposes the community service over Huma (code-first OpenAPI
-// 3.1) on Fiber v3, following the catalog/artifact shape: the house
-// {code,message,data} envelope, Fiber-layer S2S auth bridged into the Huma
-// context, and a Setup function cmd/gen-openapi can call with nil dependencies
-// to export the spec.
 package handler
 
 import (
@@ -15,7 +10,6 @@ import (
 
 const msgOK = "成功"
 
-// Envelope is the house response body {code,message,data}.
 type Envelope[T any] struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -26,8 +20,6 @@ func okEnvelope[T any](data T) Envelope[T] {
 	return Envelope[T]{Code: 0, Message: msgOK, Data: data}
 }
 
-// houseError is a huma.StatusError that marshals to the house {code,message}
-// envelope as application/json (not RFC7807).
 type houseError struct {
 	status  int
 	Code    int    `json:"code"`
@@ -46,9 +38,6 @@ func apiErrMsg(status, code int, msg string) *houseError {
 	return &houseError{status: status, Code: code, Message: msg}
 }
 
-// InstallErrorEnvelope overrides huma.NewError so Huma-internal errors
-// (validation, parsing) also come out as the house envelope. Call once at
-// startup before registering operations.
 func InstallErrorEnvelope() {
 	huma.NewError = func(status int, message string, errs ...error) huma.StatusError {
 		if len(errs) > 0 {

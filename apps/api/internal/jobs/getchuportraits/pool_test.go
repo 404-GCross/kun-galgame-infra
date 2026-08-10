@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mkCands builds n candidates, half of whose files exist on disk, so a pool run
-// exercises both branches of fill's file check.
 func mkCands(t *testing.T, n int) (string, []candidate) {
 	t.Helper()
 	dir := t.TempDir()
@@ -29,9 +27,6 @@ func mkCands(t *testing.T, n int) (string, []candidate) {
 	return dir, out
 }
 
-// The pool must be an optimisation only: the same candidates must produce the
-// same counters at any width. Run under -race, this is also the guard on the
-// merge path.
 func TestPoolWidthDoesNotChangeTheResult(t *testing.T) {
 	dir, cands := mkCands(t, 60)
 	var want Stats
@@ -48,9 +43,6 @@ func TestPoolWidthDoesNotChangeTheResult(t *testing.T) {
 	}
 }
 
-// absorb is the ONLY writer of run-level state, and it runs on the driver
-// goroutine. The screenshot wave died because a worker also wrote shared state;
-// this pins the shape that prevents it — fill returns a value, absorb folds it.
 func TestAbsorbFoldsResultsAndCollectsHashes(t *testing.T) {
 	st := &Stats{}
 	r := &runner{stats: st}
@@ -64,13 +56,9 @@ func TestAbsorbFoldsResultsAndCollectsHashes(t *testing.T) {
 	assert.Equal(t, 1, st.Rejected)
 	assert.Equal(t, 1, st.Errors)
 	assert.True(t, st.Quota)
-	// A rejected upload has no hash to keep alive; a successful one does. Both
-	// non-empty hashes are pinged, including one whose row was not claimed.
 	assert.Equal(t, []string{"aaa", "bbb"}, r.pingHashes)
 }
 
-// A cancelled context must stop the feeder rather than pushing every remaining
-// candidate through a pool that will do nothing with them.
 func TestPoolStopsOnCancel(t *testing.T) {
 	dir, cands := mkCands(t, 40)
 	ctx, cancel := context.WithCancel(context.Background())

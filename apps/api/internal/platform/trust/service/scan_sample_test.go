@@ -8,9 +8,6 @@ import (
 	"api/internal/platform/trust/model"
 )
 
-// cleanWorker builds a worker over a gateway that ACQUITS, with a deterministic
-// "random" draw so sampling is testable: drawing 0 always samples (0 < rate),
-// drawing 1 never does.
 func cleanWorker(sampleRate float64, draw float64, opts ...ScanWorkerOption) *ScanWorker {
 	all := append([]ScanWorkerOption{
 		WithSampleRate(sampleRate),
@@ -22,9 +19,6 @@ func cleanWorker(sampleRate float64, draw float64, opts ...ScanWorkerOption) *Sc
 	}, stubTier0{}, all...)
 }
 
-// TestSampleRateParsing: sampling is a human-queue tap, so every out-of-range
-// value must fail to OFF rather than to some clamped-but-still-on rate. A typo
-// that floods the inbox is the failure this guards.
 func TestSampleRateParsing(t *testing.T) {
 	for _, tc := range []struct {
 		in   float64
@@ -40,8 +34,6 @@ func TestSampleRateParsing(t *testing.T) {
 	}
 }
 
-// TestSamplingOffByDefault: a worker built without the option must behave
-// exactly as it does today. This is what lets the feature ship dark.
 func TestSamplingOffByDefault(t *testing.T) {
 	cleanTables(t)
 	seedPending(t, "nosample-1", "a perfectly ordinary galgame comment")
@@ -58,9 +50,6 @@ func TestSamplingOffByDefault(t *testing.T) {
 	}
 }
 
-// TestSampleOpensCalibrationItemWithoutEnforcing is the core contract: a drawn
-// sample reaches a human, and touches nothing else. No disposition means nothing
-// is ever hidden by a calibration draw.
 func TestSampleOpensCalibrationItemWithoutEnforcing(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
@@ -77,21 +66,15 @@ func TestSampleOpensCalibrationItemWithoutEnforcing(t *testing.T) {
 	if item.Source != model.ReviewSourceAISample {
 		t.Fatalf("source = %d, want ai_sample(%d)", item.Source, model.ReviewSourceAISample)
 	}
-	// The registered kind HAS a callback url — proving the absence of a
-	// disposition is about the sample path, not about a missing endpoint.
 	if n := countRows(t, &model.TrustDisposition{}); n != 0 {
 		t.Fatalf("a calibration sample queued %d dispositions, want 0", n)
 	}
-	// It must sort below every real signal, or samples would displace real work.
 	if item.Priority != scanSamplePriority {
 		t.Fatalf("priority = %v, want the parked %v", item.Priority, scanSamplePriority)
 	}
 	if item.Priority >= rankPriority(1, nil) {
 		t.Fatalf("sample priority %v is not below the lowest real signal", item.Priority)
 	}
-	// The note has to tell the reviewer this is a question, not an accusation —
-	// read as an accusation, the whole batch gets dismissed unexamined and the
-	// measurement silently reads zero.
 	if item.ContextNote == nil {
 		t.Fatal("context_note is nil; the reviewer cannot tell this is a calibration draw")
 	}
@@ -102,8 +85,6 @@ func TestSampleOpensCalibrationItemWithoutEnforcing(t *testing.T) {
 	}
 }
 
-// TestSampleNotDrawnWhenRollMisses: the draw actually gates. Without this, a
-// broken predicate would sample 100% of clean traffic into the human queue.
 func TestSampleNotDrawnWhenRollMisses(t *testing.T) {
 	cleanTables(t)
 	seedPending(t, "miss-1", "ordinary text")
@@ -116,10 +97,6 @@ func TestSampleNotDrawnWhenRollMisses(t *testing.T) {
 	}
 }
 
-// TestSampleSkipsSubjectAlreadyUnderReview: a subject with an open item is not a
-// random draw. Folding a calibration item into a live case would corrupt the
-// case (a reviewer sees "cleared at random" on a real report) and the
-// measurement (the sample is no longer representative).
 func TestSampleSkipsSubjectAlreadyUnderReview(t *testing.T) {
 	cleanTables(t)
 	existing := model.TrustReviewItem{
@@ -148,10 +125,6 @@ func TestSampleSkipsSubjectAlreadyUnderReview(t *testing.T) {
 	}
 }
 
-// TestSamplingIsIndependentOfScanMode: sampling enforces nothing, so it must
-// work in shadow — and must NOT turn shadow into something that enforces.
-// Shadow's whole guarantee is "records a verdict and nothing else"; a
-// calibration item is the one documented exception, and it must stay inert.
 func TestSamplingIsIndependentOfScanMode(t *testing.T) {
 	for _, mode := range []string{"shadow", "live"} {
 		cleanTables(t)
@@ -171,9 +144,6 @@ func TestSamplingIsIndependentOfScanMode(t *testing.T) {
 	}
 }
 
-// TestFlaggedVerdictIsNeverSampled: the sampler is the CLEAN-band instrument.
-// A conviction must take the enforcement path only — never land a second,
-// contradictory "we cleared this" item alongside it.
 func TestFlaggedVerdictIsNeverSampled(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))

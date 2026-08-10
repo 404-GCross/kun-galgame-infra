@@ -1,9 +1,6 @@
 <script setup lang="ts">
 const colorMode = useColorMode()
 
-// Trigger uses a fixed icon (not derived from preference) so SSR/CSR
-// render identical DOM. Current preference is shown inside the popover
-// only, which is closed by default → its body never enters SSR pass.
 
 const colorModeOptions = [
   { value: 'light', label: '浅色', icon: 'lucide:sun' },
@@ -52,8 +49,6 @@ const setColorMode = (mode: string) => {
       </KunPopover>
     </div>
 
-    <!-- The layout no longer imposes a width: each page's root owns it (the
-         AuthShell pages go wide, the OAuth consent card stays narrow). -->
     <div class="flex w-full justify-center">
       <slot />
     </div>

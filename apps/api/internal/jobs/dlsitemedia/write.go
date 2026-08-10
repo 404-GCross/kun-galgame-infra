@@ -15,39 +15,16 @@ import (
 )
 
 const (
-	// langJa is the BCP-47 language of a DLsite description.
-	//
-	// It is the SHORT code "ja", NOT "ja_jp": the claimed-side galgame intro
-	// bridge pivots its four fixed columns to BCP-47 short codes
-	// (galgameIntroPivot: intro_ja_jp→"ja", intro_en_us→"en", intro_zh_cn→
-	// "zh-Hans", intro_zh_tw→"zh-Hant"), and the step-52 VNDB intro pilot writes
-	// "en". Bodyless and claimed MUST share one lang vocabulary or the consumer's
-	// per-language selection mis-fires (§3). The step-55 spec's "ja_jp" note was
-	// pre-verification; the code's actual vocabulary is the short code, so this
-	// wave writes "ja".
 	langJa = "ja"
 
-	// coverPreset / shotPreset are the image-service presets these uploads use
-	// (configs/image_presets.yaml). The catalog image client's
-	// image_allowed_presets MUST contain both, else every upload is 403'd.
 	coverPreset = "catalog_cover"
 	shotPreset  = "catalog_screenshot"
 
-	// uploaderSub stamps a machine identity onto first_uploader_sub so the
-	// backfilled image rows are traceable (there is no human uploader).
 	uploaderSub = "system:dlsite-media-backfill"
 
-	// uploadRetries is how many times upload() retries a TRANSIENT image-service
-	// failure (connection refused / timeout / 5xx). The infra stack redeploys
-	// mid-run and recreates the image container (~30-90s unreachable, breaking
-	// in-flight connections); without retry those uploads are permanently skipped
-	// for the pass. Quota/moderation are terminal and never retried.
 	uploadRetries = 6
 )
 
-// writeIntro writes one catalog_work_intro row for a bodyless work from the
-// DLsite description. Pure DB — no bytes, no image service, no quota. Idempotent:
-// a preloaded existing row (or an ON CONFLICT hit) is a skip.
 func (r *runner) writeIntro(ctx context.Context, c candidate, m dlsiteMeta, apply bool) {
 	if m.Intro == "" {
 		r.c.introNoText++
@@ -72,7 +49,7 @@ func (r *runner) writeIntro(ctx context.Context, c candidate, m dlsiteMeta, appl
 		slog.Warn("write intro", "work", c.WorkID, "workno", c.Workno, "err", res.Error)
 		return
 	}
-	if res.RowsAffected == 0 { // concurrent writer / already present
+	if res.RowsAffected == 0 {
 		r.c.introExists++
 		return
 	}
@@ -81,17 +58,12 @@ func (r *runner) writeIntro(ctx context.Context, c candidate, m dlsiteMeta, appl
 	r.c.introWritten++
 }
 
-// writeCover uploads a bodyless work's landscape store cover (image_main) from
-// the mirror and writes one catalog_work_cover row. Returns quota=true when the
-// daily image quota is exhausted (caller aborts). portrait_pinned is always
-// false — DLsite store covers are landscape; bodyless works have no portrait
-// cover (only claimed works bridge a VNDB portrait), a data fact (§data-reality).
 func (r *runner) writeCover(ctx context.Context, dir string, c candidate, m dlsiteMeta, apply bool) (quota bool) {
-	if !isBodyless(c.Site) { // whole-facet XOR (§8.D) — cover keeps the claimed refusal
+	if !isBodyless(c.Site) {
 		r.c.coverRefused++
 		return false
 	}
-	if m.CoverFile == "" { // placeholder (no_img_main) or absent
+	if m.CoverFile == "" {
 		r.c.coverPlaceholder++
 		return false
 	}
@@ -124,7 +96,7 @@ func (r *runner) writeCover(ctx context.Context, dir string, c candidate, m dlsi
 		slog.Warn("write cover row", "work", c.WorkID, "err", tx.Error)
 		return false
 	}
-	r.pingHashes = append(r.pingHashes, res.Hash) // keep the byte alive immediately
+	r.pingHashes = append(r.pingHashes, res.Hash)
 	if tx.RowsAffected == 0 {
 		r.c.coverDedup++
 		return false
@@ -135,26 +107,8 @@ func (r *runner) writeCover(ctx context.Context, dir string, c candidate, m dlsi
 	return false
 }
 
-// writeScreenshots uploads a work's DLsite sample images (image_samples[]) from
-// the mirror and writes one catalog_work_screenshot row each, sort_order = the
-// sample's index. Per-sample idempotent (skip an index already present), so an
-// interrupted run resumes cleanly. Returns quota=true on quota exhaustion.
-//
-// NO claim guard, unlike writeIntro/writeCover: the screenshot facet carries the
-// (facet, source) XOR (refs/proj/125), so a dlsite-sourced native row is legal on
-// a claimed work — the wiki sources still never materialize here, and this writer
-// only ever writes source_id=dlsite. WHICH claimed works are admitted is decided
-// once, in loadClaimedScreenshotCandidates (no dlsite screenshot row — per-source
-// fill-missing since wave 188); this writer trusts that candidate set rather than
-// re-deriving it.
-//
-// The BODYLESS lane needs no admission change for wave 188 and gets none: it has
-// no "already done" predicate at all, so it always admitted works carrying other
-// sources' rows. Its per-source skip lives here — r.exist.shot is preloaded
-// source_id=dlsite only (preloadExisting), and ON CONFLICT (work_id, image_hash)
-// DO NOTHING is the cross-source backstop.
 func (r *runner) writeScreenshots(ctx context.Context, dir string, c candidate, m dlsiteMeta, apply bool) (quota bool) {
-	if len(m.SampleFiles) == 0 { // staging row absent, or the work has no samples
+	if len(m.SampleFiles) == 0 {
 		r.c.shotNoSamples++
 		return false
 	}
@@ -208,8 +162,6 @@ func (r *runner) writeScreenshots(ctx context.Context, dir string, c candidate, 
 	return false
 }
 
-// upload reads a mirrored image and uploads it under the given preset. The bytes
-// only ever come from the local mirror — this never dials DLsite.
 func (r *runner) upload(ctx context.Context, path, filename, preset string) (*imageclient.UploadResult, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -218,9 +170,6 @@ func (r *runner) upload(ctx context.Context, path, filename, preset string) (*im
 	if len(body) == 0 {
 		return nil, os.ErrNotExist
 	}
-	// Retry transient failures across an image-container recreation. A fresh
-	// bytes.Reader per attempt (the previous one is consumed). Terminal errors
-	// (quota / moderation) return immediately.
 	var lastErr error
 	for attempt := 0; attempt < uploadRetries; attempt++ {
 		if r.gap > 0 {
@@ -244,10 +193,6 @@ func (r *runner) upload(ctx context.Context, path, filename, preset string) (*im
 	return nil, lastErr
 }
 
-// classifyUpload maps an upload error to a counter. Returns quota=true only for
-// ErrQuotaExceeded (the caller aborts the whole run); moderation rejection is
-// counted and the run continues; any other error (incl. a vanished file) counts
-// as a generic error.
 func (r *runner) classifyUpload(err error, kind string, c candidate, rejected *int) (quota bool) {
 	switch {
 	case stderrors.Is(err, imageclient.ErrQuotaExceeded):

@@ -1,35 +1,3 @@
-// Package bangumicovers backfills catalog-native PORTRAIT cover rows for
-// BODYLESS galgame works from Bangumi (BGM 竖封轨 Phase 3, refs/proj/56c). It is
-// the infra-side consumer of two prior phases:
-//
-//   - Phase 1 (56a, internal/jobs/doujinbangumi) wrote graded Bangumi anchors
-//     into catalog_external_ref (source=bangumi, entity_type=work). This wave
-//     reads ONLY the EXACT ones (matched_by='rule:bgm-title-year').
-//   - Phase 2 (56b, the sibling repo kun-bangumi-api) fetched each anchored
-//     subject's Bangumi cover into a local mirror <dir>/<subject_id>/cover.jpg
-//     plus a <dir>/dims.jsonl manifest of pixel sizes.
-//
-// For each bodyless galgame work carrying an EXACT Bangumi anchor whose cover is
-// VERTICAL (dims h > w) it uploads that cover to the catalog image scope and
-// writes one catalog_work_cover row with portrait_pinned=true, source=bangumi —
-// the vertical cover kungal/moyu read for the portrait-first UI. Landscape/square
-// covers are skipped (DLsite already supplies the landscape cover, step 55), so
-// one work can carry BOTH a DLsite landscape (portrait_pinned=false) and this
-// Bangumi portrait (portrait_pinned=true); the (work_id, image_hash) unique key
-// lets them coexist.
-//
-// Discipline, reusing the step-55 machinery (internal/jobs/dlsitemedia):
-//   - Bytes ONLY ever come from the LOCAL mirror (--bangumi-mirror). This job
-//     NEVER dials Bangumi.
-//   - Idempotent: a work that already has a Bangumi cover is skipped before any
-//     byte read; writes are ON CONFLICT DO NOTHING, so a second run writes zero.
-//   - --dsn (catalog) is ALWAYS explicit — a bare run cannot touch a live DB.
-//   - XOR guard (§8.D): native rows are written ONLY for bodyless works
-//     (site=""); a claimed work is refused at write time.
-//   - Only EXACT anchors are pinned; probable (rule:bgm-title-only) anchors stay
-//     in the confirm bucket.
-//   - Freshly-uploaded hashes are reference-pinged immediately (an image sits at
-//     TTL from upload time; don't wait for the nightly refping).
 package bangumicovers
 
 import (
@@ -49,43 +17,35 @@ import (
 
 const defaultTimeout = 60 * time.Second
 
-// Opts configures a run.
 type Opts struct {
-	Apply         bool          // false = dry-run forecast (no uploads, no writes)
-	Limit         int           // max candidate works (0 = all)
-	Offset        int           // skip this many candidate works (chunking)
-	DSN           string        // catalog DSN — REQUIRED (rehearsal locally; live only in prod run)
-	BangumiMirror string        // local mirror root (<dir>/<subject_id>/cover.jpg + <dir>/dims.jsonl) — REQUIRED
-	ImageBaseURL  string        // image_service base override (point at the LOCAL dev service)
-	UploadGap     time.Duration // min delay between uploads (0 = none; raise for the prod sweep)
+	Apply         bool
+	Limit         int
+	Offset        int
+	DSN           string
+	BangumiMirror string
+	ImageBaseURL  string
+	UploadGap     time.Duration
 }
 
-// imageUploader is the slice of the image client this backfill needs. Narrowing
-// to an interface (satisfied by *imageclient.Client) lets the write path be
-// exercised with a fake in tests — no image service, no network.
 type imageUploader interface {
 	UploadWithSub(ctx context.Context, r io.Reader, filename, preset, uploaderSub string) (*imageclient.UploadResult, error)
 	ReferencePing(ctx context.Context, hashes []string) (*imageclient.ReferencePingResult, error)
 	Health(ctx context.Context) error
 }
 
-// counters tallies outcomes. In a dry run coverWould carries the forecast; in
-// apply coverUploaded carries the real writes.
 type counters struct {
-	coverUploaded  int // portrait uploaded + row written (apply)
-	coverWould     int // portrait that would upload (dry)
-	coverExists    int // work already has a Bangumi cover (idempotency skip)
-	coverLandscape int // skipped: dims say landscape/square (DLsite supplies it)
-	coverNoDims    int // skipped: subject absent from dims.jsonl (no fetched cover)
-	coverMissing   int // portrait, but the mirror file is absent/empty
-	coverRejected  int // image moderation rejected the upload
-	coverRefused   int // XOR guard refused a claimed work
-	coverDedup     int // ON CONFLICT no-op (row already present)
+	coverUploaded  int
+	coverWould     int
+	coverExists    int
+	coverLandscape int
+	coverNoDims    int
+	coverMissing   int
+	coverRejected  int
+	coverRefused   int
+	coverDedup     int
 	errors         int
 }
 
-// runner carries per-run dependencies + counters (serial, plain ints). exist is
-// the set of works already carrying a Bangumi cover (idempotency preload).
 type runner struct {
 	db         *gorm.DB
 	cli        imageUploader
@@ -94,16 +54,9 @@ type runner struct {
 	exist      map[int64]bool
 	c          counters
 	pingHashes []string
-	// touched collects works that actually gained a cover row, so the run bumps
-	// their catalog_work.updated_at once at the end and the public changes feed
-	// learns the work is worth re-pulling. Dedup hits and dry-runs contribute
-	// nothing, so a second --apply moves no watermark.
-	touched []int64
+	touched    []int64
 }
 
-// Run resolves the candidate set, forecasts (dry) or backfills (apply) the
-// portrait covers, and reference-pings freshly-uploaded hashes. Returns a
-// loggable summary.
 func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess — pass the rehearsal copy locally, the live catalog only in the production run")
@@ -186,9 +139,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	return sum, nil
 }
 
-// process walks the candidates, classifying each by its dims entry and, for the
-// vertical portraits, forecasting or writing the cover. Returns quota=true if the
-// image quota was hit (the run aborts).
 func (r *runner) process(ctx context.Context, opts Opts, cands []candidate, d *dims) (quota bool) {
 	for _, c := range cands {
 		if err := ctx.Err(); err != nil {
@@ -196,11 +146,11 @@ func (r *runner) process(ctx context.Context, opts Opts, cands []candidate, d *d
 		}
 		e, ok := d.entry[c.SubjectID]
 		if !ok {
-			r.c.coverNoDims++ // Phase 2 fetched no cover for this subject
+			r.c.coverNoDims++
 			continue
 		}
 		if !e.portrait() {
-			r.c.coverLandscape++ // landscape/square — DLsite already supplies it (step 55)
+			r.c.coverLandscape++
 			continue
 		}
 		if r.writeCover(ctx, opts.BangumiMirror, c, e, opts.Apply) {

@@ -6,9 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Pins every enum group to unique values — a slipped finger when adding a
-// constant must fail loudly, because these values are persisted and can
-// never be renumbered.
 func TestConstantGroupsHaveUniqueValues(t *testing.T) {
 	groups := map[string][]int16{
 		"entity_type": {
@@ -73,13 +70,6 @@ func TestConstantGroupsHaveUniqueValues(t *testing.T) {
 	}
 }
 
-// TestDisplayLimitKeyIsATwoValuePartition pins the A2-R5 editorial display
-// projection: every column combination lands on exactly one of the two values,
-// and — the load-bearing half — the CLAIMED branch reads the editorial flag
-// (catalog_work.display_nsfw, the wiki body's content_limit until refs/proj/140
-// §5b nativized it) while the BODYLESS branch reads the rating. Collapsing the two
-// is the incident (doc 106 §38): a claimed r18 game with editorially safe material
-// must project `sfw`.
 func TestDisplayLimitKeyIsATwoValuePartition(t *testing.T) {
 	wiki, empty := "galgame_wiki", ""
 	pwid := int64(42)
@@ -92,13 +82,11 @@ func TestDisplayLimitKeyIsATwoValuePartition(t *testing.T) {
 		rating  int16
 		want    string
 	}{
-		// ── bodyless: the age axis is the only signal there is ──
 		{"bodyless all_ages", nil, nil, false, ContentRatingAllAges, DisplayLimitKeySFW},
 		{"bodyless sensitive", nil, nil, false, ContentRatingSensitive, DisplayLimitKeySFW},
 		{"bodyless r18", nil, nil, false, ContentRatingR18, DisplayLimitKeyNSFW},
 		{"empty site is bodyless", &empty, &pwid, true, ContentRatingR18, DisplayLimitKeyNSFW},
 		{"site without a product work id is bodyless", &wiki, nil, true, ContentRatingAllAges, DisplayLimitKeySFW},
-		// ── claimed: the EDITORIAL FLAG decides, and the rating is ignored ──
 		{"claimed, editorially sfw, game r18", &wiki, &pwid, false, ContentRatingR18, DisplayLimitKeySFW},
 		{"claimed, editorially nsfw, game all_ages", &wiki, &pwid, true, ContentRatingAllAges, DisplayLimitKeyNSFW},
 		{"claimed, editorially nsfw, game r18", &wiki, &pwid, true, ContentRatingR18, DisplayLimitKeyNSFW},
@@ -110,17 +98,12 @@ func TestDisplayLimitKeyIsATwoValuePartition(t *testing.T) {
 			"%s: the vocabulary is exactly two values", tc.name)
 	}
 
-	// The two axes are genuinely independent: neither is a widening of the other.
 	assert.NotEqual(t,
 		DisplayLimitKey(&wiki, &pwid, false, ContentRatingR18),
 		DisplayLimitKey(nil, nil, false, ContentRatingR18),
 		"an r18 game reads sfw when claimed with safe material, nsfw when bodyless")
 }
 
-// The label-relation vocabulary is four INVERSE PAIRS, and the mirrored graph
-// depends on that: a writer that produced a code with no counterpart here would
-// leave a one-directional edge no reverse read could ever find. Every code also
-// needs a public spelling, or the read face silently drops the row.
 func TestLabelRelationVocabularyPairsAndRenders(t *testing.T) {
 	inverse := map[int16]int16{
 		LabelRelationParent:      LabelRelationSubsidiary,
@@ -133,19 +116,12 @@ func TestLabelRelationVocabularyPairsAndRenders(t *testing.T) {
 		assert.Contains(t, LabelRelationKey, a)
 		assert.Contains(t, LabelRelationKey, b)
 	}
-	// Both halves of every pair, and nothing else, are in the public map.
 	assert.Len(t, LabelRelationKey, 2*len(inverse))
 	assert.Equal(t, "imprint_of", LabelRelationKey[LabelRelationImprintOf])
 	assert.Equal(t, "succeeded_by", LabelRelationKey[LabelRelationSucceededBy])
-	// 0 has no meaning: an unset relation must never render as a fact.
 	assert.NotContains(t, LabelRelationKey, int16(0))
 }
 
-// The polymorphic discriminator values are pinned forever — renumbering them
-// would silently re-address every redirect/usage/revision row. That holds for
-// the RETIRED slot too: 2 was org (wave 195) and stays unallocated, so this
-// test pins 3 to label specifically to catch the tidy-minded compaction that
-// would slide every later type down one and re-address the whole catalogue.
 func TestEntityTypeValuesArePinned(t *testing.T) {
 	assert.Equal(t, int16(0), EntityTypePerson)
 	assert.Equal(t, int16(1), EntityTypeCreditName)

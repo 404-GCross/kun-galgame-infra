@@ -10,8 +10,6 @@ import (
 	"testing"
 )
 
-// TestConfigured — the decoupling gate: a client is configured only when BOTH
-// base URL and token are set. Empty either → degraded (callers must not dial).
 func TestConfigured(t *testing.T) {
 	cases := []struct {
 		base, token string
@@ -29,9 +27,6 @@ func TestConfigured(t *testing.T) {
 	}
 }
 
-// TestChatJSONNormal — a stubbed OpenAI-compatible server: the client posts to
-// {base}/chat/completions with a bearer token and parses content + channel +
-// usage from the response.
 func TestChatJSONNormal(t *testing.T) {
 	var gotAuth, gotPath string
 	var gotBody map[string]any
@@ -70,8 +65,6 @@ func TestChatJSONNormal(t *testing.T) {
 	}
 }
 
-// TestChatJSON5xx — an upstream 5xx surfaces as an error, which the moderation
-// service turns into a fail-open degraded allow.
 func TestChatJSON5xx(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
@@ -85,8 +78,6 @@ func TestChatJSON5xx(t *testing.T) {
 	}
 }
 
-// TestChatJSONChannelFallback — when the response omits `model`, the requested
-// model id is recorded as the channel.
 func TestChatJSONChannelFallback(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}],"usage":{}}`)

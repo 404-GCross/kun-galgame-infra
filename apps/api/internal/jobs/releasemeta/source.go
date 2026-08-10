@@ -11,9 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// registry holds the catalog registry ids this backfill needs, resolved by key
-// (never hardcoded) so a rehearsal / prod DB with different auto-increment
-// seeds still works — the workratings/dlsitemedia discipline.
 type registry struct {
 	bangumiSource int16
 	dlsiteSource  int16
@@ -41,26 +38,16 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// emptyDate is the shared fill-empty candidate predicate: released_y NULL or 0
-// (0 never carries meaning — years are real or absent).
 const emptyDate = `(rel.released_y IS NULL OR rel.released_y = 0)`
 
-// singleRelease restricts a work to exactly one live release — the 1:1 stub
-// shape that makes a WORK-level date (EG/bgm) project onto a release
-// unambiguously.
 const singleRelease = `(SELECT count(*) FROM catalog_release r2 WHERE r2.work_id = w.id AND r2.deleted_at IS NULL) = 1`
 
-// dlDateCandidate is one empty-date release with its DLsite workno anchor.
 type dlDateCandidate struct {
 	ReleaseID int64  `gorm:"column:release_id"`
 	WorkID    int64  `gorm:"column:work_id"`
 	Workno    string `gorm:"column:workno"`
 }
 
-// loadDlDateCandidates resolves empty-date releases carrying a DLsite EXACT
-// release anchor. DISTINCT ON keeps ONE workno per release (the lowest —
-// deterministic; multi-anchor releases are unobserved live). No medium or
-// bodyless pin: the date is a registry scalar and the anchor owns it.
 func loadDlDateCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]dlDateCandidate, error) {
 	var out []dlDateCandidate
 	if err := db.WithContext(ctx).
@@ -77,19 +64,12 @@ func loadDlDateCandidates(ctx context.Context, db *gorm.DB, reg registry, limit,
 	return window(out, limit, offset), nil
 }
 
-// egDateCandidate is one BODYLESS 1:1-stub work whose single empty-date
-// release may be filled from its EG exact WORK anchors (several ids when the
-// work carries >1 anchor — the lane collapses to the lowest mirror-present).
 type egDateCandidate struct {
 	WorkID    int64
 	ReleaseID int64
 	EgIDs     []int64
 }
 
-// loadEgDateCandidates resolves bodyless works carrying an EG EXACT work
-// anchor whose single live release has an empty date. A non-numeric
-// external_id becomes the -1 sentinel so it is counted missing_in_mirror
-// rather than silently dropped (workratings convention).
 func loadEgDateCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]egDateCandidate, error) {
 	var rows []struct {
 		WorkID     int64  `gorm:"column:work_id"`
@@ -133,8 +113,6 @@ func loadEgDateCandidates(ctx context.Context, db *gorm.DB, reg registry, limit,
 	return window(out, limit, offset), nil
 }
 
-// bgmDateCandidate is one 1:1-stub work (any site — claimed works' releases
-// are registry rows too) with its EXACT Bangumi anchor's subject date.
 type bgmDateCandidate struct {
 	WorkID    int64  `gorm:"column:work_id"`
 	ReleaseID int64  `gorm:"column:release_id"`
@@ -142,11 +120,6 @@ type bgmDateCandidate struct {
 	Date      string `gorm:"column:date"`
 }
 
-// loadBgmDateCandidates resolves works carrying any EXACT Bangumi work anchor
-// (every matched_by tier asserts identity) whose single live release has an
-// empty date, joined to the subject's free-text date. DISTINCT ON keeps ONE
-// subject per work (the lowest id — workratings precedent); the ::bigint cast
-// is safe (surveyed: zero non-numeric exact bgm work anchors).
 func loadBgmDateCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]bgmDateCandidate, error) {
 	var out []bgmDateCandidate
 	if err := db.WithContext(ctx).
@@ -166,16 +139,12 @@ func loadBgmDateCandidates(ctx context.Context, db *gorm.DB, reg registry, limit
 	return window(out, limit, offset), nil
 }
 
-// ratingCandidate is one unrated (content_rating=0) work; Site/ProductWorkID
-// route the wiki lane for claimed rows.
 type ratingCandidate struct {
 	WorkID        int64   `gorm:"column:work_id"`
 	Site          *string `gorm:"column:site"`
 	ProductWorkID *int64  `gorm:"column:product_work_id"`
 }
 
-// loadRatingCandidates resolves every live work still at content_rating=0
-// (0 = unrated by the step-11 ruling — the fillable "empty").
 func loadRatingCandidates(ctx context.Context, db *gorm.DB, limit, offset int) ([]ratingCandidate, error) {
 	var out []ratingCandidate
 	if err := db.WithContext(ctx).
@@ -189,9 +158,6 @@ func loadRatingCandidates(ctx context.Context, db *gorm.DB, limit, offset int) (
 	return window(out, limit, offset), nil
 }
 
-// loadRatingDlsiteAnchors maps unrated works to ONE DLsite workno each via
-// their release anchors (DISTINCT ON lowest workno). One query — the caller
-// intersects with its windowed candidate set.
 func loadRatingDlsiteAnchors(ctx context.Context, db *gorm.DB, reg registry) (map[int64]string, error) {
 	var rows []struct {
 		WorkID int64  `gorm:"column:work_id"`
@@ -216,8 +182,6 @@ func loadRatingDlsiteAnchors(ctx context.Context, db *gorm.DB, reg registry) (ma
 	return out, nil
 }
 
-// loadRatingBgmNSFW maps unrated works to their representative EXACT Bangumi
-// subject's nsfw flag (DISTINCT ON lowest subject id).
 func loadRatingBgmNSFW(ctx context.Context, db *gorm.DB, reg registry) (map[int64]bool, error) {
 	var rows []struct {
 		WorkID int64 `gorm:"column:work_id"`

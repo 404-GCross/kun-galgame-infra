@@ -2,10 +2,6 @@ package handler
 
 import "testing"
 
-// TestMayManage pins the console ownership rule: ren (manage_all) reaches every
-// row; anyone else reaches only rows they created. A NULL creator — every site
-// and client that predates ownership stamping, plus developer-portal apps —
-// belongs to nobody and stays ren-only.
 func TestMayManage(t *testing.T) {
 	owner := uint(7)
 	other := uint(8)

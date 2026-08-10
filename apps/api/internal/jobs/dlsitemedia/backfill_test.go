@@ -49,11 +49,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestIntroWritePath exercises the pure-DB intro path end to end: the XOR guard
-// (a CLAIMED work is refused), the no-text skip, the verbatim ja/dlsite write,
-// and idempotency (both the preloaded-exists skip AND the ON CONFLICT DO NOTHING
-// guard). The cover/screenshot upload paths need the image service and are
-// validated by the rehearsal apply, not here.
 func TestIntroWritePath(t *testing.T) {
 	db := testDB
 	for _, tbl := range []string{"catalog_work_intro", "catalog_work"} {
@@ -81,7 +76,7 @@ func TestIntroWritePath(t *testing.T) {
 	}
 	metas := map[string]dlsiteMeta{
 		"RJ000001": {Age: "3", Intro: "A bodyless doujin blurb."},
-		"RJ000002": {Age: "1", Intro: ""}, // no prose
+		"RJ000002": {Age: "1", Intro: ""},
 		"RJ000003": {Age: "3", Intro: "A claimed work's store blurb (wave 166)."},
 	}
 
@@ -96,7 +91,6 @@ func TestIntroWritePath(t *testing.T) {
 		return r
 	}
 
-	// --- dry run: classifies, writes nothing.
 	r := run(false)
 	assert.Equal(t, 2, r.c.introWould, "wBody and wClaimed both would write (wave 166)")
 	assert.Equal(t, 1, r.c.introNoText, "wEmpty no text")
@@ -105,9 +99,6 @@ func TestIntroWritePath(t *testing.T) {
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro").Scan(&n).Error)
 	assert.EqualValues(t, 0, n, "dry run writes nothing")
 
-	// --- apply: writes wBody's AND the claimed work's intro (ja, dlsite,
-	// verbatim). Before wave 166 the claimed one was refused, which is what
-	// left published works with an English-only intro.
 	r = run(true)
 	assert.Equal(t, 2, r.c.introWritten)
 	var row model.CatalogWorkIntro
@@ -121,13 +112,10 @@ func TestIntroWritePath(t *testing.T) {
 	assert.Equal(t, "A claimed work's store blurb (wave 166).", claimedRow.Intro)
 	assert.EqualValues(t, 0, claimedRow.Provenance, "an ingested store blurb is a source row, never machine")
 
-	// --- second apply via the preloaded-exists skip: zero new writes.
 	r = run(true)
 	assert.Equal(t, 0, r.c.introWritten)
 	assert.Equal(t, 2, r.c.introExists, "preloaded exists → skip before write")
 
-	// --- and the ON CONFLICT guard: force a write attempt with a STALE (empty)
-	// exist map; the DB unique key still refuses the duplicate.
 	rStale := &runner{db: db, sourceID: reg.dlsiteSource,
 		exist: &existing{intro: map[int64]bool{}, cover: map[int64]bool{}, shot: map[int64]map[int]bool{}}}
 	rStale.writeIntro(ctx, cands[0], metas["RJ000001"], true)
@@ -139,23 +127,10 @@ func TestIntroWritePath(t *testing.T) {
 	assert.EqualValues(t, 2, n, "bodyless + claimed, nothing more")
 }
 
-// --- refs/proj/125: the CLAIMED screenshot lane ---
-
-// claimedLaneClaimIDs are the fixture product_work_id values a claim points at.
-// They used to be galgame body ids the screenshot lane joined against; wave 149
-// dropped that body, so today they are opaque claim keys and nothing resolves
-// them.
 var claimedLaneClaimIDs = []int64{9101, 9102, 9103, 9104, 9105}
 
-// vndbSourceID is the seeded catalog_source id for vndb — a lane this job never
-// writes, used here to stage "another source's rows" (wave 188).
 const vndbSourceID = int16(2)
 
-// stubImageService stands in for image_service's /image/upload: it answers with
-// the standard envelope, hashing the uploaded bytes so identical files dedup to
-// identical hashes (matching the real content-addressed behavior). Only the
-// upload endpoint is needed — the test drives the writers directly, so neither
-// Health nor ReferencePing is called.
 func stubImageService(t *testing.T) *imageclient.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,16 +153,9 @@ func stubImageService(t *testing.T) *imageclient.Client {
 	return imageclient.New(imageclient.Config{BaseURL: srv.URL, ClientID: "test", ClientSecret: "test"})
 }
 
-// TestClaimedScreenshotLane pins the refs/proj/125 write side as wave 188 left
-// it: the candidate query's PER-SOURCE targeting of claimed works, the PER-KIND guard split
-// (screenshot admits a claimed work, intro/cover still refuse the very same
-// candidate), the real write with the dlsite age→sexual mapping, touch
-// inheritance, and idempotency (second apply writes nothing and touches nothing).
 func TestClaimedScreenshotLane(t *testing.T) {
 	db := testDB
 	ctx := context.Background()
-	// No RESTART IDENTITY: the identity sequences are shared with every other
-	// package running against this DB, and rewinding them cross-pollutes ids.
 	for _, tbl := range []string{"catalog_external_ref", "catalog_release", "catalog_work_screenshot", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" CASCADE").Error)
 	}
@@ -195,8 +163,6 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	reg, err := resolveRegistry(ctx, db)
 	require.NoError(t, err)
 
-	// anchored creates a galgame work + a release carrying an EXACT dlsite workno
-	// anchor — the reachability every candidate query shares.
 	anchored := func(name, workno string, site *string, galgameID *int64) int64 {
 		w := model.CatalogWork{MediumID: reg.galgameMedium, OLang: "ja", DisplayName: name, Site: site, ProductWorkID: galgameID}
 		require.NoError(t, db.Create(&w).Error)
@@ -211,24 +177,12 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	wBodyless := anchored("bodyless", "RJ100001", nil, nil)
 	wClaimedBare := anchored("claimed-no-screenshot", "RJ100002", &claimed, &claimedLaneClaimIDs[0])
 	wClaimedNative := anchored("claimed-with-native-screenshot", "RJ100004", &claimed, &claimedLaneClaimIDs[2])
-	// Wave 188: a claim whose only gallery comes from ANOTHER source. Under the
-	// old whole-work-emptiness rule this was excluded; per-source fill-missing
-	// admits it, because a vndb game screenshot and a DLsite official sample CG
-	// are different things and the read face shows them as separate blocks.
 	wClaimedOther := anchored("claimed-with-vndb-screenshot", "RJ100006", &claimed, &claimedLaneClaimIDs[4])
 
-	// A claim that is NOT on the public face. The wave-166 intro lane targets
-	// PUBLISHED works — the draft sea is roughly 5x the published one and every
-	// ja row written there becomes a downstream translation call. It carries a
-	// native screenshot so the SCREENSHOT lane's own targeting keeps it out and
-	// this fixture isolates exactly one variable: claim_state.
 	wDraft := anchored("claimed-but-draft", "RJ100005", &claimed, &claimedLaneClaimIDs[3])
 	require.NoError(t, db.Model(&model.CatalogWork{}).Where("id = ?", wDraft).
 		Update("claim_state", model.ClaimStateDraft).Error)
 
-	// wClaimedNative already has a DLSITE row → this lane is done with it. Only
-	// this source's own rows close the lane (wave 188): wClaimedOther's vndb row
-	// does not, which is the whole reversal.
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
 		WorkID: wClaimedNative, ImageHash: "already_here", SortOrder: 0, SourceID: reg.dlsiteSource}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
@@ -236,8 +190,6 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
 		WorkID: wDraft, ImageHash: "draft_shot", SortOrder: 0, SourceID: reg.dlsiteSource}).Error)
 
-	// --- candidate targeting: screenshot runs see both lanes, intro/cover-only
-	// runs see the pre-125 bodyless set.
 	shotCands, err := loadCandidates(ctx, db, reg, Kinds{Screenshot: true}, 0, 0)
 	require.NoError(t, err)
 	ids := map[int64]string{}
@@ -252,17 +204,11 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	assert.Equal(t, 1, bodyless)
 	assert.Equal(t, 2, claimedCount)
 
-	// COVER-only still resolves the bodyless lane alone — cover keeps its
-	// claimed refusal (wave 164 already filled those slots from the wiki).
 	coverCands, err := loadCandidates(ctx, db, reg, Kinds{Cover: true}, 0, 0)
 	require.NoError(t, err)
 	require.Len(t, coverCands, 1, "a cover-only run resolves the bodyless lane alone")
 	assert.Equal(t, wBodyless, coverCands[0].WorkID)
 
-	// INTRO, since wave 166, adds its own claimed lane: every claimed work with
-	// a dlsite anchor and no ja intro from ANY source. Both live claimed
-	// fixtures qualify here — neither has an intro row — and the screenshot
-	// lane's own exclusions (a native screenshot) do not apply to intro.
 	introCands, err := loadCandidates(ctx, db, reg, Kinds{Intro: true}, 0, 0)
 	require.NoError(t, err)
 	introIDs := map[int64]bool{}
@@ -276,8 +222,6 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	assert.Equal(t, 1, introBodyless)
 	assert.Equal(t, 3, introClaimed, "the three live claims; the draft is out")
 
-	// --- asymmetric windowing: --offset consumes the STABLE bodyless lane only, so
-	// it can isolate the self-consuming claimed lane without ever skipping it.
 	for _, off := range []int{1, 99} {
 		windowed, err := loadCandidates(ctx, db, reg, Kinds{Screenshot: true}, 0, off)
 		require.NoError(t, err)
@@ -290,7 +234,6 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	require.Len(t, capped, 1, "--limit caps the concatenation")
 	assert.Equal(t, wBodyless, capped[0].WorkID)
 
-	// --- the claimed candidate, driven through all three writers.
 	var cand candidate
 	for _, c := range shotCands {
 		if c.WorkID == wClaimedBare {
@@ -299,7 +242,6 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	}
 	require.Equal(t, wClaimedBare, cand.WorkID)
 
-	// Two mirrored samples + one sample whose bytes were never mirrored.
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, cand.Workno), 0o755))
 	for _, f := range []string{"a.jpg", "b.jpg"} {
@@ -314,11 +256,6 @@ func TestClaimedScreenshotLane(t *testing.T) {
 		return &runner{db: db, sourceID: reg.dlsiteSource, exist: exist, cli: stubImageService(t)}
 	}
 
-	// PER-KIND GUARD SPLIT, post-166: intro and screenshot write a claimed
-	// work, COVER still refuses it. The split is not arbitrary — wave 164
-	// flipped covers onto the native table with the wiki rows already mirrored
-	// in, so a claimed work's cover slot is occupied and a store cover would be
-	// a second, worse one; its intro slot may be genuinely empty.
 	r := newRunner()
 	r.writeIntro(ctx, cand, meta, true)
 	r.writeCover(ctx, dir, cand, meta, true)
@@ -331,7 +268,6 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_cover WHERE work_id = ?", cand.WorkID).Scan(&n).Error)
 	assert.EqualValues(t, 0, n, "claimed cover never materialised")
 
-	// Dry run first: forecasts, writes nothing.
 	r = newRunner()
 	assert.False(t, r.writeScreenshots(ctx, dir, cand, meta, false))
 	assert.Equal(t, 2, r.c.shotWould)
@@ -340,7 +276,6 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_screenshot WHERE work_id = ?", cand.WorkID).Scan(&n).Error)
 	assert.EqualValues(t, 0, n)
 
-	// Apply: two dlsite rows on a CLAIMED work, sexual mapped from age_category 3.
 	r = newRunner()
 	assert.False(t, r.writeScreenshots(ctx, dir, cand, meta, true))
 	assert.Equal(t, 2, r.c.shotUploaded)
@@ -360,32 +295,23 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	}
 	assert.Len(t, r.pingHashes, 2, "fresh uploads are reference-pinged immediately")
 
-	// Second apply: the preloaded-exists skip means zero writes and zero touches.
 	r = newRunner()
 	assert.False(t, r.writeScreenshots(ctx, dir, cand, meta, true))
 	assert.Zero(t, r.c.shotUploaded)
 	assert.Equal(t, 2, r.c.shotExists)
 	assert.Empty(t, r.touched, "idempotent re-run moves no watermark")
 
-	// And the work drops out of the candidate set entirely (it now has native rows).
 	shotCands, err = loadCandidates(ctx, db, reg, Kinds{Screenshot: true}, 0, 0)
 	require.NoError(t, err)
 	for _, c := range shotCands {
 		assert.NotEqual(t, cand.WorkID, c.WorkID, "a filled work is no longer a candidate")
 	}
 
-	// A work with no samples at all is classified, not silently dropped.
 	r = newRunner()
 	assert.False(t, r.writeScreenshots(ctx, dir, cand, dlsiteMeta{Age: "1"}, true))
 	assert.Equal(t, 1, r.c.shotNoSamples)
 }
 
-// TestCrossSourceSameBytesAreNotWrittenTwice is the other half of wave 188's
-// per-source admission: opening the lane to works that already carry another
-// source's rows must NOT put the same image on a work twice. The candidate
-// query admits it and the per-source preload does not skip it, so the guard is
-// the (work_id, image_hash) unique key — the first writer keeps the row and its
-// source attribution, and this run counts a dedup instead of a write.
 func TestCrossSourceSameBytesAreNotWrittenTwice(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test database")
@@ -401,9 +327,6 @@ func TestCrossSourceSameBytesAreNotWrittenTwice(t *testing.T) {
 	w := model.CatalogWork{MediumID: reg.galgameMedium, OLang: "ja", DisplayName: "shared bytes"}
 	require.NoError(t, db.Create(&w).Error)
 
-	// The stub image service is content-addressed, so the hash a upload answers
-	// with is the sha256 of the file — exactly what a different source would
-	// have landed had it mirrored the same picture.
 	dir := t.TempDir()
 	workno := "RJ200001"
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, workno), 0o755))

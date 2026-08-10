@@ -12,48 +12,27 @@ import (
 	"gorm.io/gorm"
 )
 
-// defaultBatchSize is the pinned names-per-call batch. Small enough that a
-// glm-5.2 reply stays well inside max_tokens (a truncated batch reply is
-// refused outright, costing the whole call), large enough that 12k bangumi names
-// cost ~600 calls instead of 12,259.
 const defaultBatchSize = 20
 
-// ClassifyOpts configures the classify phase: vocabulary → LLM seam → JSONL.
 type ClassifyOpts struct {
-	// DSN is REQUIRED — the catalog DB holding catalog_work_tag / catalog_tag.
-	// A bare run cannot touch a live DB.
-	DSN string
-	// Sources are the registry keys whose catalog_work_tag vocabulary is judged
-	// (default bangumi + dlsite).
-	Sources []string
-	// Vocab additionally loads every catalog_tag canonical name as a
-	// VocabSource row — the canonical layer's own sexual flag is
-	// false-by-construction for bangumi-only mints and needs the same pass.
-	Vocab bool
-	// Out is the JSONL verdict path (REQUIRED). It is APPENDED to: names already
-	// present are skipped, so an interrupted run resumes.
-	Out string
-	// MinUses gates the vocabulary by distinct-work usage (default 1 = all).
-	MinUses int
-	// Limit caps how many NEW names this run judges (0 = no cap). Every apply
-	// tool in this repo carries a rehearsal limiter; this is classify's.
-	Limit int
-	// BatchSize overrides defaultBatchSize.
+	DSN       string
+	Sources   []string
+	Vocab     bool
+	Out       string
+	MinUses   int
+	Limit     int
 	BatchSize int
 }
 
-// ClassifyStats reports a classify run.
 type ClassifyStats struct {
-	Pool        int // names loaded from the DB after --min-uses
-	Skipped     int // already present in --out (resume)
-	Judged      int // verdicts written this run
-	Errors      int // names the model dropped/garbled (re-asked on the next resume)
+	Pool        int
+	Skipped     int
+	Judged      int
+	Errors      int
 	Batches     int
 	ClassCounts map[Class]int
 }
 
-// Classify loads the vocabulary, judges it through the Classifier seam and
-// appends the verdicts to the output JSONL. cl is the seam (REQUIRED).
 func Classify(ctx context.Context, cl Classifier, opts ClassifyOpts) (*ClassifyStats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
@@ -109,8 +88,6 @@ func Classify(ctx context.Context, cl Classifier, opts ClassifyOpts) (*ClassifyS
 		st.Batches++
 		verdicts, model, err := cl.ClassifyBatch(ctx, batch)
 		if err != nil {
-			// Record-then-continue: one bad batch never aborts the run, and the
-			// names in it are re-asked by the next resume.
 			st.Errors += len(batch)
 			slog.Warn("classify batch", "source", batch[0].Source, "n", len(batch), "err", err)
 			continue
@@ -119,7 +96,7 @@ func Classify(ctx context.Context, cl Classifier, opts ClassifyOpts) (*ClassifyS
 		for i, v := range verdicts {
 			if v.Class == "" {
 				st.Errors++
-				continue // model dropped this slot — leave it for the next resume
+				continue
 			}
 			recs = append(recs, Verdict{
 				Source: batch[i].Source, Name: batch[i].Name,
@@ -138,9 +115,6 @@ func Classify(ctx context.Context, cl Classifier, opts ClassifyOpts) (*ClassifyS
 	return st, nil
 }
 
-// selectTodo drops names already judged (resume) and applies the rehearsal
-// limiter. The pool arrives sorted, so a limited run always takes the same
-// prefix and successive runs walk the vocabulary deterministically.
 func selectTodo(pool []NameInput, done map[string]struct{}, limit int, st *ClassifyStats) []NameInput {
 	todo := make([]NameInput, 0, len(pool))
 	for _, n := range pool {
@@ -156,9 +130,6 @@ func selectTodo(pool []NameInput, done map[string]struct{}, limit int, st *Class
 	return todo
 }
 
-// batches splits todo into per-source chunks: a batch never mixes sources, so
-// the prompt can state which source it is judging (dlsite genres are curated
-// official taxonomy, bangumi tags are raw folksonomy — the context matters).
 func batches(todo []NameInput, size int) [][]NameInput {
 	var out [][]NameInput
 	for i := 0; i < len(todo); {
@@ -172,9 +143,6 @@ func batches(todo []NameInput, size int) [][]NameInput {
 	return out
 }
 
-// loadPool reads the vocabulary: per requested source, distinct catalog_work_tag
-// names with uses = distinct works and votes = summed count; plus (with --vocab)
-// every catalog_tag canonical name under the VocabSource pseudo key.
 func loadPool(ctx context.Context, db *gorm.DB, opts ClassifyOpts) ([]NameInput, error) {
 	ids, err := resolveSources(ctx, db, opts.Sources)
 	if err != nil {
@@ -199,8 +167,6 @@ func loadPool(ctx context.Context, db *gorm.DB, opts ClassifyOpts) ([]NameInput,
 			pool = append(pool, NameInput{Source: VocabSource, Name: n})
 		}
 	}
-	// Deterministic order: by source, then by descending usage (the names that
-	// matter most are judged first under a --limit), then name for stability.
 	sort.SliceStable(pool, func(i, j int) bool {
 		if pool[i].Source != pool[j].Source {
 			return pool[i].Source < pool[j].Source
@@ -219,9 +185,6 @@ type vocabRow struct {
 	Votes int    `gorm:"column:votes"`
 }
 
-// loadWorkTagVocab reads one source's verbatim folksonomy: distinct name with
-// uses = number of distinct works carrying it and votes = summed folksonomy
-// count (bangumi's per-work vote tally; 0/1 for dlsite's official genres).
 func loadWorkTagVocab(ctx context.Context, db *gorm.DB, sourceID int16, minUses int) ([]vocabRow, error) {
 	var rows []vocabRow
 	if err := db.WithContext(ctx).Raw(`
@@ -243,7 +206,6 @@ func loadWorkTagVocab(ctx context.Context, db *gorm.DB, sourceID int16, minUses 
 	return out, nil
 }
 
-// loadCanonicalNames reads the whole canonical vocabulary (catalog_tag.name).
 func loadCanonicalNames(ctx context.Context, db *gorm.DB) ([]string, error) {
 	var names []string
 	if err := db.WithContext(ctx).Raw(`SELECT name FROM catalog_tag`).Scan(&names).Error; err != nil {
@@ -252,9 +214,6 @@ func loadCanonicalNames(ctx context.Context, db *gorm.DB) ([]string, error) {
 	return names, nil
 }
 
-// resolveSources maps registry keys → ids at runtime (never hardcoded ids — the
-// tagcanon discipline: a rehearsal / prod DB with different seeds still works).
-// VocabSource is not a registry key and is rejected here.
 func resolveSources(ctx context.Context, db *gorm.DB, keys []string) (map[string]int16, error) {
 	out := make(map[string]int16, len(keys))
 	for _, key := range keys {
@@ -273,7 +232,6 @@ func resolveSources(ctx context.Context, db *gorm.DB, keys []string) (map[string
 	return out, nil
 }
 
-// openGorm opens a silent-logger gorm handle (shared by classify/apply).
 func openGorm(dsn string) (*gorm.DB, error) {
 	return database.OpenJob(dsn)
 }

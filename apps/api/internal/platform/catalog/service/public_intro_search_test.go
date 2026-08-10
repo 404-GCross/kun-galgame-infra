@@ -1,13 +1,3 @@
-// public_intro_search_test.go — A2-1f: the works index's synopsis text and the
-// `search_intro=` opt-in, plus the tag-level `sexual` flag.
-//
-// The load-bearing case is the DEFAULT one: the index now CONTAINS intro
-// fields, so a caller who does not ask for them must still match nothing in
-// them. That is not a property of the index (its searchable list includes
-// them) — it is a property of the per-request attributesToSearchOn restriction,
-// which is exactly the kind of thing that silently rots. Hence a synopsis-ONLY
-// term: a word that appears in no title anywhere in the corpus, so the default
-// lane can only find it if the restriction is gone.
 package service
 
 import (
@@ -21,17 +11,8 @@ import (
 	"api/pkg/config"
 )
 
-// worksSearchClient opens a Meilisearch client under this package's own index
-// prefix, so a settings assertion reads the very index worksSearchIndexer
-// configured.
 func worksSearchClient(t *testing.T) *infrasearch.Client {
 	t.Helper()
-	// No host, no test. NewClient never dials — it only builds a handle — so a
-	// hard-coded 127.0.0.1:7700 fallback could not be caught by the err check
-	// below: without a Meilisearch the test proceeded to a connection-refused
-	// FAILURE instead of a skip, and with an unrelated local Meilisearch it
-	// failed on a 401. The CI integration job sets this variable; the
-	// no-services job deliberately does not.
 	host := os.Getenv("MEILISEARCH_TEST_HOST")
 	if host == "" {
 		t.Skip("MEILISEARCH_TEST_HOST unset — search-backed test not run")
@@ -45,12 +26,8 @@ func worksSearchClient(t *testing.T) *infrasearch.Client {
 	return client
 }
 
-// introOnlyTerm appears in ONE work's synopsis and in no title in the corpus.
 const introOnlyTerm = "夏至祭"
 
-// seedIntroCorpus indexes three works: one with the synopsis-only term, one
-// whose TITLE carries a term that also appears in the first one's synopsis (so
-// the ranking claim can be checked), and one plain control.
 func seedIntroCorpus(t *testing.T) (*PublicService, map[string]int64) {
 	t.Helper()
 	cleanTables(t)
@@ -67,8 +44,6 @@ func seedIntroCorpus(t *testing.T) (*PublicService, map[string]int64) {
 			ContentRating: model.ContentRatingAllAges, UpdatedTS: 1700000001, Popularity: 1,
 			SourceKeys: []string{"vndb"},
 			Intros: []catsearch.WorkDocIntro{
-				// Carries BOTH the synopsis-only term and the other work's title
-				// word, so "灯火" must still rank the titled work first.
 				{Lang: "ja", Text: "主人公は" + introOnlyTerm + "の夜に灯火を見つける物語。"},
 				{Lang: "zh-Hans", Text: "主角在祭典之夜找到灯火的故事。"},
 			},
@@ -87,8 +62,6 @@ func seedIntroCorpus(t *testing.T) (*PublicService, map[string]int64) {
 	return svc, map[string]int64{"intro": withIntro.ID, "titled": titled.ID, "plain": plain.ID}
 }
 
-// TestWorksSearchIntroIsOptIn is the byte-freeze gate: a term that exists ONLY
-// in a synopsis is unfindable by default and findable with search_intro=1.
 func TestWorksSearchIntroIsOptIn(t *testing.T) {
 	svc, ids := seedIntroCorpus(t)
 
@@ -100,8 +73,6 @@ func TestWorksSearchIntroIsOptIn(t *testing.T) {
 		t.Fatalf("search_intro=1 got %v, want exactly [%d]", got, ids["intro"])
 	}
 
-	// Titles keep working identically on BOTH lanes — widening must add, never
-	// move, results.
 	for _, si := range []bool{false, true} {
 		got := searchIDs(t, svc, WorksSearchFilter{Q: "陽だまり", SearchIntro: si})
 		if len(got) != 1 || got[0] != ids["intro"] {
@@ -110,9 +81,6 @@ func TestWorksSearchIntroIsOptIn(t *testing.T) {
 	}
 }
 
-// TestWorksSearchIntroNeverOutranksATitle pins the attribute ordering: the
-// intro fields sit last in the searchable list, so a work whose TITLE carries
-// the term must precede one that merely mentions it in its synopsis.
 func TestWorksSearchIntroNeverOutranksATitle(t *testing.T) {
 	svc, ids := seedIntroCorpus(t)
 
@@ -125,9 +93,6 @@ func TestWorksSearchIntroNeverOutranksATitle(t *testing.T) {
 	}
 }
 
-// TestWorksSearchIntroIsLanguageBucketed: a Chinese synopsis is matched by a
-// Chinese query even though the work's own language is Japanese — the field is
-// bucketed so cmn tokenization applies to it.
 func TestWorksSearchIntroIsLanguageBucketed(t *testing.T) {
 	svc, ids := seedIntroCorpus(t)
 
@@ -137,9 +102,6 @@ func TestWorksSearchIntroIsLanguageBucketed(t *testing.T) {
 	}
 }
 
-// TestWorkDocIntroBucketingAndTruncation is the pure projection case (no
-// database, no Meilisearch): buckets by language, joins co-bucketed languages,
-// caps on a RUNE boundary.
 func TestWorkDocIntroBucketingAndTruncation(t *testing.T) {
 	long := strings.Repeat("あ", catsearch.IntroMaxRunes+500)
 	doc := catsearch.BuildWorkDoc(catsearch.WorkDocInput{
@@ -149,7 +111,7 @@ func TestWorkDocIntroBucketingAndTruncation(t *testing.T) {
 			{Lang: "zh-Hans", Text: "简体"},
 			{Lang: "zh-Hant", Text: "繁體"},
 			{Lang: "en", Text: "english"},
-			{Lang: "ja", Text: "  "}, // blank rows never enter a bucket
+			{Lang: "ja", Text: "  "},
 		},
 	})
 
@@ -159,7 +121,6 @@ func TestWorkDocIntroBucketingAndTruncation(t *testing.T) {
 	if !utf8Valid(doc.IntroJa) {
 		t.Fatalf("truncation cut mid-rune — the document would be invalid UTF-8")
 	}
-	// zh-Hans and zh-Hant share the zh bucket and are BOTH searchable.
 	if doc.IntroZh != "简体\n繁體" {
 		t.Fatalf("zh bucket = %q, want both variants joined", doc.IntroZh)
 	}
@@ -177,11 +138,8 @@ func utf8Valid(s string) bool {
 	return true
 }
 
-// TestEnsureIndexesConvergesOnSecondRun pins the A2-1d discipline this wave
-// rides: EnsureIndexes is the ONLY carrier of a settings change, and running it
-// twice must be a no-op — the settings it reads back are the ones it declared.
 func TestEnsureIndexesConvergesOnSecondRun(t *testing.T) {
-	idx := worksSearchIndexer(t) // already ran EnsureIndexes once
+	idx := worksSearchIndexer(t)
 	_ = idx
 
 	client := worksSearchClient(t)
@@ -205,19 +163,6 @@ func TestEnsureIndexesConvergesOnSecondRun(t *testing.T) {
 	}
 }
 
-// ── tag-level sexual (A2-1f) ────────────────────────────────────────────────
-
-// TestTagSexualReachesBothFacesFromTheColumn covers the A2-1f tag axis on BOTH
-// faces: the browse row and the record agree, a sexual-category tag flags true, a
-// plain one false, and a tag nobody ever flagged (pure folksonomy) is false — the
-// "no axis" case the Tier-A caveat is about.
-//
-// The flag is catalog_tag.sexual since the W1-pre nativization (refs/proj/140): the
-// read-time derivation through the A2-0 identity anchors into galgame_tag.category
-// moved into wikirescue step r, which writes THAT SAME derivation onto this column
-// — anchor discipline included, and pinned there (TestTagMirror,
-// TestTagVocabularySexualIgnoresNonExactAndForeignAnchors). What this suite owes is
-// the other half: that whatever the column says reaches both faces intact.
 func TestTagSexualReachesBothFacesFromTheColumn(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -227,8 +172,6 @@ func TestTagSexualReachesBothFacesFromTheColumn(t *testing.T) {
 	sexualTag := createCanonicalTag(t, "エロ(a2-1f)", model.TagTierCore, model.TagKindContent)
 	contentTag := createCanonicalTag(t, "純愛(a2-1f)", model.TagTierCore, model.TagKindContent)
 	techTag := createCanonicalTag(t, "実写(a2-1f)", model.TagTierCore, model.TagKindMeta)
-	// Never flagged: a canonical tag that exists only through folksonomy, whose
-	// sources publish no safety axis at all.
 	folkTag := createCanonicalTag(t, "百合(a2-1f)", model.TagTierCore, model.TagKindContent)
 	if err := testDB.Exec(
 		`UPDATE catalog_tag SET sexual = true WHERE id = ?`, sexualTag).Error; err != nil {
@@ -239,7 +182,6 @@ func TestTagSexualReachesBothFacesFromTheColumn(t *testing.T) {
 		sexualTag: true, contentTag: false, techTag: false, folkTag: false,
 	}
 
-	// (1) the browse lane.
 	list, err := svc.TagsList(ctx, TagsListFilter{}, "", 50)
 	if err != nil {
 		t.Fatalf("TagsList: %v", err)
@@ -259,7 +201,6 @@ func TestTagSexualReachesBothFacesFromTheColumn(t *testing.T) {
 		t.Fatalf("browse lane covered %d fixture tags, want %d", seen, len(want))
 	}
 
-	// (2) the record — must agree with its own list row.
 	for id, exp := range want {
 		rec, found, err := svc.TagDetail(ctx, id, false, false, 50, 0)
 		if err != nil || !found {

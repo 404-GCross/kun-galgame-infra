@@ -1,23 +1,12 @@
 <script setup lang="ts">
 import { MCP_ENDPOINT } from '~/constants/dev'
 
-// AI / MCP access guide: how to point an AI assistant at the NextMoe catalog via
-// the Model Context Protocol. The MCP server is a thin, stateless adapter over
-// the SAME public /v1 read faces documented here — one key authenticates both.
 useSeoMeta({
   title: 'AI / MCP 接入',
   description:
     '把 NextMoe 开放 API 作为 MCP（Model Context Protocol）server 接入 AI 助手：端点、密钥配置，以及 Claude Code / Claude Desktop / 通用 MCP 客户端三段配置示例。'
 })
 
-// The twenty-two tools (mirrors apps/api/internal/platform/mcpface). Each maps
-// 1:1 to a public /v1 endpoint; lookup/get take an id, search takes natural
-// language, _list browses a vocabulary to discover the ids the filters take.
-// R18 is hidden by default (nsfw=true opts in). The two galgame_* tools retired
-// on 2026-07-30 with the /v1/galgame face they proxied — catalog_search
-// (type=works) and catalog_work_get replace them; the eight A2 catalog ops
-// (works search, the calendar buckets, the browse lanes) joined at wave 7, and
-// the series pair + catalogue stats at wave 189.
 const tools = [
   {
     name: 'catalog_search',
@@ -106,8 +95,6 @@ const tools = [
   }
 ]
 
-// Client config snippets. The key is a secret — the placeholder stands in for
-// the developer's real nm_live_… key, injected client-side, never shipped.
 const claudeCodeCmd = `claude mcp add --transport http nextmoe ${MCP_ENDPOINT} \\
   --header "Authorization: Bearer nm_live_你的密钥"`
 
@@ -131,8 +118,6 @@ const genericJson = `{
   }
 }`
 
-// A bare Streamable-HTTP handshake, proving the endpoint is a plain HTTP MCP
-// server (no SDK required) — initialize → then tools/list, tools/call.
 const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
   -H "Content-Type: application/json" \\
   -H "Accept: application/json, text/event-stream" \\
@@ -144,7 +129,6 @@ const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
 
 <template>
   <div class="space-y-10">
-    <!-- Intro -->
     <header>
       <p class="text-sm font-medium tracking-wide text-primary">AI 接入</p>
       <h1 class="mt-2 text-3xl font-bold tracking-tight text-foreground">
@@ -158,7 +142,6 @@ const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
       </p>
     </header>
 
-    <!-- Endpoint + transport + auth -->
     <section class="grid gap-4 md:grid-cols-3">
       <div class="rounded-xl border border-default-200 bg-content1 p-4">
         <h2 class="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -206,7 +189,6 @@ const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
       </div>
     </section>
 
-    <!-- Key idea: zero new authz/metering -->
     <section
       class="flex items-start gap-3 rounded-xl border border-primary-200 bg-primary-50 p-4"
     >
@@ -222,7 +204,6 @@ const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
       </p>
     </section>
 
-    <!-- Tool surface -->
     <section>
       <h2 class="text-lg font-semibold text-foreground">工具面（{{ tools.length }} 个）</h2>
       <p class="mt-1 text-sm text-default-500">
@@ -247,7 +228,6 @@ const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
       </ul>
     </section>
 
-    <!-- Client configuration -->
     <section class="space-y-4">
       <div>
         <h2 class="text-lg font-semibold text-foreground">客户端配置</h2>
@@ -285,7 +265,6 @@ const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
       </div>
     </section>
 
-    <!-- Raw handshake -->
     <section class="space-y-2">
       <h2 class="text-lg font-semibold text-foreground">裸 HTTP 握手</h2>
       <p class="text-sm text-default-500">

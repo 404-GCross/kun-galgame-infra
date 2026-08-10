@@ -1,13 +1,3 @@
-// import-getchu-characters projects the Getchu crawler's character rosters onto
-// catalog characters: the profile prose and the typed attributes
-// (refs/proj/167 §9).
-//
-// Both DSNs are REQUIRED. The staging side is the kun-getchu-api database (in
-// production it sits beside dlsite and erogamespace in the same postgres);
-// the catalog side is the live registry.
-//
-//	go run ./cmd/import-getchu-characters --dsn "$CATALOG" --getchu-dsn "$GETCHU"
-//	go run ./cmd/import-getchu-characters --dsn "$CATALOG" --getchu-dsn "$GETCHU" --apply
 package main
 
 import (

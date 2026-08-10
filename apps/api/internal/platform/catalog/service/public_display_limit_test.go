@@ -25,8 +25,6 @@ import (
 	catsearch "api/internal/platform/catalog/search"
 )
 
-// setDisplayNSFW writes one work's editorial display flag by CATALOG work id — the
-// column the whole axis reads since refs/proj/140 §5b.
 func setDisplayNSFW(t *testing.T, workID int64, nsfw bool) {
 	t.Helper()
 	if err := testDB.Exec(
@@ -35,14 +33,6 @@ func setDisplayNSFW(t *testing.T, workID int64, nsfw bool) {
 	}
 }
 
-// declareDisplayLimit sets the editorial display flag of the work that claims the
-// given wiki body — the mirror step's write, expressed as one test line. It is
-// addressed by PRODUCT WORK ID (the claim key) rather than by catalog work id
-// because that is how the wave's editors talk about a body, and because it keeps
-// these cases readable next to their claimWork() calls.
-//
-// A miss is FATAL: a fixture that forgot to claim first would otherwise silently
-// update nothing and the case would pass for the wrong reason.
 func declareDisplayLimit(t *testing.T, productWorkID int64, contentLimit string) {
 	t.Helper()
 	res := testDB.Exec(
@@ -57,7 +47,6 @@ func declareDisplayLimit(t *testing.T, productWorkID int64, contentLimit string)
 	}
 }
 
-// displayRow is one column combination plus the editorial declaration behind it.
 type displayRow struct {
 	name    string
 	site    *string
@@ -66,31 +55,21 @@ type displayRow struct {
 	rating  int16
 }
 
-// displayLimitFixture creates one LIVE galgame work per combination — including
-// the two rows where the axes DISAGREE, which are the point — and returns them
-// keyed by the value model.DisplayLimitKey says they carry.
-//
-// Every claim gets its OWN product_work_id: (medium_id, site, product_work_id)
-// is unique (uq_catalog_work_claim), and reusing one would reject the insert
-// instead of exercising the case.
 func displayLimitFixture(t *testing.T) (byLimit map[string][]int64, all []int64) {
 	t.Helper()
 	wiki, empty, letmoe := "galgame_wiki", "", "letmoe"
 	pw := func(n int64) *int64 { return &n }
 
 	rows := []displayRow{
-		// ── bodyless: the age axis is the only signal ──
 		{"bodyless all_ages", nil, nil, false, model.ContentRatingAllAges},
 		{"bodyless sensitive", nil, nil, false, model.ContentRatingSensitive},
 		{"bodyless r18", nil, nil, false, model.ContentRatingR18},
 		{"empty site is bodyless", &empty, pw(9401), false, model.ContentRatingR18},
 		{"site without a product work id", &wiki, nil, false, model.ContentRatingR18},
-		// ── claimed: the editorial flag decides, and the rating is ignored ──
 		{"claimed r18 game, editorially sfw", &wiki, pw(9405), false, model.ContentRatingR18},
 		{"claimed all_ages game, editorially nsfw", &wiki, pw(9406), true, model.ContentRatingAllAges},
 		{"claimed r18 game, editorially nsfw", &wiki, pw(9407), true, model.ContentRatingR18},
 		{"claimed, nothing declared", &wiki, pw(9408), false, model.ContentRatingR18},
-		// ── a claimer with no wiki lane: nothing declares its material, so sfw ──
 		{"non-wiki claim of an r18 game", &letmoe, pw(9410), false, model.ContentRatingR18},
 	}
 
@@ -108,19 +87,11 @@ func displayLimitFixture(t *testing.T) (byLimit map[string][]int64, all []int64)
 	return byLimit, all
 }
 
-// TestDisplayLimitWhereMatchesProjection is the load-bearing case: for EVERY
-// column combination the SQL predicate selects a row exactly when
-// model.DisplayLimitKey names that row's value. The Go projection and its DB
-// twin are two languages saying one thing, and this is what keeps them saying
-// it (the claim_state axis's TestClaimStateWhereMatchesProjection, verbatim
-// posture).
 func TestDisplayLimitWhereMatchesProjection(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
 	byLimit, all := displayLimitFixture(t)
 
-	// Sanity: the fixture actually exercises both values, and both DISAGREEMENT
-	// directions (an r18 game reading sfw, an all_ages game reading nsfw).
 	for _, lim := range []string{model.DisplayLimitKeySFW, model.DisplayLimitKeyNSFW} {
 		if len(byLimit[lim]) == 0 {
 			t.Fatalf("fixture covers no %q row", lim)
@@ -140,8 +111,6 @@ func TestDisplayLimitWhereMatchesProjection(t *testing.T) {
 			seen[id]++
 		}
 	}
-	// A partition, not two overlapping filters: every row landed on exactly one
-	// value, so naming both is the ungated set and no row can hide from both.
 	for _, id := range all {
 		if seen[id] != 1 {
 			t.Fatalf("work %d matched %d display limits, want exactly 1", id, seen[id])
@@ -155,10 +124,6 @@ func TestDisplayLimitWhereMatchesProjection(t *testing.T) {
 	}
 }
 
-// TestWorksListDisplayLimitIsNotTheAgeAxis is the wave's actual promise: an r18
-// game whose wiki material is editorially safe is served by content_limit=sfw
-// (and is NOT served by content_rating=all_ages), and an all_ages game the wiki
-// marked nsfw is excluded from it. Those are the 5,568 + 50 production rows.
 func TestWorksListDisplayLimitIsNotTheAgeAxis(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -192,22 +157,15 @@ func TestWorksListDisplayLimitIsNotTheAgeAxis(t *testing.T) {
 		t.Fatalf("content_limit=nsfw = %v, want exactly the wiki-nsfw work and the bodyless r18 one", nsfw)
 	}
 
-	// No parameter = no gate: every pre-existing caller's page is unchanged.
 	if n := len(idSet(listIDs(t, WorksListFilter{Sort: "id", NSFW: true}))); n != 3 {
 		t.Fatalf("no content_limit selected %d rows, want all 3", n)
 	}
 }
 
-// TestWorksListThreeGatesAreOrthogonal pins nsfw × content_limit × claim_state
-// as three independent conjuncts: a row is served only when ALL of them admit
-// it, and opening one never reopens another. It also checks the paged walk
-// against the single big page under all three at once — one predicate, not a
-// per-page afterthought.
 func TestWorksListThreeGatesAreOrthogonal(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
 
-	// Four claimed works spanning (rating × wiki flag × claim state).
 	safeLive := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "成人・安全・公開")
 	safeDraft := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "成人・安全・下書き")
 	spicyLive := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "成人・成人素材・公開")
@@ -253,8 +211,6 @@ func TestWorksListThreeGatesAreOrthogonal(t *testing.T) {
 		}
 	}
 
-	// The keyset walk under all three gates is complete: paging with limit 2
-	// returns the same set one big page does.
 	f := WorksListFilter{Sort: "id", NSFW: true, DisplayLimits: sfwOnly, ClaimStates: live}
 	walked := idSet(listIDs(t, f))
 	onePage, err := newPublicSvc().WorksList(t.Context(), f, "", 100)
@@ -267,10 +223,6 @@ func TestWorksListThreeGatesAreOrthogonal(t *testing.T) {
 	}
 }
 
-// TestClaimedByContentLimitOnEveryFace pins the VALUE on the wire: every face
-// that emits a claimed_by object carries content_limit, and it is the wiki
-// body's flag — not a re-encoding of the rating. An unclaimed row still emits
-// null rather than an object.
 func TestClaimedByContentLimitOnEveryFace(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -283,14 +235,10 @@ func TestClaimedByContentLimitOnEveryFace(t *testing.T) {
 	claimWork(t, spicySFW.ID, "galgame_wiki", 9701)
 	declareDisplayLimit(t, 9700, "sfw")
 	declareDisplayLimit(t, 9701, "nsfw")
-	// The draft/hidden claims carry the editorial flag too — the display axis is
-	// independent of the claim's visibility.
 	setClaimState(t, spicySFW.ID, i16(model.ClaimStateDraft))
 
 	want := map[int64]string{safeR18.ID: "sfw", spicySFW.ID: "nsfw"}
 
-	// (1) works LIST (which is also the search face's and the calendar's item
-	// projection — all three share enrichWorkListItems).
 	page, err := svc.WorksList(ctx, WorksListFilter{Sort: "id", NSFW: true}, "", 50)
 	if err != nil {
 		t.Fatalf("WorksList: %v", err)
@@ -312,7 +260,6 @@ func TestClaimedByContentLimitOnEveryFace(t *testing.T) {
 		t.Fatalf("list covered %d claimed works, want %d", seen, len(want))
 	}
 
-	// (2) work DETAIL.
 	for id, limit := range want {
 		rec, found, err := svc.WorkDetail(ctx, id, PublicInclude{}, true, 0)
 		if err != nil || !found {
@@ -323,8 +270,6 @@ func TestClaimedByContentLimitOnEveryFace(t *testing.T) {
 		}
 	}
 
-	// (3) lookup — single and batch, both through the anchor registry, and both
-	// blocks of the record (the brief AND the top-level claimed_by).
 	addExternalRef(t, model.EntityTypeWork, safeR18.ID, srcVNDB, "v70501", model.LinkKindExact)
 	single, found, err := svc.Lookup(ctx, "vndb", "v70501", true)
 	if err != nil || !found {
@@ -337,7 +282,6 @@ func TestClaimedByContentLimitOnEveryFace(t *testing.T) {
 		t.Fatalf("lookup brief claimed_by = %+v, want content_limit sfw", single.Work)
 	}
 
-	// (4) the batch claim loader (entity → works lanes): a label's works block.
 	claims, err := svc.claimedByFor(ctx, []int64{safeR18.ID, spicySFW.ID, bodyless.ID})
 	if err != nil {
 		t.Fatalf("claimedByFor: %v", err)
@@ -352,16 +296,11 @@ func TestClaimedByContentLimitOnEveryFace(t *testing.T) {
 	}
 }
 
-// TestCalendarDisplayLimitGateAndETag pins the calendar half: the gate decides
-// BUCKET MEMBERSHIP and the count, the navigation bounds follow it, and — the
-// cache-correctness half — two different gates can never mint the same ETag.
 func TestCalendarDisplayLimitGateAndETag(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
 	ctx := t.Context()
 
-	// One 2024-06 work per display value, both claimed r18 games so the AGE axis
-	// cannot be what separates them.
 	safe := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "CalSafe")
 	spicy := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "CalSpicy")
 	claimWork(t, safe.ID, "galgame_wiki", 9800)
@@ -369,7 +308,6 @@ func TestCalendarDisplayLimitGateAndETag(t *testing.T) {
 	declareDisplayLimit(t, 9800, "sfw")
 	declareDisplayLimit(t, 9801, "nsfw")
 	createRelease(t, safe.ID, 2024, 6, 14)
-	// The nsfw one is a year later, so the gate also moves the navigation bounds.
 	createRelease(t, spicy.ID, 2025, 6, 14)
 
 	june2024 := CalendarBucket{Kind: CalendarMonthBucket, Year: 2024, Month: 6}
@@ -405,7 +343,6 @@ func TestCalendarDisplayLimitGateAndETag(t *testing.T) {
 		}
 	}
 
-	// The navigation frame runs under the caller's own gate.
 	_, maxOrd, found, err := svc.CalendarBounds(ctx, sfwOnly)
 	if err != nil || !found {
 		t.Fatalf("CalendarBounds: found=%v err=%v", found, err)
@@ -414,8 +351,6 @@ func TestCalendarDisplayLimitGateAndETag(t *testing.T) {
 		t.Fatalf("sfw-gated max month = %d, want 202406_00 (the nsfw 2025 work is outside this population)", maxOrd)
 	}
 
-	// ETag: the display gate is in the population key, so an ungated and a gated
-	// caller can never collide on a validator — even when their counts agree.
 	ungatedCount, ungatedMax, err := svc.CalendarMeta(ctx, june2024, ungated)
 	if err != nil {
 		t.Fatalf("CalendarMeta ungated: %v", err)
@@ -439,15 +374,12 @@ func TestCalendarDisplayLimitGateAndETag(t *testing.T) {
 	}
 }
 
-// TestDisplayLimitVocabularyIsClosed pins the token set the handler 400s against.
 func TestDisplayLimitVocabularyIsClosed(t *testing.T) {
 	for _, ok := range []string{"sfw", "nsfw"} {
 		if !IsDisplayLimit(ok) {
 			t.Fatalf("%q must be a legal content_limit token", ok)
 		}
 	}
-	// `all` is the WIKI face's third token; here absence already means both, so
-	// accepting it would quietly imply the two parameters are the same thing.
 	for _, bad := range []string{"", "all", "SFW", "NSFW", "r18", "safe", "true"} {
 		if IsDisplayLimit(bad) {
 			t.Fatalf("%q must NOT be a legal content_limit token", bad)
@@ -455,9 +387,6 @@ func TestDisplayLimitVocabularyIsClosed(t *testing.T) {
 	}
 }
 
-// TestDisplayLimitFilterCompilation pins the gate inside the ONE Meilisearch
-// expression: absent = no clause at all, one value = one equality, both = a
-// parenthesized OR group that still ANDs with the rest.
 func TestDisplayLimitFilterCompilation(t *testing.T) {
 	if got := (WorksSearchFilter{}).meiliFilter(""); strings.Contains(got, "content_limit") {
 		t.Fatalf("no content_limit param must emit no clause: %q", got)
@@ -467,7 +396,6 @@ func TestDisplayLimitFilterCompilation(t *testing.T) {
 	if !strings.Contains(one, "(content_limit = 'sfw')") {
 		t.Fatalf("single content_limit clause = %q", one)
 	}
-	// It rides the same expression as the age gate — one door, not two.
 	if !strings.Contains(one, "content_rating != 2") {
 		t.Fatalf("content_limit must not replace the other clauses: %q", one)
 	}
@@ -478,7 +406,6 @@ func TestDisplayLimitFilterCompilation(t *testing.T) {
 	if !strings.Contains(both, "(content_limit = 'sfw' OR content_limit = 'nsfw')") {
 		t.Fatalf("multi content_limit clause = %q", both)
 	}
-	// And it composes with the OTHER two gates in one conjunction.
 	all := WorksSearchFilter{
 		DisplayLimits: []string{model.DisplayLimitKeySFW},
 		ClaimStates:   []string{model.ClaimStateKeyLive},
@@ -490,9 +417,6 @@ func TestDisplayLimitFilterCompilation(t *testing.T) {
 	}
 }
 
-// TestWorksSearchDisplayLimitGate is the end-to-end search case: three works
-// indexed through the PRODUCTION projection, and every content_limit query
-// returns exactly its own set with total agreeing with the page.
 func TestWorksSearchDisplayLimitGate(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -508,8 +432,6 @@ func TestWorksSearchDisplayLimitGate(t *testing.T) {
 	declareDisplayLimit(t, 9900, "sfw")
 	declareDisplayLimit(t, 9901, "nsfw")
 
-	// Index off the very columns the reindexer reads, through the very
-	// projection it uses — a look-alike here would prove nothing.
 	docs := make([]catsearch.WorkDocInput, 0, 3)
 	for _, w := range []struct {
 		id   int64
@@ -568,7 +490,6 @@ func TestWorksSearchDisplayLimitGate(t *testing.T) {
 				t.Fatalf("content_limit=%v: work %d missing from %v", tc.limits, id, got)
 			}
 		}
-		// ONE DOOR: total is counted over the same expression as the page.
 		if int(data.Total) != len(data.Items) {
 			t.Fatalf("content_limit=%v: total=%d but page carries %d rows — total and items must share one filter",
 				tc.limits, data.Total, len(data.Items))

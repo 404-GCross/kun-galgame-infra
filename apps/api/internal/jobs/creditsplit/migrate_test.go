@@ -11,10 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// migrateFixture reproduces the post-split world of wave 156b: a credit_name
-// that keeps its bgm anchor, has NO eg anchor any more (156b deleted it), and
-// still carries the eg importer's credit rows plus one bgm row that must not
-// move. Source ids follow the registry: 3=bangumi, 5=erogamespace.
 func migrateFixture(t *testing.T) (cnID, roleID, workA, workB int64) {
 	t.Helper()
 	for _, tbl := range []string{
@@ -83,8 +79,6 @@ func TestMigrateDryThenApplyThenSecondPassIsZeroWrite(t *testing.T) {
 	target := got.Receipts[0].ToCreditNameID
 	require.NotZero(t, target)
 
-	// The minted row carries the SOURCE-side spelling, no person link, and the
-	// detached anchor.
 	var minted model.CatalogCreditName
 	require.NoError(t, testDB.First(&minted, target).Error)
 	assert.Equal(t, "高濱亮", minted.Name)
@@ -96,7 +90,6 @@ func TestMigrateDryThenApplyThenSecondPassIsZeroWrite(t *testing.T) {
 	assert.Equal(t, "15510", ref.ExternalID)
 	assert.Equal(t, "rule:eg-creater-import", ref.MatchedBy)
 
-	// Credits: the eg rows moved, the bgm row did not, and nothing was lost.
 	var total, onOld, onNew int64
 	require.NoError(t, testDB.Model(&model.CatalogCredit{}).Count(&total).Error)
 	require.NoError(t, testDB.Model(&model.CatalogCredit{}).Where("credit_name_id = ?", cnID).Count(&onOld).Error)
@@ -105,7 +98,6 @@ func TestMigrateDryThenApplyThenSecondPassIsZeroWrite(t *testing.T) {
 	assert.EqualValues(t, 1, onOld)
 	assert.EqualValues(t, 2, onNew)
 
-	// The origin revision carries the moved credit ids — that is the undo.
 	var rev model.CatalogRevision
 	require.NoError(t, testDB.Where("entity_type = ? AND entity_id = ?",
 		model.EntityTypeCreditName, cnID).First(&rev).Error)
@@ -123,9 +115,6 @@ func TestMigrateDryThenApplyThenSecondPassIsZeroWrite(t *testing.T) {
 	assert.EqualValues(t, 2, revs)
 }
 
-// If an importer re-minted the detached id before this wave ran, the existing
-// row is reused — a second competing exact anchor would violate
-// uq_catalog_external_ref_exact anyway.
 func TestMigrateReusesAnImporterReMint(t *testing.T) {
 	cnID, _, _, _ := migrateFixture(t)
 	fresh := model.CatalogCreditName{Name: "高濱亮", Lang: "ja"}
@@ -147,9 +136,6 @@ func TestMigrateReusesAnImporterReMint(t *testing.T) {
 	assert.EqualValues(t, 2, onNew)
 }
 
-// The duplicate this wave exists to prevent may already be live: the importer
-// re-minted AND re-wrote the credits. Moving would then collide with
-// uq_catalog_credit, and deleting rows is not this tool's mandate.
 func TestMigrateRefusesWhenTheDuplicateIsAlreadyLive(t *testing.T) {
 	cnID, roleID, workA, _ := migrateFixture(t)
 	fresh := model.CatalogCreditName{Name: "高濱亮", Lang: "ja"}
@@ -169,8 +155,6 @@ func TestMigrateRefusesWhenTheDuplicateIsAlreadyLive(t *testing.T) {
 	assert.Contains(t, st.Refusals[0].Reason, "uq_catalog_credit")
 }
 
-// The attribution predicate is source-scoped, so it is only sound while the
-// name carries no anchor of that source. If one is back, refuse.
 func TestMigrateRefusesWhenTheSourceIsStillAnchored(t *testing.T) {
 	cnID, _, _, _ := migrateFixture(t)
 	require.NoError(t, testDB.Create(&model.CatalogExternalRef{

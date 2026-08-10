@@ -1,14 +1,3 @@
-// public_refs.go — the generic per-entity refs[] loader for the public face
-// (doc 106 G4: refs are isomorphic across every entity). EXACT tier only —
-// probable is a review-lane hypothesis and related is a non-identity link;
-// neither ever crosses the public face (硬红线). FROZEN after W1.
-//
-// ONE amendment since the freeze (upstream-liveness wave): the query now also
-// requires r.dead_at IS NULL. Anchors whose upstream entry has been deleted
-// (VNDB removes ~20 entries a week, and we anchor ~98.7% of it) were still
-// being rendered as vndb.org/v… links that 404. The wire SHAPE is untouched —
-// refs[] keeps its exact structure and ordering; dead entries simply drop out.
-// Nothing else about this loader changed.
 package service
 
 import (
@@ -18,10 +7,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// entityRefsFor batch-loads the EXACT identity anchors for a set of entities
-// of one type, keyed by entity id, projected to the public wire shape
-// (source = public key spelling; deterministic (source_id, external_id)
-// order). Missing entities simply have no map entry; callers render [].
 func (s *PublicService) entityRefsFor(ctx context.Context, entityType int16, ids []int64) (map[int64][]dto.PublicCatalogRef, error) {
 	if len(ids) == 0 {
 		return map[int64][]dto.PublicCatalogRef{}, nil
@@ -49,8 +34,6 @@ func (s *PublicService) entityRefsFor(ctx context.Context, entityType int16, ids
 	return out, nil
 }
 
-// entityRefs is the single-entity convenience over entityRefsFor; always
-// returns a non-nil slice (the public face serializes [] never null).
 func (s *PublicService) entityRefs(ctx context.Context, entityType int16, id int64) ([]dto.PublicCatalogRef, error) {
 	m, err := s.entityRefsFor(ctx, entityType, []int64{id})
 	if err != nil {

@@ -13,25 +13,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// EnsureSchema creates/updates everything the Silver layer owns: the src_vndb
-// schema plus the staging + output tables. Idempotent.
 func EnsureSchema(db *gorm.DB) error {
 	if err := db.Exec(`CREATE SCHEMA IF NOT EXISTS src_vndb`).Error; err != nil {
 		return fmt.Errorf("create schema: %w", err)
 	}
-	// Step-72 chars widening: the pre-72 table staged only a column subset, and
-	// AutoMigrate cannot add NOT NULL columns to a populated table. The schema
-	// is fully-rebuildable staging, so the upgrade is drop+recreate — the next
-	// ingest reloads chars wholesale. One-shot: never fires on a current table.
 	m := db.Migrator()
 	if m.HasTable(&Char{}) && !m.HasColumn(&Char{}, "bloodt") {
 		if err := m.DropTable(&Char{}); err != nil {
 			return fmt.Errorf("drop pre-72 chars: %w", err)
 		}
 	}
-	// Step-91 vn widening: same pattern — the pre-91 table staged 5 columns and
-	// AutoMigrate cannot add NOT NULL columns to a populated table. Staging is
-	// fully rebuildable; the next ingest reloads vn wholesale.
 	if m.HasTable(&VN{}) && !m.HasColumn(&VN{}, "c_length") {
 		if err := m.DropTable(&VN{}); err != nil {
 			return fmt.Errorf("drop pre-91 vn: %w", err)
@@ -51,8 +42,6 @@ func EnsureSchema(db *gorm.DB) error {
 	return nil
 }
 
-// Files lists the staged dump tables, in load order (entities before their
-// edges; the original five first, then the step-72 expansion by family).
 var Files = []string{
 	"vn", "chars", "chars_names", "chars_vns", "images",
 	"vn_relations",
@@ -64,24 +53,17 @@ var Files = []string{
 	"vn_extlinks", "producers_extlinks", "staff_extlinks", "producers_relations",
 }
 
-// FileReport is one file's ingestion outcome.
 type FileReport struct {
 	Rows    int64 `json:"rows"`
-	Skipped int64 `json:"skipped"` // non-ch image rows dropped
+	Skipped int64 `json:"skipped"`
 }
 
-// Report aggregates one Run.
 type Report struct {
 	DumpDir  string
 	PerFile  map[string]FileReport
 	Duration time.Duration
 }
 
-// Run ingests the dump directory's db/ files into src_vndb. Deterministic and
-// re-runnable: each file is one transaction that TRUNCATEs its table and
-// reloads it wholesale from the VNDB COPY-format export. only restricts the run
-// to one file (iteration aid). Columns are mapped by NAME from each file's
-// .header, so a column reorder in a future dump does not break the load.
 func Run(db *gorm.DB, dumpDir, only string) (*Report, error) {
 	started := time.Now()
 	report := &Report{DumpDir: dumpDir, PerFile: map[string]FileReport{}}
@@ -116,8 +98,6 @@ func Run(db *gorm.DB, dumpDir, only string) (*Report, error) {
 	return report, nil
 }
 
-// ingestFile replaces one table from one COPY-format file inside the caller's
-// transaction.
 func ingestFile(tx *gorm.DB, dumpDir, name string) (FileReport, error) {
 	newTableLoader, ok := loaders[name]
 	if !ok {
@@ -147,17 +127,13 @@ func ingestFile(tx *gorm.DB, dumpDir, name string) (FileReport, error) {
 	ld := newTableLoader(tx, time.Now())
 	var report FileReport
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 1024*1024), 64*1024*1024) // descriptions are large
+	sc.Buffer(make([]byte, 0, 1024*1024), 64*1024*1024)
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 {
 			continue
 		}
 		fields := strings.Split(string(line), "\t")
-		// get returns (value, present): present is false when the column is
-		// absent OR the field is the COPY NULL sentinel (\N). String callers
-		// use getStr (present=false → ""); numeric/bool callers use the
-		// getInt*/getBool* helpers below.
 		get := func(col string) (string, bool) {
 			i, ok := idx[col]
 			if !ok || i >= len(fields) {
@@ -196,21 +172,13 @@ func readHeader(path string) ([]string, error) {
 	return strings.Split(strings.TrimRight(string(b), "\r\n"), "\t"), nil
 }
 
-// --- generic per-file loader ------------------------------------------------
-
-// getter fetches one column of the current row by header name.
 type getter = func(col string) (string, bool)
 
-// tableLoader accumulates one file's rows and flushes them in batches.
 type tableLoader interface {
-	// add decodes one row; skipped=true means the row was deliberately dropped
-	// (e.g. non-ch images).
 	add(get getter) (skipped bool, err error)
 	flush() error
 }
 
-// loader is the one generic tableLoader: decode maps a row onto the table's
-// struct (returning ok=false to skip the row).
 type loader[T any] struct {
 	tx     *gorm.DB
 	decode func(get getter) (T, bool)
@@ -246,8 +214,6 @@ func (l *loader[T]) flush() error {
 
 const batchSize = 2000
 
-// loaders maps each dump file name to its loader constructor. The decode
-// functions live in the loaders_*.go files, grouped by family.
 var loaders = map[string]func(tx *gorm.DB, now time.Time) tableLoader{
 	"vn":                  newVNLoader,
 	"vn_relations":        newVNRelationLoader,
@@ -279,8 +245,6 @@ var loaders = map[string]func(tx *gorm.DB, now time.Time) tableLoader{
 	"producers_relations": newProducerRelationLoader,
 }
 
-// --- field helpers ----------------------------------------------------------
-
 func getStr(get getter, col string) string {
 	v, _ := get(col)
 	return v
@@ -306,15 +270,10 @@ func getInt64(get getter, col string) int64 {
 	return n
 }
 
-// getBool decodes the dump's t/f booleans (anything but "t" — including NULL —
-// is false).
 func getBool(get getter, col string) bool {
 	v, _ := get(col)
 	return v == "t"
 }
-
-// Nullable variants: NULL (\N) stays nil — used where the dump distinguishes
-// NULL from a meaningful zero value (see the models' NULL DISCIPLINE note).
 
 func getInt16Ptr(get getter, col string) *int16 {
 	v, ok := get(col)
@@ -362,10 +321,6 @@ func getBoolPtr(get getter, col string) *bool {
 	return &b
 }
 
-// copyUnescape decodes one PostgreSQL COPY text-format field. Returns (value,
-// isNull); "\N" is the NULL sentinel. Real tabs/newlines/backslashes inside a
-// value arrive escaped (\t, \n, \r, \\), so each dump row is exactly one
-// physical line — line-based reading is correct.
 func copyUnescape(s string) (string, bool) {
 	if s == `\N` {
 		return "", true

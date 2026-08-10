@@ -1,33 +1,3 @@
-// Package creditsplit undoes import-era identity contamination on
-// catalog_credit_name (wave 156, refs/proj/156-p2b-adjudication.md).
-//
-// The 18,133 multi-source credit names were merged at import by EXACT NAME
-// STRING, never by an identity judgement (wave 152 §5). Most of that is
-// correct, but a measured slice is not: a bare surname (井上, 原田) or a
-// two-character handle collects several different people's source ids under one
-// row. Wave 152 shortlisted 593 such rows; wave 156 adjudicates them and hands
-// the confirmed ones here.
-//
-// What a split does, and deliberately nothing else:
-//
-//   - DELETE the et=1 external_ref rows of the sources that do not belong on
-//     this name (the false identity claim), recording every deleted row in a
-//     receipts file so the operation is reversible by hand;
-//   - NULL catalog_credit_name.person_id if the row carried one — the person
-//     link was inferred from an anchor set now known to be mixed;
-//   - write one action=split revision per changed row, so the entity history
-//     carries the pre-split snapshot.
-//
-// What it does NOT touch: catalog_credit (a credit says "this NAME had this
-// role on this work", which stays true whichever person the name is), aliases,
-// redirects, and every anchor of the sources that keep the name.
-//
-// Existing machinery was surveyed first: MergeService.Unmerge only reverses a
-// RECORDED merge proposal, and no proposal exists for import-era merges, so it
-// cannot be used here.
-//
-// Idempotent: a second --apply finds the anchors already gone and person_id
-// already NULL, so it writes nothing (and adds no revision).
 package creditsplit
 
 import (
@@ -45,9 +15,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Opts configures a run. Apply=false is the dry forecast; DSN is REQUIRED and
-// never defaulted (the rehearsal copy locally, the live catalog only in the
-// acceptance run).
 type Opts struct {
 	Apply        bool
 	DSN          string
@@ -57,11 +24,10 @@ type Opts struct {
 	Limit        int
 }
 
-// Stats reports the run. The decided counters are identical in dry and apply.
 type Stats struct {
 	Rows            int
-	Skipped         int // nothing left to do (already split, or never anchored)
-	Refused         int // guard tripped — reported, never forced
+	Skipped         int
+	Refused         int
 	WouldDropAnchor int
 	WouldUnlink     int
 	AnchorsDropped  int
@@ -71,14 +37,11 @@ type Stats struct {
 	Receipts        []Receipt
 }
 
-// Refusal is a worklist row the guards rejected.
 type Refusal struct {
 	CreditNameID int64  `json:"credit_name_id"`
 	Reason       string `json:"reason"`
 }
 
-// Receipt records exactly what one split removed, so it can be put back by
-// hand. It is written even in a dry run (as the forecast).
 type Receipt struct {
 	CreditNameID   int64    `json:"credit_name_id"`
 	Name           string   `json:"name"`
@@ -87,7 +50,6 @@ type Receipt struct {
 	PersonUnlinked *int64   `json:"person_unlinked,omitempty"`
 }
 
-// Anchor is one deleted external_ref row.
 type Anchor struct {
 	SourceID   int16  `json:"source_id"`
 	SourceKey  string `json:"source_key"`
@@ -96,7 +58,6 @@ type Anchor struct {
 	MatchedBy  string `json:"matched_by"`
 }
 
-// Run executes the split worklist against the catalog.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess")
@@ -137,7 +98,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// splitOne decides and (in apply) performs one row, in a single transaction.
 func splitOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r Row, opts Opts, st *Stats) error {
 	wanted := make([]int16, 0, len(r.DetachSources))
 	for _, key := range r.DetachSources {
@@ -174,9 +134,6 @@ func splitOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r Row,
 			}
 		}
 	}
-	// A split that takes every anchor off the row leaves a name with no source
-	// at all — that is not a split, it is a deletion, and it means the worklist
-	// row is wrong. Refuse rather than perform it.
 	if len(drop) > 0 && len(drop) == len(refs) {
 		st.Refused++
 		st.Refusals = append(st.Refusals, Refusal{r.CreditNameID,
@@ -209,8 +166,6 @@ func splitOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r Row,
 	}
 
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// The snapshot is taken BEFORE the mutation: the revision must carry the
-		// pre-split state, which is what makes the operation reversible.
 		snap, err := json.Marshal(map[string]any{
 			"credit_name": cn,
 			"anchors":     refs,
@@ -273,7 +228,6 @@ func loadSources(db *gorm.DB) (map[string]int16, error) {
 	for _, r := range rows {
 		out[r.Key] = r.ID
 	}
-	// The wave's artefacts spell erogamespace "eg" throughout (wave 152/154).
 	if id, ok := out["erogamespace"]; ok {
 		out["eg"] = id
 	}

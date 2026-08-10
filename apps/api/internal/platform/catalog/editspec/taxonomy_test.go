@@ -1,10 +1,3 @@
-// taxonomy_test.go — wave 154 W4: the four narrow vocabulary registrations and
-// catalog.work's OnMerge.
-//
-// The acceptance surface for a registration is the engine itself: registering a
-// family is supposed to buy proposals, revisions, diffs and revert with no
-// per-family code, so the cases exercise a real merge on each family rather
-// than asserting that a spec struct has fields.
 package editspec_test
 
 import (
@@ -18,14 +11,13 @@ import (
 
 func newTaxonomyEngine(t *testing.T) *editing.Engine {
 	t.Helper()
-	e := newEngine(t) // truncates the catalog + engine tables
+	e := newEngine(t)
 	if err := editspec.RegisterTaxonomy(e.Registry(), testDB); err != nil {
 		t.Fatalf("register taxonomy: %v", err)
 	}
 	return e
 }
 
-// mergeOn is mergeField for an arbitrary entity type.
 func mergeOn(t *testing.T, e *editing.Engine, entityType string, id int64, patch map[string]any) map[string]any {
 	t.Helper()
 	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
@@ -64,7 +56,6 @@ func TestLabelFamilyEdits(t *testing.T) {
 	sameJSON(t, "label intros", snap[editspec.FieldLabelIntros], intros)
 	sameJSON(t, "label links", snap[editspec.FieldLabelLinks], links)
 
-	// The link landed on the LABEL's own external-ref rows, not the work's.
 	var refs []model.CatalogExternalRef
 	if err := testDB.Where("entity_type = ? AND entity_id = ?", model.EntityTypeLabel, label.ID).
 		Find(&refs).Error; err != nil {
@@ -75,8 +66,6 @@ func TestLabelFamilyEdits(t *testing.T) {
 	}
 }
 
-// TestTagFamilyIsIntroOnly pins the deliberate narrowness: a canonical tag's
-// NAME is the join key of the whole convergence layer, so it is not a field.
 func TestTagFamilyIsIntroOnly(t *testing.T) {
 	e := newTaxonomyEngine(t)
 	tag := model.CatalogTag{Name: "純愛", Tier: model.TagTierCore, Kind: model.TagKindContent}
@@ -138,9 +127,6 @@ func TestEngineAndSeriesFamilies(t *testing.T) {
 	sameJSON(t, "series intros", snap[editspec.FieldSeriesIntros], intros)
 }
 
-// TestWorkOnMergeTouchesTheWork pins the wave-149 gap being closed: a field
-// edit that writes only a CHILD table must still move catalog_work.updated_at,
-// or the public changes feed never learns the work was edited.
 func TestWorkOnMergeTouchesTheWork(t *testing.T) {
 	e := newEngine(t)
 	work := createWork(t, "作品")
@@ -149,8 +135,6 @@ func TestWorkOnMergeTouchesTheWork(t *testing.T) {
 	if err := testDB.First(&before, work.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	// Push the watermark into the past so a same-transaction now() is strictly
-	// newer than it (the touch is the only thing under test here).
 	if err := testDB.Exec(
 		`UPDATE catalog_work SET updated_at = now() - interval '1 hour' WHERE id = ?`, work.ID).Error; err != nil {
 		t.Fatal(err)

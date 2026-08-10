@@ -1,22 +1,3 @@
-// llm-suggest is the local-LLM SUGGESTION pipeline driver (doc 17 §4): the
-// model proposes, never asserts. Three tasks write graded suggestions into the
-// src_llm staging schema; nothing here writes Gold, mutates Silver's
-// infobox_parsed, touches wiki data, or re-grades a ref.
-//
-//	# reproduce the calibration gold set from the local dumps
-//	go run ./cmd/llm-suggest --build-goldset
-//
-//	# calibrate against the gold set (dry samples first, then write)
-//	go run ./cmd/llm-suggest --task goldset --limit 5
-//	go run ./cmd/llm-suggest --task goldset --apply
-//	go run ./cmd/llm-suggest --calibrate
-//
-//	# application A + B
-//	go run ./cmd/llm-suggest --task residue --apply
-//	go run ./cmd/llm-suggest --task bid-audit --apply
-//
-// The local vLLM (default http://127.0.0.1:8002/v1) must be reachable; an
-// unreachable server is a BLOCKED precondition, not a crash.
 package main
 
 import (
@@ -76,11 +57,10 @@ func main() {
 	}
 
 	if *conc > 4 {
-		*conc = 4 // T0.4 cap
+		*conc = 4
 	}
 	ctx := context.Background()
 
-	// --- build-goldset: no LLM needed ---
 	if *buildGold {
 		egDB := openEG(cfg, *egDSN)
 		stats, err := llmsuggest.BuildGoldSet(catalogDB.DB(), egDB, *goldPath)
@@ -96,7 +76,6 @@ func main() {
 		return
 	}
 
-	// --- calibrate: reads persisted verdicts, no LLM ---
 	if *calibrate {
 		metrics, err := llmsuggest.Calibrate(catalogDB.DB(), *model, promptVersion)
 		if err != nil {
@@ -112,7 +91,6 @@ func main() {
 		os.Exit(2)
 	}
 
-	// LLM tasks: the vLLM server is a hard precondition.
 	client := llmsuggest.NewClient(*llmBase, *model)
 	models, err := client.Ping(ctx)
 	if err != nil {
@@ -154,8 +132,6 @@ func main() {
 	}
 }
 
-// openEG opens the erogamespace staging DB (flag DSN or derived from the
-// catalog server config — staging DSN never enters config).
 func openEG(cfg *config.Config, dsn string) *gorm.DB {
 	if dsn == "" {
 		egCfg := cfg.CatalogDatabase

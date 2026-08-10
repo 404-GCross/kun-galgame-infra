@@ -12,12 +12,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// TestSetIdentityLocals pins the shared fill helper that all three JWT fill
-// sites route through (JWTAuth, OptionalJWT, and — DB-backed — Auth): it
-// publishes the additive user_global_roles (the GLOBAL roles, NOT the site
-// union) and token_client_id, while user_roles keeps its established union
-// meaning. This is the whole of what Auth's fill site does with the claims, so
-// it covers that site without a main-DB fixture.
 func TestSetIdentityLocals(t *testing.T) {
 	var gotGlobal, gotUnion []string
 	var gotClient string
@@ -48,11 +42,9 @@ func TestSetIdentityLocals(t *testing.T) {
 	}
 }
 
-// TestJWTMiddlewaresFillScopeLocals confirms both verifier-backed fill sites
-// (JWTAuth and OptionalJWT) publish the additive scope locals from a real token.
 func TestJWTMiddlewaresFillScopeLocals(t *testing.T) {
 	const secret = "test-secret"
-	verifier := oidctoken.NewVerifier(secret, nil) // HS256-only (no JWKS)
+	verifier := oidctoken.NewVerifier(secret, nil)
 	token, err := utils.GenerateAccessToken(secret, utils.TokenClaims{
 		ID: 1, Roles: []string{"moderator"}, ClientID: "cli-x",
 	}, time.Hour)

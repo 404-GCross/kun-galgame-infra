@@ -1,20 +1,3 @@
-// expand-bgm-type4-gated gates the UNANCHORED Bangumi type=4 (game) subjects
-// through a precision-first three-way OR signal gate (PC-platform galgame genre
-// / explicit galgame-classification tag / cross-source title match against the
-// erogamespace + dlsite-game + VNDB-ja corpora), with a console/mobile-exclusive
-// exclusion (主机/手游排除), and creates a BODYLESS medium=galgame catalog_work +
-// an EXACT Bangumi anchor (rule:bgm-type4-gated) + title rows + an imported
-// revision per gated subject. A subject whose normalized title collides with an
-// EXISTING work title is SKIPPED (a reconcile candidate, not a creation one).
-//
-//	go run ./cmd/expand-bgm-type4-gated --dsn '…rehearsal…'                 # dry-run survey (default)
-//	go run ./cmd/expand-bgm-type4-gated --dsn '…rehearsal…' --apply         # write (×2 = idempotent)
-//	go run ./cmd/expand-bgm-type4-gated --dsn '…' --sample-out ./out        # dump random-100 + collisions TSV
-//
-// The catalog --dsn is REQUIRED and never guessed (the 56a discipline — a bare
-// run must not touch a live DB). The erogamespace and DLsite staging DSNs default
-// to the same host as --dsn with the dbname swapped (override via --eg-dsn /
-// --dlsite-dsn); src_vndb lives in the catalog db itself.
 package main
 
 import (
@@ -99,8 +82,6 @@ func openDB(dsn string) (*gorm.DB, error) {
 
 var dbNameRe = regexp.MustCompile(`\bdbname=\S+`)
 
-// deriveDSN returns override when set, else the base DSN with its dbname swapped
-// (eg/dlsite always sit on the same server as the catalog db).
 func deriveDSN(override, base, dbName string) string {
 	if override != "" {
 		return override
@@ -111,7 +92,6 @@ func deriveDSN(override, base, dbName string) string {
 	return strings.TrimSpace(base) + " dbname=" + dbName
 }
 
-// writeSamples dumps the reviewer's random-100 and the collision samples as TSV.
 func writeSamples(dir string, st *importer.BgmGatedStats) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -138,7 +118,6 @@ func writeSamples(dir string, st *importer.BgmGatedStats) error {
 	return writeSampleTSV(filepath.Join(dir, "ascii_survivors.tsv"), st.ASCIISurvivorSamples)
 }
 
-// writeSampleTSV writes an id|name|name_cn|signals sample list.
 func writeSampleTSV(path string, samples []importer.BgmGatedSample) error {
 	var b strings.Builder
 	b.WriteString("subject_id\tname\tname_cn\tsignals\n")
@@ -148,7 +127,6 @@ func writeSampleTSV(path string, samples []importer.BgmGatedSample) error {
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
-// tsv strips tab/newline so a title never breaks the TSV row.
 func tsv(s string) string {
 	return strings.NewReplacer("\t", " ", "\n", " ", "\r", " ").Replace(s)
 }

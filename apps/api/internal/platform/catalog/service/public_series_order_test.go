@@ -6,7 +6,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// createSeries makes a series row on the given source key.
 func createSeries(t *testing.T, sourceKey, externalID, name string) int64 {
 	t.Helper()
 	var srcID int16
@@ -28,10 +27,6 @@ func addSeriesMember(t *testing.T, seriesID, workID int64, position, kind int16)
 	}
 }
 
-// TestSeriesDetailOrdersByPositionAndPublishesMembers pins the wave-184 read
-// face: works[] comes back in position order with the unordered sentinel LAST,
-// and members[] runs parallel to it carrying position + the kind KEY (never the
-// numeric enum id).
 func TestSeriesDetailOrdersByPositionAndPublishesMembers(t *testing.T) {
 	cleanTables(t)
 	ctx := t.Context()
@@ -43,9 +38,6 @@ func TestSeriesDetailOrdersByPositionAndPublishesMembers(t *testing.T) {
 	unordered := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Line A ?")
 
 	sid := createSeries(t, "dlsite", "SRI-184", "Line A")
-	// Deliberately inserted out of order, and the sentinel member has the
-	// LOWEST work id — so an ordering that fell back to work id would put it
-	// first and fail here.
 	addSeriesMember(t, sid, unordered.ID, 0, model.SeriesMemberKindUnknown)
 	addSeriesMember(t, sid, fd.ID, 3, model.SeriesMemberKindFandisc)
 	addSeriesMember(t, sid, first.ID, 1, model.SeriesMemberKindMain)
@@ -81,9 +73,6 @@ func TestSeriesDetailOrdersByPositionAndPublishesMembers(t *testing.T) {
 	}
 }
 
-// TestSeriesDetailMembersDropWithR18Briefs pins the parallelism under the r18
-// filter: a brief the sfw caller may not see takes its membership row with it,
-// so members[i] never describes a work that is not works[i].
 func TestSeriesDetailMembersDropWithR18Briefs(t *testing.T) {
 	cleanTables(t)
 	ctx := t.Context()

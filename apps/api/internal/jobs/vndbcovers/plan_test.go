@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// canned is a verbatim-shaped /kana/vn response: one portrait cover, one
-// landscape cover with fractional ratings, and one vn whose image is null.
 const canned = `{
   "results": [
     {"id": "v17", "image": {"url": "https://t.vndb.org/cv/50/17.jpg", "dims": [256, 400], "sexual": 0.4, "violence": 0}},
@@ -34,8 +32,6 @@ func TestParseVNResponse(t *testing.T) {
 	assert.Equal(t, []int{256, 400}, resp.Results[0].Image.Dims)
 	assert.InDelta(t, 0.4, resp.Results[0].Image.Sexual, 1e-9)
 
-	// A vn with no cover decodes to a nil image rather than a zero struct, so
-	// "VNDB has no picture" is distinguishable from "the URL was empty".
 	assert.Nil(t, resp.Results[2].Image)
 }
 
@@ -51,12 +47,12 @@ func TestRatingLevel(t *testing.T) {
 	}{
 		{0, 0},
 		{0.49, 0},
-		{0.5, 1}, // exactly on the fence rounds UP (stricter)
+		{0.5, 1},
 		{1.49, 1},
 		{1.5, 2},
 		{2, 2},
-		{2.4, 2}, // clamped: never above the scale
-		{-1, 0},  // clamped: never below it
+		{2.4, 2},
+		{-1, 0},
 		{math.NaN(), 0},
 	}
 	for _, c := range cases {
@@ -99,10 +95,10 @@ func TestBuildPlanClassifiesEveryCandidate(t *testing.T) {
 	}
 
 	cands := []candidate{
-		{WorkID: 1, VNDBID: "v17"},   // portrait cover
-		{WorkID: 2, VNDBID: "v99"},   // landscape cover
-		{WorkID: 3, VNDBID: "v250"},  // vn known, no cover
-		{WorkID: 4, VNDBID: "v4444"}, // vn not returned at all
+		{WorkID: 1, VNDBID: "v17"},
+		{WorkID: 2, VNDBID: "v99"},
+		{WorkID: 3, VNDBID: "v250"},
+		{WorkID: 4, VNDBID: "v4444"},
 	}
 	stats := &Stats{Candidates: len(cands)}
 	plan := buildPlan(cands, images, stats)
@@ -117,7 +113,6 @@ func TestBuildPlanClassifiesEveryCandidate(t *testing.T) {
 	assert.Equal(t, "no-image", plan[2].Reason)
 	assert.Equal(t, "vn-unknown", plan[3].Reason)
 
-	// Only the rows with an image are worked on, and --limit caps that list.
 	assert.Len(t, actionable(plan, 0), 2)
 	assert.Len(t, actionable(plan, 1), 1)
 	assert.Equal(t, int64(1), actionable(plan, 1)[0].WorkID)
@@ -155,8 +150,6 @@ func TestParseIDs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, got)
 
-	// A junk entry is a hard error: silently dropping it would make a targeted
-	// run quietly under-cover.
 	_, err = ParseIDs("1,abc")
 	assert.Error(t, err)
 	_, err = ParseIDs("0")

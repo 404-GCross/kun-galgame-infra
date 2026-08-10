@@ -1,8 +1,5 @@
 package srcvndb
 
-// Row decoders for the original five staged files (vn / chars / chars_names /
-// chars_vns / images) plus vn_relations. See ingest.go for the machinery.
-
 import (
 	"strings"
 	"time"
@@ -80,7 +77,7 @@ func newCharVNLoader(tx *gorm.DB, _ time.Time) tableLoader {
 func newImageLoader(tx *gorm.DB, _ time.Time) tableLoader {
 	return newLoader(tx, func(get getter) (Image, bool) {
 		id, _ := get("id")
-		if !strings.HasPrefix(id, "ch") { // character portraits only (drop sf/cv)
+		if !strings.HasPrefix(id, "ch") {
 			return Image{}, false
 		}
 		return Image{

@@ -11,15 +11,6 @@ import (
 	"api/pkg/errors"
 )
 
-// Author read + purge face (step 10). Every handler derives the tenant from the
-// client's site binding and forwards to PostService, which enforces the
-// site-scope at the repository layer — so a client bound to site A cannot read or
-// purge site B's authors (the by-author reads answer an empty page/zero counts, a
-// purge affects zero rows).
-
-// authorPostsInput is the by-author list request. after is a post-id keyset
-// (descending), so 0 reads the newest page. anchor_kind defaults to -1 (all
-// kinds) — a plain int16 sentinel, never a pointer query param (Huma trap).
 type authorPostsInput struct {
 	ID         int64 `path:"id"`
 	After      int64 `query:"after" doc:"post id to read after (descending; 0 = newest first)"`
@@ -65,7 +56,6 @@ func (s *Server) authorStats(ctx context.Context, in *authorStatsInput) (*author
 	if err != nil {
 		return nil, mapErr("author stats", err)
 	}
-	// One entry per requested id, in request order; an unknown id reports 0.
 	stats := make([]dto.AuthorStat, 0, len(ids))
 	for _, id := range ids {
 		stats = append(stats, dto.AuthorStat{AuthorID: id, VisiblePosts: counts[id]})
@@ -94,9 +84,6 @@ func (s *Server) purgeAuthor(ctx context.Context, in *authorPurgeInput) (*author
 	})}, nil
 }
 
-// --- helpers ---------------------------------------------------------------
-
-// clampAuthorLimit applies the by-author page defaults: 20 by default, 100 max.
 func clampAuthorLimit(limit int) int {
 	if limit <= 0 {
 		return 20
@@ -107,9 +94,6 @@ func clampAuthorLimit(limit int) int {
 	return limit
 }
 
-// authorPostsCursor returns the "after post id" cursor for the next (older) page,
-// or "" when the page was not full (last page). The last row's id IS the cursor
-// (the list is descending by post id).
 func authorPostsCursor(rows []repository.AuthorPostRow, limit int) string {
 	if len(rows) < limit || len(rows) == 0 {
 		return ""
@@ -117,8 +101,6 @@ func authorPostsCursor(rows []repository.AuthorPostRow, limit int) string {
 	return strconv.FormatInt(rows[len(rows)-1].ID, 10)
 }
 
-// authorPostView projects one joined row into the by-author view: the reused
-// PostView nested under post, plus the thread render context for the jump link.
 func authorPostView(row *repository.AuthorPostRow) dto.AuthorPostView {
 	return dto.AuthorPostView{
 		Post: toPostView(&row.CommunityPost),
@@ -139,9 +121,6 @@ func toAuthorPostViews(rows []repository.AuthorPostRow) []dto.AuthorPostView {
 	return out
 }
 
-// parseAuthorIDs parses the comma-separated ids query: a malformed id is a 400,
-// more than 100 ids is a 422 (the batch cap), and empty is an empty list (a
-// no-op stats call). Ids are de-duplicated preserving first-seen order.
 func parseAuthorIDs(raw string) ([]int64, *houseError) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

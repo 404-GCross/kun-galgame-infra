@@ -9,10 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// registry holds the two catalog registry ids this backfill needs, resolved by
-// key (never hardcoded) so a rehearsal / prod DB with different auto-increment
-// seeds still works — the same discipline the dlsite / bangumi / getchu lanes
-// follow.
 type registry struct {
 	vndbSource    int16
 	galgameMedium int16
@@ -32,36 +28,11 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one galgame work with no cover, joined to the vn it is exactly
-// anchored to. VNDBID carries the anchor VERBATIM ("v38") — that is both what
-// catalog_external_ref stores and what the API's id filter expects, so nothing
-// is re-formatted in between.
 type candidate struct {
 	WorkID int64  `gorm:"column:work_id"`
 	VNDBID string `gorm:"column:vndb_id"`
 }
 
-// loadCandidates resolves the galgame works reachable via an EXACT VNDB work
-// anchor that show NO cover at all today:
-//
-//	catalog_work(galgame, alive)
-//	  → catalog_external_ref(entity_type=work, source=vndb, link_kind=exact)
-//	  ∧ NOT EXISTS catalog_work_cover
-//
-// "Shows no cover" is the whole admission rule and it is also the idempotency
-// gate: a work that gained a cover between runs is not a candidate at all, so
-// it is skipped before any VNDB call. VNDB is a FALLBACK here, never a
-// supplement — a work with a wiki / DLsite / Getchu cover keeps exactly what it
-// has.
-//
-// Only EXACT anchors qualify; probable/related links are a guess and a wrong
-// cover is a worse failure than no cover. DISTINCT ON keeps ONE vn per work in
-// the theoretical case a work carries several exact anchors (the anti-squatting
-// unique index makes that near-impossible), so the row count is the work count.
-//
-// ids, when non-empty, restricts the sweep to an explicit work list; the anchor
-// and no-cover predicates still apply, so naming a work that already has a
-// cover forecasts nothing rather than adding a second one.
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, ids []int64) ([]candidate, error) {
 	sql := `
 		SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id AS vndb_id

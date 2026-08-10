@@ -7,11 +7,11 @@ import (
 
 func TestAgeToSexual(t *testing.T) {
 	cases := map[string]int16{
-		"3": 2, // adult
-		"2": 1, // r15
-		"1": 0, // general
-		"":  0, // unknown
-		"9": 0, // unexpected → safe default
+		"3": 2,
+		"2": 1,
+		"1": 0,
+		"":  0,
+		"9": 0,
 	}
 	for age, want := range cases {
 		if got := ageToSexual(age); got != want {
@@ -21,8 +21,6 @@ func TestAgeToSexual(t *testing.T) {
 }
 
 func TestIntroFromPage(t *testing.T) {
-	// The description lives in parts[].text + multiimage items[].text — NOT in the
-	// `outline` metadata object, which this extraction must ignore entirely.
 	page := []byte(`{
 		"outline": {"販売日": "2022年10月28日", "年齢指定": "R18", "ジャンル": "学園"},
 		"parts": [
@@ -40,7 +38,6 @@ func TestIntroFromPage(t *testing.T) {
 		t.Errorf("introFromPage:\n got=%q\nwant=%q", got, want)
 	}
 
-	// outline-only (no parts) → empty (the outline object is never the intro).
 	if got := introFromPage([]byte(`{"outline": {"x": "y"}}`)); got != "" {
 		t.Errorf("outline-only should yield empty intro, got %q", got)
 	}
@@ -57,12 +54,10 @@ func TestCoverFile(t *testing.T) {
 	if name, got := coverFile(ok); !got || name != "RJ093895_img_main.jpg" {
 		t.Errorf("coverFile ok = (%q,%v), want (RJ093895_img_main.jpg,true)", name, got)
 	}
-	// Placeholder → skip.
 	ph := []byte(`{"image_main": {"url": "//img.dlsite.jp/.../no_img_main.gif"}}`)
 	if name, got := coverFile(ph); got || name != "" {
 		t.Errorf("coverFile placeholder = (%q,%v), want ('',false)", name, got)
 	}
-	// Empty / absent → skip.
 	if _, got := coverFile([]byte(`{"image_main": {"url": ""}}`)); got {
 		t.Error("coverFile empty url should be false")
 	}
@@ -72,7 +67,6 @@ func TestCoverFile(t *testing.T) {
 }
 
 func TestSampleFiles(t *testing.T) {
-	// Ordered filenames; the index becomes sort_order.
 	prod := []byte(`{"image_samples": [
 		{"url": "//img.dlsite.jp/.../RJ093895_img_smp1.jpg"},
 		{"url": "//img.dlsite.jp/.../RJ093895_img_smp2.jpg"},
@@ -89,7 +83,6 @@ func TestSampleFiles(t *testing.T) {
 			t.Errorf("sampleFiles[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
-	// Non-array image_samples (null / object) → no samples (tolerated).
 	if s := sampleFiles([]byte(`{"image_samples": null}`)); s != nil {
 		t.Errorf("null image_samples should yield nil, got %v", s)
 	}

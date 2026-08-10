@@ -17,9 +17,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test: catalog Gold schema + a minimal dlsite mirror fixture in
-// its OWN schema (workseries_dl) via a search_path DSN (the workratings /
-// workplaytime pattern — public.works belongs to importer_test.go).
 var (
 	testDB    *gorm.DB
 	testDSN   string
@@ -76,7 +73,6 @@ func mediumID(t *testing.T) int16 {
 	return id
 }
 
-// mkAnchoredWork creates a galgame work + release + dlsite release anchor.
 func mkAnchoredWork(t *testing.T, medium int16, name, workno string) int64 {
 	t.Helper()
 	w := model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name}
@@ -96,9 +92,6 @@ func mkMirrorWork(t *testing.T, workno, seriesID, seriesName string) {
 		VALUES (?, jsonb_build_object('series_id', ?::text, 'series_name', ?::text))`, workno, seriesID, seriesName).Error)
 }
 
-// TestImportWorkSeries pins the whole lane: the >=2 materialization gate, the
-// refresh semantics (rename in place / member add + stale delete / sub-gate
-// series deleted), dry-run zero writes and second-apply idempotence.
 func TestImportWorkSeries(t *testing.T) {
 	clean(t)
 	medium := mediumID(t)
@@ -109,13 +102,12 @@ func TestImportWorkSeries(t *testing.T) {
 	mkAnchoredWork(t, medium, "noseries", "RJ300")
 	mkMirrorWork(t, "RJ100", "SRI001", "テスト系列")
 	mkMirrorWork(t, "RJ101", "SRI001", "テスト系列")
-	mkMirrorWork(t, "RJ200", "SRI002", "一人系列") // single member — gated out
+	mkMirrorWork(t, "RJ200", "SRI002", "一人系列")
 	mkMirrorWork(t, "RJ300", "", "")
 
 	ctx := context.Background()
 	opts := Opts{DSN: testDSN, DlsiteDSN: dlTestDSN}
 
-	// Dry: plan only.
 	st, err := Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 4, st.AnchoredWorks)
@@ -127,7 +119,6 @@ func TestImportWorkSeries(t *testing.T) {
 	require.NoError(t, testDB.Table("catalog_series").Count(&n).Error)
 	assert.Zero(t, n, "dry run must not write")
 
-	// Apply.
 	opts.Apply = true
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
@@ -140,22 +131,17 @@ func TestImportWorkSeries(t *testing.T) {
 	require.NoError(t, testDB.Table("catalog_series_member").Where("series_id = ?", se.ID).Count(&n).Error)
 	assert.EqualValues(t, 2, n)
 
-	// The reaper also maintains the wave-184 ordering facets: a freshly created
-	// series lands ordered, never at the 0 sentinel.
 	var positions []int16
 	require.NoError(t, testDB.Table("catalog_series_member").Where("series_id = ?", se.ID).
 		Order("position").Pluck("position", &positions).Error)
 	assert.Equal(t, []int16{1, 2}, positions)
 	assert.Equal(t, 2, st.OrderChanged)
 
-	// Second apply: zero writes — including the ordering pass, which recomputes
-	// every series every run and must therefore prove it changes nothing.
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Zero(t, st.SeriesCreated+st.SeriesRenamed+st.SeriesDeleted+st.MembersAdded+st.MembersStale)
 	assert.Zero(t, st.OrderChanged)
 
-	// Refresh: rename + membership move (wB leaves, wC joins) + verify stale.
 	require.NoError(t, testDB.Exec(`UPDATE workseries_dl.works SET product_json =
 		jsonb_set(product_json, '{series_name}', '"新名前"') WHERE workno = 'RJ100'`).Error)
 	require.NoError(t, testDB.Exec(`UPDATE workseries_dl.works SET product_json =
@@ -175,7 +161,6 @@ func TestImportWorkSeries(t *testing.T) {
 	assert.Equal(t, []int64{wA, wC}, members)
 	_ = wB
 
-	// Sub-gate: RJ200 leaves too → series drops below 2 → deleted entirely.
 	require.NoError(t, testDB.Exec(`UPDATE workseries_dl.works SET product_json =
 		jsonb_build_object('series_id', '', 'series_name', '') WHERE workno = 'RJ200'`).Error)
 	st, err = Run(ctx, opts)

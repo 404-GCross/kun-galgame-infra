@@ -18,8 +18,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: catalog Gold schema + the src_vndb
-// Silver schema, both provisioned exactly as production does it.
 var (
 	testDB  *gorm.DB
 	testDSN string
@@ -91,14 +89,9 @@ func mkChar(t *testing.T, name, vndbID string) int64 {
 	return ch.ID
 }
 
-// TestImportCharacterTraits pins the three phases end to end: vocab upsert with
-// change detection, DAG edge rebuild (add + stale delete), link batch upsert
-// (spoiler regrade refresh), dry-run zero writes and second-apply idempotence.
 func TestImportCharacterTraits(t *testing.T) {
 	clean(t)
 
-	// Vocabulary: one root group (i1 Hair) + two children; one sexual root
-	// (i43) + one sexual child.
 	mkSrcTrait(t, "i1", "", "Hair", false, 0)
 	mkSrcTrait(t, "i10", "i1", "Blond Hair", false, 0)
 	mkSrcTrait(t, "i11", "i1", "Long Hair", false, 0)
@@ -117,7 +110,6 @@ func TestImportCharacterTraits(t *testing.T) {
 	ctx := context.Background()
 	opts := Opts{DSN: testDSN}
 
-	// Dry: everything planned, nothing written.
 	st, err := Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 5, st.VocabTotal)
@@ -128,7 +120,6 @@ func TestImportCharacterTraits(t *testing.T) {
 	require.NoError(t, testDB.Table("catalog_character_trait").Count(&n).Error)
 	assert.Zero(t, n, "dry run must not write")
 
-	// Apply.
 	opts.Apply = true
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
@@ -140,7 +131,6 @@ func TestImportCharacterTraits(t *testing.T) {
 	assert.Equal(t, 3, st.LinksWritten)
 	assert.Zero(t, st.Errors)
 
-	// Landed shapes: link rows carry spoiler/lie verbatim.
 	require.NoError(t, testDB.Table("catalog_character_trait_link").Where("character_id = ?", chA).Count(&n).Error)
 	assert.EqualValues(t, 2, n, "chA carries its two links")
 	var link model.CatalogCharacterTraitLink
@@ -152,7 +142,6 @@ func TestImportCharacterTraits(t *testing.T) {
 	assert.True(t, trait.Sexual)
 	assert.Equal(t, "i43", trait.GroupTID)
 
-	// Second apply: zero writes everywhere.
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Zero(t, st.VocabWritten)
@@ -161,8 +150,6 @@ func TestImportCharacterTraits(t *testing.T) {
 	assert.Zero(t, st.LinksWritten)
 	assert.Equal(t, 3, st.LinksUnchanged)
 
-	// Refresh semantics: upstream regrades a spoiler + renames a trait + drops
-	// an edge → exactly those writes fire.
 	require.NoError(t, testDB.Exec(`UPDATE src_vndb.chars_traits SET spoil = 2 WHERE id = 'c2' AND tid = 'i11'`).Error)
 	require.NoError(t, testDB.Exec(`UPDATE src_vndb.traits SET name = 'Blonde Hair' WHERE id = 'i10'`).Error)
 	require.NoError(t, testDB.Exec(`DELETE FROM src_vndb.traits_parents WHERE id = 'i11'`).Error)
@@ -176,17 +163,12 @@ func TestImportCharacterTraits(t *testing.T) {
 	require.NoError(t, testDB.Where("character_id = ?", chB).First(&link).Error)
 	assert.EqualValues(t, 2, link.SpoilerLevel)
 
-	// A character carrying TWO vndb anchors (the schema-legal multi-anchor
-	// shape — uq_catalog_external_ref_exact forbids two characters sharing one
-	// vndb id, the squatting guard): links from both anchors project onto the
-	// same catalog character; DISTINCT ON keeps one row per (character, trait)
-	// when both anchors carry the same trait.
 	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
 		EntityType: model.EntityTypeCharacter, EntityID: chA, SourceID: 2,
 		ExternalID: "c99", LinkKind: model.LinkKindExact, MatchedBy: "rule:test",
 	}).Error)
-	mkSrcLink(t, "c99", "i10", 0, false) // same trait as via c1 — must not dupe
-	mkSrcLink(t, "c99", "i11", 0, false) // genuinely new trait for chA
+	mkSrcLink(t, "c99", "i10", 0, false)
+	mkSrcLink(t, "c99", "i11", 0, false)
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 4, st.LinksSeen, "chA i10+i11+i50 (deduped) + chB i11")

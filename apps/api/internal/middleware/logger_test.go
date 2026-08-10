@@ -12,10 +12,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// logStatusOf drives one request through the Logger middleware and returns both
-// what the client saw and what the log line claimed. The two must agree — a
-// retired face answering 404 while the log says 200 is the exact blindness that
-// hid the wave-161 P5 outage.
 func logStatusOf(t *testing.T, register func(app *fiber.App), method, path string) (wire int, logged int) {
 	t.Helper()
 
@@ -99,8 +95,6 @@ func TestLoggerRecordsHandlerErrorStatus(t *testing.T) {
 func TestLoggerKeepsHandlerWrittenStatus(t *testing.T) {
 	wire, logged := logStatusOf(t, func(app *fiber.App) {
 		app.Get("/missing", func(c fiber.Ctx) error {
-			// The handler writes the status itself and returns nil — the shape
-			// that always logged correctly, pinned so the fix does not break it.
 			return c.Status(http.StatusNotFound).JSON(fiber.Map{"code": 404})
 		})
 	}, http.MethodGet, "/missing")

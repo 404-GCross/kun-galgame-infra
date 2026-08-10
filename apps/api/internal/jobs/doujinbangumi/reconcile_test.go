@@ -21,10 +21,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + registry seeds) and the src_bangumi Silver schema co-located
-// in ONE database, exactly as CI lays them out. Run drives the DSN itself, so
-// we capture it (not just the handle) to exercise the real entry point.
 var (
 	testDB  *gorm.DB
 	testDSN string
@@ -68,7 +64,7 @@ func clean(t *testing.T) {
 
 func mkWork(t *testing.T, medium int16, name string) int64 {
 	t.Helper()
-	w := model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name} // Site nil = bodyless
+	w := model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name}
 	require.NoError(t, testDB.Create(&w).Error)
 	return w.ID
 }
@@ -118,12 +114,6 @@ func countRefs(t *testing.T) int64 {
 	return n
 }
 
-// TestReconcileScenarios pins every tier + guard on one fixture: exact (title +
-// corroborating year, ja and cn sides), probable (no year / year disagrees),
-// the work-side and bangumi-side (squatting) ambiguity skips, the length floor,
-// the type=4 filter, the already-anchored idempotency skip, never-re-grade, and
-// the second-pass-zero-write guarantee — all driven through the real Run entry
-// point (DSN → open → resolve → decide → write).
 func TestReconcileScenarios(t *testing.T) {
 	clean(t)
 	reg, err := resolveRegistry(context.Background(), testDB)
@@ -131,66 +121,60 @@ func TestReconcileScenarios(t *testing.T) {
 	require.EqualValues(t, 3, reg.bangumiSource, "bangumi source id must resolve to 3")
 
 	galgame := reg.galgameMedium
-	other := int16(2) // manga — a non-galgame medium, must never be a candidate
+	other := int16(2)
 
-	// --- subjects (type=4 games unless noted) ---
-	seedSubject(t, 5001, 4, "ぜっとゲームアルファexact", "", "2011-05-01")     // W1: year diff 1 → exact boundary
-	seedSubject(t, 5002, 4, "ぷろばぶるゲームベータ", "", "2011")               // W2: work has no year → probable
-	seedSubject(t, 5003, 4, "みすまっちゲームガンマ", "", "2015-01-01")         // W3: year disagree → probable
-	seedSubject(t, 5004, 4, "JPTITLE5004", "中文标题作品cn", "2012-03-01") // W4: cn-side match → exact
-	seedSubject(t, 5005, 4, "あいまいさくひんファイブ", "", "2013-01-01")        // W5: shares title with 5055
-	seedSubject(t, 5055, 4, "あいまいさくひんファイブ", "", "2013-01-01")        // → W5 hits two subjects (work-side ambig)
-	seedSubject(t, 5006, 4, "きょうゆうさぶじぇくとシックス", "", "2014-01-01")     // W6+W7 both hit it (squatting)
-	seedSubject(t, 5009, 4, "あんかーどナインexact", "", "2010-01-01")       // W9: already-anchored, never re-graded
-	seedSubject(t, 5100, 2, "あにめだけのやつゼロ", "", "2016-01-01")          // type=2 anime — must be ignored
-	seedSubject(t, 5200, 4, "みじか", "", "2017-01-01")                 // 3 chars — below the length floor
+	seedSubject(t, 5001, 4, "ぜっとゲームアルファexact", "", "2011-05-01")
+	seedSubject(t, 5002, 4, "ぷろばぶるゲームベータ", "", "2011")
+	seedSubject(t, 5003, 4, "みすまっちゲームガンマ", "", "2015-01-01")
+	seedSubject(t, 5004, 4, "JPTITLE5004", "中文标题作品cn", "2012-03-01")
+	seedSubject(t, 5005, 4, "あいまいさくひんファイブ", "", "2013-01-01")
+	seedSubject(t, 5055, 4, "あいまいさくひんファイブ", "", "2013-01-01")
+	seedSubject(t, 5006, 4, "きょうゆうさぶじぇくとシックス", "", "2014-01-01")
+	seedSubject(t, 5009, 4, "あんかーどナインexact", "", "2010-01-01")
+	seedSubject(t, 5100, 2, "あにめだけのやつゼロ", "", "2016-01-01")
+	seedSubject(t, 5200, 4, "みじか", "", "2017-01-01")
 
-	// --- works (all bodyless galgame unless noted) ---
 	w1 := mkWork(t, galgame, "W1")
 	mkTitle(t, w1, "ja", "ぜっとゲームアルファexact", model.WorkTitleKindOfficial)
-	mkRelease(t, w1, 2010) // |2010-2011| = 1 → exact
+	mkRelease(t, w1, 2010)
 
 	w2 := mkWork(t, galgame, "W2")
-	mkTitle(t, w2, "ja", "ぷろばぶるゲームベータ", model.WorkTitleKindOfficial) // no release row → no year
+	mkTitle(t, w2, "ja", "ぷろばぶるゲームベータ", model.WorkTitleKindOfficial)
 
 	w3 := mkWork(t, galgame, "W3")
 	mkTitle(t, w3, "ja", "みすまっちゲームガンマ", model.WorkTitleKindOfficial)
-	mkRelease(t, w3, 2000) // |2000-2015| = 15 → probable
+	mkRelease(t, w3, 2000)
 
 	w4 := mkWork(t, galgame, "W4")
 	mkTitle(t, w4, "zh-Hans", "中文标题作品cn", model.WorkTitleKindOfficial)
-	mkRelease(t, w4, 2012) // cn match, |2012-2012| = 0 → exact
+	mkRelease(t, w4, 2012)
 
 	w5 := mkWork(t, galgame, "W5")
 	mkTitle(t, w5, "ja", "あいまいさくひんファイブ", model.WorkTitleKindOfficial)
-	mkRelease(t, w5, 2013) // hits 5005 AND 5055 → work-side ambiguous
+	mkRelease(t, w5, 2013)
 
 	w6 := mkWork(t, galgame, "W6")
 	mkTitle(t, w6, "ja", "きょうゆうさぶじぇくとシックス", model.WorkTitleKindOfficial)
 	mkRelease(t, w6, 2014)
 	w7 := mkWork(t, galgame, "W7")
 	mkTitle(t, w7, "ja", "きょうゆうさぶじぇくとシックス", model.WorkTitleKindOfficial)
-	mkRelease(t, w7, 2014) // W6+W7 both hit 5006 → bangumi-side ambiguous (squatting guard)
+	mkRelease(t, w7, 2014)
 
 	w8 := mkWork(t, galgame, "W8")
-	mkTitle(t, w8, "ja", "みじか", model.WorkTitleKindOfficial) // 3 chars → not a candidate at all
+	mkTitle(t, w8, "ja", "みじか", model.WorkTitleKindOfficial)
 
 	w9 := mkWork(t, galgame, "W9")
 	mkTitle(t, w9, "ja", "あんかーどナインexact", model.WorkTitleKindOfficial)
-	mkRelease(t, w9, 2010) // would be exact, but is already anchored (below)
+	mkRelease(t, w9, 2010)
 
 	w10 := mkWork(t, galgame, "W10")
 	mkTitle(t, w10, "ja", "あにめだけのやつゼロ", model.WorkTitleKindOfficial)
-	mkRelease(t, w10, 2016) // only matches a type=2 subject → no match
+	mkRelease(t, w10, 2016)
 
-	// A non-galgame work whose title equals an exact subject — the medium filter
-	// must exclude it entirely (never a candidate, never anchored).
 	wm := mkWork(t, other, "Wmanga")
 	mkTitle(t, wm, "ja", "ぜっとゲームアルファexact", model.WorkTitleKindOfficial)
 	mkRelease(t, wm, 2011)
 
-	// Pre-existing human-confirmed EXACT anchor on W9 → idempotency skip + the
-	// never-re-grade witness (a later probable/exact pass must not touch it).
 	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
 		EntityType: model.EntityTypeWork, EntityID: w9, SourceID: reg.bangumiSource,
 		ExternalID: "5009", LinkKind: model.LinkKindExact, MatchedBy: "human:9",
@@ -198,7 +182,6 @@ func TestReconcileScenarios(t *testing.T) {
 
 	ctx := context.Background()
 
-	// --- dry run: reports the plan, writes nothing ---
 	dry, err := Run(ctx, Opts{DSN: testDSN, Apply: false})
 	require.NoError(t, err)
 	assert.Equal(t, 9, dry.CandidateWorks, "W1..W7, W9, W10 — W8 (short title) and the manga work excluded")
@@ -213,7 +196,6 @@ func TestReconcileScenarios(t *testing.T) {
 	assert.Len(t, dry.ExactSamples, 2)
 	assert.Len(t, dry.ProbableSamples, 2)
 
-	// --- apply run 1 ---
 	a1, err := Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 2, a1.ExactWritten)
@@ -226,18 +208,15 @@ func TestReconcileScenarios(t *testing.T) {
 	assert.True(t, hasRef(refsOf(t, w2), reg.bangumiSource, "5002", model.LinkKindProbable, ruleTitleOnly), "W2 probable (no year)")
 	assert.True(t, hasRef(refsOf(t, w3), reg.bangumiSource, "5003", model.LinkKindProbable, ruleTitleOnly), "W3 probable (year disagree)")
 
-	// squatting guard + ambiguity + excluded works never got an anchor
 	for _, w := range []int64{w5, w6, w7, w8, w10, wm} {
 		assert.Empty(t, refsOf(t, w), "work %d must carry no anchor", w)
 	}
 
-	// --- never-re-grade: W9's human EXACT anchor is untouched ---
 	w9refs := refsOf(t, w9)
 	require.Len(t, w9refs, 1)
 	assert.Equal(t, model.LinkKindExact, w9refs[0].LinkKind, "existing exact never demoted")
 	assert.Equal(t, "human:9", w9refs[0].MatchedBy)
 
-	// --- apply run 2: idempotent, writes zero ---
 	a2, err := Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, a2.ExactWritten+a2.ProbableWritten, "second apply writes nothing")
@@ -247,18 +226,12 @@ func TestReconcileScenarios(t *testing.T) {
 	assert.EqualValues(t, 5, countRefs(t), "second pass mints no ref")
 }
 
-// TestDSNRequired pins the never-defaulted-DSN discipline: a bare run refuses
-// rather than guessing at a database.
 func TestDSNRequired(t *testing.T) {
 	_, err := Run(context.Background(), Opts{DSN: ""})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--dsn")
 }
 
-// TestInsertRefNeverReGrade witnesses the write primitive directly: once an
-// exact assertion exists, re-proposing the SAME (entity, source, external_id)
-// at the probable tier is a no-op — InsertRefIfAbsent never re-grades. This is
-// the backstop under the tool's per-work idempotency skip.
 func TestInsertRefNeverReGrade(t *testing.T) {
 	clean(t)
 	reg, err := resolveRegistry(context.Background(), testDB)

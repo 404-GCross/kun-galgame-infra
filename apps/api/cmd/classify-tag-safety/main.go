@@ -1,26 +1,3 @@
-// classify-tag-safety is the GLM driver for the tag SAFETY / JUNK axes of the
-// bangumi + dlsite folksonomy (and of the canonical catalog_tag vocabulary).
-// Both axes are currently unclassified in the data: every catalog_work_tag row
-// of both sources carries sexual = false, which means "never judged", not
-// "judged safe", and bangumi-only canonicals inherit the same false.
-//
-// Three modes. The DSN is ALWAYS explicit, the LLM is reached only through the
-// Classifier seam (so --mock proves the whole chain offline), and apply is DRY
-// until --run.
-//
-//	# 1) classify — vocabulary → GLM → verdict JSONL. Appends and resumes: a
-//	#    name already in --out is skipped, so an interrupted run continues.
-//	go run ./cmd/classify-tag-safety -mode classify --dsn "$DSN" --out verdicts.jsonl \
-//	    --sources bangumi,dlsite --vocab --min-uses 2 --limit 200 --mock
-//	go run ./cmd/classify-tag-safety -mode classify --dsn "$DSN" --out verdicts.jsonl \
-//	    --llm-base http://one-api:3000/v1 --llm-token "$TOK" --model glm-5.2
-//
-//	# 2) report — DB-free census of a verdict file (class × confidence).
-//	go run ./cmd/classify-tag-safety -mode report --in verdicts.jsonl
-//
-//	# 3) apply — bucket by --min-confidence and write. Dry by default.
-//	go run ./cmd/classify-tag-safety -mode apply --dsn "$DSN" --in verdicts.jsonl \
-//	    --review-out review.jsonl --reviewed ruled.jsonl --limit 500 --run
 package main
 
 import (
@@ -110,8 +87,6 @@ func main() {
 	}
 }
 
-// printSamples shows the head of each write bucket so a dry run is inspectable
-// without opening the JSONL.
 func printSamples(p tagsafety.Plan) {
 	sample := func(label string, items []string) {
 		if len(items) == 0 {
@@ -129,9 +104,6 @@ func printSamples(p tagsafety.Plan) {
 	sample("vocab_hidden", p.VocabHidden)
 }
 
-// selectClassifier wires the LLM seam: mock (offline rehearsal) or the
-// configured HTTP gateway. An unconfigured live gateway is a BLOCKED
-// precondition, not a crash.
 func selectClassifier(mock bool, base, token, model string, maxTokens int) tagsafety.Classifier {
 	if mock {
 		slog.Warn("MOCK classifier active — rehearsal only; verdicts are NOT real judgments")

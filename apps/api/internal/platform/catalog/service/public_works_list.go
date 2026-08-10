@@ -1,17 +1,3 @@
-// public_works_list.go — the works browse lane (GET /v1/catalog/works) and
-// the changes feed (GET /v1/catalog/changes), doc 106 G1/G2.
-//
-// Population invariant (both lanes): the public fetchable set — galgame
-// medium, status=live, not soft-deleted — exactly the wave-105 works-index
-// population. Wave 186a made the works LIST's status axis a FILTER
-// (WorksListFilter.Statuses) whose empty value is still {live}, so the
-// invariant holds for every caller who does not pass the moderator-gated
-// status= parameter; the CHANGES feed keeps the literal, because a public sync
-// watermark that could be widened per caller would hand different consumers
-// different id sets under one cursor. The works LIST additionally drops r18 rows unless nsfw; the
-// CHANGES feed does NOT nsfw-gate (ids + timestamps are identity, not
-// content: the consumer's detail follow-up re-applies the gate, mirroring
-// /v1/galgame/changes and the redirects feed).
 package service
 
 import (
@@ -24,107 +10,39 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// WorksListFilter is the works browse lane's request shape: the filter set
-// (all optional; zero value = the whole fetchable set) plus the include=
-// projection selector. Date bounds are composed ordinals
-// (y*10000 + m*100 + d) over the EARLIEST release date per work.
 type WorksListFilter struct {
-	ContentRating *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
-	Claimed       *bool  // true = claimed only; false = bodyless only; nil = both
-	// ClaimStates narrows to a set of PUBLIC claim states (none|live|draft|
-	// hidden, A2-R4) — the values claimed_by.state renders on the very items
-	// this lane returns. Empty = no gate at all, so every pre-existing caller's
-	// wire stays byte-identical.
-	//
-	// It is a different axis from Claimed, not a finer spelling of it: `claimed`
-	// answers "does a product own this row", this answers "may it be shown". An
-	// entity page listing its member works passes claim_state=live — without it
-	// there is no server-side way to keep DRAFT (unpublished) stubs and
-	// unclaimed rows off a public list, which is exactly how they reached
-	// production. Semantics are the works/search parameter's, word for word.
-	ClaimStates []string
-	// DisplayLimits narrows to a set of EDITORIAL DISPLAY limits (sfw|nsfw,
-	// A2-R5) — the values claimed_by.content_limit renders on these very items.
-	// Empty = no gate at all, so every pre-existing caller's wire stays
-	// byte-identical.
-	//
-	// It is a different axis from ContentRating, not a finer spelling of it:
-	// content_rating answers "what is the GAME rated", this answers "is the
-	// material we would RENDER safe to publish". A site building its indexable
-	// surface passes content_limit=sfw — mapping the age axis onto that question
-	// instead is what collapsed one downstream's SEO surface from 6,117 works to
-	// 599 (doc 106 §38).
-	DisplayLimits []string
-	// Site narrows to the works claimed by ONE tenant (catalog_work.site) —
-	// the sibling of the parameter PendingClaims and the S2S work search
-	// already take (wave 161 P5, 162 §4 ruling ①). Empty = no gate at all, so
-	// every pre-existing caller's wire stays byte-identical.
-	//
-	// A product's own review queue and "my site's works" lane cannot be built
-	// without it: filtering another tenant's rows out AFTER the page is fetched
-	// makes both the page size and the keyset cursor lie. This is a LIVE SQL
-	// predicate inside the LIMIT, so a claim that moves tenant is reflected on
-	// the very next call — the works search index carries no site facet and
-	// deliberately gains none.
-	Site string
-	// Statuses narrows the REGISTRY status axis (catalog_work.status, i.e.
-	// model.WorkStatus*). EMPTY IS NOT "no gate" here — it is {live}, the
-	// population every pre-existing caller of this lane has ever seen, so the
-	// default page stays byte-identical while the axis stops being a literal
-	// buried in the WHERE.
-	//
-	// It is the third axis beside ClaimStates and DisplayLimits and answers a
-	// different question from both: `status` is what the REGISTRY thinks of the
-	// row (live / stub — below the metadata bar / merged — a tombstone),
-	// `claim_state` is what the owning PRODUCT thinks of its claim. Only the
-	// moderator queue view (wave 186a) ever widens it, and never to merged:
-	// status=2 answering anything but 404 is a contract break.
-	Statuses []int16
-	LabelID  int64 // via catalog_work_label
-	// LabelRollup widens LabelID to the label's imprints and subsidiaries
-	// (wave 199). Ignored without LabelID. Every row that came in through a
-	// child carries via_label — see public_label_rollup.go for why the
-	// attribution is not optional.
-	LabelRollup bool
-	// TagIDs are canonical tag ids ANDed together (A2-1e): a work must carry a
-	// source tag mapped to EVERY id, which is what a facet sidebar's "narrow by
-	// another tag" means. One id behaves exactly as the pre-A2-1e scalar did.
-	TagIDs         []int64 // via catalog_tag_source_map ⋈ catalog_work_tag
-	SeriesID       int64   // via catalog_series_member
-	EngineID       int64   // via catalog_work_engine (A2-1b)
-	Platform       string  // release-level platform ∪ work-level platform rows
-	ReleasedAfter  int64   // composed ordinal, inclusive; 0 = unbounded
-	ReleasedBefore int64   // composed ordinal, inclusive; 0 = unbounded
+	ContentRating  *int16
+	Claimed        *bool
+	ClaimStates    []string
+	DisplayLimits  []string
+	Site           string
+	Statuses       []int16
+	LabelID        int64
+	LabelRollup    bool
+	TagIDs         []int64
+	SeriesID       int64
+	EngineID       int64
+	Platform       string
+	ReleasedAfter  int64
+	ReleasedBefore int64
 	IDs            []int64
 	NSFW           bool
-	Sort           string // "id" (default, ASC) | "updated" (DESC, newest first)
-	// Include selects the optional rich-brief blocks (A2-1a). The zero value
-	// asks for none, which is what keeps the default page byte-identical to
-	// the frozen W1 contract.
-	Include WorksListInclude
+	Sort           string
+	Include        WorksListInclude
 }
 
-// WorksList serves the keyset works browse lane. Returns one page of enriched
-// list items plus the next cursor (nil on the last page). A malformed cursor
-// is ErrBadCursor (the handler maps it to 400).
 func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor string, limit int) (dto.PublicWorksListData, error) {
 	lane := worksSortLane(f.Sort)
 	cur, err := decodePublicCursor(cursor, lane)
 	if err != nil {
 		return dto.PublicWorksListData{}, err
 	}
-	// Defensive only — the handler is the wire authority (it 400s a bad limit).
-	// Clamp at the ceiling rather than resetting to the default so both layers
-	// agree on what an over-max limit means.
 	if limit <= 0 {
 		limit = 20
 	} else if limit > 100 {
 		limit = 100
 	}
 
-	// The registry status axis. An absent filter is the frozen public default
-	// {live}, so this clause is the same single-value predicate it has always
-	// been unless a caller was explicitly authorized to widen it.
 	statuses := f.Statuses
 	if len(statuses) == 0 {
 		statuses = []int16{model.WorkStatusLive}
@@ -142,40 +60,25 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 	}
 	if f.Claimed != nil {
 		if *f.Claimed {
-			where = append(where, "w.site <> ''") // NULL and '' both excluded (bodyless)
+			where = append(where, "w.site <> ''")
 		} else {
 			where = append(where, "(w.site = '' OR w.site IS NULL)")
 		}
 	}
 	if f.Site != "" {
-		// ANDed into the SAME conjunction as every other filter — i.e. inside
-		// the LIMIT — so the page the caller receives is a page of THIS tenant's
-		// works and the next_cursor it derives is honest.
 		where = append(where, "w.site = ?")
 		args = append(args, f.Site)
 	}
 	if pred, pargs := claimStateWhere(f.ClaimStates); pred != "" {
-		// ONE clause in the SAME conjunction as every other filter. This face
-		// emits no total (keyset paging: items + next_cursor), so "the count and
-		// the rows share one gate" holds by construction — there is exactly one
-		// query, and adding a count later would inherit this WHERE with it.
 		where = append(where, pred)
 		args = append(args, pargs...)
 	}
 	if pred, pargs := displayLimitWhere(f.DisplayLimits); pred != "" {
-		// The editorial display axis (A2-R5), ANDed into the SAME conjunction as
-		// the nsfw age gate and the claim-state gate — three orthogonal doors, one
-		// query, so a caller opening one never widens another.
 		where = append(where, pred)
 		args = append(args, pargs...)
 	}
 	if f.LabelID > 0 {
 		if f.LabelRollup {
-			// The company page's population: this label's own works UNION the
-			// works of its one-hop imprints/subsidiaries. One EXISTS, so the
-			// roll-up is a widened probe inside the same conjunction — the
-			// keyset page and its next_cursor stay honest about the set they
-			// describe. Each row's attribution is restored below.
 			where = append(where, `EXISTS (SELECT 1 FROM catalog_work_label wl
 				WHERE wl.work_id = w.id AND (wl.label_id = ? OR wl.label_id IN (`+labelRollupChildren+`)))`)
 			args = append(args, f.LabelID, f.LabelID, labelRollupRelations)
@@ -185,10 +88,6 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		}
 	}
 	for _, tagID := range f.TagIDs {
-		// Canonical tag → any source tag mapped to it (idx on catalog_work_tag
-		// (work_id,...) unique carries the correlated work_id probe). ONE EXISTS
-		// per requested tag — conjunctive by construction, and each probe stays
-		// index-served (a single IN + HAVING count would force an aggregate).
 		where = append(where, `EXISTS (SELECT 1 FROM catalog_work_tag wt
 			JOIN catalog_tag_source_map m ON m.source_id = wt.source_id AND m.source_name = wt.name
 			WHERE wt.work_id = w.id AND m.tag_id = ?)`)
@@ -199,14 +98,10 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		args = append(args, f.SeriesID)
 	}
 	if f.EngineID > 0 {
-		// catalog_work_engine.engine_id carries its own reverse index, so the
-		// correlated probe is an index lookup (A2-1b).
 		where = append(where, "EXISTS (SELECT 1 FROM catalog_work_engine we WHERE we.work_id = w.id AND we.engine_id = ?)")
 		args = append(args, f.EngineID)
 	}
 	if f.Platform != "" {
-		// Release-level primary platform ∪ work-level platform rows (the two
-		// grains a consumer unions on the detail face).
 		where = append(where, `(EXISTS (SELECT 1 FROM catalog_release r WHERE r.work_id = w.id AND r.deleted_at IS NULL AND r.platform = ?)
 			OR EXISTS (SELECT 1 FROM catalog_work_platform wp WHERE wp.work_id = w.id AND wp.platform = ?))`)
 		args = append(args, f.Platform, f.Platform)
@@ -235,8 +130,6 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 			if perr != nil {
 				return dto.PublicWorksListData{}, ErrBadCursor
 			}
-			// Row-value comparison (not OR expansion) so the keyset lands as an
-			// Index Cond on idx_catalog_work_updated_id instead of a Filter.
 			where = append(where, "(w.updated_at, w.id) < (?, ?)")
 			args = append(args, ts, cur.ID)
 		}
@@ -311,30 +204,16 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 	return out, nil
 }
 
-// Changes serves the incremental works changes feed: LIVE galgame works
-// ordered by (updated_at, id) ASC, resuming from the cursor. next_cursor is
-// ALWAYS returned (it advances past the last row even on a short page, so a
-// consumer keeps polling the same cursor for new rows). No nsfw gate. The feed
-// deliberately trails real time by 5 seconds (see the watermark note below).
 func (s *PublicService) Changes(ctx context.Context, cursor string, limit int) (dto.PublicChangesData, error) {
 	cur, err := decodePublicCursor(cursor, "changes")
 	if err != nil {
 		return dto.PublicChangesData{}, err
 	}
-	// Defensive only — the handler is the wire authority (it 400s a bad limit).
-	// Clamp at the ceiling rather than resetting to the default so both layers
-	// agree on what an over-max limit means.
 	if limit <= 0 {
 		limit = 100
 	} else if limit > 500 {
 		limit = 500
 	}
-	// Watermark safety lag: updated_at is STATEMENT time, not commit time, so a
-	// long transaction can commit a row whose updated_at already sits behind a
-	// consumer's advanced cursor — that row would be skipped forever. Refusing
-	// to serve rows younger than the lag means any transaction that commits
-	// within 5s of its statement can no longer be missed. Changes feed ONLY:
-	// the works-list `sort=updated` lane is a browse lane, not a sync watermark.
 	where := []string{"deleted_at IS NULL", "status = ?", "medium_id = ?",
 		"updated_at < now() - interval '5 seconds'"}
 	args := []any{model.WorkStatusLive, galgameMediumID}
@@ -343,8 +222,6 @@ func (s *PublicService) Changes(ctx context.Context, cursor string, limit int) (
 		if perr != nil {
 			return dto.PublicChangesData{}, ErrBadCursor
 		}
-		// Row-value comparison (not OR expansion) so the keyset lands as an
-		// Index Cond on idx_catalog_work_updated_id instead of a Filter.
 		where = append(where, "(updated_at, id) > (?, ?)")
 		args = append(args, ts, cur.ID)
 	}
@@ -370,7 +247,6 @@ func (s *PublicService) Changes(ctx context.Context, cursor string, limit int) (
 	return out, nil
 }
 
-// worksSortLane normalizes the works-list sort token to its cursor lane.
 func worksSortLane(sort string) string {
 	if sort == "updated" {
 		return "updated"
@@ -378,10 +254,6 @@ func worksSortLane(sort string) string {
 	return "id"
 }
 
-// ── W1-frozen enrichment helpers below (W2A calls, never edits) ──────────────
-
-// workListSourceRow is what the WorksList page query produces per work — the
-// raw registry columns enrichWorkListItems needs.
 type workListSourceRow struct {
 	ID            int64
 	MediumID      int16
@@ -391,14 +263,9 @@ type workListSourceRow struct {
 	Site          *string
 	ProductWorkID *int64
 	ClaimState    *int16
-	UpdatedAt     string // RFC3339
+	UpdatedAt     string
 }
 
-// enrichWorkListItems projects one page of registry rows to the public list
-// items, batch-attaching release_date (earliest release, partial ISO) and one
-// representative cover (portrait pin first; sexual-flagged covers are never
-// served to sfw callers), then whatever include= asked for on top. Order is
-// preserved. The cover set is loaded ONCE and shared with the covers block.
 func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workListSourceRow, nsfw bool, inc WorksListInclude) ([]dto.PublicWorkListItem, error) {
 	if len(rows) == 0 {
 		return []dto.PublicWorkListItem{}, nil
@@ -417,10 +284,6 @@ func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workList
 	if err != nil {
 		return nil, err
 	}
-	// The display axis (A2-R5), one batched wiki-body read per page — the same
-	// shape (and the same claim partition) the cover bridge above rides on. This
-	// is the ONE place the works list, the works search and the three calendar
-	// buckets all fill claimed_by.content_limit from: they share this function.
 	limits, err := s.read.loadDisplayNSFW(ctx, subjects)
 	if err != nil {
 		return nil, err
@@ -441,9 +304,6 @@ func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workList
 	return out, nil
 }
 
-// earliestReleaseDatesFor batch-loads each work's earliest release date as a
-// partial ISO string (YYYY[-MM[-DD]]), keyed by work id; works with no dated
-// release have no entry (nil pointer on the item).
 func (s *PublicService) earliestReleaseDatesFor(ctx context.Context, ids []int64) (map[int64]*string, error) {
 	if len(ids) == 0 {
 		return map[int64]*string{}, nil
@@ -468,8 +328,6 @@ func (s *PublicService) earliestReleaseDatesFor(ctx context.Context, ids []int64
 	return out, nil
 }
 
-// partialISOFromOrdinal renders a composed date ordinal (y*10000+m*100+d,
-// month/day 0 = unknown) as YYYY[-MM[-DD]].
 func partialISOFromOrdinal(ord int64) string {
 	y, m, d := ord/10000, (ord/100)%100, ord%100
 	out := fmt.Sprintf("%04d", y)
@@ -482,12 +340,6 @@ func partialISOFromOrdinal(ord int64) string {
 	return out
 }
 
-// pickListCover picks one representative cover URL for a list item: portrait
-// pin first, then the loader's (sort_order, image_hash) order. allowSexual
-// carries the same conjunction the slot picker runs on — the caller's age gate
-// AND the work's editorial display flag — so a work that declares its art
-// display-safe never represents itself with a sexual-flagged cover ("" when
-// none qualifies).
 func (s *PublicService) pickListCover(rows []WorkCoverRow, allowSexual bool) string {
 	var fallback string
 	for _, c := range rows {

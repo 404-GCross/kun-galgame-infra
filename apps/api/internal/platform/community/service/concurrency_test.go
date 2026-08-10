@@ -9,9 +9,6 @@ import (
 	"api/internal/platform/community/model"
 )
 
-// TestConcurrent_CommentsGetOrCreate races many callers to get-or-create the
-// SAME anchor's comments thread: exactly one row is created and everyone gets
-// the same id (invariant 4 under concurrency — the partial unique + re-read).
 func TestConcurrent_CommentsGetOrCreate(t *testing.T) {
 	cleanTables(t)
 	ts := NewThreadService(testDB, NoopSink{})
@@ -52,14 +49,11 @@ func TestConcurrent_CommentsGetOrCreate(t *testing.T) {
 	}
 }
 
-// TestConcurrent_ReplyPostNumbers races many replies on one thread: the
-// row-locked allocation makes post_number gap-free and dup-free (invariant 5
-// under concurrency).
 func TestConcurrent_ReplyPostNumbers(t *testing.T) {
 	cleanTables(t)
 	ts := NewThreadService(testDB, NoopSink{})
 	ps := NewPostService(testDB, NoopSink{})
-	th := openTopic(t, ts, "letmoe", 100, "b1", "opening") // post #1
+	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 	const n = 10
 
 	nums := make([]int32, n)
@@ -69,8 +63,6 @@ func TestConcurrent_ReplyPostNumbers(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			// Distinct authors so each is a genuine new participant (no
-			// same-author participant-count contention to reason about here).
 			p, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: int64(900 + i), BodyRaw: "r"})
 			if err != nil {
 				errs[i] = err
@@ -86,7 +78,6 @@ func TestConcurrent_ReplyPostNumbers(t *testing.T) {
 			t.Fatalf("reply %d: %v", i, errs[i])
 		}
 	}
-	// The n replies must be exactly post_numbers 2..n+1 (opening is 1).
 	got := append([]int32(nil), nums...)
 	slices.Sort(got)
 	for i, v := range got {

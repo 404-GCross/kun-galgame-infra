@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Shared fetch-error banner for admin list reads: distinguishes a failed load
-// (backend down / 500 / 403) from a genuinely-empty result, so an unreachable
-// service never masquerades as "nothing here". Pairs with useApiFetch's `error`.
 defineProps<{ message?: string }>()
 const emit = defineEmits<{ retry: [] }>()
 </script>

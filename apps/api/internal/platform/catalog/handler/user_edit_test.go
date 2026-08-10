@@ -25,22 +25,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// The editing engine on the user-token face (wave 177). Every test here asks
-// one question in a different place: did the actor come from the token? The
-// engine's own rules (what a policy means, when a proposal automerges) are
-// already pinned by the editspec and S2S suites and are NOT re-litigated —
-// what is new is that roles now arrive as claims instead of as body fields.
-
-// userEditApp wires the face as cmd/catalog does: JWTAuth + UserGate on the
-// prefix, then the user Huma API over the SAME engine and per-family resolvers
-// the S2S face uses.
 func userEditApp(t *testing.T, db *gorm.DB, clients fakeClientLookup) *fiber.App {
 	t.Helper()
 	reg := editing.NewRegistry()
 	require.NoError(t, editspec.RegisterWork(reg, db))
 
 	app := fiber.New()
-	verifier := oidctoken.NewVerifier(userTestSecret, nil) // HS256-only (no JWKS)
+	verifier := oidctoken.NewVerifier(userTestSecret, nil)
 	app.Use(UserPrefix, middleware.JWTAuth(verifier), UserGate(clients))
 	SetupUser(app, service.NewCoverVoteService(db), editing.NewEngine(db, reg),
 		PermResolvers{"catalog": perm.Resolver}, service.NewClaimLifecycleService(db),
@@ -48,9 +39,6 @@ func userEditApp(t *testing.T, db *gorm.DB, clients fakeClientLookup) *fiber.App
 	return app
 }
 
-// seedUserEditWork gives each test a clean engine state and one live work on
-// the kungal tenant (whose overlay is propose=open + automerge=review — the
-// posture a browser-borne editor actually meets).
 func seedUserEditWork(t *testing.T, db *gorm.DB) int64 {
 	t.Helper()
 	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work_title", "catalog_work"} {
@@ -61,8 +49,6 @@ func seedUserEditWork(t *testing.T, db *gorm.DB) int64 {
 	return work.ID
 }
 
-// seedUserEditOwnedWork is seedUserEditWork plus the wave-178 fact: the work
-// carries an owner uid, exactly as the submission mint / claim birth stamps it.
 func seedUserEditOwnedWork(t *testing.T, db *gorm.DB, ownerUID int64) int64 {
 	t.Helper()
 	work := seedUserEditWork(t, db)
@@ -73,11 +59,6 @@ func seedUserEditOwnedWork(t *testing.T, db *gorm.DB, ownerUID int64) int64 {
 }
 
 func userEditClients() fakeClientLookup {
-	// thirdPartyOwner is what makes the third row a THIRD-PARTY developer
-	// application (wave 186b): a non-null oauth_clients.owner_user_id. It is
-	// bound to letmoe — the trusted-lane tenant — on purpose, so the cap is
-	// tested where it actually bites rather than on a tenant that grants
-	// nothing.
 	thirdPartyOwner := uint(4040)
 	return fakeClientLookup{
 		"kungal-client": {ID: "kungal-client", CatalogSite: "kungal"},
@@ -91,7 +72,6 @@ func userEditClients() fakeClientLookup {
 	}
 }
 
-// userEditReq issues a request with an optional bearer token and JSON body.
 func userEditReq(t *testing.T, app *fiber.App, method, path, token, body string) (int, []byte) {
 	t.Helper()
 	var req = httptest.NewRequest(method, path, nil)
@@ -140,9 +120,6 @@ func decodeUserCreate(t *testing.T, raw []byte) userCreateEnvelope {
 	return env
 }
 
-// TestUserEdit_BehindTheSameGate: the new routes are not a second door. The
-// eight-row refusal matrix is the gate's own test (TestUserCoverVote_Refusals);
-// all that needs saying here is that these paths sit behind the same gate.
 func TestUserEdit_BehindTheSameGate(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := seedUserEditWork(t, db)
@@ -164,10 +141,6 @@ func TestUserEdit_BehindTheSameGate(t *testing.T) {
 	assert.EqualValues(t, 0, rows, "no refusal filed anything")
 }
 
-// TestUserEdit_ProposerAndSiteComeFromTheToken is the wave's doctrine pinned on
-// the row that lands in edit_proposal: a plain user's edit files an open
-// proposal whose proposer is the token's `id` and whose tenant is the token
-// client's catalog_site — neither value was on the wire.
 func TestUserEdit_ProposerAndSiteComeFromTheToken(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := seedUserEditWork(t, db)
@@ -196,21 +169,16 @@ func TestUserEdit_ProposerAndSiteComeFromTheToken(t *testing.T) {
 	assert.EqualValues(t, 501, row.ProposerUID)
 	assert.Equal(t, "kungal", row.Site)
 
-	// The work itself is untouched: an open proposal is not an edit.
 	var after model.CatalogWork
 	require.NoError(t, db.First(&after, work).Error)
 	assert.Equal(t, "利用者面テスト", after.DisplayName)
 
-	// The engine's ordinary refusals reach the wire through this face too.
 	status, raw = userEditReq(t, app, "POST", UserPrefix+"/edit/proposals",
 		userToken(t, 501, ScopeCatalogEdit, "kungal-client"),
 		fmt.Sprintf(`{"entity_type":"catalog.work","entity_id":%d,"patch":{"catalog.work.ghost":"x"}}`, work))
 	assert.Equal(t, fiber.StatusUnprocessableEntity, status, string(raw))
 }
 
-// TestUserEdit_AdminTokenAutomerges proves the roles really flow from the token
-// through the family's permission resolver: the SAME request that waits for
-// review above lands directly when the token carries the admin role.
 func TestUserEdit_AdminTokenAutomerges(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := seedUserEditWork(t, db)
@@ -233,9 +201,6 @@ func TestUserEdit_AdminTokenAutomerges(t *testing.T) {
 	assert.Equal(t, "管理者直編", after.DisplayName)
 }
 
-// TestUserEdit_Withdraw: taking a proposal back needs no body, because the only
-// identity in play is the token's — and it is checked twice, once against the
-// proposal's tenant and once against its proposer.
 func TestUserEdit_Withdraw(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := seedUserEditWork(t, db)
@@ -254,13 +219,10 @@ func TestUserEdit_Withdraw(t *testing.T) {
 
 	id := file(601)
 
-	// Another tenant's token is refused before the proposer check is reached:
-	// the proposal is not that tenant's to close.
 	status, raw := userEditReq(t, app, "POST", withdrawPath(id),
 		userToken(t, 601, ScopeCatalogEdit, "letmoe-client"), "")
 	assert.Equal(t, fiber.StatusForbidden, status, string(raw))
 
-	// Same tenant, different user: the engine's proposer check refuses it.
 	status, raw = userEditReq(t, app, "POST", withdrawPath(id),
 		userToken(t, 602, ScopeCatalogEdit, "kungal-client"), "")
 	assert.Equal(t, fiber.StatusForbidden, status, string(raw))
@@ -269,7 +231,6 @@ func TestUserEdit_Withdraw(t *testing.T) {
 	require.NoError(t, db.Raw(`SELECT status FROM edit_proposal WHERE id = ?`, id).Scan(&stillOpen).Error)
 	assert.Equal(t, editing.StatusOpen, stillOpen, "neither refusal closed it")
 
-	// The proposer's own token closes it.
 	status, raw = userEditReq(t, app, "POST", withdrawPath(id),
 		userToken(t, 601, ScopeCatalogEdit, "kungal-client"), "")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
@@ -281,8 +242,6 @@ func TestUserEdit_Withdraw(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &closed))
 	assert.Equal(t, "withdrawn", closed.Data.Status)
 
-	// Withdrawing a closed proposal is a 409, and an unknown id a 404 — the
-	// engine's answers, mapped by the S2S face's own error taste.
 	status, _ = userEditReq(t, app, "POST", withdrawPath(id),
 		userToken(t, 601, ScopeCatalogEdit, "kungal-client"), "")
 	assert.Equal(t, fiber.StatusConflict, status)
@@ -291,9 +250,6 @@ func TestUserEdit_Withdraw(t *testing.T) {
 	assert.Equal(t, fiber.StatusNotFound, status)
 }
 
-// TestUserEdit_SchemaProjectsTheToken: the projection is the CALLER's, and the
-// caller cannot be named on the wire. Two tokens, same entity type, different
-// answers — and the actor query parameters the S2S op accepts do nothing here.
 func TestUserEdit_SchemaProjectsTheToken(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := seedUserEditWork(t, db)
@@ -344,22 +300,16 @@ func TestUserEdit_SchemaProjectsTheToken(t *testing.T) {
 	assert.True(t, review, "the admin role arrives as a claim and resolves to the review perm")
 	assert.True(t, automerge)
 
-	// Asking to be somebody else changes nothing: this op declares no actor
-	// parameters, so the strings below are inert query noise.
 	spoofed := get(base+"&user_id=777&roles=admin&trust_tier=4&is_entity_owner=true&site=letmoe",
 		userToken(t, 501, ScopeCatalogEdit, "kungal-client"))
 	assert.Equal(t, plain.Data.Fields, spoofed.Data.Fields,
 		"no query parameter can promote the caller")
 }
 
-// ---- the moderation ops (wave 178) -----------------------------------------
-
 func userEditPath(id int64, verb string) string {
 	return fmt.Sprintf("%s/edit/proposals/%d/%s", UserPrefix, id, verb)
 }
 
-// fileUserProposal files an open proposal on kungal as a plain user and returns
-// its id — the subject every moderation test below decides on.
 func fileUserProposal(t *testing.T, app *fiber.App, work int64, uid uint, name string) int64 {
 	t.Helper()
 	status, raw := userEditReq(t, app, "POST", UserPrefix+"/edit/proposals",
@@ -371,17 +321,11 @@ func fileUserProposal(t *testing.T, app *fiber.App, work int64, uid uint, name s
 	return env.Data.Proposal.ID
 }
 
-// TestUserEdit_OwnershipIsACatalogFact is the wave's doctrine: the entry's
-// creator reviews their own entry on the user face, and NOTHING on the wire
-// said so. The uid is the token's, the ownership is the catalog's own column,
-// and the engine puts the two together.
 func TestUserEdit_OwnershipIsACatalogFact(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := seedUserEditOwnedWork(t, db, 901)
 	app := userEditApp(t, db, userEditClients())
 
-	// The schema projection already answers it: the owner may review, a
-	// stranger with the same (empty) roles may not.
 	canReview := func(uid uint) bool {
 		status, raw := userEditReq(t, app, "GET",
 			fmt.Sprintf("%s/edit/schema/catalog.work?entity_id=%d", UserPrefix, work),
@@ -406,7 +350,6 @@ func TestUserEdit_OwnershipIsACatalogFact(t *testing.T) {
 	assert.True(t, canReview(901), "the owner's own token projects can_review (kungal overlay: OwnerReview)")
 	assert.False(t, canReview(902), "a stranger's token projects nothing of the sort")
 
-	// And it holds on the write: a stranger's merge is refused, the owner's lands.
 	id := fileUserProposal(t, app, work, 902, "他人の提案")
 	status, raw := userEditReq(t, app, "POST", userEditPath(id, "merge"),
 		userToken(t, 903, ScopeCatalogEdit, "kungal-client"), `{}`)
@@ -420,7 +363,6 @@ func TestUserEdit_OwnershipIsACatalogFact(t *testing.T) {
 	require.NoError(t, db.First(&after, work).Error)
 	assert.Equal(t, "他人の提案", after.DisplayName, "the owner's merge landed the patch")
 
-	// A second merge of the same proposal is a 409, and an unknown id a 404.
 	status, _ = userEditReq(t, app, "POST", userEditPath(id, "merge"),
 		userToken(t, 901, ScopeCatalogEdit, "kungal-client"), `{}`)
 	assert.Equal(t, fiber.StatusConflict, status)
@@ -429,12 +371,9 @@ func TestUserEdit_OwnershipIsACatalogFact(t *testing.T) {
 	assert.Equal(t, fiber.StatusNotFound, status)
 }
 
-// TestUserEdit_ModerationNeedsAuthority: the four moderation ops are gated by
-// the SAME per-field review rule the S2S face applies — a plain token is
-// refused everywhere, an admin token (roles from the claims) is not.
 func TestUserEdit_ModerationNeedsAuthority(t *testing.T) {
 	db := openCatalogTestDB(t)
-	work := seedUserEditWork(t, db) // no owner: authority can only come from roles
+	work := seedUserEditWork(t, db)
 	app := userEditApp(t, db, userEditClients())
 
 	plain := func(uid uint) string { return userToken(t, uid, ScopeCatalogEdit, "kungal-client") }
@@ -447,15 +386,11 @@ func TestUserEdit_ModerationNeedsAuthority(t *testing.T) {
 			`{"entity_type":"catalog.work","entity_id":%d,"to_seq":%d,"note":"undo"}`, work, seq)
 	}
 
-	// A plain user may propose, and may do nothing else.
 	id := fileUserProposal(t, app, work, 502, "平民の提案")
 	for _, tc := range []struct{ path, body string }{
 		{userEditPath(id, "amendments"), amendBody},
 		{userEditPath(id, "merge"), `{"note":"x"}`},
 		{userEditPath(id, "decline"), `{"note":"x"}`},
-		// revert is refused for the same reason, and is asserted below once the
-		// entity has a revision to be put back to (with none, the engine's 404
-		// answers first).
 	} {
 		status, raw := userEditReq(t, app, "POST", tc.path, plain(502), tc.body)
 		assert.Equal(t, fiber.StatusForbidden, status, "%s: %s", tc.path, raw)
@@ -464,7 +399,6 @@ func TestUserEdit_ModerationNeedsAuthority(t *testing.T) {
 	require.NoError(t, db.Raw(`SELECT status FROM edit_proposal WHERE id = ?`, id).Scan(&stillOpen).Error)
 	assert.Equal(t, editing.StatusOpen, stillOpen, "no refusal decided anything")
 
-	// The same requests with an admin token: amend, then decline.
 	status, raw := userEditReq(t, app, "POST", userEditPath(id, "amendments"), admin(777), amendBody)
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var amended struct {
@@ -477,7 +411,6 @@ func TestUserEdit_ModerationNeedsAuthority(t *testing.T) {
 	assert.EqualValues(t, 777, amended.Data.AmenderUID, "the amender is the token's id")
 	assert.Equal(t, "審査済み", amended.Data.Set["catalog.work.display_name"])
 
-	// The detail read returns the amendment and the effective patch.
 	status, raw = userEditReq(t, app, "GET",
 		fmt.Sprintf("%s/edit/proposals/%d", UserPrefix, id), plain(502), "")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
@@ -508,8 +441,6 @@ func TestUserEdit_ModerationNeedsAuthority(t *testing.T) {
 	require.NotNil(t, closed.Data.DecidedByUID)
 	assert.EqualValues(t, 777, *closed.Data.DecidedByUID, "the decider is the token's id")
 
-	// Revert: the admin direct-edits twice (revisions 1 and 2), then puts the
-	// entity back — through the same review authority a merge needs.
 	for _, name := range []string{"第一版", "第二版"} {
 		status, raw = userEditReq(t, app, "POST", UserPrefix+"/edit/proposals",
 			admin(777), userProposalBody(work, name, ""))
@@ -540,10 +471,6 @@ func TestUserEdit_ModerationNeedsAuthority(t *testing.T) {
 	assert.Equal(t, "第一版", after.DisplayName)
 }
 
-// TestUserEdit_ModerationIsFencedAndUnspoofable: every new op refuses a
-// proposal filed on another tenant, and no request field can name a different
-// actor — the two ways this face could have leaked back into "the caller says
-// who it is".
 func TestUserEdit_ModerationIsFencedAndUnspoofable(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := seedUserEditOwnedWork(t, db, 901)
@@ -551,7 +478,6 @@ func TestUserEdit_ModerationIsFencedAndUnspoofable(t *testing.T) {
 
 	id := fileUserProposal(t, app, work, 902, "越境される提案")
 
-	// A letmoe token — admin roles and all — cannot touch a kungal proposal.
 	letmoeAdmin := userTokenRoles(t, 901, ScopeCatalogEdit, "letmoe-client", "user", "admin")
 	for _, tc := range []struct {
 		method, path, body string
@@ -565,10 +491,6 @@ func TestUserEdit_ModerationIsFencedAndUnspoofable(t *testing.T) {
 		assert.Equal(t, fiber.StatusForbidden, status, "%s %s: %s", tc.method, tc.path, raw)
 	}
 
-	// Spoofing: the S2S bodies' identity fields do not exist here, so a request
-	// carrying them is rejected outright rather than obeyed. What matters is
-	// only that it never decides anything — the status may be 422 (the schema
-	// knows no such field) or 403 (the caller's real authority), never 200.
 	for _, body := range []string{
 		`{"note":"x","actor":{"user_id":901,"roles":["admin"],"is_entity_owner":true}}`,
 		`{"note":"x","site":"letmoe"}`,
@@ -586,7 +508,6 @@ func TestUserEdit_ModerationIsFencedAndUnspoofable(t *testing.T) {
 	require.NoError(t, db.Raw(`SELECT status FROM edit_proposal WHERE id = ?`, id).Scan(&stillOpen).Error)
 	assert.Equal(t, editing.StatusOpen, stillOpen, "nothing above decided the proposal")
 
-	// The token's OWN user still reads its own tenant's proposal.
 	status, raw = userEditReq(t, app, "GET",
 		fmt.Sprintf("%s/edit/proposals/%d", UserPrefix, id),
 		userToken(t, 902, ScopeCatalogEdit, "kungal-client"), "")
@@ -597,12 +518,6 @@ func TestUserEdit_ModerationIsFencedAndUnspoofable(t *testing.T) {
 	assert.Equal(t, fiber.StatusNotFound, status)
 }
 
-// TestUserEditActor_TrustTierComesFromThePermissionKey pins the wave-183 door
-// itself, without a database: the actor's trust tier is not a constant any more
-// but a reading of the token's roles through the catalog permission vocabulary.
-// A role bundle carrying catalog.edit.trusted writes at editing.TrustedTier —
-// the only tier value any engine rule compares against — and every other role
-// keeps the old tier 0.
 func TestUserEditActor_TrustTierComesFromThePermissionKey(t *testing.T) {
 	client := &siteModel.OAuthClient{ID: "letmoe-client", CatalogSite: "letmoe"}
 	actorFor := func(roles ...string) dto.EditActor {
@@ -620,9 +535,6 @@ func TestUserEditActor_TrustTierComesFromThePermissionKey(t *testing.T) {
 		assert.Equal(t, editing.TrustedTier, actorFor("user", role).TrustTier,
 			"%s holds catalog.edit.trusted through the code bundles", role)
 	}
-	// Trust is orthogonal to moderation, and creator is a product-side role the
-	// CODE bundles say nothing about (a site grants it the key through the
-	// permission-console overlay, which this test does not install).
 	for _, role := range []string{"user", "creator", "moderator", "no_such_role"} {
 		assert.EqualValues(t, 0, actorFor(role).TrustTier,
 			"%s does not hold catalog.edit.trusted in the code bundles", role)
@@ -630,11 +542,6 @@ func TestUserEditActor_TrustTierComesFromThePermissionKey(t *testing.T) {
 	assert.EqualValues(t, 0, actorFor().TrustTier, "no roles at all grants nothing")
 }
 
-// TestUserEdit_TrustedLaneWorksOnTheUserFace is the same door end to end, on the
-// overlay that needed it: letmoe's work policy is propose=trusted, so before
-// wave 183 EVERY user-token filing on a letmoe tenant was a 403 and letmoe's
-// trusted lane could only live on the S2S face. A token whose roles carry
-// catalog.edit.trusted now files there; one without it is still refused.
 func TestUserEdit_TrustedLaneWorksOnTheUserFace(t *testing.T) {
 	db := openCatalogTestDB(t)
 	work := seedUserEditWork(t, db)
@@ -654,9 +561,6 @@ func TestUserEdit_TrustedLaneWorksOnTheUserFace(t *testing.T) {
 	env := decodeUserCreate(t, raw)
 	assert.Equal(t, "letmoe", env.Data.Proposal.Site)
 	assert.EqualValues(t, 611, env.Data.Proposal.ProposerUID)
-	// letmoe automerges on OWNER, not on tier: this work is unclaimed, so the
-	// trusted filing legitimately waits in the queue. What the tier bought is
-	// the right to file at all.
 	assert.False(t, env.Data.Merged)
 
 	var rows int64

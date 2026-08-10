@@ -1,20 +1,3 @@
-// catalog-image-refping keeps catalog CHARACTER portraits alive in the image
-// service (TTL: >365d unreferenced → soft-deleted, +30d → physical delete).
-// Portraits are set-once (step-48 backfill) so without this daily ping they only
-// ever get the single upload-time TTL touch and vanish ~13 months later.
-//
-// This is a thin shell. The logic lives in internal/jobs (single source of
-// truth) so the in-process scheduler and this CLI run identical code. The job
-// authenticates as the catalog image client (site_key "catalog") — reference-ping
-// is site-scoped, so any other identity 404s every hash and portraits rot.
-//
-//	go run ./cmd/catalog-image-refping --dry-run
-//
-// Flags:
-//
-//	--batch=1000    hashes per reference-ping request (max 1000)
-//	--timeout=30m   overall run timeout
-//	--dry-run       collect + log the hash count, do not call image_service
 package main
 
 import (

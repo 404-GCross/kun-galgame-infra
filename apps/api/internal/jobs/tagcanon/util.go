@@ -4,8 +4,6 @@ import "sort"
 
 const maxGroupSamples = 40
 
-// topGroups digests the decided groups into the widest-first sample list (source
-// count desc, then member count desc, then canonical name), capped.
 func topGroups(groups []group) []GroupSample {
 	out := make([]GroupSample, 0, len(groups))
 	for _, g := range groups {

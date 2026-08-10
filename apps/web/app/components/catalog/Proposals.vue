@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// The merge-proposal bucket: approve starts the mandatory 48h cooling-off;
-// execute is client-disabled until execute_after and server-enforced anyway
-// (a premature execute answers 422 with the deadline — the client clock is
-// never trusted, the server message is always surfaced).
 import {
   CATALOG_FILTER_ALL,
   CATALOG_ENTITY_TYPES,
@@ -52,7 +48,6 @@ const statusTabs = computed(() => [
   }))
 ])
 
-// Entity-type filter options for the KunSelect (FILTER_ALL + each type).
 const entityTypeOptions = computed(() => [
   { value: CATALOG_FILTER_ALL, label: '全部类型' },
   ...Object.entries(CATALOG_ENTITY_TYPES).map(([id, label]) => ({
@@ -61,8 +56,6 @@ const entityTypeOptions = computed(() => [
   }))
 ])
 
-// Ticking clock for the cooling-off countdown (display only — the server
-// re-checks on execute).
 const now = ref(Date.now())
 let tick: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
@@ -83,10 +76,6 @@ const coolingRemaining = (p: CatalogProposalItem): string | null => {
   return `${h} 小时 ${m} 分`
 }
 
-// field_resolution is datatypes.JSON on the wire (a JSON object), though the
-// generated type mislabels it `string` (Huma reflects []byte). Render it only
-// when it actually carries keys, stringified — otherwise the raw object prints
-// "[object Object]" and the old `!== '{}'` guard (string compare) never fired.
 const fieldResolutionText = (p: CatalogProposalItem): string => {
   const fr = p.field_resolution as unknown
   if (typeof fr === 'string') return fr && fr !== '{}' ? fr : ''
@@ -127,8 +116,6 @@ const act = async (
       useKunMessage(messages[action] ?? '完成', 'success')
       await refresh()
     } else {
-      // Honest surfacing: 422 carries the cooling-off deadline, 409 the
-      // conflicting state — always show the server's message verbatim.
       useKunMessage(res.message || '操作失败', 'error')
     }
   } finally {

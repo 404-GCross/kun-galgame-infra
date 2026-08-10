@@ -1,9 +1,6 @@
 <script setup lang="ts">
 const api = useApi()
 
-// SSR-rendered list (kungal-style): useApiFetch runs on the server so the
-// sites are in the first-paint HTML. refresh() re-fetches client-side after
-// a create / edit / delete.
 const { data: sitesData, status, refresh } = await useApiFetch<Site[]>('/sites')
 const sites = computed(() => sitesData.value ?? [])
 const isLoading = computed(() => status.value === 'pending')

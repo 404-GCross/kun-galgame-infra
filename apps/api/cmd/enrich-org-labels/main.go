@@ -1,24 +1,3 @@
-// enrich-org-labels lands the E2b org/label enrichment wave (refs/proj/83):
-// intros, aliases and external links onto the labels anchored by E2a
-// (reconcile-org-labels). All facets are fill-missing and idempotent.
-//
-//   - intro: VNDB producer descriptions (markup-stripped, 3-way lang) + Bangumi
-//     company/group summaries → catalog_label_intro.
-//   - alias: VNDB aliases (spelling variant) + EG furigana (search hint) →
-//     catalog_label_alias.
-//   - link:  EG official site / twitter / cien + Bangumi infobox site / twitter
-//     → catalog_external_ref(link_kind=related).
-//   - cien:  Ci-en creator profiles (kun-dlsite-api crawl, refs/proj/85/86) —
-//     description → catalog_label_intro(source=cien) + twitter/self links,
-//     mapped purely via dlsite_maker_ids ∩ dlsite label anchors
-//     (--dlsite-dsn REQUIRED; runs alone, not part of --facet all).
-//
-// Run E2a first — enrichment follows the anchors. The catalog DSN (--dsn,
-// REQUIRED) hosts src_vndb / src_bangumi; erogamespace is a separate database
-// (--eg-dsn). Dry-run is the default.
-//
-//	go run ./cmd/enrich-org-labels --facet all --dsn "$DSN"           # dry run
-//	go run ./cmd/enrich-org-labels --facet all --dsn "$DSN" --apply   # write (×2 = idempotent)
 package main
 
 import (

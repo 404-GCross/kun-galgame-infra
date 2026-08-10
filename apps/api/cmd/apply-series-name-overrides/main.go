@@ -1,28 +1,3 @@
-// apply-series-name-overrides loads reviewed display names for the derived
-// series lane (wave 185) into catalog_series_name_override, where the builder
-// consults them (see internal/jobs/derivedseries: an override wins only while
-// its member-hash still matches, so this tool snapshots the CURRENT membership
-// as the hash at load time).
-//
-// It writes the override table ONLY. Nothing a reader sees changes until the
-// next build-derived-series --apply pass — the builder stays the lane's single
-// writer.
-//
-// Input is jsonl, one {"external_id": "comp:123", "display_name": "..."} per
-// line. Every row is validated before it counts:
-//
-//   - the series must exist in the derived lane right now;
-//   - the name must be non-empty and, NFKC-case-folded, a substring of at least
-//     one CURRENT member title. The reviewer (an LLM wave) is allowed to pick
-//     and trim a name, never to invent one — this check is what makes that a
-//     property of the table rather than a hope about the prompt.
-//
-// Dry-run is the DEFAULT; --limit N caps how many rows apply writes (the
-// rehearsal discipline: first run --apply --limit 20, eyeball, then the rest).
-//
-//	go run ./cmd/apply-series-name-overrides --input names.jsonl \
-//	    --reviewed-by "wave185-fable" \
-//	    --dsn "host=localhost port=5432 user=postgres dbname=kun_catalog sslmode=disable"
 package main
 
 import (
@@ -101,9 +76,6 @@ func main() {
 		seen[row.ExternalID] = true
 		name := strings.TrimSpace(row.DisplayName)
 
-		// Current membership — both the hash snapshot and the honesty check
-		// read the same rows, so the override is verified against exactly the
-		// state it will be keyed to.
 		var members []struct {
 			WorkID int64  `gorm:"column:work_id"`
 			Title  string `gorm:"column:display_name"`

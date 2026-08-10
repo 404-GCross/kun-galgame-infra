@@ -17,9 +17,6 @@ import (
 	"gorm.io/datatypes"
 )
 
-// decodeMap / decodeStrings render stored JSONB documents for the wire; the
-// engine wrote them, so a decode failure is a programming error — the view
-// then carries a nil field rather than failing the whole read.
 func decodeMap(raw datatypes.JSON) (map[string]any, error) {
 	var m map[string]any
 	err := json.Unmarshal(raw, &m)
@@ -32,40 +29,13 @@ func decodeStrings(raw datatypes.JSON) []string {
 	return s
 }
 
-// The editing-engine S2S face. Registered under /api/v1/catalog so the existing
-// path-scoped S2SAuth (Basic client credentials) gates it. The public /v1 face
-// exposes NONE of this.
-//
-// Wave 181 shrank the face to six ops by moving everything a HUMAN performs to
-// the user-token plane (user_edit.go), leaving create / withdraw / schema here
-// for backends that authenticate their own user. Wave 185 retires those three
-// too: letmoe migrated, and neither the cross-repo sweep nor 48h of production
-// logs found another caller — so the last place a body could ASSERT "I am user
-// N" is closed rather than deprecated in place.
-//
-// What is left is the READ plane, and it needs no actor: the proposal LIST,
-// whose proposer_uid names the person being looked at rather than the caller
-// claiming to be them, and the revision log + diff, which are public version
-// history and belong to nobody. The face therefore no longer has a write path,
-// which is why no operation here consults the client's catalog_site binding
-// any more.
-
-// PermResolvers routes an entity family to the permission vocabulary its
-// asserted roles evaluate through (E3a ruling 1). The face hardcodes no
-// family name — assembly points register whatever families they serve,
-// exactly like the EntityTypeSpec registrations; a family absent from the
-// map fails closed (every perm-gated rule denies).
 type PermResolvers map[string]authz.Checker
 
-// EditServer holds the editing operations' dependencies.
 type EditServer struct {
 	engine *editing.Engine
 	perms  PermResolvers
 }
 
-// SetupEdit registers the editing operations on the S2S Huma API built by
-// Setup. Callable with a nil engine/resolver map for spec export (handlers
-// never run).
 func SetupEdit(api huma.API, engine *editing.Engine, perms PermResolvers) {
 	s := &EditServer{engine: engine, perms: perms}
 	tags := []string{"catalog-edit"}
@@ -84,27 +54,11 @@ func SetupEdit(api huma.API, engine *editing.Engine, perms PermResolvers) {
 	}, s.diff)
 }
 
-// familyOf derives the entity family from a registered entity type — its
-// first dotted segment (the wire carries no family; E0 deviation 8). An
-// unknown type resolves to a family absent from the resolver map, which
-// fails closed.
 func familyOf(entityType string) string {
 	family, _, _ := strings.Cut(entityType, ".")
 	return family
 }
 
-// policyCtx builds the engine policy context from an asserted actor: roles
-// resolve through the FAMILY's perm vocabulary (fail-closed when the family
-// registered no resolver), trust tier passes through.
-//
-// It takes the REQUEST context, not just the actor, because one input into the
-// engine's rules is not a property of the person at all: the client their token
-// was issued through (wave 187a). Deriving it here rather than on dto.EditActor
-// is deliberate — there is exactly one place in this package where an engine
-// PolicyContext is born, so no present or future op can build one that forgot
-// to ask. A caller that authenticated without a client (the S2S read plane,
-// spec export) is not capped: the cap keys on a client that IS third-party,
-// never on the absence of one.
 func (s *EditServer) policyCtx(ctx context.Context, actor dto.EditActor, site, family string) editing.PolicyContext {
 	roles := actor.Roles
 	resolver := s.perms[family]
@@ -121,7 +75,6 @@ func (s *EditServer) policyCtx(ctx context.Context, actor dto.EditActor, site, f
 	}
 }
 
-// editErr maps engine errors onto the house envelope.
 func editErr(err error) error {
 	var (
 		unknownField *editing.UnknownFieldError
@@ -130,11 +83,6 @@ func editErr(err error) error {
 		permission   *editing.PermissionError
 		conflict     *editing.ConflictError
 	)
-	// The wave-155 mirror gate used to take the first case here, 409ing an
-	// otherwise valid patch on a facet a duty-chain step still owned. Wave 161
-	// retired those steps, so the gate and its case are gone: every registered
-	// field now has exactly one persistent writer, which is the state the gate
-	// existed to hold the line for.
 	switch {
 	case stderrors.Is(err, editing.ErrProposalNotFound),
 		stderrors.Is(err, editing.ErrRevisionNotFound),
@@ -159,8 +107,6 @@ func editErr(err error) error {
 	return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 }
 
-// ---- views -----------------------------------------------------------------
-
 func proposalView(p *editing.Proposal) dto.EditProposalView {
 	v := dto.EditProposalView{
 		ID: p.ID, EntityFamily: p.EntityFamily, EntityType: p.EntityType, EntityID: p.EntityID,
@@ -182,9 +128,6 @@ func revisionView(r *editing.Revision) dto.EditRevisionView {
 	}
 	v.Snapshot, _ = decodeMap(r.Snapshot)
 	v.ChangedFields = decodeStrings(r.ChangedFields)
-	// Migrated rows (E2) carry honest provenance: the original action word
-	// and the old-wire note/minor flag out of legacy_meta. New-era rows have
-	// neither — the engine never writes these columns.
 	if r.LegacyAction != nil {
 		v.LegacyAction = *r.LegacyAction
 	}
@@ -215,8 +158,6 @@ func amendmentViews(items []editing.ProposalAmendment) []dto.EditAmendmentView {
 	}
 	return out
 }
-
-// ---- operations ------------------------------------------------------------
 
 type editListInput struct {
 	EntityType  string `query:"entity_type" doc:"Filter to one entity type"`
@@ -263,10 +204,6 @@ type editGetInput struct {
 	ID int64 `path:"id"`
 }
 
-// editGetInput and the output shapes below back ops that this face no longer
-// registers — they are the user plane's (user_edit.go), declared here so both
-// faces answer with byte-identical envelopes. Moving them would only make two
-// copies free to drift.
 type editGetOutput struct {
 	Body Envelope[dto.EditProposalView]
 }

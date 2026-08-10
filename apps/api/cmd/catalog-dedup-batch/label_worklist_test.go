@@ -14,11 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLabelClassMapsToLabelEntity is the loader-level half of the step-175
-// lane: "label" is an accepted worklist class and it must map to the LABEL
-// entity type, not to the character default entityTypeOf falls back to. A class
-// that parses but types wrong would open a character proposal against label
-// ids — a merge of two unrelated rows that happen to share the number.
 func TestLabelClassMapsToLabelEntity(t *testing.T) {
 	groups, err := loadWorklist(writeWorklist(t,
 		`{"class":"label","survivor":11871,"sources":[12775],"evidence":{"anchors":"dlsite VG02008 vs VG01282"}}`))
@@ -30,12 +25,6 @@ func TestLabelClassMapsToLabelEntity(t *testing.T) {
 	assert.Equal(t, model.EntityTypeLabel, entityTypeOf(classLabel))
 }
 
-// TestLabelWorklistMergesBrandFacets is the wave-175 duplicate pair as a test:
-// two labels imported from two DLsite maker ids for one brand. What a label
-// merge owes, per the rehang list, is that the loser's brand edges, aliases,
-// intros and credits all arrive on the survivor, the loser is soft-deleted
-// behind a redirect, and — unlike a person merge — the HOST WORK is touched,
-// because a work renders its labels.
 func TestLabelWorklistMergesBrandFacets(t *testing.T) {
 	for _, tbl := range []string{
 		"catalog_merge_proposal", "catalog_redirect", "catalog_external_ref",
@@ -54,8 +43,6 @@ func TestLabelWorklistMergesBrandFacets(t *testing.T) {
 	require.NoError(t, testDB.Create(&host).Error)
 	require.NoError(t, testDB.Create(&loser).Error)
 
-	// One work per side — the loser's edge must move, and BOTH works' read
-	// faces change (one gains the survivor label, one loses the loser label).
 	hostWork := model.CatalogWork{DisplayName: "H", MediumID: 1}
 	loserWork := model.CatalogWork{DisplayName: "L", MediumID: 1}
 	require.NoError(t, testDB.Create(&hostWork).Error)
@@ -69,8 +56,6 @@ func TestLabelWorklistMergesBrandFacets(t *testing.T) {
 	require.NoError(t, testDB.Create(&model.CatalogLabelAlias{
 		LabelID: loser.ID, Name: "チーム暗黒媒体", Kind: model.AliasKindSpellingVariant}).Error)
 
-	// Two EXACT dlsite maker ids, one per side: after the merge they both hang
-	// off the survivor and both demote to probable (the review queue).
 	for _, ref := range []model.CatalogExternalRef{
 		{EntityType: model.EntityTypeLabel, EntityID: host.ID, SourceID: 4, ExternalID: "VG02008", LinkKind: model.LinkKindExact},
 		{EntityType: model.EntityTypeLabel, EntityID: loser.ID, SourceID: 4, ExternalID: "VG01282", LinkKind: model.LinkKindExact},

@@ -11,11 +11,6 @@ import (
 	"api/internal/platform/editing"
 )
 
-// E1 acceptance lines: the catalog.work.titles list field (validate / apply
-// full-replace / display_name derivation / round-trips) and the letmoe site
-// overlay (trusted propose + owner automerge) end to end.
-
-// title builds one wire-shaped element (decoded JSON: map + float64 kind).
 func title(lang, name string, kind int16) map[string]any {
 	return map[string]any{"lang": lang, "title": name, "kind": float64(kind)}
 }
@@ -26,15 +21,10 @@ func titleLatin(lang, name, latin string, kind int16) map[string]any {
 	return el
 }
 
-// letmoeActor mirrors the letmoe BFF assertion posture: site=letmoe, roles
-// asserted EMPTY (nil HasPerm fails closed — tenant users never carry the
-// global curation perms), rights come from trust tier + the site overlay.
 func letmoeActor(uid int64, tier int16) editing.PolicyContext {
 	return editing.PolicyContext{UserID: uid, Site: "letmoe", TrustTier: tier}
 }
 
-// nextProductID keeps (medium, site, product_work_id) claims unique across
-// subtests (uq_catalog_work_claim).
 var nextProductID int64 = 4242
 
 func createClaimedWork(t *testing.T, site string, displayName, olang string) *model.CatalogWork {
@@ -120,16 +110,11 @@ func TestTitlesApplyAndDerivation(t *testing.T) {
 
 	t.Run("full replace + olang official wins", func(t *testing.T) {
 		work := createWork(t, "旧名")
-		// Pre-existing row that the full replace must remove.
 		if err := testDB.Create(&model.CatalogWorkTitle{
 			WorkID: work.ID, Lang: "en", Title: "stale", Kind: model.WorkTitleKindAlias,
 		}).Error; err != nil {
 			t.Fatal(err)
 		}
-		// A search_hint row the dlsite importer owns. Since wave 155 it is
-		// neither part of the value nor part of the replace scope, so it must
-		// still be here afterwards (TestTitlesReplaceLeavesTheSearchHintLane
-		// pins the whole rule).
 		if err := testDB.Create(&model.CatalogWorkTitle{
 			WorkID: work.ID, Lang: "ja", Title: "にほんごめい", Kind: model.WorkTitleKindSearchHint,
 		}).Error; err != nil {
@@ -144,8 +129,6 @@ func TestTitlesApplyAndDerivation(t *testing.T) {
 		if len(rows) != 3 {
 			t.Fatalf("rows after replace: %+v", rows)
 		}
-		// The importer row keeps its (older) id, so the editorial rows — which
-		// the replace re-inserted in array order — follow it.
 		if rows[0].Kind != model.WorkTitleKindSearchHint ||
 			rows[1].Title != "中文名" || rows[2].Title != "日本語名" {
 			t.Fatalf("row order/content: %+v", rows)
@@ -157,14 +140,13 @@ func TestTitlesApplyAndDerivation(t *testing.T) {
 		if err := testDB.First(&w, work.ID).Error; err != nil {
 			t.Fatal(err)
 		}
-		// olang=ja → the ja official wins even though zh comes first.
 		if w.DisplayName != "日本語名" {
 			t.Fatalf("derived display_name: %q", w.DisplayName)
 		}
 	})
 
 	t.Run("no olang official falls back to first official", func(t *testing.T) {
-		work := createWork(t, "旧名") // olang=ja
+		work := createWork(t, "旧名")
 		mergeTitles(t, work.ID, []any{
 			title("zh", "中文名", 0),
 			title("en", "English Name", 0),
@@ -179,7 +161,7 @@ func TestTitlesApplyAndDerivation(t *testing.T) {
 	})
 
 	t.Run("same-merge olang change feeds the derivation", func(t *testing.T) {
-		work := createWork(t, "旧名") // olang=ja
+		work := createWork(t, "旧名")
 		mergeTitles(t, work.ID, []any{
 			title("ja", "日本語名", 0),
 			title("en", "English Name", 0),
@@ -188,7 +170,6 @@ func TestTitlesApplyAndDerivation(t *testing.T) {
 		if err := testDB.First(&w, work.ID).Error; err != nil {
 			t.Fatal(err)
 		}
-		// olang applied before titles (sorted key order) → en official wins.
 		if w.OLang != "en" || w.DisplayName != "English Name" {
 			t.Fatalf("after olang+titles merge: olang=%q display=%q", w.OLang, w.DisplayName)
 		}
@@ -202,8 +183,6 @@ func TestTitlesApplyAndDerivation(t *testing.T) {
 		if err := testDB.First(&w, work.ID).Error; err != nil {
 			t.Fatal(err)
 		}
-		// display_name applies before titles (sorted key order); the titles
-		// derivation is the invariant keeper and lands last. Pinned behavior.
 		if w.DisplayName != "タイトル" {
 			t.Fatalf("derivation must win: %q", w.DisplayName)
 		}
@@ -213,7 +192,6 @@ func TestTitlesApplyAndDerivation(t *testing.T) {
 		work := createWork(t, "旧名")
 		value := []any{titleLatin("ja", "同一", "douitsu", 0), title("zh", "同一中文", 1)}
 		mergeTitles(t, work.ID, value, nil)
-		// The same value again: the effective patch has no effective change.
 		prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 			EntityType: editspec.TypeWork, EntityID: work.ID,
 			Patch: map[string]any{editspec.FieldWorkTitles: value}, Actor: realActor(100, "admin"),
@@ -250,8 +228,6 @@ func TestTitlesApplyAndDerivation(t *testing.T) {
 	})
 }
 
-// The letmoe tenant policy end to end (02 号裁定 4): trusted propose + owner
-// automerge, with roles asserted empty (the BFF posture).
 func TestLetmoeSiteOverlay(t *testing.T) {
 	e := newEngine(t)
 
@@ -284,7 +260,7 @@ func TestLetmoeSiteOverlay(t *testing.T) {
 	})
 
 	t.Run("unclaimed work proposal stays open", func(t *testing.T) {
-		work := createWork(t, "公共作品") // unclaimed (Site nil)
+		work := createWork(t, "公共作品")
 		prop, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 			EntityType: editspec.TypeWork, EntityID: work.ID,
 			Patch: map[string]any{editspec.FieldWorkDisplayName: "公共作品・提案"},
@@ -296,7 +272,6 @@ func TestLetmoeSiteOverlay(t *testing.T) {
 		if rev != nil || prop.Status != editing.StatusOpen {
 			t.Fatalf("must stay open: rev=%v status=%d", rev, prop.Status)
 		}
-		// The existing review authority can still merge it.
 		if _, err := e.MergeProposal(testCtx, prop.ID, realActor(200, "ren"), "ok"); err != nil {
 			t.Fatalf("reviewer merge: %v", err)
 		}
@@ -331,7 +306,6 @@ func TestLetmoeSiteOverlay(t *testing.T) {
 
 	t.Run("nextmoe default site is unaffected by the overlay", func(t *testing.T) {
 		work := createClaimedWork(t, "letmoe", "自家作品", "ja")
-		// A trusted-but-permless actor on the DEFAULT site still may not propose.
 		nextmoeTrusted := editing.PolicyContext{UserID: 502, Site: "nextmoe", TrustTier: 4}
 		var permErr *editing.PermissionError
 		if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
@@ -344,12 +318,6 @@ func TestLetmoeSiteOverlay(t *testing.T) {
 	})
 }
 
-// A lang-less ALIAS is legal and must round-trip. This is the wave-161 P1
-// relaxation: the mirror has always written alias rows with an empty lang (41,373 of
-// them), so before this the field could not read back its own table — a full
-// replace loaded lang:"" and then failed its own validator, which meant the
-// only way to edit a title was to reap every alias the work had. Officials and
-// abbreviations keep the strict rule.
 func TestAliasMayHaveNoLanguage(t *testing.T) {
 	e := newEngine(t)
 	reviewer := realActor(200, "ren")
@@ -375,11 +343,6 @@ func TestAliasMayHaveNoLanguage(t *testing.T) {
 		t.Fatalf("stored rows: %+v", rows)
 	}
 
-	// The round trip is the point: what LoadSnapshot returns must be a value
-	// this field accepts, or the next full replace destroys the alias lane.
-	// Through JSON, because that is the only form the value ever travels in —
-	// the snapshot column is jsonb and every patch arrives decoded from the
-	// wire (parseTitles's own doc: "the wire truth: a decoded JSON array").
 	snapshot, err := e.CurrentSnapshot(testCtx, editspec.TypeWork, work.ID)
 	if err != nil {
 		t.Fatalf("current snapshot: %v", err)
@@ -401,7 +364,6 @@ func TestAliasMayHaveNoLanguage(t *testing.T) {
 	}
 }
 
-// Only an alias gets the exemption.
 func TestOnlyAliasMayHaveNoLanguage(t *testing.T) {
 	e := newEngine(t)
 	work := createWork(t, "alias lang negative")

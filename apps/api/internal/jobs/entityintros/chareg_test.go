@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// backdated is stamped on freshly created works so any TouchWorks bump is
-// unambiguous (GORM writes now() on create).
 var backdated = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func mkWork(t *testing.T, name string) int64 {
@@ -39,8 +37,6 @@ func workUpdatedAt(t *testing.T, id int64) time.Time {
 	return ts
 }
 
-// mkAppearance inserts one erogamespace appearance row. Only raw is written —
-// pk / game / character_id are generated columns, exactly as in the mirror.
 func mkAppearance(t *testing.T, game, character, stage int, netabare bool, text string) {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{
@@ -59,10 +55,6 @@ func charIntro(t *testing.T, characterID int64) model.CatalogCharacterIntro {
 	return row
 }
 
-// TestCharEGLane drives the char-eg lane end to end through the real Run entry
-// point: text selection across several appearances, the netabare exclusion,
-// fill-missing against a foreign-source ja row, the dry-run forecast, the
-// host-work touch and second-pass idempotency.
 func TestCharEGLane(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -83,26 +75,20 @@ func TestCharEGLane(t *testing.T) {
 		mkAnchor(t, model.EntityTypeCharacter, ch, reg.egSource, egID, model.LinkKindExact)
 	}
 
-	// Longest wins, and the longest text of all is a spoiler that must lose.
 	const longest = "とても長い紹介文です。ここが最長になります。"
 	mkAppearance(t, 20, 500, 1, false, "短い紹介。")
 	mkAppearance(t, 10, 500, 1, false, longest)
 	mkAppearance(t, 30, 500, 1, true, longest+"ネタバレはさらに長い。")
-	// Equal lengths → the smaller game id wins, regardless of insertion order.
 	mkAppearance(t, 40, 501, 1, false, "ゲーム四十の紹介。")
 	mkAppearance(t, 15, 501, 1, false, "ゲーム十五の紹介。")
 	mkAppearance(t, 60, 502, 1, false, "EG 側の紹介文。")
 	mkAppearance(t, 70, 503, 1, false, "一行目です。\r\n二行目です。")
-	// 504 has no appearance at all; 505 has only a spoiler one.
 	mkAppearance(t, 80, 505, 1, true, "ネタバレのみ。")
 
-	// A ja intro from ANOTHER source makes chDupJa a fill-missing skip.
 	require.NoError(t, testDB.Create(&model.CatalogCharacterIntro{
 		CharacterID: chDupJa, Lang: "ja", Intro: "既にある日本語紹介。", SourceID: reg.bangumiSource,
 	}).Error)
 
-	// Host works: the two that list chLongest must be bumped, the one that
-	// lists the skipped character must not.
 	hostA := mkWork(t, "host-a")
 	hostB := mkWork(t, "host-b")
 	hostSkipped := mkWork(t, "host-skipped")
@@ -110,7 +96,6 @@ func TestCharEGLane(t *testing.T) {
 	mkRosterEdge(t, hostB, chLongest)
 	mkRosterEdge(t, hostSkipped, chDupJa)
 
-	// --- dry run: decides, writes nothing, touches nothing.
 	st, err := Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Only: LaneCharEG})
 	require.NoError(t, err)
 	assert.Equal(t, 4, st.CharEG.Candidates, "chLongest chTie chDupJa chCRLF")
@@ -122,7 +107,6 @@ func TestCharEGLane(t *testing.T) {
 	assert.EqualValues(t, 1, charIntroCount(t, ""), "only the fixture row exists")
 	assert.Equal(t, backdated.UTC(), workUpdatedAt(t, hostA).UTC(), "dry run moves no watermark")
 
-	// --- apply.
 	st, err = Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Apply: true, Only: LaneCharEG})
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.CharEG.JaWritten)
@@ -145,7 +129,6 @@ func TestCharEGLane(t *testing.T) {
 	assert.True(t, bumpedB.After(backdated))
 	assert.Equal(t, backdated.UTC(), workUpdatedAt(t, hostSkipped).UTC(), "a skipped character bumps nothing")
 
-	// --- second apply: zero writes, and therefore zero touches.
 	st, err = Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Apply: true, Only: LaneCharEG})
 	require.NoError(t, err)
 	assert.Zero(t, st.CharEG.JaWritten, "second pass writes zero")
@@ -157,9 +140,6 @@ func TestCharEGLane(t *testing.T) {
 	assert.Equal(t, bumpedB.UTC(), workUpdatedAt(t, hostB).UTC())
 }
 
-// TestCharEGRequiresDSN pins the "never guess a DSN" discipline: the lane is
-// refused without an erogamespace DSN, while a --only run on an in-DB lane
-// still works without one.
 func TestCharEGRequiresDSN(t *testing.T) {
 	clean(t)
 	ctx := context.Background()

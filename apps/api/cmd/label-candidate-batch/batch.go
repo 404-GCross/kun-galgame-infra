@@ -18,7 +18,6 @@ import (
 
 const importNoteMark = "rule:galgame-official-import"
 
-// pairRow is one pending label candidate with the classification evidence.
 type pairRow struct {
 	AID, BID       int64
 	AName, BName   string
@@ -28,8 +27,6 @@ type pairRow struct {
 	AWorks, BWorks int
 }
 
-// loadPending returns every still-pending entity_type=3 candidate with both
-// names, the import-side marks and the shared-work count.
 func loadPending(db *gorm.DB) ([]pairRow, error) {
 	var rows []pairRow
 	err := db.Raw(`SELECT c.a_id AS a_id, c.b_id AS b_id,
@@ -48,9 +45,6 @@ func loadPending(db *gorm.DB) ([]pairRow, error) {
 	return rows, err
 }
 
-// direction fixes source/target by policy: the wiki-import label is absorbed
-// into the pre-existing one. ok=false when the pair has no single import side
-// (never seen in practice; such a pair goes to the judgment lane instead).
 func direction(r pairRow) (source, target int64, ok bool) {
 	switch {
 	case r.BImport && !r.AImport:
@@ -61,9 +55,6 @@ func direction(r pairRow) (source, target int64, ok bool) {
 	return 0, 0, false
 }
 
-// acceptAndApprove drives the same two clicks an admin would make: accept the
-// candidate (which opens the merge proposal) and approve the proposal (which
-// starts the 48h cooling clock).
 func acceptAndApprove(ctx context.Context, queue *service.AdminQueueService, merge *service.MergeService,
 	r pairRow, source, target, actor int64, note string) error {
 	outcome, err := queue.DecideCandidate(ctx, service.CandidateDecision{
@@ -82,8 +73,6 @@ func acceptAndApprove(ctx context.Context, queue *service.AdminQueueService, mer
 	}
 	return merge.ApproveMerge(ctx, outcome.Proposal.ID, actor)
 }
-
-// --- mechanical -------------------------------------------------------------
 
 func runMechanical(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, run bool) error {
 	rows, err := loadPending(db)
@@ -126,8 +115,6 @@ func runMechanical(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, r
 	}
 	return nil
 }
-
-// --- receipts ---------------------------------------------------------------
 
 type receiptRow struct {
 	aID, bID, source, target int64
@@ -176,7 +163,7 @@ func runReceipts(ctx context.Context, db *gorm.DB, w io.Writer, path string, act
 			}
 			kept++
 		case "unsure":
-			unsure++ // stays pending for a human
+			unsure++
 		default:
 			fmt.Fprintf(w, "  (%d,%d): unknown verdict %q — skipped\n", r.aID, r.bID, r.verdict)
 			errs++
@@ -194,8 +181,6 @@ func runReceipts(ctx context.Context, db *gorm.DB, w io.Writer, path string, act
 	return nil
 }
 
-// parseReceipts reads the adjudicated TSV: a_id, b_id, source_id, target_id,
-// verdict (merge/keep/unsure), reason.
 func parseReceipts(path string) ([]receiptRow, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -231,8 +216,6 @@ func parseReceipts(path string) ([]receiptRow, error) {
 	}
 	return out, sc.Err()
 }
-
-// --- execute ----------------------------------------------------------------
 
 func runExecute(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, limit int, run bool) error {
 	var ids []int64

@@ -1,17 +1,3 @@
-// work_facets_test.go — wave 154 W3: the catalog.work fields that write the
-// work's CHILD tables (intros, the four taxonomy edges, links, covers,
-// screenshots).
-//
-// Two properties are load-bearing for every one of them and are asserted per
-// field rather than once in general:
-//
-//  1. the value ROUND-TRIPS — merge a value, read the snapshot back, get the
-//     same JSON. A full-replace list field whose snapshot is lossy would make
-//     the NEXT edit delete whatever the snapshot forgot, and a revert replay a
-//     value that was never submitted.
-//  2. the CURATED LANE is respected — an importer row on the same table
-//     survives a full replace untouched. That is the whole human×machine
-//     separation the design rests on (03 定案 §0 line 2).
 package editspec_test
 
 import (
@@ -23,15 +9,10 @@ import (
 	"api/internal/platform/editing"
 )
 
-// curatedSource is source 12 (seeded `galgame_wiki`, renamed `curated` at the
-// N5 close) — the lane every human write lands in. Spelled out here rather than
-// imported so the test would notice a silent change of lane.
 const curatedSource int16 = 12
 
-// vndbSource is the importer lane the isolation cases use as the other party.
 const vndbSource int16 = 2
 
-// mergeField proposes and merges one field, returning the resulting snapshot.
 func mergeField(t *testing.T, e *editing.Engine, workID int64, key string, value any) map[string]any {
 	t.Helper()
 	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
@@ -51,8 +32,6 @@ func mergeField(t *testing.T, e *editing.Engine, workID int64, key string, value
 	return snap
 }
 
-// sameJSON compares a snapshot value against the submitted one through JSON,
-// which is the encoding the engine stores and diffs in.
 func sameJSON(t *testing.T, field string, got, want any) {
 	t.Helper()
 	g, err := json.Marshal(got)
@@ -72,8 +51,6 @@ func TestIntrosLaneAndRoundTrip(t *testing.T) {
 	e := newEngine(t)
 	work := createWork(t, "作品")
 
-	// The other two parties on this table: an importer source row and a
-	// machine-translation row. Neither may be touched by a curated edit.
 	rows := []model.CatalogWorkIntro{
 		{WorkID: work.ID, Lang: "en", Intro: "upstream text", SourceID: vndbSource, Provenance: model.IntroProvenanceSource},
 		{WorkID: work.ID, Lang: "zh-Hans", Intro: "机翻", SourceID: curatedSource, Provenance: model.IntroProvenanceMachine},
@@ -93,11 +70,6 @@ func TestIntrosLaneAndRoundTrip(t *testing.T) {
 	if err := testDB.Where("work_id = ?", work.ID).Order("source_id, lang, provenance").Find(&all).Error; err != nil {
 		t.Fatal(err)
 	}
-	// 2 curated source rows + the importer row. The curated MACHINE zh-Hans row
-	// is gone on purpose: the table's unique key is (work_id, lang, source_id)
-	// with no provenance, so a human writing that language occupies exactly its
-	// coordinate — and superseding a machine translation with human text is the
-	// intended outcome, not a loss.
 	if len(all) != 3 {
 		t.Fatalf("expected 2 curated + 1 importer row, got %d: %+v", len(all), all)
 	}
@@ -110,7 +82,6 @@ func TestIntrosLaneAndRoundTrip(t *testing.T) {
 		}
 	}
 
-	// An empty array clears the curated lane and nothing else.
 	snap = mergeField(t, e, work.ID, editspec.FieldWorkIntros, []any{})
 	sameJSON(t, "intros", snap[editspec.FieldWorkIntros], []any{})
 	var left int64
@@ -131,7 +102,6 @@ func TestTagEdgesCarryCatalogIDs(t *testing.T) {
 	if err := testDB.Create(&tags).Error; err != nil {
 		t.Fatal(err)
 	}
-	// An importer edge on the same work, same table, different lane.
 	if err := testDB.Create(&model.CatalogWorkTag{
 		WorkID: work.ID, Name: "upstream tag", SourceID: vndbSource, Count: 12,
 	}).Error; err != nil {
@@ -150,7 +120,6 @@ func TestTagEdgesCarryCatalogIDs(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("curated tag rows: %+v", rows)
 	}
-	// The safety axis comes from the canonical tag, not from the submitter.
 	for _, r := range rows {
 		if (r.Name == "陵辱") != r.Sexual {
 			t.Fatalf("sexual must follow catalog_tag: %+v", r)
@@ -163,8 +132,6 @@ func TestTagEdgesCarryCatalogIDs(t *testing.T) {
 		t.Fatal("the importer tag edge must survive a curated full replace")
 	}
 
-	// An id that is not a tag fails the MERGE (validation checks shape, the
-	// apply checks existence) instead of writing a dangling edge.
 	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkTagIDs: []any{float64(9999999)}},
@@ -204,9 +171,6 @@ func TestLabelEngineSeriesEdges(t *testing.T) {
 	snap = mergeField(t, e, work.ID, editspec.FieldWorkSeriesIDs, series)
 	sameJSON(t, "series_ids", snap[editspec.FieldWorkSeriesIDs], series)
 
-	// An upstream series is NOT editable membership: its importer reconciles
-	// members by insert-absent/delete-stale, so a curated row there would be
-	// reaped on the next run. The merge must fail rather than write it.
 	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkSeriesIDs: []any{upstreamSeries.ID}},
@@ -224,8 +188,6 @@ func TestLinksCanonicalizeAndGrade(t *testing.T) {
 	e := newEngine(t)
 	work := createWork(t, "作品")
 
-	// A confirmed identity anchor written by the importer lane. A curated link
-	// edit must never delete or downgrade it.
 	if err := testDB.Create(&model.CatalogExternalRef{
 		EntityType: model.EntityTypeWork, EntityID: work.ID,
 		SourceID: vndbSource, ExternalID: "v999", LinkKind: model.LinkKindExact,
@@ -235,9 +197,9 @@ func TestLinksCanonicalizeAndGrade(t *testing.T) {
 	}
 
 	snap := mergeField(t, e, work.ID, editspec.FieldWorkLinks, []any{
-		"https://twitter.com/studio_x?ref=1", // → x.com canonical
-		"https://vndb.org/v123/chars",        // → identity candidate
-		"https://example.com/product/kimi",   // → generic web ref
+		"https://twitter.com/studio_x?ref=1",
+		"https://vndb.org/v123/chars",
+		"https://example.com/product/kimi",
 	})
 	sameJSON(t, "links", snap[editspec.FieldWorkLinks], []any{
 		"https://vndb.org/v123",
@@ -267,7 +229,6 @@ func TestLinksCanonicalizeAndGrade(t *testing.T) {
 			related++
 		}
 	}
-	// A human identity claim is a CANDIDATE for the registrar, never an anchor.
 	if exact != 1 || probable != 1 || related != 2 {
 		t.Fatalf("grades: exact=%d probable=%d related=%d (%+v)", exact, probable, related, refs)
 	}
@@ -295,7 +256,6 @@ func TestCoversAndScreenshotsOrderAndLane(t *testing.T) {
 		Order("sort_order").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
-	// sort_order is the ARRAY INDEX — the client never sends it.
 	if len(rows) != 2 || rows[0].SortOrder != 0 || rows[1].SortOrder != 1 ||
 		rows[0].ImageHash != "hash-a" || !rows[0].PortraitPinned || rows[1].Sexual != 2 {
 		t.Fatalf("cover rows: %+v", rows)
@@ -307,7 +267,6 @@ func TestCoversAndScreenshotsOrderAndLane(t *testing.T) {
 		t.Fatal("the importer cover must survive a curated full replace")
 	}
 
-	// Two pinned portraits is an ambiguous answer, not a richer one.
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkCovers: []any{
@@ -342,8 +301,6 @@ func TestDisplayNSFWScalar(t *testing.T) {
 	if !w.DisplayNSFW {
 		t.Fatal("display_nsfw column was not written")
 	}
-	// The DISPLAY axis is independent of the AGE axis — flipping one must not
-	// move the other (the doc-106 §38 incident in miniature).
 	if w.ContentRating != model.ContentRatingAllAges {
 		t.Fatalf("content_rating moved with display_nsfw: %d", w.ContentRating)
 	}

@@ -17,11 +17,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// The best-cover vote fixture, plus the two claims that are nobody's face in
-// particular: the schema's referential rule, and what the S2S work detail says
-// about a tally now that it has no viewer to speak of. The ballot ops themselves
-// live on the user plane and are exercised in user_cover_votes_test.go.
-
 type voteEnvelope struct {
 	Data struct {
 		CoverID   int64 `json:"cover_id"`
@@ -37,9 +32,6 @@ func decodeVote(t *testing.T, raw []byte) voteEnvelope {
 	return env
 }
 
-// coverVoteFixture wipes the vote-relevant tables and builds: one live work
-// with two covers, a second live work with one cover (the mismatch case), and a
-// merged-away work with a cover (the unavailable case).
 type coverVoteFixture struct {
 	work, other, merged     int64
 	coverA, coverB, foreign int64
@@ -73,9 +65,6 @@ func seedCoverVoteFixture(t *testing.T, db *gorm.DB) coverVoteFixture {
 	return f
 }
 
-// castVote writes a ballot the way the user face would, without going through
-// it: these two cases are about the schema and the read side, not about how a
-// vote arrives.
 func castVote(t *testing.T, db *gorm.DB, f coverVoteFixture, coverID, uid int64) {
 	t.Helper()
 	require.NoError(t, db.Create(&model.CatalogCoverVote{
@@ -83,10 +72,6 @@ func castVote(t *testing.T, db *gorm.DB, f coverVoteFixture, coverID, uid int64)
 	}).Error)
 }
 
-// TestCoverVote_S2SReadFaceTally: the counts ride back on the S2S work detail's
-// cover rows as decoration — and `voted` does not, on any request. The face has
-// no verified viewer, so an asserted one is not an option: ?uid= is not a
-// parameter of these ops, and huma drops it.
 func TestCoverVote_S2SReadFaceTally(t *testing.T) {
 	db := openCatalogTestDB(t)
 	f := seedCoverVoteFixture(t, db)
@@ -120,16 +105,11 @@ func TestCoverVote_S2SReadFaceTally(t *testing.T) {
 		assert.False(t, has, "the S2S detail states no per-viewer flag")
 	}
 
-	// Naming a viewer changes nothing: the parameter is gone, and an undeclared
-	// query parameter is ignored rather than honoured (the forum's anonymous
-	// fallback still sends uid=0 and reads only vote_count).
 	withUID := readCovers(fmt.Sprintf("/api/v1/catalog/works/%d?uid=6", f.work))
 	assert.Equal(t, covers, withUID)
 	assert.Equal(t, covers, readCovers(fmt.Sprintf("/api/v1/catalog/works/%d?uid=0", f.work)))
 }
 
-// TestCoverVote_FKCascade: deleting a cover takes its votes with it, with zero
-// Go code involved — the referential rule is the schema's.
 func TestCoverVote_FKCascade(t *testing.T) {
 	db := openCatalogTestDB(t)
 	f := seedCoverVoteFixture(t, db)

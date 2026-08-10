@@ -25,7 +25,6 @@ func (r stubResolver) Key(_ context.Context, kid string) (crypto.PublicKey, erro
 	return nil, fmt.Errorf("no key for kid %q", kid)
 }
 
-// pubFromMaterial mirrors the production path: JWK JSON -> map -> public key.
 func pubFromMaterial(t *testing.T, km *oidckeys.KeyMaterial) crypto.PublicKey {
 	t.Helper()
 	raw, err := json.Marshal(km.PublicJWK)
@@ -43,10 +42,6 @@ func pubFromMaterial(t *testing.T, km *oidckeys.KeyMaterial) crypto.PublicKey {
 	return pub
 }
 
-// TestAsymmetricSignVerifyRoundtrip proves the full loop: a private key signs a
-// token, its public JWK (P0 encoding) is decoded back to a public key (P1) and
-// verifies the token — for both ES256 (via the production signer) and RS256
-// (signed directly, since we only mint ES256 but must verify RS256).
 func TestAsymmetricSignVerifyRoundtrip(t *testing.T) {
 	esKM, err := oidckeys.Generate(oidckeys.AlgES256)
 	if err != nil {
@@ -60,14 +55,13 @@ func TestAsymmetricSignVerifyRoundtrip(t *testing.T) {
 		esKM.Kid: pubFromMaterial(t, esKM),
 		rsKM.Kid: pubFromMaterial(t, rsKM),
 	}}
-	v := NewVerifier("", resolver) // asymmetric-only (HS256 rejected)
+	v := NewVerifier("", resolver)
 
 	claims := utils.TokenClaims{
 		UserUUID: "u-1", ID: 42, Roles: []string{"admin"}, Scope: "openid profile",
 		RegisteredClaims: jwt.RegisteredClaims{Audience: jwt.ClaimStrings{"www.example.com"}},
 	}
 
-	// ES256 via the production signer.
 	esPriv, err := oidckeys.ParsePrivate(esKM.PrivateDER)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +77,6 @@ func TestAsymmetricSignVerifyRoundtrip(t *testing.T) {
 	if got.UserUUID != "u-1" || got.ID != 42 || len(got.Roles) != 1 || got.Roles[0] != "admin" || got.Scope != "openid profile" {
 		t.Fatalf("ES256 claims mismatch: %+v", got)
 	}
-	// RFC 9068: iss stamped by the signer, caller-set aud preserved, typ=at+jwt.
 	if got.Issuer != "https://id.example" {
 		t.Fatalf("access token iss mismatch: %q", got.Issuer)
 	}
@@ -98,7 +91,6 @@ func TestAsymmetricSignVerifyRoundtrip(t *testing.T) {
 		t.Fatalf("access token typ header mismatch: %v", hdr.Header["typ"])
 	}
 
-	// RS256 signed directly (verification-only path).
 	rsPriv, err := oidckeys.ParsePrivate(rsKM.PrivateDER)
 	if err != nil {
 		t.Fatal(err)
@@ -116,8 +108,6 @@ func TestAsymmetricSignVerifyRoundtrip(t *testing.T) {
 	}
 }
 
-// TestAcceptBothHS256 confirms the migration window: a verifier with the legacy
-// secret accepts HS256 tokens; one without it rejects them.
 func TestAcceptBothHS256(t *testing.T) {
 	const secret = "legacy-secret"
 	claims := utils.TokenClaims{UserUUID: "u-2", ID: 7}
@@ -126,23 +116,17 @@ func TestAcceptBothHS256(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// accept-both: HS256 accepted.
 	if _, err := NewVerifier(secret, stubResolver{}).Parse(context.Background(), tok); err != nil {
 		t.Fatalf("accept-both should accept HS256: %v", err)
 	}
-	// post-migration: HS256 rejected when the secret is dropped.
 	if _, err := NewVerifier("", stubResolver{}).Parse(context.Background(), tok); err == nil {
 		t.Fatal("asymmetric-only verifier should reject HS256")
 	}
-	// wrong secret rejected.
 	if _, err := NewVerifier("other-secret", stubResolver{}).Parse(context.Background(), tok); err == nil {
 		t.Fatal("verifier should reject HS256 signed with a different secret")
 	}
 }
 
-// TestJWKSResolverEndToEnd exercises the full resource-server path: an ES256
-// token is verified by fetching the signer's public key from an HTTP JWK Set
-// (as galgame/image/artifact do against the OP's /oauth/jwks).
 func TestJWKSResolverEndToEnd(t *testing.T) {
 	km, err := oidckeys.Generate(oidckeys.AlgES256)
 	if err != nil {
@@ -160,7 +144,7 @@ func TestJWKSResolverEndToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	v := NewVerifierWithJWKS("", srv.URL) // asymmetric-only, keys fetched over HTTP
+	v := NewVerifierWithJWKS("", srv.URL)
 	priv, err := oidckeys.ParsePrivate(km.PrivateDER)
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +164,6 @@ func TestJWKSResolverEndToEnd(t *testing.T) {
 		t.Fatal("expected the resolver to fetch the JWK Set")
 	}
 
-	// A second verify reuses the cache (no forced refetch for a known kid).
 	before := hits
 	if _, err := v.Parse(context.Background(), tok); err != nil {
 		t.Fatalf("second verify: %v", err)
@@ -190,9 +173,6 @@ func TestJWKSResolverEndToEnd(t *testing.T) {
 	}
 }
 
-// TestIDSigner checks the id_token carries the minimal claims (iss/sub/aud/
-// exp/iat), echoes nonce only when present, sets the kid header, and verifies
-// against the published public key.
 func TestIDSigner(t *testing.T) {
 	km, err := oidckeys.Generate(oidckeys.AlgES256)
 	if err != nil {
@@ -221,7 +201,6 @@ func TestIDSigner(t *testing.T) {
 		t.Fatalf("id_token claims mismatch: %+v", claims)
 	}
 
-	// nonce omitted when empty.
 	tok2, err := s.Sign("u", "c", "", time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +211,6 @@ func TestIDSigner(t *testing.T) {
 	}
 }
 
-// TestRejectAlgNone guards against alg=none downgrade.
 func TestRejectAlgNone(t *testing.T) {
 	tok := jwt.NewWithClaims(jwt.SigningMethodNone, utils.TokenClaims{UserUUID: "x"})
 	s, err := tok.SignedString(jwt.UnsafeAllowNoneSignatureType)

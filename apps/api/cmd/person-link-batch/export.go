@@ -18,11 +18,6 @@ var exportHeader = []string{
 	"decision", "notes",
 }
 
-// runExport drafts the T2 review worklist: the alias_declared candidates NOT
-// cleared by A3/A4, each with the context a human (the reviewer, via a
-// sub-agent) needs to judge same-person — names, sources, credit counts and a
-// sample of each side's ingested aliases. co_credit_works is 0 by construction
-// (A3 removed the co-credited pairs); it stays as a sanity column.
 func runExport(db *gorm.DB, out string) error {
 	rows, err := loadCandidates(db, model.CandidateReasonAliasDeclared)
 	if err != nil {

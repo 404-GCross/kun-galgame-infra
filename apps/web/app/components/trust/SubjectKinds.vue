@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Subject-kind registry: the per-site kinds a report may target, each with an
-// optional callback (URL + HMAC secret) the trust service posts dispositions
-// to. Rows are registered, their callback config edited, and deprecated — never
-// deleted.
 import type {
   TrustSubjectKind,
   TrustCreateSubjectKindRequest,
@@ -23,7 +19,6 @@ const { data, refresh, error } = await useApiFetch<TrustSubjectKind[]>(
 )
 const kinds = computed<TrustSubjectKind[]>(() => data.value ?? [])
 
-// Create
 const createOpen = ref(false)
 const form = reactive({
   site: '',
@@ -71,7 +66,6 @@ const create = async () => {
   }
 }
 
-// Edit callback config
 const editOpen = ref(false)
 const editTarget = ref<TrustSubjectKind | null>(null)
 const editForm = reactive({
@@ -110,7 +104,6 @@ const saveEdit = async () => {
       callback_url: editForm.callback_url.trim(),
       notify_on_dismiss: editForm.notify_on_dismiss
     }
-    // A blank secret leaves the stored secret untouched (it is never shown).
     if (editForm.callback_secret.trim())
       body.callback_secret = editForm.callback_secret.trim()
     if (await patch(editTarget.value, body)) {
@@ -128,9 +121,6 @@ const toggleDeprecated = async (k: TrustSubjectKind) => {
   }
 }
 
-// Batch add — the human-ops counterpart of the S2S declarative ensure: one key
-// per line + shared callback/notify fields, converged per-kind by the backend.
-// Deprecated kinds are never revived (that stays a manual decision above).
 const batchOpen = ref(false)
 const batchForm = reactive({
   site: '',
@@ -176,8 +166,6 @@ const runBatch = async () => {
     const item: TrustEnsureSubjectKindItem = { key }
     if (cbURL) item.callback_url = cbURL
     if (cbSecret) item.callback_secret = cbSecret
-    // Sparse: only declare notify_on_dismiss when toggled on, so an off switch
-    // never flips an existing kind's flag.
     if (batchForm.notify_on_dismiss) item.notify_on_dismiss = true
     return item
   })

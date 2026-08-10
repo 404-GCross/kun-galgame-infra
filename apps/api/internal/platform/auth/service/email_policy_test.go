@@ -29,9 +29,9 @@ func TestCheckEmailDomainAllowed(t *testing.T) {
 		"user@proton.me",
 		"user@protonmail.com",
 		"user@pm.me",
-		"USER@QQ.COM",       // case-insensitive
-		"a.b+tag@gmail.com", // local part with dots/plus
-		"x@outlook.com ",    // trailing space on domain tolerated
+		"USER@QQ.COM",
+		"a.b+tag@gmail.com",
+		"x@outlook.com ",
 	}
 	for _, e := range allowed {
 		if err := checkEmailDomainAllowed(e); err != nil {
@@ -41,7 +41,7 @@ func TestCheckEmailDomainAllowed(t *testing.T) {
 
 	rejected := []string{
 		"user@example.com",
-		"user@mail.qq.com", // subdomain is a different domain
+		"user@mail.qq.com",
 		"user@qq.com.evil.com",
 		"user@10minutemail.com",
 		"user@",

@@ -1,20 +1,3 @@
-// merge-work-dups drives the QA-handover work-level merge-dup worklist
-// (step 97, refs/proj/97) through the FULL merge protocol — the same service
-// path as an admin click, no cooling-window bypass, no raw SQL (the
-// catalog-dedup-batch precedent):
-//
-//	propose:  TSV rows → sanity checks → ProposeMerge(source=holder,
-//	          target=claimed work) + ApproveMerge (execute_after = now+48h).
-//	          Idempotent: an existing open/approved/executed proposal for the
-//	          same pair is skipped.
-//	execute:  every APPROVED proposal tagged qa-mergedup whose cooling window
-//	          has passed → ExecuteMerge. Dry by default.
-//
-// TSV shape (QA handover): gid, work_id (claimed target), wiki_vndb,
-// correct_bid, holder_work_id (bangumi-only source), evidence.
-//
-//	go run ./cmd/merge-work-dups -mode propose --dsn "$DSN" --tsv a.tsv --tsv b.tsv -actor 1 [-run]
-//	go run ./cmd/merge-work-dups -mode execute --dsn "$DSN" -actor 1 [-run]
 package main
 
 import (
@@ -37,14 +20,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// notePrefix tags every proposal this tool opens, so execute mode (and any
-// later audit) can scope to exactly this wave.
 const notePrefix = "qa-mergedup(97): "
 
 type tsvRow struct {
 	gid        string
-	targetWork int64 // claimed work (keeper)
-	sourceWork int64 // bangumi-only holder (absorbed)
+	targetWork int64
+	sourceWork int64
 	correctBid string
 	evidence   string
 }
@@ -96,8 +77,6 @@ func main() {
 	}
 }
 
-// reject vetoes one cooling proposal (open or approved) through the service
-// layer — the step-97 per-case re-check path (#36138 edition split).
 func reject(ctx context.Context, db *gorm.DB, merge *service.MergeService, proposalID, actor int64, reason string, run bool) {
 	var p model.CatalogMergeProposal
 	if err := db.WithContext(ctx).First(&p, proposalID).Error; err != nil {
@@ -164,10 +143,6 @@ func propose(ctx context.Context, db *gorm.DB, merge *service.MergeService, tsvs
 	fmt.Printf("\n=== propose %s ===\nproposed=%d skipped=%d failed=%d\n", modeLabel(run), proposed, skipped, failed)
 }
 
-// sanity pins the QA case shape before any write: target = live claimed kungal
-// work; source = live BODYLESS work (claim guard would reject a claimed source
-// anyway — this fails fast with a better message) carrying the correct_bid
-// exact bgm anchor.
 func sanity(ctx context.Context, db *gorm.DB, r tsvRow) error {
 	var tgt struct {
 		ID   int64
@@ -257,7 +232,7 @@ func readTSV(path string) []tsvRow {
 	first := true
 	for sc.Scan() {
 		line := sc.Text()
-		if first { // header
+		if first {
 			first = false
 			continue
 		}

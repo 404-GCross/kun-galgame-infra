@@ -7,10 +7,6 @@ const emit = defineEmits<{ created: [client: OAuthClientCreated] }>()
 
 const api = useApi()
 
-// Ren-only scopes (image:upload / artifact:upload) + auto_consent are ren（莲）-
-// only (server-enforced via the ren-gate in site_handler). Hide the controls
-// for non-ren so they never submit a request the API would 403; all stay
-// default-off regardless.
 const { isRen } = useAuth()
 const scopeOptions = computed(() =>
   isRen.value ? KNOWN_SCOPES : KNOWN_SCOPES.filter((s) => !REN_ONLY_SCOPES.includes(s))
@@ -19,28 +15,12 @@ const scopeOptions = computed(() =>
 const siteId = ref<number | ''>('')
 const name = ref('')
 const redirectUris = ref([''])
-// Default both grants — see api/internal/platform/site/handler/site_handler.go.
-// authorization_code-only clients break after 15min because refresh hits
-// the OAuth grant-allowlist check.
 const grants = ref<string[]>(['authorization_code', 'refresh_token'])
-// Allowed scopes for this client. Empty array sent to the server falls
-// back to the OIDC core set {openid, profile, email} only — anything
-// beyond that (e.g. image:upload) MUST be explicitly checked here.
 const allowedScopes = ref<string[]>(['openid', 'profile', 'email'])
-// Public client (SPA / native): no client_secret on refresh, PKCE required
-// on the code flow. Confidential clients are the default (false).
 const isPublic = ref(false)
 // First-party client — silently skips /oauth/authorize consent UI for
-// already-logged-in users. SECURITY-SENSITIVE: only enable for clients
-// you fully own (third-party apps MUST go through the consent screen).
-// Default false; admin must explicitly opt in.
 const autoConsent = ref(false)
-// Refresh token lifetime — exposed in the UI as days for usability,
-// converted to seconds at submit time. Default 90d matches the server.
 const refreshTokenTtlDays = ref(DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400)
-// App-directory (生态一键登录) display fields — shown on the register/login
-// strip via GET /oauth/ecosystem. listed (opt-in, default off)/logo/tagline are
-// admin-settable; display_order is ren-only (cross-site ordering, gated in the API).
 const listed = ref(false)
 const logoUrl = ref('')
 const tagline = ref('')
@@ -48,13 +28,7 @@ const displayOrder = ref<number | null>(0)
 const error = ref('')
 const isLoading = ref(false)
 
-// Logo upload — POSTs a cropped square Blob to image_service and fills logoUrl
-// with the returned CDN URL. Uploading is the only way to set a logo — an
-// arbitrary external URL would leave the app directory hotlinking a host we
-// don't control.
 const { uploading: logoUploading, error: logoError, upload: uploadLogo } = useClientLogoUpload()
-// KunUpload keeps its picked image in internal state with no reset API, so we
-// remount it via :key to clear the preview after a successful upload.
 const logoUploadKey = ref(0)
 
 const onLogoPicked = async (blob: Blob) => {
@@ -65,7 +39,6 @@ const onLogoPicked = async (blob: Blob) => {
   }
 }
 
-// KunSelect option list for the site picker (value=id, label=name+domain).
 const siteOptions = computed(() =>
   props.sites.map((s) => ({ value: s.id, label: `${s.name} (${s.domain})` }))
 )
@@ -140,7 +113,6 @@ const handleSubmit = async () => {
     })
     if (response.code === 0) {
       emit('created', response.data)
-      // Reset form
       siteId.value = ''
       name.value = ''
       redirectUris.value = ['']

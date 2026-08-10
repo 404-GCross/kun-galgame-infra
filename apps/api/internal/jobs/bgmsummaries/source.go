@@ -10,11 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// registry holds the two catalog registry ids this enrichment needs, resolved
-// by key (never hardcoded) so a rehearsal / prod DB with different
-// auto-increment seeds still works. In practice both are stable (galgame
-// medium=1, bangumi source=3) but resolving keeps the tool honest — the same
-// discipline internal/jobs/dlsitemedia and doujinbangumi follow.
 type registry struct {
 	galgameMedium int16
 	bangumiSource int16
@@ -34,14 +29,6 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// Population selects which works a run may write intros for. Before wave 166
-// this job was hard-wired to bodyless: a claimed work's intro was BRIDGED from
-// its product body at read time, so materialising a native row would have
-// double-shown it. The W1-pre nativization (refs/proj/140) mirrored those
-// bodies into catalog_work_intro and DELETED the bridge, so today
-// loadWorkIntros reads that one table for EVERY work — and the bodyless-only
-// gate stopped being an invariant and became the reason 4,725 published works
-// show an English-only intro (the 164 blank face). All is now the default.
 const (
 	PopulationAll       = "all"
 	PopulationBodyless  = "bodyless"
@@ -71,10 +58,6 @@ func sitePredicate(pop string) (string, error) {
 	return workpop.Predicate(workpop.Population(pop), "w")
 }
 
-// candidate is one galgame work joined to its EXACT Bangumi anchor's subject.
-// Summary is verbatim from the dump ('' when the subject has none — counted,
-// not filtered, so the run reports skip_no_summary). Site is carried so the run
-// can report the bodyless/claimed split of what it wrote.
 type candidate struct {
 	WorkID    int64   `gorm:"column:work_id"`
 	SubjectID int64   `gorm:"column:subject_id"`
@@ -82,19 +65,6 @@ type candidate struct {
 	Summary   string  `gorm:"column:summary"`
 }
 
-// loadCandidates resolves galgame works in the requested population carrying an
-// EXACT Bangumi work anchor — matched_by UNRESTRICTED (every exact tier asserts
-// identity, the 66/69/71 ruling; the bgmworkmeta precedent) — joined to the
-// anchored subject's summary:
-//
-//	catalog_work(galgame) → catalog_external_ref(entity_type=work,
-//	  source=bangumi, link_kind=exact) → src_bangumi.subject
-//	  (same DB — src_bangumi is a schema, single DSN)
-//
-// Probable anchors (link_kind=probable) never appear (the exact gate excludes
-// them). The external_id→bigint cast is safe (surveyed: zero non-numeric exact
-// bgm work anchors — the 69 verification). DISTINCT ON keeps ONE anchor per
-// work (the lowest external_id), same as dlsitemedia.
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop string, limit, offset int) ([]candidate, error) {
 	site, err := sitePredicate(pop)
 	if err != nil {
@@ -114,8 +84,6 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop string, 
 	if err := q.Scan(&out).Error; err != nil {
 		return nil, err
 	}
-	// Window in Go after DISTINCT ON so offset/limit apply to distinct works
-	// (the dlsitemedia chunking discipline — slicing keeps it obviously correct).
 	if offset > 0 {
 		if offset >= len(out) {
 			return nil, nil
@@ -128,11 +96,6 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop string, 
 	return out, nil
 }
 
-// preloadExistingLangs loads every (work_id → set of intro langs) pair already
-// present for the candidate works — across ALL sources, because the
-// fill-missing-language rule asks "does the work have this language at all?",
-// not "did bangumi already write it?". This preload is the primary skip; the
-// (work_id,lang,source_id) ON CONFLICT is only the backstop.
 func preloadExistingLangs(ctx context.Context, db *gorm.DB, workIDs []int64) (map[int64]map[string]bool, error) {
 	out := map[int64]map[string]bool{}
 	if len(workIDs) == 0 {

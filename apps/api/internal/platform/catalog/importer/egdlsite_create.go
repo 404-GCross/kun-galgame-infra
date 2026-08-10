@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// loadEGDlsiteClaims returns dlsite_id → the EG game ids that claim it.
 func (im *Importer) loadEGDlsiteClaims() (map[string][]int64, error) {
 	var rows []struct {
 		ID     int64  `gorm:"column:id"`
@@ -27,8 +26,6 @@ func (im *Importer) loadEGDlsiteClaims() (map[string][]int64, error) {
 	return m, nil
 }
 
-// loadDLWorks fetches the fetched DLsite works for the given worknos, with the
-// work name pre-folded by the exact Silver expression.
 func loadDLWorks(dlsiteDB *gorm.DB, worknos []string, limit int) ([]dlRow, error) {
 	if len(worknos) == 0 {
 		return nil, nil
@@ -50,8 +47,6 @@ func loadDLWorks(dlsiteDB *gorm.DB, worknos []string, limit int) ([]dlRow, error
 	return rows, nil
 }
 
-// createEGDLShared creates the new maker labels and creater credit names (own
-// transaction) and updates the anchor maps in place.
 func (im *Importer) createEGDLShared(newLabels, newNames []dlNamed, makerKind map[string]int16, labelAnchor, cnAnchor map[string]int64) error {
 	labelItems := make([]labelItem, len(newLabels))
 	for i, m := range newLabels {
@@ -80,8 +75,6 @@ func (im *Importer) createEGDLShared(newLabels, newNames []dlNamed, makerKind ma
 	})
 }
 
-// mintEGDLWorks mints an unclaimed galgame work per item, with release + SKU
-// anchor + PROBABLE EG work-ref + titles + credits + revisions, chunked.
 func (im *Importer) mintEGDLWorks(items []egdlItem, cnResolve func(string) (int64, bool), st *EGDLsiteStats) error {
 	for start := 0; start < len(items); start += dlChunk {
 		end := min(start+dlChunk, len(items))
@@ -104,11 +97,6 @@ func (im *Importer) createMintChunk(tx *gorm.DB, chunk []egdlItem, cnResolve fun
 			status = model.WorkStatusStub
 			st.Stubs++
 		}
-		// olang: the eges × DLsite catalogue is Japanese doujin/commercial VN
-		// releases by construction and neither source publishes an original
-		// language, so the default is a STATED fact here, not the placeholder
-		// wave 144 had to undo elsewhere. A work of this population that also
-		// carries a VNDB anchor gets the upstream truth from backfill-olang.
 		works[i] = model.CatalogWork{
 			MediumID: mediumGalgame, OLang: model.OLangDefault, DisplayName: it.dw.name,
 			ContentRating: it.dw.contentRating, Status: status,
@@ -146,10 +134,7 @@ func (im *Importer) createMintChunk(tx *gorm.DB, chunk []egdlItem, cnResolve fun
 	for i, it := range chunk {
 		wid := works[i].ID
 		rel := releases[i]
-		// SKU release anchor (exact, self-identity via the rosetta path).
 		refs = append(refs, selfRef(model.EntityTypeRelease, rel.ID, dl, it.dw.workno, ruleEGDLsite))
-		// The EG↔work identity as community data (probable) — omitted for B2
-		// (a dlsite_id claimed by several EG games: unattributable, SKU stands).
 		if !it.noEGRef {
 			refs = append(refs, model.CatalogExternalRef{
 				EntityType: model.EntityTypeWork, EntityID: wid, SourceID: eg,
@@ -175,8 +160,6 @@ func (im *Importer) createMintChunk(tx *gorm.DB, chunk []egdlItem, cnResolve fun
 	return nil
 }
 
-// attachEGDLReleases adds a DLsite release to each already-claimed work, plus a
-// search-hint title when the DLsite name is not already a title of that work.
 func (im *Importer) attachEGDLReleases(items []egdlItem, cnResolve func(string) (int64, bool), st *EGDLsiteStats) error {
 	ids := make([]int64, 0, len(items))
 	for _, it := range items {
@@ -226,7 +209,7 @@ func (im *Importer) createAttachChunk(tx *gorm.DB, chunk []egdlItem, cnResolve f
 			if titleFolds[it.workID] == nil {
 				titleFolds[it.workID] = map[string]bool{}
 			}
-			titleFolds[it.workID][it.nameFold] = true // dedup within the batch
+			titleFolds[it.workID][it.nameFold] = true
 		}
 		credits = append(credits, buildDLCredits(it.workID, it.dw.credits, cnResolve, st)...)
 	}
@@ -245,10 +228,6 @@ func (im *Importer) createAttachChunk(tx *gorm.DB, chunk []egdlItem, cnResolve f
 	st.ReleasesCreated += len(releases)
 	st.TitlesCreated += len(titles)
 	st.CreditsWritten += written
-	// Every item in an attach chunk is a work that already existed and just
-	// gained a release (plus maybe a title and credits), so the hosts must
-	// surface on the public changes feed. Worknos that already carry a release
-	// anchor never reach this chunk, so a re-run touches nothing.
 	hosts := make([]int64, 0, len(chunk))
 	for _, it := range chunk {
 		hosts = append(hosts, it.workID)
@@ -256,9 +235,6 @@ func (im *Importer) createAttachChunk(tx *gorm.DB, chunk []egdlItem, cnResolve f
 	return touchWorks(tx, hosts)
 }
 
-// emitEGDLEdges asserts the work↔maker attribution edge for every wave work,
-// resolving workno→work via the eg-dlsite release anchors just written.
-// Idempotent (composite PK ON CONFLICT DO NOTHING).
 func (im *Importer) emitEGDLEdges(items []egdlItem, labelAnchor map[string]int64, makerKind map[string]int16, st *EGDLsiteStats) error {
 	var rows []struct {
 		Workno string `gorm:"column:external_id"`
@@ -300,8 +276,6 @@ func (im *Importer) emitEGDLEdges(items []egdlItem, labelAnchor map[string]int64
 		return res.Error
 	}
 	st.EdgesWritten = int(res.RowsAffected)
-	// No touch here: every work in items was either just minted (a fresh row
-	// carries its own updated_at) or just attached (createAttachChunk bumped it).
 	return nil
 }
 
@@ -321,7 +295,6 @@ func buildDLCredits(workID int64, plan []dlCredit, cnResolve func(string) (int64
 	return out
 }
 
-// loadTitleFolds maps a work id to the folded forms of its existing titles.
 func loadTitleFolds(db *gorm.DB, workIDs []int64) (map[int64]map[string]bool, error) {
 	out := map[int64]map[string]bool{}
 	if len(workIDs) == 0 {

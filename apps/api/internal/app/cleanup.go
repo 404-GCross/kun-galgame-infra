@@ -8,12 +8,9 @@ import (
 	authrepo "api/internal/platform/auth/repository"
 )
 
-// StartCleanup starts a background goroutine that periodically deletes
-// expired sessions and authorization codes. It stops when ctx is cancelled.
 func StartCleanup(ctx context.Context, sessionRepo *authrepo.SessionRepository, authCodeRepo *authrepo.AuthorizationCodeRepository) {
 	ticker := time.NewTicker(1 * time.Hour)
 
-	// Run once immediately at startup
 	runCleanup(ctx, sessionRepo, authCodeRepo)
 
 	go func() {

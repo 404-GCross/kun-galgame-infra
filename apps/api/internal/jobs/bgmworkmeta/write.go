@@ -11,42 +11,22 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// writer applies planned rows with a PER-FIELD claim policy (T2, refs/proj/70
-// §3/§8, 88): Field A (meta tags) has NO guard — meta_tags is a catalog-native
-// SOURCE lane, so claimed and bodyless works materialize alike; it is a FILL:
-// ON CONFLICT (work_id, name, source_id) DO NOTHING — a same-name folksonomy row
-// keeps its votes, a second pass counts pure conflicts. Field B (favorite
-// shelves) has NO guard either since T2b (refs/proj/102): the popularity
-// facet's XOR moved from whole-facet to per-source at the read face, so
-// claimed favorites materialize like bodyless ones. It is the step-62
-// CHANGE-DETECTED upsert: ON CONFLICT DO UPDATE fires only when the value
-// actually differs, so RowsAffected cleanly separates effective writes from
-// refresh no-ops.
 type writer struct {
-	db    *gorm.DB
-	stats *Stats
-	// touched collects works whose meta-tag or shelf facet actually changed, so
-	// the run bumps their catalog_work.updated_at once at the end and the public
-	// changes feed learns the work is worth re-pulling. Conflicts, refresh
-	// no-ops and dry-runs contribute nothing.
+	db      *gorm.DB
+	stats   *Stats
 	touched []int64
 }
 
-// touch bumps updated_at on every work this run effectively wrote for.
 func (w *writer) touch(ctx context.Context) error {
 	return repository.TouchWorks(ctx, w.db, w.touched)
 }
 
-// tagRow is one decided catalog_work_tag write (Count is always 0 — the
-// moderated-meta-tag marker).
 type tagRow struct {
 	WorkID   int64
 	SourceID int16
 	Name     string
 }
 
-// writeTag (apply only) inserts the Count=0 row. T2: no claim guard — meta tags
-// materialize for claimed and bodyless works alike.
 func (w *writer) writeTag(ctx context.Context, p tagRow, apply bool) {
 	if !apply {
 		return
@@ -62,7 +42,7 @@ func (w *writer) writeTag(ctx context.Context, p tagRow, apply bool) {
 		slog.Warn("write meta tag", "work", p.WorkID, "name", p.Name, "err", res.Error)
 		return
 	}
-	if res.RowsAffected == 0 { // existing row (voted folksonomy or earlier meta) kept
+	if res.RowsAffected == 0 {
 		w.stats.MetaConflict++
 		return
 	}
@@ -70,7 +50,6 @@ func (w *writer) writeTag(ctx context.Context, p tagRow, apply bool) {
 	w.touched = append(w.touched, p.WorkID)
 }
 
-// favRow is one decided catalog_work_popularity write.
 type favRow struct {
 	WorkID   int64
 	SourceID int16
@@ -78,10 +57,6 @@ type favRow struct {
 	Value    int64
 }
 
-// writeFavorite (apply only) upserts the shelf row — the workratings
-// writePopularity pattern verbatim. T2b (refs/proj/102): no claim guard —
-// favorite shelves materialize for claimed and bodyless works alike; the
-// per-source XOR at the read face keeps dlsite bridge-exclusive.
 func (w *writer) writeFavorite(ctx context.Context, p favRow, apply bool) {
 	if !apply {
 		return
@@ -99,7 +74,7 @@ func (w *writer) writeFavorite(ctx context.Context, p favRow, apply bool) {
 		slog.Warn("write favorite shelf", "work", p.WorkID, "metric", p.Metric, "err", res.Error)
 		return
 	}
-	if res.RowsAffected == 0 { // row already current (refresh no-op)
+	if res.RowsAffected == 0 {
 		w.stats.FavUnchanged++
 		return
 	}

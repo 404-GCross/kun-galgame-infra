@@ -10,10 +10,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// TestSplitBearerSchemeIsCaseInsensitive pins RFC 7235 §2.1: the auth-scheme is
-// case-insensitive. This is not pedantry — a standard OIDC client sending
-// `bearer <token>` used to be rejected here as though its TOKEN were bad, which
-// is close to undiagnosable from the far side of an integration.
 func TestSplitBearerSchemeIsCaseInsensitive(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -27,7 +23,7 @@ func TestSplitBearerSchemeIsCaseInsensitive(t *testing.T) {
 		{"mixed case", "BeArEr abc", "abc", true},
 		{"wrong scheme", "Basic abc", "", false},
 		{"scheme only, no space", "Bearer", "", false},
-		{"scheme with empty credentials", "Bearer ", "", true}, // ok=true, token="" — callers reject
+		{"scheme with empty credentials", "Bearer ", "", true},
 		{"empty header", "", "", false},
 		{"token containing spaces is kept whole", "Bearer a b", "a b", true},
 	}
@@ -43,10 +39,6 @@ func TestSplitBearerSchemeIsCaseInsensitive(t *testing.T) {
 	}
 }
 
-// TestBearerErrorShape pins the RFC 6750 §3 error format: every rejection
-// carries a WWW-Authenticate challenge, and a request that presented no
-// credentials at all gets a challenge with NO error code and no body (§3, "the
-// resource server SHOULD NOT include an error code").
 func TestBearerErrorShape(t *testing.T) {
 	t.Run("no credentials: bare challenge, no error code, no body", func(t *testing.T) {
 		app := fiber.New()
@@ -103,14 +95,11 @@ func TestBearerErrorShape(t *testing.T) {
 		if got["error"] != "invalid_token" || got["error_description"] != "token expired" {
 			t.Fatalf("body = %v", got)
 		}
-		// The house envelope must never leak onto a protocol endpoint.
 		if _, ok := got["code"]; ok {
 			t.Fatal(`RFC 6750 body must not carry the house "code" key`)
 		}
 	})
 
-	// A description containing a quote would otherwise break the header grammar
-	// and could smuggle extra auth-params into the challenge.
 	t.Run("quotes in the description are escaped", func(t *testing.T) {
 		app := fiber.New()
 		app.Get("/x", func(c fiber.Ctx) error {

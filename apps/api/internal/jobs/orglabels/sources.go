@@ -9,8 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// loadSource dispatches to the per-source adapter, returning the org records,
-// the source's rule strings and its source id.
 func loadSource(catalog, eg *gorm.DB, src string, limit int) ([]orgRec, ruleSet, int16, error) {
 	switch src {
 	case "vndb":
@@ -30,8 +28,6 @@ func loadSource(catalog, eg *gorm.DB, src string, limit int) ([]orgRec, ruleSet,
 	}
 }
 
-// finalize collects the record map into a deterministic slice (ordered by
-// external id), dedups each record's name folds and works, and applies --limit.
 func finalize(recByExt map[string]*orgRec, limit int) []orgRec {
 	out := make([]orgRec, 0, len(recByExt))
 	for _, r := range recByExt {
@@ -46,8 +42,6 @@ func finalize(recByExt map[string]*orgRec, limit int) []orgRec {
 	}
 	return out
 }
-
-// ── VNDB ────────────────────────────────────────────────────────────────────
 
 func loadVNDBOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 	var meta []struct {
@@ -74,7 +68,7 @@ func loadVNDBOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 		case "ng":
 			kind = model.LabelKindDoujinCircle
 		case "in":
-			canCreate = false // persons anchor existing labels only, never mint
+			canCreate = false
 		}
 		var latin *string
 		if m.Latin != "" {
@@ -107,7 +101,6 @@ func loadVNDBOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 		}
 	}
 
-	// Evidence: every work reachable through ANY release of this producer.
 	if err := attachWorks(db, recByExt, `
 		SELECT DISTINCT rp.pid AS ext_id, vwa.work_id AS work_id
 		FROM src_vndb.releases_producers rp
@@ -117,10 +110,6 @@ func loadVNDBOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 		func(r *orgRec, workID int64) { r.works = append(r.works, workID) }); err != nil {
 		return nil, err
 	}
-	// Attribution: only the ORIGINAL-language, non-patch releases. vndb records
-	// a release's own language (releases.olang) — the earlier gate asked
-	// releases_titles instead, which answers "does a title exist in that
-	// language", a different question that a bilingual localisation passes.
 	if err := attachWorks(db, recByExt, `
 		SELECT DISTINCT rp.pid AS ext_id, vwa.work_id AS work_id
 		FROM src_vndb.releases_producers rp
@@ -139,8 +128,6 @@ func loadVNDBOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 	return finalize(recByExt, limit), nil
 }
 
-// ── Bangumi ─────────────────────────────────────────────────────────────────
-
 func loadBGMOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 	var meta []struct {
 		ExtID    string `gorm:"column:ext_id"`
@@ -156,9 +143,9 @@ func loadBGMOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 	recByExt := make(map[string]*orgRec, len(meta))
 	for i := range meta {
 		m := &meta[i]
-		kind := model.LabelKindGameBrand // type 2 company
+		kind := model.LabelKindGameBrand
 		if m.Type == 3 {
-			kind = model.LabelKindGroup // type 3 group/unit
+			kind = model.LabelKindGroup
 		}
 		recByExt[m.ExtID] = &orgRec{
 			extID: m.ExtID, nameNorms: []string{m.NameNorm}, displayName: m.Name,
@@ -166,8 +153,6 @@ func loadBGMOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 		}
 	}
 
-	// Infobox 别名 folds broaden the name-equality branch. Items is only
-	// unnested when it is an array (a scalar Items errors otherwise).
 	var aliases []struct {
 		ExtID string `gorm:"column:ext_id"`
 		Norm  string `gorm:"column:norm"`
@@ -195,16 +180,11 @@ func loadBGMOrgs(db *gorm.DB, limit int) ([]orgRec, error) {
 		JOIN (SELECT external_id::bigint AS sid, entity_id AS work_id FROM catalog_external_ref
 		      WHERE entity_type = 5 AND source_id = 3 AND link_kind = 0) bwa ON bwa.sid = sp.subject_id
 		JOIN src_bangumi.person p ON p.id = sp.person_id WHERE p.type IN (2, 3)`,
-		// Bangumi's subject↔person link carries no edition layer at all, so
-		// there is nothing narrower to attribute from: evidence and
-		// attribution are the same set here, and attribWorks stays nil.
 		func(r *orgRec, workID int64) { r.works = append(r.works, workID) }); err != nil {
 		return nil, err
 	}
 	return finalize(recByExt, limit), nil
 }
-
-// ── erogamespace ────────────────────────────────────────────────────────────
 
 func loadEGOrgs(catalog, eg *gorm.DB, limit int) ([]orgRec, error) {
 	var meta []struct {
@@ -229,7 +209,7 @@ func loadEGOrgs(catalog, eg *gorm.DB, limit int) ([]orgRec, error) {
 	recByExt := make(map[string]*orgRec, len(meta))
 	for i := range meta {
 		m := &meta[i]
-		kind := model.LabelKindGameBrand // CORPORATION / unknown
+		kind := model.LabelKindGameBrand
 		if m.Kind == "CIRCLE" {
 			kind = model.LabelKindDoujinCircle
 		}
@@ -240,8 +220,6 @@ func loadEGOrgs(catalog, eg *gorm.DB, limit int) ([]orgRec, error) {
 		}
 	}
 
-	// brand → works: compose (game→brand) from eg with (game→work) anchors from
-	// catalog. The two live in different databases, so the join is in Go.
 	var gb []struct {
 		GameID  int64 `gorm:"column:game_id"`
 		BrandID int64 `gorm:"column:brand_id"`
@@ -274,9 +252,6 @@ func loadEGOrgs(catalog, eg *gorm.DB, limit int) ([]orgRec, error) {
 	return finalize(recByExt, limit), nil
 }
 
-// attachWorks runs an (ext_id, work_id) query and hands each pair to add, which
-// decides WHICH set of the record it lands in — the wide evidence set or the
-// narrow attributable one.
 func attachWorks(db *gorm.DB, recByExt map[string]*orgRec, query string, add func(*orgRec, int64)) error {
 	var works []struct {
 		ExtID  string `gorm:"column:ext_id"`

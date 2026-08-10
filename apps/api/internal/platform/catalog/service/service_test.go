@@ -16,13 +16,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration tests against a real Postgres (the galgame service_test.go
-// convention): TEST_DATABASE_DSN or a local default; missing database =
-// skip the whole package. Schema comes from migrate.Run — the exact
-// production migration — plus registry seeds (credits need role rows).
-// In CI the DSN points at the shared job database; `go test -p 1` (already
-// pinned in test.yml) serializes the packages that share it.
-
 var (
 	testDB      *gorm.DB
 	testResolve *ResolveService
@@ -35,7 +28,6 @@ var (
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_DSN")
 	if dsn == "" {
-		// Default: local test database
 		dsn = "host=localhost port=5432 user=postgres password=postgres dbname=kun_catalog_test sslmode=disable"
 	}
 
@@ -63,17 +55,12 @@ func TestMain(m *testing.M) {
 	testGuard = NewGuardService(db)
 	testQueues = NewAdminQueueService(db, testMerge)
 
-	// Hold the shared edit-table suite lock for the WHOLE package run — these
-	// tests truncate tables the handler / editing / galgameapp suites also
-	// write (suite_lock_test.go explains the key choice).
 	release := acquireCatalogSuiteLock(db)
 	code := m.Run()
 	release()
 	os.Exit(code)
 }
 
-// cleanTables truncates every DATA table (registry seeds stay). RESTART
-// IDENTITY gives deterministic ids per test.
 func cleanTables(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
@@ -82,9 +69,6 @@ func cleanTables(t *testing.T) {
 		"catalog_merge_proposal", "catalog_revision", "catalog_redirect", "catalog_entity_usage",
 		"catalog_work_relation", "catalog_entity_relation",
 		"catalog_work_title", "catalog_release", "catalog_work",
-		// Work facet tables — the wave-170b merge rehang list (each hangs off a
-		// work by work_id and is truncated in its own right, not only via the
-		// CASCADE, so RESTART IDENTITY reaches them too).
 		"catalog_work_intro", "catalog_work_cover", "catalog_work_screenshot",
 		"catalog_work_rating", "catalog_work_tag", "catalog_work_popularity",
 		"catalog_work_playtime", "catalog_work_platform",
@@ -103,8 +87,6 @@ func cleanTables(t *testing.T) {
 		}
 	}
 }
-
-// --- factories -------------------------------------------------------------
 
 func createPerson(t *testing.T, displayName string) *model.CatalogPerson {
 	t.Helper()
@@ -216,9 +198,6 @@ func addExternalRef(t *testing.T, entityType int16, entityID int64, sourceID int
 	}
 }
 
-// approveAndForceExecutable moves a proposal through approval and rewinds
-// its cooling-off deadline into the past (the tests' stand-in for waiting
-// 48 hours).
 func approveAndForceExecutable(t *testing.T, proposalID int64) {
 	t.Helper()
 	if err := testMerge.ApproveMerge(t.Context(), proposalID, 7); err != nil {
@@ -229,7 +208,6 @@ func approveAndForceExecutable(t *testing.T, proposalID int64) {
 	}
 }
 
-// seededRoleID returns a role id present in the registry seeds.
 func seededRoleID(t *testing.T) int64 {
 	t.Helper()
 	var id int64

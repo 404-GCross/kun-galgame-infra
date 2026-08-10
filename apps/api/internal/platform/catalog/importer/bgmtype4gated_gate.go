@@ -1,16 +1,11 @@
 package importer
 
-// Stateless gate-decision, collision and sampling helpers for the Bangumi type-4
-// gated expansion (refs/proj/78) — kept apart from the run/creation flow so the
-// main file stays under the size guideline.
-
 import (
 	"math/bits"
 	"math/rand"
 	"unicode"
 )
 
-// tallySignals accumulates the per-signal + overlap matrix over the eligible pool.
 func tallySignals(st *BgmGatedStats, p, t, x bool) {
 	if p {
 		st.SigP++
@@ -45,7 +40,6 @@ func tallySignals(st *BgmGatedStats, p, t, x bool) {
 	}
 }
 
-// collide reports whether either normalized title (≥4) already exists on a work.
 func collide(r poolRow, wt map[string]wtNorm) (BgmGatedCollision, bool) {
 	for _, n := range []string{r.NameNorm, r.NameCNNorm} {
 		if runeLen(n) < bgmGatedMinLen {
@@ -61,10 +55,6 @@ func collide(r poolRow, wt map[string]wtNorm) (BgmGatedCollision, bool) {
 	return BgmGatedCollision{}, false
 }
 
-// dropIntraCollisions removes every survivor that shares a normalized title with
-// ANOTHER survivor (the bidirectional-uniqueness guard within the wave: two
-// same-title subjects are ambiguous, so neither is minted — they stay reconcile
-// candidates, 漏收可补).
 func dropIntraCollisions(cands []candidate, st *BgmGatedStats) []candidate {
 	subjectsPerNorm := make(map[string]map[int64]struct{})
 	note := func(norm string, id int64) {
@@ -94,8 +84,6 @@ func dropIntraCollisions(cands []candidate, st *BgmGatedStats) []candidate {
 	return out
 }
 
-// pickRandomSample returns a deterministic (seeded) random sample of ≤100
-// to-create subjects — the reviewer's approval artifact.
 func pickRandomSample(cands []candidate) []BgmGatedSample {
 	idx := make([]int, len(cands))
 	for i := range idx {
@@ -133,13 +121,8 @@ func signalString(p, t, x bool) string {
 	return out
 }
 
-// corpusCount is the number of distinct corpora the bitmask represents.
 func corpusCount(mask uint8) int { return bits.OnesCount8(mask) }
 
-// pureASCIIHits reports whether EVERY corpus-hitting normalized title lacks any
-// CJK character (the reviewer's "pure ASCII" discriminator — a hit whose title
-// carries kana/kanji/hanzi is treated as Japanese/Chinese and is NOT pure ASCII).
-// Only the strings that actually produced a corpus hit are tested.
 func pureASCIIHits(r poolRow, nMask, cnMask uint8) bool {
 	hit := false
 	if nMask != 0 {
@@ -157,8 +140,6 @@ func pureASCIIHits(r poolRow, nMask, cnMask uint8) bool {
 	return hit
 }
 
-// hasCJK reports whether s contains any Han ideograph, Hiragana or Katakana rune
-// (halfwidth katakana included) — i.e. any Japanese/Chinese script character.
 func hasCJK(s string) bool {
 	for _, r := range s {
 		if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) {
@@ -168,13 +149,10 @@ func hasCJK(s string) bool {
 	return false
 }
 
-// bgmSampleOf builds a sample row for the evidence lists.
 func bgmSampleOf(r poolRow, signals string) BgmGatedSample {
 	return BgmGatedSample{SubjectID: r.ID, Name: r.Name, NameCN: r.NameCN, Signals: signals}
 }
 
-// runeLen is the character length of s (Postgres length() semantics), the
-// isomorphic counterpart to the SQL-side `length(norm) >= 4` floors.
 func runeLen(s string) int {
 	n := 0
 	for range s {

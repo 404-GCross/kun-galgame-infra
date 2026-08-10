@@ -11,25 +11,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- pure tests -----------------------------------------------------------
 
-// TestGlossaryCanonical pins the serialization the hash is taken over:
-// "src\tzh" lines, newline-joined, in priority order. Both MT jobs must
-// produce these exact bytes.
 func TestGlossaryCanonical(t *testing.T) {
 	assert.Equal(t, "", Glossary(nil).Canonical(), "an empty glossary serializes to nothing")
 
 	g := Glossary{{Src: "星空のメモリア", Zh: "星空的记忆"}, {Src: "ういんどみる", Zh: "风车"}}
 	assert.Equal(t, "星空のメモリア\t星空的记忆\nういんどみる\t风车", g.Canonical())
 
-	// Order is part of the value: a different order is a different glossary and
-	// therefore a different hash (which is why the loader is deterministic).
 	rev := Glossary{g[1], g[0]}
 	assert.NotEqual(t, g.Canonical(), rev.Canonical())
 }
 
-// TestGlossaryPromptSection pins the injected prompt block: the header, one
-// "原文 → 中文译名" line per entry in priority order, then the hard rule.
 func TestGlossaryPromptSection(t *testing.T) {
 	assert.Equal(t, "", Glossary(nil).PromptSection(), "no terms → no section")
 	assert.Equal(t, TranslateSystemPrompt, withGlossary(TranslateSystemPrompt, nil),
@@ -48,10 +40,6 @@ func TestGlossaryPromptSection(t *testing.T) {
 		"the English lane gets the same section")
 }
 
-// TestHashCandidateBackwardCompatible is the load-bearing contract: with NO
-// glossary the hash is bit-for-bit the plain sha256 the ~137k already-written
-// machine rows carry, so they do not re-translate; with one it folds the
-// canonical glossary in behind a NUL.
 func TestHashCandidateBackwardCompatible(t *testing.T) {
 	const text = "これはあらすじです。"
 	assert.Equal(t, hashSource(text), hashCandidate(text, nil),
@@ -69,16 +57,14 @@ func TestHashCandidateBackwardCompatible(t *testing.T) {
 		"a changed rendering re-translates")
 }
 
-// TestGlossaryBuilderCapAndDedup pins the cap, the source-term dedup (first =
-// highest priority wins) and the no-op filters.
 func TestGlossaryBuilderCapAndDedup(t *testing.T) {
 	var b glossaryBuilder
 	b.add("A", "甲")
-	b.add("A", "乙") // same source term → the higher-priority rendering stays
+	b.add("A", "乙")
 	b.add(" B ", " 乙 ")
-	b.add("", "丙")   // empty source
-	b.add("C", "")   // empty rendering
-	b.add("D", "D")  // renders to itself → teaches nothing
+	b.add("", "丙")
+	b.add("C", "")
+	b.add("D", "D")
 	assert.Equal(t, Glossary{{Src: "A", Zh: "甲"}, {Src: "B", Zh: "乙"}}, b.out)
 
 	var capped glossaryBuilder
@@ -89,11 +75,7 @@ func TestGlossaryBuilderCapAndDedup(t *testing.T) {
 	assert.Equal(t, "x", capped.out[0].Src, "the cap keeps the HIGHEST-priority entries")
 }
 
-// --- DB-backed tests ------------------------------------------------------
 
-// cleanEntities clears the entity tables the glossary reads. clean() truncates
-// catalog_work CASCADE, which reaches the work_title / work_character /
-// work_label edges but not the characters and labels themselves.
 func cleanEntities(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{"catalog_character", "catalog_label"} {
@@ -108,8 +90,6 @@ func mkTitle(t *testing.T, workID int64, lang, title string, kind int16) {
 	}).Error)
 }
 
-// mkRosterCharacter creates a character, optionally with a Chinese alias, and
-// puts it on the work's roster.
 func mkRosterCharacter(t *testing.T, workID int64, name, zh string) int64 {
 	t.Helper()
 	c := model.CatalogCharacter{DisplayName: name, Lang: "ja"}
@@ -142,9 +122,6 @@ func mkWorkLabel(t *testing.T, workID int64, name, zh string) int64 {
 	return l.ID
 }
 
-// TestLoadGlossaries proves the bulk loader's content AND its priority order:
-// the work's own title first, then its roster characters (character-id order),
-// then its labels — with search-hint rows and alias-less characters absent.
 func TestLoadGlossaries(t *testing.T) {
 	clean(t)
 	cleanEntities(t)
@@ -154,18 +131,14 @@ func TestLoadGlossaries(t *testing.T) {
 	w := mkWork(t, medium, "glossary-work", nil)
 	mkTitle(t, w, "ja", "星空のメモリア", model.WorkTitleKindOfficial)
 	mkTitle(t, w, "zh-Hans", "星空的记忆", model.WorkTitleKindOfficial)
-	// A search hint is a findability string, never a title — it must not leak
-	// into either side of the pair.
 	mkTitle(t, w, "ja", "hoshimemo", model.WorkTitleKindSearchHint)
 	mkTitle(t, w, "zh-Hans", "星空记忆搜索用", model.WorkTitleKindSearchHint)
 
 	mkRosterCharacter(t, w, "水橋 かおり", "水桥香织")
 	mkRosterCharacter(t, w, "橘 ひなた", "橘向日葵")
-	mkRosterCharacter(t, w, "名無し", "") // no Chinese alias → contributes nothing
+	mkRosterCharacter(t, w, "名無し", "")
 	mkWorkLabel(t, w, "ういんどみる", "风车")
 
-	// A second work with nothing translated anywhere — the empty-glossary case
-	// the backward-compatible hash exists for.
 	bare := mkWork(t, medium, "no-glossary-work", nil)
 	mkTitle(t, bare, "ja", "何もない作品", model.WorkTitleKindOfficial)
 
@@ -180,17 +153,11 @@ func TestLoadGlossaries(t *testing.T) {
 	}, gs[w], "own title, then roster characters by id, then labels")
 	assert.NotContains(t, gs, bare, "a work with no Chinese anywhere gets no glossary")
 
-	// Determinism: the same DB state must yield the identical order, or the
-	// hash wobbles and the corpus re-translates every run.
 	again, err := loadGlossaries(ctx, testDB, []int64{w, bare})
 	require.NoError(t, err)
 	assert.Equal(t, gs[w].Canonical(), again[w].Canonical())
 }
 
-// TestGlossaryReachesPromptAndHash drives the whole lane: the glossary lands on
-// the candidate, reaches the translator, folds into src_hash — and a machine
-// row written under the OLD plain hash re-translates exactly once when the work
-// has glossary data, while a glossary-less work keeps skipping.
 func TestGlossaryReachesPromptAndHash(t *testing.T) {
 	clean(t)
 	cleanEntities(t)
@@ -208,8 +175,6 @@ func TestGlossaryReachesPromptAndHash(t *testing.T) {
 	bare := mkWork(t, medium, "bare-hash", nil)
 	mkIntro(t, bare, "ja", bareText, bangumi)
 
-	// Both works already carry a machine row written by the PRE-glossary binary:
-	// src_hash = plain sha256(source).
 	for _, seed := range []struct {
 		id   int64
 		text string
@@ -240,16 +205,12 @@ func TestGlossaryReachesPromptAndHash(t *testing.T) {
 	require.NoError(t, testDB.Where("work_id=? AND lang='zh-Hans'", bare).First(&untouched).Error)
 	assert.Equal(t, "旧的机器译文", untouched.Intro, "no glossary → no re-translation")
 
-	// Third pass over the same state: everything is now idempotent. The
-	// re-translate is a ONE-TIME cost, not a per-run one.
 	tr2 := &fakeTranslator{model: "gloss-mt", fn: func(string) string { return "SHOULD-NOT-BE-CALLED" }}
 	st, err = Run(ctx, tr2, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 2, st.SkipUnchanged)
 	assert.Zero(t, tr2.calls)
 
-	// Ingesting a new Chinese alias changes the glossary → exactly that work
-	// re-translates again.
 	mkRosterCharacter(t, w, "水橋 かおり", "水桥香织")
 	tr3 := &fakeTranslator{model: "gloss-mt-v2", fn: func(ja string) string { return "[新译] " + ja }}
 	st, err = Run(ctx, tr3, Opts{DSN: testDSN, Apply: true})
@@ -259,8 +220,6 @@ func TestGlossaryReachesPromptAndHash(t *testing.T) {
 	assert.Len(t, tr3.gloss, 2, "the new alias joined the term list")
 }
 
-// TestMockTranslatorShowsGlossary: the rehearsal mock echoes the term count, so
-// a full mock apply proves the glossary really travelled the whole path.
 func TestMockTranslatorShowsGlossary(t *testing.T) {
 	m := MockTranslator{Model: "stub"}
 	none, _, err := m.Translate(context.Background(), "原文", nil)

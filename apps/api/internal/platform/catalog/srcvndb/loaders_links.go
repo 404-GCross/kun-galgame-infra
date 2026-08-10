@@ -1,8 +1,5 @@
 package srcvndb
 
-// Row decoders for the link-graph family (vn_extlinks / producers_extlinks /
-// staff_extlinks / producers_relations). See ingest.go for the machinery.
-
 import (
 	"time"
 

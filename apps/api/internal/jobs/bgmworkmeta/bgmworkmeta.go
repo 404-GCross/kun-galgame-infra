@@ -1,50 +1,3 @@
-// Package bgmworkmeta backfills two Bangumi-side facets for galgame works in one
-// candidate pass (refs/proj/71, ledger T3 — two similar BGM fields batched, zero
-// schema; T2 = refs/proj/70 §3/§8, 88):
-//
-//   - Field A, meta_tags → catalog_work_tag (source=bangumi): the subject's
-//     meta_tags (surveyed: jsonb array of strings — Bangumi's MODERATED
-//     official tag vocabulary, platform/genre style, no vote counts) land one
-//     row per tag with Count=0. Count=0 distinguishes a moderated meta tag
-//     from the voted 58b folksonomy rows inside the same table (the 68
-//     DLsite-genre precedent: count=0 = "no vote semantics on this source").
-//     A same-name collision with an existing folksonomy row hits the
-//     (work_id, name, source_id) unique key → ON CONFLICT DO NOTHING keeps
-//     the voted row. FILL semantics, not upsert: meta_tags are quasi-static;
-//     a dump-refresh re-run only adds names that newly appeared. T2: Field A
-//     admits CLAIMED works — meta_tags is a catalog-native SOURCE lane merged
-//     with the wiki bridge at the read face (no write-time guard).
-//
-//   - Field B, favorite shelves → catalog_work_popularity (source=bangumi):
-//     the subject's favorite (surveyed: jsonb object carrying exactly the
-//     five collection shelves {wish, done, doing, on_hold, dropped} on every
-//     game row — Bangumi's "collect" shelf is serialized as "done" in the
-//     dump) lands one row per shelf under the PopularityMetricBgm* vocabulary
-//     (10-14 — the step-62 extensible-metric design point exercised for the
-//     first time). UPSERT (ON CONFLICT DO UPDATE, change-detected — favorites
-//     are volatile, the 62 write pattern verbatim; a dump-refresh re-run
-//     heals values). A present 0 is a REAL row (about a third of shelf values
-//     are 0); an absent shelf writes no row. T2b (refs/proj/102): Field B
-//     admits CLAIMED works too — the popularity XOR became per-source at
-//     the read face (dlsite stays bridge-exclusive, bgm shelves read
-//     native), so the write-time guard is retired.
-//
-// Candidates: galgame works (claimed OR bodyless — T2) carrying an EXACT Bangumi
-// WORK anchor, matched_by UNRESTRICTED — every exact tier asserts identity (the
-// 66/69 ruling; the releasemeta bgm lane is the code precedent). Both fields
-// admit claimed works (Field A since T2, Field B since T2b — refs/proj/102):
-// no write-time claim guard remains. src_bangumi is a schema INSIDE the
-// catalog DB — a single --dsn covers the whole run.
-//
-// Discipline (55/57/58/62 lineage, all spec-pinned):
-//   - The DSN is ALWAYS explicit — a bare run cannot touch a live DB.
-//   - Dry-run is the default: the decided plan (per-field counters + samples)
-//     is identical in dry and apply; only the write outcomes need --apply.
-//   - Claim policy (T2 + T2b): both fields materialize for claimed and
-//     bodyless works alike — no write-time guard.
-//   - Idempotent: a second --apply writes zero — field A counts the no-ops as
-//     conflicts (DO NOTHING), field B as unchanged (change-detected upsert).
-//   - Limit/Offset window the candidate work list (chunking).
 package bgmworkmeta
 
 import (
@@ -58,70 +11,55 @@ import (
 	"gorm.io/gorm"
 )
 
-// maxSamples caps how many per-field example rows a run collects for logging /
-// test assertions; maxTopNames caps the meta-tag top-frequency digest.
 const (
 	maxSamples  = 8
 	maxTopNames = 10
 )
 
-// Opts configures a run.
 type Opts struct {
-	// Apply=false is a dry-run forecast (no writes). DSN (catalog, which also
-	// hosts src_bangumi) is REQUIRED and never defaulted. Limit/Offset window
-	// the candidate work list (0 = all).
 	Apply  bool
 	DSN    string
 	Limit  int
 	Offset int
 }
 
-// TagSample is one example planned meta-tag row (field A).
 type TagSample struct {
 	WorkID    int64
 	SubjectID int64
 	Name      string
 }
 
-// FavSample is one example planned favorite-shelf row (field B).
 type FavSample struct {
 	WorkID    int64
 	SubjectID int64
-	Bucket    string // the dump's shelf key (wish/done/doing/on_hold/dropped)
-	Metric    int16  // the PopularityMetricBgm* constant it maps to
+	Bucket    string
+	Metric    int16
 	Value     int64
 }
 
-// NameFreq is one entry of field A's top-frequency digest: how many works the
-// meta-tag name is planned on.
 type NameFreq struct {
 	Name  string
 	Works int
 }
 
-// Stats reports a run's outcome. The plan counters are identical in dry and
-// apply; the write outcomes (MetaWritten/MetaConflict, FavWritten/FavUnchanged)
-// are apply-only.
 type Stats struct {
-	Candidates int // exact-anchored galgame works (claimed + bodyless) joined to their subject
+	Candidates int
 
-	// Field A: meta_tags → catalog_work_tag (fill, Count=0).
-	MetaNoTags    int // meta_tags NULL / empty array → nothing to write
-	MetaNotArray  int // meta_tags malformed (not an array of strings) → counted skip
-	MetaNameBlank int // element blank after trim → skipped
-	MetaDup       int // duplicate name within one subject → collapsed
-	MetaPlanned   int // decided tag rows
-	MetaWritten   int // rows inserted (apply)
-	MetaConflict  int // ON CONFLICT no-ops — an existing folksonomy/meta row kept
-	MetaDistinct  int // distinct names across the plan
+	MetaNoTags    int
+	MetaNotArray  int
+	MetaNameBlank int
+	MetaDup       int
+	MetaPlanned   int
+	MetaWritten   int
+	MetaConflict  int
+	MetaDistinct  int
 
-	// Field B: favorite shelves → catalog_work_popularity (change-detected upsert).
-	FavNoObject   int // favorite NULL / not an object / empty object → nothing to write
-	FavUnknownKey int // shelf key outside the five-shelf vocabulary → counted skip
-	FavBadValue   int // non-integer or negative shelf value → skipped
-	FavPlanned    int // decided popularity rows
-	FavWritten    int // rows inserted or value-updated (apply)
-	FavUnchanged  int // change-detected no-ops (row already current)
+	FavNoObject   int
+	FavUnknownKey int
+	FavBadValue   int
+	FavPlanned    int
+	FavWritten    int
+	FavUnchanged  int
 
 	Errors int
 
@@ -130,8 +68,6 @@ type Stats struct {
 	FavSamples   []FavSample
 }
 
-// Run resolves the candidates and forecasts (dry) or writes (apply) both
-// fields' rows. Returns a loggable Stats.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess — pass the rehearsal copy locally, the live catalog only in the acceptance run")
@@ -161,14 +97,12 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		// Field A: moderated meta tags, Count=0 fill.
 		for _, name := range parseMetaTags(c.MetaTags, st) {
 			st.MetaPlanned++
 			nameFreq[name]++
 			collectTag(&st.MetaSamples, TagSample{WorkID: c.WorkID, SubjectID: c.SubjectID, Name: name})
 			w.writeTag(ctx, tagRow{WorkID: c.WorkID, SourceID: reg.bangumiSource, Name: name}, opts.Apply)
 		}
-		// Field B: favorite shelves, change-detected upsert.
 		for _, b := range parseFavorite(c.Favorite, st) {
 			st.FavPlanned++
 			collectFav(&st.FavSamples, FavSample{WorkID: c.WorkID, SubjectID: c.SubjectID, Bucket: b.Bucket, Metric: b.Metric, Value: b.Value})
@@ -206,8 +140,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// topNames digests field A's name→work frequency map into the most-frequent
-// meta-tag names (ties broken by name for determinism), capped at maxTopNames.
 func topNames(freq map[string]int) []NameFreq {
 	out := make([]NameFreq, 0, len(freq))
 	for name, works := range freq {
@@ -225,7 +157,6 @@ func topNames(freq map[string]int) []NameFreq {
 	return out
 }
 
-// collectTag / collectFav append capped samples.
 func collectTag(dst *[]TagSample, s TagSample) {
 	if len(*dst) < maxSamples {
 		*dst = append(*dst, s)

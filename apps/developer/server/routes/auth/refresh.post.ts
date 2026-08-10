@@ -1,15 +1,3 @@
-// OAuth (SSO) access-token refresh — the OAuth counterpart of the first-party
-// /api/v1/auth/refresh. It CANNOT reuse that endpoint: the IdP rejects
-// client-bound (OAuth) sessions there (auth_service.go:611), so an OAuth session
-// must refresh through /oauth/token with grant_type=refresh_token. Reads the
-// httpOnly refresh_token cookie, rotates it, and re-lands the session.
-//
-// §4.4 discipline: only a PERMANENT failure (the IdP returned an error body —
-// invalid_grant / expired) clears the session; a transient network/5xx blip
-// keeps the cookies so the caller can retry. The client single-flights refreshes
-// (useTokenRefresh), so concurrent 401s collapse into one call here.
-// Token responses are read via the tokenWire helpers, which judge success by
-// the presence of access_token in the bare RFC 6749 shape.
 import {
   tokenWireError,
   tokenWirePayload,
@@ -41,7 +29,6 @@ export default defineEventHandler(async (event) => {
   } catch (e) {
     const data = (e as { data?: TokenWire })?.data
     if (!data) {
-      // Transient (network / 5xx) — keep the session, let the client retry.
       setResponseStatus(event, 503)
       return { code: -1, message: '刷新暂时失败' }
     }

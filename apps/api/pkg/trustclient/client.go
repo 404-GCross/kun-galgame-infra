@@ -1,8 +1,3 @@
-// Package trustclient is a thin server-side client for the trust service's S2S
-// forward face. The community service uses it to forward its local review
-// signals (over-threshold flags, held first posts) into the unified trust inbox
-// and to resolve them back after a site moderator decides locally (step 03).
-// The Basic S2S credentials stay server-side.
 package trustclient
 
 import (
@@ -17,24 +12,19 @@ import (
 	"time"
 )
 
-// Config is the caller-side configuration.
 type Config struct {
-	BaseURL      string // e.g. http://trust:9283  (no trailing slash, no /api/v1)
+	BaseURL      string
 	ClientID     string
 	ClientSecret string
 	HTTPClient   *http.Client
-	Timeout      time.Duration // default 15s
+	Timeout      time.Duration
 }
 
-// Client talks to the trust S2S forward face. Safe for concurrent use.
 type Client struct {
 	cfg  Config
 	http *http.Client
 }
 
-// New builds a Client. Returns nil when unconfigured (no base URL / credentials)
-// so the caller can treat "trust forwarding not wired" as forwarding disabled
-// (fail-closed — the outbox ticker idles).
 func New(cfg Config) *Client {
 	if cfg.BaseURL == "" || cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return nil
@@ -51,7 +41,6 @@ func New(cfg Config) *Client {
 	return &Client{cfg: cfg, http: hc}
 }
 
-// ForwardRequest mirrors the trust ForwardRequest DTO.
 type ForwardRequest struct {
 	Site         string   `json:"site"`
 	SubjectKind  string   `json:"subject_kind"`
@@ -73,8 +62,6 @@ type forwardData struct {
 	Created      bool  `json:"created"`
 }
 
-// Forward opens/updates a forwarded review item. Returns the trust review item
-// id and whether it was newly created.
 func (c *Client) Forward(ctx context.Context, req ForwardRequest) (trustItemID int64, created bool, err error) {
 	var env envelope[forwardData]
 	if err := c.post(ctx, "/api/v1/trust/forward", req, &env); err != nil {
@@ -83,10 +70,6 @@ func (c *Client) Forward(ctx context.Context, req ForwardRequest) (trustItemID i
 	return env.Data.ReviewItemID, env.Data.Created, nil
 }
 
-// ScanRequest mirrors the trust ScanRequest DTO (step 04). Site is the relay
-// path: a community forwarder relays for many sites through one S2S identity, so
-// it carries the tenant site on the wire (allowlist-gated trust-side). Text is
-// the author's RAW body (capped/truncated at intake, never client-side).
 type ScanRequest struct {
 	Site        string `json:"site,omitempty"`
 	SubjectKind string `json:"subject_kind"`
@@ -100,8 +83,6 @@ type scanData struct {
 	Truncated bool  `json:"truncated"`
 }
 
-// Scan submits a content-scan event for async AI shadow-scoring. Returns the
-// scan-row id and whether the text was truncated at intake.
 func (c *Client) Scan(ctx context.Context, req ScanRequest) (scanID int64, truncated bool, err error) {
 	var env envelope[scanData]
 	if err := c.post(ctx, "/api/v1/trust/scan", req, &env); err != nil {
@@ -110,12 +91,6 @@ func (c *Client) Scan(ctx context.Context, req ScanRequest) (scanID int64, trunc
 	return env.Data.ScanID, env.Data.Truncated, nil
 }
 
-// CheckRequest mirrors the trust CheckRequest DTO (step 05): a synchronous
-// Tier0 word-list gate. Site is the relay path (a community forwarder relays for
-// many sites through one S2S identity, so it carries the tenant site on the
-// wire, allowlist-gated trust-side); an empty Site derives from the client
-// binding. Text is the RAW body to check. AuthorID is accepted for future
-// repeat-offender weighting (not consulted in v0).
 type CheckRequest struct {
 	Site     string `json:"site,omitempty"`
 	Text     string `json:"text"`
@@ -127,10 +102,6 @@ type checkData struct {
 	Matched  []string `json:"matched"`
 }
 
-// Check runs a synchronous word-list check. Returns the decision
-// (allow|deny|hold — deny wins over hold) and the matched normalized terms ([]
-// when none). The caller (community service) owns the timeout and the fail-open
-// posture; this method just answers or errors.
 func (c *Client) Check(ctx context.Context, req CheckRequest) (decision string, matched []string, err error) {
 	var env envelope[checkData]
 	if err := c.post(ctx, "/api/v1/trust/check", req, &env); err != nil {
@@ -149,9 +120,6 @@ type resolveData struct {
 	Closed bool `json:"closed"`
 }
 
-// Resolve closes a forwarded item after a local decision (outcome =
-// approved|rejected). Returns whether an open item was actually closed
-// (false = the trust item was already terminal — a tolerated race).
 func (c *Client) Resolve(ctx context.Context, trustItemID int64, outcome, actorRef string) (closed bool, err error) {
 	req := resolveRequest{ReviewItemID: trustItemID, Outcome: outcome}
 	if actorRef != "" {
@@ -164,8 +132,6 @@ func (c *Client) Resolve(ctx context.Context, trustItemID int64, outcome, actorR
 	return env.Data.Closed, nil
 }
 
-// post sends a Basic-authed JSON POST and decodes the house envelope. A non-2xx
-// status or a non-zero envelope code is an error.
 func (c *Client) post(ctx context.Context, path string, body, out any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -189,7 +155,6 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("trust %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
-	// Peek the envelope code before decoding into the typed target.
 	var head struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`

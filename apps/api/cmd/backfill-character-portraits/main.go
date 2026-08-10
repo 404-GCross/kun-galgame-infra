@@ -1,28 +1,3 @@
-// backfill-character-portraits uploads catalog CHARACTER portraits into the
-// image service (site "catalog", preset "character") and writes the returned
-// content hash to catalog_character.image_hash. It consumes the step-47 output
-// src_vndb.portrait_backfill (one in-gate VNDB portrait per catalog character,
-// already filtered to sexual/violence ≤ 100) and reads the portrait bytes from a
-// LOCAL VNDB image mirror (rsync ch/ — this job never dials t.vndb.org).
-//
-// Logic lives in internal/jobs/charportraits. Idempotent: a character whose
-// image_hash is already set is skipped before any byte read, so a re-run writes
-// nothing (skipped_has_hash == whole window).
-//
-// IMPORTANT: --dsn is REQUIRED and must point at the rehearsal copy locally
-// (kun_catalog_rehearsal) — NEVER the live kun_catalog. The acceptance-tester
-// points it at the production catalog for the real run.
-//
-//	# dry: forecast candidates + local-file availability
-//	go run ./cmd/backfill-character-portraits \
-//	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable" \
-//	    --vndb-image-dir ./vndb-img
-//
-//	# apply a local slice against the LOCAL compose/dev image service
-//	KUN_CATALOG_IMAGE_CLIENT_ID=... KUN_CATALOG_IMAGE_CLIENT_SECRET=... \
-//	go run ./cmd/backfill-character-portraits --apply --limit 300 \
-//	    --dsn "...dbname=kun_catalog_rehearsal..." \
-//	    --vndb-image-dir ./vndb-img --image-base-url http://127.0.0.1:9278
 package main
 
 import (

@@ -1,13 +1,3 @@
-// Package llmsuggest is the local-LLM SUGGESTION pipeline (doc 17 §4): the
-// model is a proposer, never an asserter. Every output lands in the src_llm
-// staging schema as a graded suggestion carrying its model + prompt_version +
-// input_hash; nothing here writes Gold, touches Silver's infobox_parsed,
-// mutates wiki data, or re-grades an external_ref. Confidence values are
-// archived for sorting only — there is no threshold that triggers an
-// automatic action (self-reported confidence is systematically overconfident).
-//
-// The client talks to a local vLLM OpenAI-compatible server. Zero new Go
-// dependencies: the HTTP client is hand-written on net/http.
 package llmsuggest
 
 import (
@@ -21,15 +11,12 @@ import (
 	"time"
 )
 
-// Client is a minimal OpenAI-compatible chat client for a local vLLM server.
 type Client struct {
 	baseURL string
 	model   string
 	http    *http.Client
 }
 
-// NewClient builds a client. baseURL is the OpenAI base (…/v1); model is the
-// served model id (e.g. "qwen3-14b").
 func NewClient(baseURL, model string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
@@ -38,9 +25,6 @@ func NewClient(baseURL, model string) *Client {
 	}
 }
 
-// chatRequest is the subset of the chat-completions body we send. guided JSON
-// via response_format=json_schema; Qwen3 "thinking" is disabled through
-// chat_template_kwargs so the whole budget goes to the schema-valid answer.
 type chatRequest struct {
 	Model             string         `json:"model"`
 	Messages          []chatMessage  `json:"messages"`
@@ -70,16 +54,12 @@ type chatResponse struct {
 	} `json:"error"`
 }
 
-// ChatResult carries the raw content plus token usage (for throughput stats).
 type ChatResult struct {
 	Content          string
 	CompletionTokens int
 	FinishReason     string
 }
 
-// ChatJSON runs one guided-JSON chat completion. schema is a JSON Schema
-// object; the server constrains the reply to it. The returned Content is the
-// raw JSON string (caller unmarshals into the task struct).
 func (c *Client) ChatJSON(ctx context.Context, system, user, schemaName string, schema map[string]any, maxTokens int) (ChatResult, error) {
 	body := chatRequest{
 		Model:             c.model,
@@ -137,7 +117,6 @@ func (c *Client) ChatJSON(ctx context.Context, system, user, schemaName string, 
 	}, nil
 }
 
-// Ping checks the server is reachable and returns the served model ids.
 func (c *Client) Ping(ctx context.Context) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
 	if err != nil {

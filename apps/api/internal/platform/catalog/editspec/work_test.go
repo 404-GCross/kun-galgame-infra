@@ -21,11 +21,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// End-to-end pilot test (acceptance line: catalog.work three fields —
-// propose → amend → merge → revision → diff → revert) against the exact
-// production schema (migrate.Run includes editing.AutoMigrate) and the real
-// catalog.work spec with the real perm keys.
-
 var (
 	testDB  *gorm.DB
 	testCtx = context.Background()
@@ -59,8 +54,6 @@ func newEngine(t *testing.T) *editing.Engine {
 	t.Helper()
 	for _, table := range []string{
 		"edit_proposal_amendment", "edit_proposal", "edit_revision",
-		// Every table a catalog.work field writes (wave 154 W3), so a facet
-		// case never inherits another case's rows.
 		"catalog_work_title", "catalog_work_intro", "catalog_work_tag",
 		"catalog_work_label", "catalog_work_engine", "catalog_series_member",
 		"catalog_work_cover", "catalog_work_screenshot", "catalog_external_ref",
@@ -90,8 +83,6 @@ func createWork(t *testing.T, displayName string) *model.CatalogWork {
 	return w
 }
 
-// realActor mirrors the S2S handler's policyCtx: roles resolve through the
-// REAL catalog perm bundles (no fake HasPerm here — this is the wiring test).
 func realActor(uid int64, roles ...string) editing.PolicyContext {
 	return editing.PolicyContext{
 		UserID: uid, Site: "nextmoe", TrustTier: 0,
@@ -109,7 +100,6 @@ func TestWorkPilotEndToEnd(t *testing.T) {
 	reviewer := realActor(200, "ren")
 	nobody := realActor(300, "user")
 
-	// A plain user cannot propose (default policy: perm-gated).
 	var permErr *editing.PermissionError
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
@@ -118,7 +108,6 @@ func TestWorkPilotEndToEnd(t *testing.T) {
 		t.Fatalf("user propose: %v", err)
 	}
 
-	// Propose all three pilot fields (admin).
 	prop, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{
@@ -135,7 +124,6 @@ func TestWorkPilotEndToEnd(t *testing.T) {
 		t.Fatal("automerge=never must keep the proposal open")
 	}
 
-	// Amend (reviewer): correct the name, reject the olang change.
 	if _, err := e.AmendProposal(testCtx, prop.ID, editing.AmendInput{
 		Set:   map[string]any{editspec.FieldWorkDisplayName: "正式名・改"},
 		Unset: []string{editspec.FieldWorkOLang},
@@ -144,7 +132,6 @@ func TestWorkPilotEndToEnd(t *testing.T) {
 		t.Fatalf("amend: %v", err)
 	}
 
-	// Merge → revision with double signature and precise changed_fields.
 	merged, err := e.MergeProposal(testCtx, prop.ID, reviewer, "ok")
 	if err != nil {
 		t.Fatalf("merge: %v", err)
@@ -160,7 +147,6 @@ func TestWorkPilotEndToEnd(t *testing.T) {
 		t.Fatalf("double signature: %+v", merged)
 	}
 
-	// The materialized row is the projection of the merge.
 	var w model.CatalogWork
 	if err := testDB.First(&w, work.ID).Error; err != nil {
 		t.Fatal(err)
@@ -169,7 +155,6 @@ func TestWorkPilotEndToEnd(t *testing.T) {
 		t.Fatalf("work after merge: %+v", w)
 	}
 
-	// Second edit for diff coverage (direct: none automerge, so via merge).
 	prop2, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkDisplayName: "第二版"}, Actor: editor,
@@ -181,7 +166,6 @@ func TestWorkPilotEndToEnd(t *testing.T) {
 		t.Fatalf("merge 2: %v", err)
 	}
 
-	// Diff 1 → 2: exactly the display_name changed.
 	diffs, err := e.Diff(testCtx, editspec.TypeWork, work.ID, 1, 2)
 	if err != nil {
 		t.Fatalf("diff: %v", err)
@@ -191,7 +175,6 @@ func TestWorkPilotEndToEnd(t *testing.T) {
 		t.Fatalf("diff: %+v", diffs)
 	}
 
-	// Revert to revision 1 — a NEW revision, action=reverted, history kept.
 	_, rev3, err := e.Revert(testCtx, editing.RevertInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID, ToSeq: 1,
 		Note: "undo", Actor: reviewer,
@@ -221,14 +204,14 @@ func TestWorkValidators(t *testing.T) {
 
 	var valErr *editing.ValidationError
 	cases := []map[string]any{
-		{editspec.FieldWorkDisplayName: ""},           // empty
-		{editspec.FieldWorkDisplayName: "   "},        // whitespace
-		{editspec.FieldWorkDisplayName: 42.0},         // not a string
-		{editspec.FieldWorkOLang: "xx"},               // not whitelisted
-		{editspec.FieldWorkOLang: "JA"},               // case-sensitive
-		{editspec.FieldWorkContentRating: float64(3)}, // out of range
-		{editspec.FieldWorkContentRating: 1.5},        // not an integer
-		{editspec.FieldWorkContentRating: "r18"},      // not a number
+		{editspec.FieldWorkDisplayName: ""},
+		{editspec.FieldWorkDisplayName: "   "},
+		{editspec.FieldWorkDisplayName: 42.0},
+		{editspec.FieldWorkOLang: "xx"},
+		{editspec.FieldWorkOLang: "JA"},
+		{editspec.FieldWorkContentRating: float64(3)},
+		{editspec.FieldWorkContentRating: 1.5},
+		{editspec.FieldWorkContentRating: "r18"},
 	}
 	for i, patch := range cases {
 		if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
@@ -238,7 +221,6 @@ func TestWorkValidators(t *testing.T) {
 		}
 	}
 
-	// Soft-deleted works are unreachable through the edit path.
 	if err := testDB.Delete(&model.CatalogWork{}, work.ID).Error; err != nil {
 		t.Fatal(err)
 	}

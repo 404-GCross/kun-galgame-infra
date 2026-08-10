@@ -1,15 +1,4 @@
 <script setup lang="ts">
-// Per-site moderation posture (step 07 M0). Everything governing enforcement
-// used to be platform-global — one env, one constant — so onboarding a second
-// site meant imposing kungal's calibrated posture on it from day one, and
-// denying it the shadow period kungal itself got. This page is where a site
-// says otherwise.
-//
-// The one idea the whole page rests on: an EMPTY field means "no opinion —
-// inherit the platform default", which is NOT the same as setting it to the
-// default's current value. Change a default later and the first moves while the
-// second stays put. So every control shows what "继承" actually resolves to, and
-// clearing a field is a real, expressible operation.
 import type {
   TrustSitePolicy,
   TrustSitePoliciesResponse,
@@ -36,8 +25,6 @@ const isLoading = computed(() => status.value === 'pending')
 
 const formatRate = (v: number) => `${(v * 100).toFixed(2)}%`
 
-// An inherited cell states the value it inherits, not a bare dash: "继承" alone
-// tells an operator nothing about the posture actually in force.
 const inheritedLabel = (kind: 'mode' | 'rate' | 'aggregate' | 'hide') => {
   const d = defaults.value
   if (!d) return '继承'
@@ -47,8 +34,6 @@ const inheritedLabel = (kind: 'mode' | 'rate' | 'aggregate' | 'hide') => {
   return `继承(${d.auto_hide_enabled ? '开' : '关'})`
 }
 
-// Editing. The form mirrors the API: a wholesale write where an empty field
-// clears the override. `null` is the in-form representation of 继承.
 const editOpen = ref(false)
 const saving = ref(false)
 const form = reactive({
@@ -72,7 +57,6 @@ const autoHideOptions = computed(() => [
   { value: 0, label: '关(只开单,不隐藏)' }
 ])
 
-// KunSelect carries numbers, so the tri-state (继承 / 是 / 否) rides on -1.
 const scanModeSelect = ref(-1)
 const autoHideSelect = ref(-1)
 
@@ -90,8 +74,6 @@ const openEdit = (p?: TrustSitePolicy) => {
   editOpen.value = true
 }
 
-// An empty string is an intentional clear; a non-numeric string is a mistake and
-// must not be silently sent as 0 — that would read as "this site chose zero".
 const numberOrNull = (raw: string): number | null | 'invalid' => {
   const s = raw.trim()
   if (!s) return null
@@ -224,8 +206,6 @@ const save = async () => {
                 <span v-if="p.flag_threshold != null">
                   {{ p.flag_threshold }}
                 </span>
-                <!-- No threshold is not "unset": it means this site takes the AI
-                     gateway's own verdict rather than re-deriving one. -->
                 <span v-else class="text-default-400">网关判定</span>
               </td>
               <td class="px-2 py-2">

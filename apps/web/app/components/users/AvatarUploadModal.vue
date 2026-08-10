@@ -1,11 +1,4 @@
 <script setup lang="ts">
-// Avatar upload modal for the user admin table.
-//
-// Posts a multipart file to `POST /api/v1/admin/users/:uuid/avatar` which
-// calls image_service via the SDK and writes back `users.avatar_image_hash`.
-//
-// On success emits `success` with the new hash so the parent can refresh
-// the user list (KunAvatar will then show the new image via the resolver).
 
 interface Props {
   open: boolean
@@ -19,14 +12,9 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-// KunUpload emits an already-cropped, square image/webp Blob (q0.77).
-// We POST that Blob as-is; image_service still re-processes it through
-// the avatar preset server-side (256/100 cover variants).
 const file = ref<Blob | null>(null)
 const uploading = ref(false)
 const errorMsg = ref('')
-// KunUpload holds its picked image in internal state with no reset API,
-// so we remount it via :key to clear the preview after close/success.
 const uploadKey = ref(0)
 
 const onCropped = (blob: Blob) => {
@@ -51,8 +39,6 @@ const submit = async () => {
 
   try {
     const fd = new FormData()
-    // Blob has no filename; the multipart parser needs one to treat this
-    // part as a file rather than a plain form field.
     fd.append('file', file.value, 'avatar.webp')
 
     const cfg = useRuntimeConfig()
@@ -85,10 +71,6 @@ const submit = async () => {
 
 <template>
   <KunModal :model-value="open" @update:model-value="close">
-    <!--
-      KunModal 只有一个默认 slot — `#header` / `#footer` 不存在。
-      所有内容（标题、表单、按钮）都按从上到下的顺序放进这一个 slot。
-    -->
     <div class="space-y-4">
       <h2 class="text-foreground text-lg font-semibold">
         上传头像 — {{ user?.name }}

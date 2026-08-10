@@ -6,22 +6,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// mirrorBatch is the shared IN-list chunk size for mirror reads.
 const mirrorBatch = 1000
 
-// dlDate is one DLsite mirror regist_date, pre-split. nil fields = the mirror
-// row exists but regist_date IS NULL ("DLsite never published a date").
 type dlDate struct {
 	y, m, d *int
 }
 
-// loadDlsiteDates batch-loads regist_date trios for the referenced worknos.
-// The timestamptz is rendered AT TIME ZONE 'Asia/Shanghai' — the wall clock
-// the mirror ingest recorded and the step-55/56 importers (process-local
-// splitDate on a +08 box) already projected into catalog rows, so re-derived
-// dates are byte-identical to the imported ones; surveyed: zero hour-23 rows,
-// so this equals the JST calendar date on every row. Extracting explicitly
-// also makes the run independent of any session TimeZone setting.
 func loadDlsiteDates(ctx context.Context, dlDB *gorm.DB, worknos []string) (map[string]dlDate, error) {
 	out := make(map[string]dlDate, len(worknos))
 	type row struct {
@@ -48,8 +38,6 @@ func loadDlsiteDates(ctx context.Context, dlDB *gorm.DB, worknos []string) (map[
 	return out, nil
 }
 
-// loadDlsiteAges batch-loads age_category ('1' general / '2' r15 / '3' adult;
-// NULL/” = unpublished) for the referenced worknos.
 func loadDlsiteAges(ctx context.Context, dlDB *gorm.DB, worknos []string) (map[string]string, error) {
 	out := make(map[string]string, len(worknos))
 	type row struct {
@@ -75,9 +63,6 @@ func loadDlsiteAges(ctx context.Context, dlDB *gorm.DB, worknos []string) (map[s
 	return out, nil
 }
 
-// loadEgSelldays batch-loads the EG mirror's sellday text ('YYYY-MM-DD';
-// surveyed: always non-NULL and full-ISO, with 2050-01-01 as the TBA
-// placeholder — the year gate rejects it).
 func loadEgSelldays(ctx context.Context, egDB *gorm.DB, ids []int64) (map[int64]string, error) {
 	out := make(map[int64]string, len(ids))
 	type row struct {

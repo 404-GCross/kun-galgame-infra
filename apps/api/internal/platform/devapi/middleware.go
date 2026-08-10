@@ -15,44 +15,28 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// credLocalsKey is the Fiber locals key under which ResolveCredential stashes
-// the resolved *Credential for downstream middleware/handlers.
 const credLocalsKey = "devapi_cred"
 
-// Resolve-cache tuning. A positive credential is cached 60s (裁定 1); a negative
-// result is cached briefly to blunt lookup floods for an unknown/rejected key
-// without meaningfully delaying a legitimately re-enabled one.
 const (
 	credCachePosTTL = 60 * time.Second
 	credCacheNegTTL = 10 * time.Second
-	credCacheNeg    = byte('-') // one-byte negative marker (a JSON Credential is longer)
+	credCacheNeg    = byte('-')
 )
 
-// Middleware carries the collaborators the open-API request chain needs. The
-// host process (cmd/catalog — both the galgame and catalog public faces) wires
-// it in 02/03; this package only delivers + tests the handlers.
 type Middleware struct {
 	repo  *Repository
 	store Store
 }
 
-// NewMiddleware builds the middleware chain over the main-DB repository and the
-// counter/cache store.
 func NewMiddleware(repo *Repository, store Store) *Middleware {
 	return &Middleware{repo: repo, store: store}
 }
 
-// CredentialFrom returns the resolved credential a preceding ResolveCredential
-// stored, or nil.
 func CredentialFrom(c fiber.Ctx) *Credential {
 	cred, _ := c.Locals(credLocalsKey).(*Credential)
 	return cred
 }
 
-// ResolveCredential authenticates the request from its API key (Authorization:
-// Bearer nm_… or X-API-Key), resolving it against the main DB with a 60s Redis
-// cache. On any missing/invalid credential it returns 401; on a genuine DB
-// error it returns 503 and does NOT fail open (裁定 5).
 func (m *Middleware) ResolveCredential(c fiber.Ctx) error {
 	raw := extractKey(c)
 	if !HasKeyPrefix(raw) {
@@ -70,9 +54,6 @@ func (m *Middleware) ResolveCredential(c fiber.Ctx) error {
 	return c.Next()
 }
 
-// resolve computes the key hash, consults the cache, and falls back to the DB,
-// caching the positive/negative outcome. A nil credential means "no valid
-// credential" (401); a non-nil error means an infra failure (do not fail open).
 func (m *Middleware) resolve(ctx context.Context, raw string) (*Credential, error) {
 	cacheKey := "devkey:" + hashHex(raw)
 	if b, _ := m.store.Get(ctx, cacheKey); len(b) > 0 {
@@ -83,7 +64,6 @@ func (m *Middleware) resolve(ctx context.Context, raw string) (*Credential, erro
 		if json.Unmarshal(b, &cred) == nil {
 			return &cred, nil
 		}
-		// Corrupt cache entry → fall through to the DB.
 	}
 
 	cred, err := m.repo.ResolveByHash(ctx, HashKey(raw), time.Now())
@@ -100,10 +80,6 @@ func (m *Middleware) resolve(ctx context.Context, raw string) (*Credential, erro
 	return cred, nil
 }
 
-// RateLimit enforces the per-minute request budget (per key, shared across
-// faces) with a minute-bucketed counter (`ratelimit:{key_id}:{minute}`). Sets
-// the X-RateLimit-* headers; on overflow returns 429 + Retry-After. If the
-// counter store is unavailable it fails open with a WARN (裁定 5).
 func (m *Middleware) RateLimit(c fiber.Ctx) error {
 	cred := CredentialFrom(c)
 	if cred == nil {
@@ -114,7 +90,7 @@ func (m *Middleware) RateLimit(c fiber.Ctx) error {
 		slog.Warn("devapi rate-limit store unavailable; failing open", "key_id", cred.KeyID)
 		return c.Next()
 	}
-	if limit > 0 { // 0 == unlimited (internal tier): no headers, always allowed
+	if limit > 0 {
 		c.Set("X-RateLimit-Limit", strconv.Itoa(limit))
 		c.Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
 		c.Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
@@ -130,10 +106,6 @@ func (m *Middleware) RateLimit(c fiber.Ctx) error {
 	return c.Next()
 }
 
-// rateResult runs the counter math for `now`. Returns the effective limit,
-// remaining (clamped ≥0), the reset epoch second, whether the request is
-// allowed, and whether the store failed (caller fails open). An unlimited tier
-// yields limit 0 / allowed true.
 func (m *Middleware) rateResult(ctx context.Context, cred *Credential, now time.Time) (limit, remaining int, reset int64, allowed, failOpen bool) {
 	lim, unlimited := cred.EffectiveRate()
 	if unlimited {
@@ -153,9 +125,6 @@ func (m *Middleware) rateResult(ctx context.Context, cred *Credential, now time.
 	return lim, remaining, reset, int(n) <= lim, false
 }
 
-// Quota enforces the daily request quota (per key, shared across faces) with a
-// day-bucketed counter (`quota:{key_id}:{YYYY-MM-DD}`, TTL to the next day).
-// Sets X-Quota-* headers; on overflow returns 429. Fails open on store outage.
 func (m *Middleware) Quota(c fiber.Ctx) error {
 	cred := CredentialFrom(c)
 	if cred == nil {
@@ -176,8 +145,6 @@ func (m *Middleware) Quota(c fiber.Ctx) error {
 	return c.Next()
 }
 
-// quotaResult runs the daily-counter math for `now`. A new day is a distinct
-// key, so the counter resets automatically at the day boundary.
 func (m *Middleware) quotaResult(ctx context.Context, cred *Credential, now time.Time) (limit, remaining int, allowed, failOpen bool) {
 	lim, unlimited := cred.EffectiveQuota()
 	if unlimited {
@@ -196,7 +163,6 @@ func (m *Middleware) quotaResult(ctx context.Context, cred *Credential, now time
 	return lim, remaining, int(n) <= lim, false
 }
 
-// RequireScope gates a route on a single scope being present in the credential.
 func RequireScope(scope string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		cred := CredentialFrom(c)
@@ -210,11 +176,6 @@ func RequireScope(scope string) fiber.Handler {
 	}
 }
 
-// RequireTier gates a route on the credential's tier matching `tier` exactly.
-// A missing credential is 401 (mirrors RequireScope — a preceding
-// ResolveCredential should already have rejected it); a present credential of
-// the wrong tier is 403. It fences the /internal rich read face to internal-tier
-// keys only (free/trusted → 403). ResolveCredential must run before it.
 func RequireTier(tier string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		cred := CredentialFrom(c)
@@ -228,18 +189,6 @@ func RequireTier(tier string) fiber.Handler {
 	}
 }
 
-// ResolveContentLimit computes the effective content_limit TOKEN for a request:
-// the three-state gate sfw (default) | nsfw | all (W1a, P5). Both nsfw and all
-// require BOTH the galgame:nsfw scope and the credential's effective nsfw_allowed
-// flag; anything short of that silently downgrades to sfw (default-safe
-// projection, not a hard 403 — so a no-scope key is byte-identical across the
-// three requested values). The returned token is a WIRE token: callers that feed
-// a repository filter must map "all" → "" (no filter) via utils.ParseContentLimit
-// (sfwGate passthrough routes already do this downstream).
-//
-// No Phase 1 key carries galgame:nsfw, so this still returns "sfw" for every
-// key issued today — the gate is wired but inert until a key is granted the
-// scope (裁定 6 / P5).
 func ResolveContentLimit(c fiber.Ctx, requested string) string {
 	if requested != "nsfw" && requested != "all" {
 		return "sfw"
@@ -250,40 +199,11 @@ func ResolveContentLimit(c fiber.Ctx, requested string) string {
 	return "sfw"
 }
 
-// NSFWCapable reports whether the request's resolved credential may see NSFW
-// content: it carries the galgame:nsfw scope AND its effective nsfw_allowed flag
-// is set (the same gate the three-state content_limit uses). Used to gate the
-// add-only per-image sexual/violence levels (W1c) independently of the request's
-// content_limit, so the sfw face stays byte-frozen for a scope-less third party
-// while an nsfw-capable consumer (moyu's internal key) sees the ratings on every
-// request, matching the internal bridge's always-present rating rows.
 func NSFWCapable(c fiber.Ctx) bool {
 	cred := CredentialFrom(c)
 	return cred != nil && cred.NSFWAllowed && cred.HasScope(ScopeGalgameNSFW)
 }
 
-// extractKey pulls the raw API key from the request. Preference order:
-//
-//  1. Authorization: Bearer <value> — but ONLY when <value> carries one of our
-//     key prefixes (nm_live_/nm_test_). This is the legacy single-credential
-//     transport (a key in the Bearer slot).
-//  2. X-API-Key header — the dual-credential transport: the key rides here so
-//     Authorization is free for an OPTIONAL end-user JWT (the internal rich
-//     face's personalized reads: /mine, /messages/mine, and the optionalJWT
-//     routes). See 09-open-api-phase2 01 裁定 6.
-//
-// The prefix guard on (1) is a strict widening, not a behavior change for any
-// pre-existing single-credential request:
-//   - Bearer nm_… only        → matched by (1), returned unchanged.
-//   - X-API-Key only           → (1) misses, falls through to X-API-Key.
-//   - Bearer <non-key JWT> only → (1) misses (no key prefix), X-API-Key is
-//     empty, so "" is returned ⇒ ResolveCredential 401 — the SAME 401 the old
-//     code produced (it returned the JWT, which then failed HasKeyPrefix).
-//   - neither                   → "".
-//
-// The only newly-reachable path is BOTH present (key in X-API-Key + a JWT in
-// Authorization): the old code returned the JWT and 401'd; now it returns the
-// real key from X-API-Key.
 func extractKey(c fiber.Ctx) string {
 	if h := c.Get("Authorization"); h != "" {
 		if v, ok := strings.CutPrefix(h, "Bearer "); ok {
@@ -295,22 +215,15 @@ func extractKey(c fiber.Ctx) string {
 	return strings.TrimSpace(c.Get("X-API-Key"))
 }
 
-// quotaCounterKey is the day-bucketed daily-quota counter key for a key. It is
-// the SINGLE definition shared by the Quota enforcer (which INCRs it) and the
-// account-level live-remaining read (which GETs it) so the two can never drift.
 func quotaCounterKey(keyID uint, day string) string {
 	return fmt.Sprintf("quota:%d:%s", keyID, day)
 }
 
-// nextDayStartUnix is the epoch second at the next UTC midnight — the moment the
-// daily quota counter rolls over (its own key expires and a fresh day begins).
 func nextDayStartUnix(now time.Time) int64 {
 	utc := now.UTC()
 	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1).Unix()
 }
 
-// ttlUntilNextDay is the duration from now (UTC) to the start of the next day,
-// plus a small buffer so the counter key survives just past midnight.
 func ttlUntilNextDay(now time.Time) time.Duration {
 	next := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
 	return next.Sub(now) + time.Minute

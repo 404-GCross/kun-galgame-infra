@@ -1,20 +1,3 @@
-// Package workproducers lands the E2b producer-edge backfill (step 100,
-// refs/proj/100): vndb releases_producers dev/pub flags → work-level
-// catalog_work_label attribution edges.
-//
-//   - Grain: WORK-level, original-language gate. "Who developed / published
-//     this" is a work-level consumer question, and vndb's own VN page derives
-//     its producer list from original-language releases only. A localization
-//     publisher (Sekai Project on the EN release) is a RELEASE-level fact —
-//     deliberately NOT flattened into the work face here.
-//   - Kinds: developer → WorkLabelKindDeveloper (2, reserved since E2, first
-//     use); publisher → WorkLabelKindPublisher (1). source_id = vndb.
-//   - Resolution: pid → catalog_label through the EXACT vndb label anchors
-//     E2a graded (probable stays in the review lane). Pids without an exact
-//     anchor are counted, never guessed (measured: the gap is structural —
-//     an E2a re-run is a no-op; type=in never mints per doctrine).
-//
-// Edges are static facts — ON CONFLICT DO NOTHING; re-runs are no-ops.
 package workproducers
 
 import (
@@ -30,23 +13,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// Opts configures a run.
 type Opts struct {
 	Apply bool
-	DSN   string // catalog DB (hosts src_vndb) — REQUIRED
+	DSN   string
 }
 
-// Stats reports a run. Planned counters are identical in dry and apply.
 type Stats struct {
-	DevPlanned int // (work,label) pairs with the developer flag
-	PubPlanned int // (work,label) pairs with the publisher flag
+	DevPlanned int
+	PubPlanned int
 	Written    int
-	SkippedDup int // edge row already there (E2a mint or re-run)
-	Unresolved int // (work,pid) pairs whose pid has no exact vndb label anchor
+	SkippedDup int
+	Unresolved int
 	Errors     int
 }
 
-// Run executes the backfill.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
@@ -69,8 +49,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 
 	st := &Stats{}
 
-	// Candidates: one row per (work,label) with OR-folded flags. The olang
-	// EXISTS is the original-language gate (non-MTL title row in w.olang).
 	var cands []struct {
 		WorkID    int64 `gorm:"column:work_id"`
 		LabelID   int64 `gorm:"column:label_id"`
@@ -95,7 +73,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		return nil, fmt.Errorf("load candidates: %w", err)
 	}
 
-	// The unresolved tail — counted for the report, never guessed.
 	if err := db.WithContext(ctx).Raw(`
 		SELECT count(DISTINCT (rel.work_id, rp.pid))
 		FROM catalog_external_ref r
@@ -129,10 +106,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 
 	if opts.Apply {
-		// touched collects the works that actually gained an edge. RETURNING is
-		// what makes that exact under ON CONFLICT DO NOTHING — it yields only the
-		// inserted rows, so a re-run over an already-complete edge set returns
-		// nothing and bumps no catalog_work.updated_at.
 		var touched []int64
 		for start := 0; start < len(rows); start += 2000 {
 			end := min(start+2000, len(rows))
@@ -158,10 +131,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// insertEdges inserts one batch of work↔label edges, insert-if-absent, and
-// returns the work ids of the rows that were really written (RETURNING under
-// ON CONFLICT DO NOTHING yields inserted rows only). Raw SQL rather than a GORM
-// batch create because GORM cannot hand back a non-primary-key column.
 func insertEdges(ctx context.Context, db *gorm.DB, batch []model.CatalogWorkLabel) ([]int64, error) {
 	var sb strings.Builder
 	sb.WriteString(`INSERT INTO catalog_work_label (work_id, label_id, kind, source_id) VALUES `)

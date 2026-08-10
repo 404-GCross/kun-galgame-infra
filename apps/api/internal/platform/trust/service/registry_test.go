@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-// TestListUsableReasons pins the S2S reasons feed: a site sees the global base
-// plus its OWN non-deprecated extensions — never another site's rows, never
-// deprecated ones. (This is the endpoint that spares product BFFs from
-// hardcoding the seed set.)
 func TestListUsableReasons(t *testing.T) {
 	if testDB == nil {
 		t.Skip("TEST_DATABASE_DSN not set")
@@ -33,8 +29,6 @@ func TestListUsableReasons(t *testing.T) {
 		t.Fatalf("deprecate reason: %v", err)
 	}
 	t.Cleanup(func() {
-		// Reason rows are never DELETEd in production (registry discipline), but
-		// the shared suite DB must not leak per-test extensions into other tests.
 		testDB.Exec(`DELETE FROM trust_report_reason WHERE site IS NOT NULL`)
 	})
 

@@ -2,10 +2,6 @@
 import { DEV_TIER_COLORS, DEV_TIER_LABELS } from '~/constants/dev'
 import type { DevApp, DevKey, DevKeyMinted, DevUsageDayFace } from '~~/shared/types/dev'
 
-// App detail: read-only config summary + name/description edit + API-key
-// lifecycle + basic usage. The self-service face exposes a single-app GET, so
-// the app row loads directly (404 → not owned / not found). Mutations go through
-// useApi; reads are SSR-rendered via useApiFetch.
 const route = useRoute()
 const clientId = computed(() => String(route.params.clientId))
 
@@ -31,8 +27,6 @@ const busy = ref(false)
 const showEditModal = ref(false)
 const showMintModal = ref(false)
 
-// Show-once plaintext lives ONLY here (component-local), handed to the reveal
-// modal and cleared on close — never store/localStorage/URL/logs.
 const mintedKey = ref<DevKeyMinted | null>(null)
 const revealRotated = ref(false)
 
@@ -153,7 +147,6 @@ const askDeactivate = () => {
     </KunCard>
 
     <template v-else>
-      <!-- Config card -->
       <KunCard content-class="justify-start gap-0" class-name="p-6">
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">
@@ -224,7 +217,6 @@ const askDeactivate = () => {
         </div>
       </KunCard>
 
-      <!-- Keys -->
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-foreground">API 密钥</h2>
         <KunButton color="primary" size="sm" @click="showMintModal = true">
@@ -240,7 +232,6 @@ const askDeactivate = () => {
         @revoke="askRevoke"
       />
 
-      <!-- Usage -->
       <div>
         <h2 class="mb-3 text-lg font-semibold text-foreground">
           用量（最近 7 天）

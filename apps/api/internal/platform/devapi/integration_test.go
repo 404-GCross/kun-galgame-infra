@@ -17,18 +17,8 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration tests against a real Postgres (the community/catalog/trust
-// convention): TEST_DATABASE_DSN or a local default; a missing database skips
-// the package. The schema is provisioned by the exact production migration
-// helpers (AddOAuthClientDevColumns + Models), and provisioned TWICE in TestMain
-// as the idempotency probe. `go test -p 1` (pinned in test.yml) serializes
-// packages that share the CI database; a dedicated advisory lock adds
-// robustness when -p 1 is not set.
-
 var testDB *gorm.DB
 
-// suiteLockKey = "dvap" — distinct from community (0x636f6d6d) and trust keys,
-// per the single-keyspace advisory-lock rule.
 const suiteLockKey = 0x64766170
 
 func TestMain(m *testing.M) {
@@ -44,8 +34,6 @@ func TestMain(m *testing.M) {
 	sqlDB, _ := db.DB()
 	release := acquireSuiteLock(sqlDB)
 
-	// First provision creates the schema; the second is the idempotency probe —
-	// a re-run of AddOAuthClientDevColumns + AutoMigrate must be a no-op.
 	if err := provision(db); err != nil {
 		release()
 		fmt.Fprintf(os.Stderr, "SKIP: devapi migration failed: %v\n", err)
@@ -63,10 +51,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// provision mirrors cmd/migrate's order for the developer-platform schema:
-// safely pre-migrate an existing oauth_clients table, then AutoMigrate the
-// complete OAuth client and developer-platform models. On a fresh database the
-// pre-migration is a no-op and AutoMigrate creates every column.
 func provision(db *gorm.DB) error {
 	if err := AddOAuthClientDevColumns(db); err != nil {
 		return err
@@ -131,8 +115,6 @@ func acquireSuiteLock(db *sql.DB) func() {
 	}
 }
 
-// --- helpers ---
-
 func cleanup(t *testing.T) {
 	t.Helper()
 	if err := testDB.Exec(`TRUNCATE developer_api_keys, developer_api_usage RESTART IDENTITY`).Error; err != nil {
@@ -166,10 +148,6 @@ func newService(t *testing.T) (*AdminService, *Repository) {
 	return NewAdminService(repo, newMemStore()), repo
 }
 
-// --- migration discipline ---
-
-// TestDevColumnDiscipline asserts the dev_* intent columns carry NO DB default
-// (the GORM zero-value trap, 裁定 8).
 func TestDevColumnDiscipline(t *testing.T) {
 	for _, col := range []string{"dev_enabled", "dev_tier", "dev_nsfw_allowed", "dev_rate_per_min", "dev_quota_daily"} {
 		var def *string
@@ -185,8 +163,6 @@ func TestDevColumnDiscipline(t *testing.T) {
 	}
 }
 
-// TestUsageUniqueIndex asserts the composite unique index carries all four
-// columns in declared order (the shared-index priority trap).
 func TestUsageUniqueIndex(t *testing.T) {
 	var def string
 	if err := testDB.Raw(
@@ -205,8 +181,6 @@ func TestUsageUniqueIndex(t *testing.T) {
 	}
 }
 
-// --- key lifecycle ---
-
 func TestKeyLifecycle(t *testing.T) {
 	cleanup(t)
 	const clientID = "devapitest_lifecycle"
@@ -215,7 +189,6 @@ func TestKeyLifecycle(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	// Mint → resolves active with the right scopes.
 	key, plaintext, err := svc.MintKey(ctx, clientID, MintKeyInput{Name: "k1"}, 42)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
@@ -234,7 +207,6 @@ func TestKeyLifecycle(t *testing.T) {
 		t.Errorf("resolved scopes = %v, want the two default reads", cred.Scopes)
 	}
 
-	// Rotate → both old and new resolve during the grace window.
 	newKey, newPlain, err := svc.RotateKey(ctx, key.ID, 42)
 	if err != nil {
 		t.Fatalf("rotate: %v", err)
@@ -248,7 +220,6 @@ func TestKeyLifecycle(t *testing.T) {
 	if c, _ := repo.ResolveByHash(ctx, HashKey(newPlain), now); c == nil {
 		t.Errorf("new key must resolve after rotate")
 	}
-	// Old key past its grace expiry → no longer resolves.
 	old, _ := repo.GetKey(ctx, key.ID)
 	if old.ExpiresAt == nil {
 		t.Fatalf("rotated-out key should have an expiry")
@@ -257,7 +228,6 @@ func TestKeyLifecycle(t *testing.T) {
 		t.Errorf("old key must not resolve after its expiry")
 	}
 
-	// Revoke new key → immediately rejected.
 	if err := svc.RevokeKey(ctx, newKey.ID); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
@@ -266,8 +236,6 @@ func TestKeyLifecycle(t *testing.T) {
 	}
 }
 
-// TestRevokeBustsCache: revoking a key actively deletes its resolve-cache entry
-// (not waiting out the 60s TTL).
 func TestRevokeBustsCache(t *testing.T) {
 	cleanup(t)
 	const clientID = "devapitest_bust"
@@ -280,7 +248,6 @@ func TestRevokeBustsCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	// Seed the resolve cache as if the key had been resolved once.
 	cacheKey := "devkey:" + hashHex(plaintext)
 	store.kv[cacheKey] = []byte("cached")
 
@@ -292,11 +259,10 @@ func TestRevokeBustsCache(t *testing.T) {
 	}
 }
 
-// TestDevEnabledGate: a valid key on a disabled app resolves to nothing (401).
 func TestDevEnabledGate(t *testing.T) {
 	cleanup(t)
 	const clientID = "devapitest_disabled"
-	makeApp(t, clientID, false) // dev_enabled = false
+	makeApp(t, clientID, false)
 	svc, repo := newService(t)
 	ctx := context.Background()
 
@@ -308,7 +274,6 @@ func TestDevEnabledGate(t *testing.T) {
 		t.Errorf("key on a dev_enabled=false app must not resolve, got %+v", c)
 	}
 
-	// Enabling the app makes the same key resolve.
 	if _, err := svc.UpdateAppConfig(ctx, clientID, AppConfig{DevEnabled: boolPtr(true)}); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
@@ -317,8 +282,6 @@ func TestDevEnabledGate(t *testing.T) {
 	}
 }
 
-// TestUsageFlushIdempotent: record N → flush → correct row; re-flush is a no-op;
-// further records accumulate.
 func TestUsageFlushIdempotent(t *testing.T) {
 	cleanup(t)
 	repo := NewRepository(testDB)
@@ -328,20 +291,18 @@ func TestUsageFlushIdempotent(t *testing.T) {
 
 	rec.Record(cred, "catalog", 200)
 	rec.Record(cred, "catalog", 200)
-	rec.Record(cred, "catalog", 404) // 4xx
+	rec.Record(cred, "catalog", 404)
 	if err := rec.Flush(ctx); err != nil {
 		t.Fatalf("flush: %v", err)
 	}
 	assertUsage(t, cred.ClientID, cred.KeyID, "catalog", 3, 1, 0)
 
-	// Re-flush with nothing pending must not double-count.
 	if err := rec.Flush(ctx); err != nil {
 		t.Fatalf("re-flush: %v", err)
 	}
 	assertUsage(t, cred.ClientID, cred.KeyID, "catalog", 3, 1, 0)
 
-	// Further records accumulate via the ON CONFLICT upsert.
-	rec.Record(cred, "catalog", 500) // 5xx
+	rec.Record(cred, "catalog", 500)
 	rec.Record(cred, "catalog", 200)
 	if err := rec.Flush(ctx); err != nil {
 		t.Fatalf("flush 2: %v", err)
@@ -363,31 +324,17 @@ func assertUsage(t *testing.T, clientID string, keyID uint, face string, count, 
 	}
 }
 
-// TestAddDevColumnsBackfillsExisting exercises the real production migration
-// path (裁定 8): the dev_* columns are added to an oauth_clients table that
-// ALREADY has rows. The pre-existing row must backfill to the NOT NULL zero
-// values, the temporary DEFAULT must be dropped, and a re-run must be a no-op.
-// Runs last (it drops + re-adds columns on the shared table, restoring them).
 func TestAddDevColumnsBackfillsExisting(t *testing.T) {
 	cleanup(t)
-	// This test runs DDL (drop + re-add columns) on the shared oauth_clients
-	// table. Pooled connections hold prepared-statement plans against the OLD
-	// row type, and the next `SELECT *` on any of them fails with "cached plan
-	// must not change result type" (SQLSTATE 0A000) — in THIS test and in every
-	// test that runs after it (file order puts integration_test before
-	// selfservice_test, so "runs last" never held). Flush the pool's idle
-	// connections around each DDL phase so no stale plan survives.
 	flushPool := func() {
 		sqlDB, err := testDB.DB()
 		if err != nil {
 			t.Fatalf("flush pool: %v", err)
 		}
-		sqlDB.SetMaxIdleConns(0) // closes idle conns and their statement caches
+		sqlDB.SetMaxIdleConns(0)
 		sqlDB.SetMaxIdleConns(2)
 	}
 	defer flushPool()
-	// Simulate a pre-migration table: strip the dev columns, then insert a
-	// legacy client that predates them.
 	for _, col := range []string{"dev_enabled", "dev_tier", "dev_nsfw_allowed", "dev_rate_per_min", "dev_quota_daily", "owner_user_id"} {
 		if err := testDB.Exec("ALTER TABLE oauth_clients DROP COLUMN IF EXISTS " + col).Error; err != nil {
 			t.Fatalf("drop %s: %v", col, err)
@@ -398,16 +345,14 @@ func TestAddDevColumnsBackfillsExisting(t *testing.T) {
 		t.Fatalf("insert legacy: %v", err)
 	}
 
-	// Add columns (populated table) — then again for idempotency.
 	if err := AddOAuthClientDevColumns(testDB); err != nil {
 		t.Fatalf("add columns: %v", err)
 	}
 	if err := AddOAuthClientDevColumns(testDB); err != nil {
 		t.Fatalf("add columns not idempotent: %v", err)
 	}
-	flushPool() // row type just changed twice — drop stale cached plans
+	flushPool()
 
-	// The legacy row backfilled to the zero values.
 	var app siteModel.OAuthClient
 	if err := testDB.Where("id = ?", "devapitest_legacy").Take(&app).Error; err != nil {
 		t.Fatalf("read legacy: %v", err)
@@ -417,7 +362,6 @@ func TestAddDevColumnsBackfillsExisting(t *testing.T) {
 			app.DevEnabled, app.DevTier, app.DevRatePerMin, app.DevQuotaDaily)
 	}
 
-	// The temporary DEFAULT was dropped (intent-column discipline).
 	var def *string
 	if err := testDB.Raw(
 		`SELECT column_default FROM information_schema.columns

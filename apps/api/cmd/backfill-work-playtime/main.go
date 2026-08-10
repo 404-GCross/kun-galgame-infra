@@ -1,8 +1,3 @@
-// backfill-work-playtime populates catalog_work_playtime (the step-91 playtime
-// facet) from the EG mirror (hours ×60) and src_vndb.vn c_length (minutes).
-// Dry-run by default; writes are change-detected upserts (refresh-runnable).
-//
-//	go run ./cmd/backfill-work-playtime --dsn "$CATALOG" --eg-dsn "$EG" [--source eg|vndb|all] [--apply]
 package main
 
 import (

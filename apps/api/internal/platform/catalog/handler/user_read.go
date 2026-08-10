@@ -13,31 +13,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// The user plane's one READ of the catalog itself (wave 180): a work's best-
-// cover tallies, with the per-viewer `voted` flag.
-//
-// Wave 176 put the ballot here; the tally that ballot changes stayed on the S2S
-// work detail, where the viewer is named in `?uid=` — an assertion, and the last
-// place the cover-vote feature needed one. This op is that read with the uid
-// removed: the viewer is the token's user, so there is no parameter to say
-// otherwise and no way for a caller to ask "has SOMEONE ELSE voted for this".
-//
-// It is deliberately NOT tenant-fenced. Reads on this service are cross-site
-// open (docs/catalog/01 §4.3) — one registry, one work, one set of covers — and
-// a vote tally is public in the same sense the cover itself is. What the token
-// adds is only the answer to "and did I vote", which is the caller's own fact.
-//
-// It reuses the S2S read face's path exactly: ReadService.WorkByID for the
-// cover set, ReadService.CoverVotes for the batched tally. One query per read,
-// never one per cover.
-
-// UserReadServer holds the user plane's read dependency.
 type UserReadServer struct{ read *service.ReadService }
 
-// RegisterUserReadOps registers the user-plane read operations. Called by
-// SetupUser for the runtime face and by cmd/gen-openapi on the catalog S2S spec
-// API, so one contract document describes both planes. Safe with a nil service:
-// spec export never invokes a handler.
 func RegisterUserReadOps(api huma.API, read *service.ReadService) {
 	s := &UserReadServer{read: read}
 	tags := []string{"catalog-user"}
@@ -72,7 +49,6 @@ func (s *UserReadServer) covers(ctx context.Context, in *userWorkCoversInput) (*
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
 
-	// Pre-sized non-nil so a work with no cover serializes `[]`, not `null`.
 	resp := dto.UserWorkCoversResponse{
 		WorkID: in.ID, Covers: make([]dto.UserWorkCover, 0, len(detail.Covers)),
 	}
@@ -89,8 +65,6 @@ func (s *UserReadServer) covers(ctx context.Context, in *userWorkCoversInput) (*
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
 	for _, cv := range detail.Covers {
-		// Absent from the map = nobody voted, which is a zero count — never a
-		// reason to omit the cover.
 		tally := votes[cv.ID]
 		resp.Covers = append(resp.Covers, dto.UserWorkCover{
 			ID: cv.ID, ImageHash: cv.ImageHash, VoteCount: tally.Count, Voted: tally.Voted,

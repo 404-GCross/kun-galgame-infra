@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import type { DevKey } from '~~/shared/types/devapi'
 
-// Key list for the app detail page. Renders each key's prefix…last4, scopes,
-// timestamps and lifecycle status; rotate/revoke are emitted up to the parent
-// (which owns the confirm + reveal flow). No secret material is ever shown —
-// keyView carries only prefix + last4.
 defineProps<{ keys: DevKey[]; busy?: boolean }>()
 defineEmits<{ rotate: [DevKey]; revoke: [DevKey] }>()
 
 type KeyStatus = { label: string; color: 'success' | 'warning' | 'danger' | 'default' }
 
-// Lifecycle: revoked > (past-)expired > grace (future expiry, rotated-out) >
-// active. A rotated-out key carries a future expires_at during its 72h window.
 const keyStatus = (k: DevKey): KeyStatus => {
   if (k.revoked_at) return { label: '已吊销', color: 'danger' }
   if (k.expires_at) {

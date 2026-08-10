@@ -13,15 +13,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// existingSeries is one derived series already in the database.
 type existingSeries struct {
 	id   int64
 	name string
 }
 
-// reconcile brings the derived lane to the wanted state and returns the works
-// whose series facet really moved. Dry counts exactly what apply would write
-// (with one honest exception noted below), so the forecast is the plan.
 func reconcile(ctx context.Context, db *gorm.DB, derivedSrc int16, want map[string]*candidate,
 	facts *seriesorder.Facts, titles map[int64]string, opts Opts, st *Stats) ([]int64, error) {
 	var rows []struct {
@@ -49,9 +45,6 @@ func reconcile(ctx context.Context, db *gorm.DB, derivedSrc int16, want map[stri
 	}
 	enc := json.NewEncoder(log)
 
-	// Walk in a stable order so two runs over the same graph produce identical
-	// receipts — a diffable artifact is what makes "nothing changed" checkable
-	// by eye as well as by counter.
 	keys := make([]string, 0, len(want))
 	for k := range want {
 		keys = append(keys, k)
@@ -75,10 +68,6 @@ func reconcile(ctx context.Context, db *gorm.DB, derivedSrc int16, want map[stri
 				}
 			}
 		case e.name != cand.name:
-			// The builder owns display_name outright: no human can rename a
-			// derived series (the edit face's curatedOnly guard), so a
-			// difference here is always the naming rule seeing new members,
-			// never an edit this would stomp.
 			st.SeriesRenamed++
 			if opts.Apply {
 				if err := db.WithContext(ctx).Exec(`
@@ -87,7 +76,7 @@ func reconcile(ctx context.Context, db *gorm.DB, derivedSrc int16, want map[stri
 					return nil, fmt.Errorf("series %s rename: %w", key, err)
 				}
 			}
-			touched = append(touched, cand.works...) // the members render the new name
+			touched = append(touched, cand.works...)
 		}
 
 		memberTouched, err := reconcileMembers(ctx, db, seriesID, cand, opts.Apply, st)
@@ -116,10 +105,6 @@ func reconcile(ctx context.Context, db *gorm.DB, derivedSrc int16, want map[stri
 		}
 	}
 
-	// Series the graph no longer produces: a component that merged into another
-	// (its minimum id moved), one that fell below 2 live members, or one whose
-	// works were adopted by a dlsite/curated series since the last run. All
-	// three mean the same thing — this grouping is not what the data says now.
 	extKeys := make([]string, 0, len(existing))
 	for k := range existing {
 		extKeys = append(extKeys, k)
@@ -148,10 +133,6 @@ func reconcile(ctx context.Context, db *gorm.DB, derivedSrc int16, want map[stri
 	return touched, nil
 }
 
-// reconcileMembers inserts the absent memberships and deletes the stale ones.
-// A brand-new series in a DRY run has no id yet, so its whole member set counts
-// as added without a query — the one place the forecast is computed rather than
-// measured, and it cannot be wrong: the rows provably do not exist.
 func reconcileMembers(ctx context.Context, db *gorm.DB, seriesID int64, cand *candidate,
 	apply bool, st *Stats) ([]int64, error) {
 	if seriesID == 0 {

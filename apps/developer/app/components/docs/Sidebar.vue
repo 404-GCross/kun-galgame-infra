@@ -2,10 +2,6 @@
 import { cn } from '@kungal/ui-core'
 import type { DocsOperation } from '~~/shared/types/docs'
 
-// Persistent classification nav for the docs section. Held by the docs LAYOUT
-// (not a page) so it never remounts while navigating within /docs — only the
-// content column transitions. Three layers: face switch → tag group → operation.
-// Sticky + independently scrollable on desktop; a disclosure panel on mobile.
 const route = useRoute()
 const { faces } = useDocs()
 
@@ -38,7 +34,6 @@ const visibleGroups = computed(() =>
 const showGroupHeaders = computed(() => activeFace.value.groups.length > 1)
 const hasResults = computed(() => visibleGroups.value.length > 0)
 
-// Close the mobile panel after any in-section navigation.
 watch(
   () => route.fullPath,
   () => {
@@ -51,7 +46,6 @@ watch(
   <aside
     class="lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:w-64 lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-default-200"
   >
-    <!-- Mobile disclosure toggle -->
     <button
       type="button"
       class="flex w-full items-center justify-between gap-2 border-b border-default-200 py-3 text-sm font-semibold text-foreground lg:hidden"
@@ -71,7 +65,6 @@ watch(
     <div
       :class="cn('space-y-4 py-4 lg:pr-3', mobileOpen ? 'block' : 'hidden lg:block')"
     >
-      <!-- Layer 1 — face switch -->
       <div class="grid grid-cols-2 gap-1 rounded-lg bg-default-100 p-1">
         <NuxtLink
           v-for="f in faces"
@@ -90,7 +83,6 @@ watch(
         </NuxtLink>
       </div>
 
-      <!-- Filter -->
       <div class="relative">
         <KunIcon
           name="lucide:search"
@@ -105,7 +97,6 @@ watch(
         />
       </div>
 
-      <!-- Layers 2 + 3 — groups → operations -->
       <nav v-if="hasResults" class="space-y-4">
         <div v-for="group in visibleGroups" :key="group.tag" class="space-y-1">
           <p

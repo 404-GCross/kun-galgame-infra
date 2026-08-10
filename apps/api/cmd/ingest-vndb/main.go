@@ -1,19 +1,3 @@
-// Command ingest-vndb loads a VNDB database dump (vndb.org/d14, PostgreSQL
-// COPY format) into the src_vndb schema of kun_catalog (Silver),
-// deterministically and re-runnably (whole-table replacement per file). Staged
-// (see srcvndb.Files for the full set): the work tables (vn, vn_relations),
-// the character tables (chars — full columns since step 72 — chars_names,
-// chars_vns, images with character "ch" portraits only, chars_traits), the
-// staff family (staff, staff_alias, vn_staff, vn_seiyuu), the vocabularies
-// (traits, tags + their parent edges, tags_vn votes), producers, the
-// releases family (releases + vn/producers/platforms/titles child tables), and
-// the link graph (extlinks plus the vn/producers/staff/releases junctions, and
-// the mirrored producers_relations edges). See the srcvndb package doc.
-//
-//	# extract the dump's db/ directory somewhere first:
-//	#   zstd -dc vndb-db-latest.tar.zst | tar -x
-//	go run ./cmd/ingest-vndb --dump-dir /path/to/db          # from apps/api
-//	go run ./cmd/ingest-vndb --dump-dir /path/to/db --only vn
 package main
 
 import (
@@ -58,8 +42,6 @@ func main() {
 	}
 	defer db.Close()
 
-	// The Silver schema is tool-owned (fully rebuildable staging) — deliberately
-	// NOT part of cmd/migrate-catalog's Gold migration order.
 	if err := srcvndb.EnsureSchema(db.DB()); err != nil {
 		slog.Error("ensure src_vndb schema", "error", err)
 		os.Exit(1)
@@ -79,8 +61,6 @@ func main() {
 	slog.Info("vndb ingest completed", "total", report.Duration.String())
 }
 
-// resolveDumpDir accepts the directory as given, or relative to the repo root
-// when running from apps/api (and vice versa).
 func resolveDumpDir(dir string) (string, error) {
 	for _, candidate := range []string{dir, filepath.Join("..", "..", dir)} {
 		if st, err := os.Stat(candidate); err == nil && st.IsDir() {

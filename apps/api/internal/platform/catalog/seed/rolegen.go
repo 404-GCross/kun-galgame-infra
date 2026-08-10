@@ -11,15 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// This file is the DETERMINISTIC generation logic behind the checked-in role
-// vocabulary artifacts (data/roles.gen.yaml + data/bangumi_role_map.gen.yaml).
-// It is executed only by seed/gen (to regenerate the artifacts) and by the
-// drift test (to assert the artifacts match this logic); the migrate path
-// reads the checked-in artifacts and never re-deduplicates at runtime, so
-// role IDs are frozen once generated. Refreshing the vocabulary = re-run the
-// generator, review the diff, keep changes additive.
-
-// RoleSeed is one row of roles.gen.yaml.
 type RoleSeed struct {
 	ID       int64  `yaml:"id"`
 	Key      string `yaml:"key"`
@@ -29,42 +20,19 @@ type RoleSeed struct {
 	NameJA   string `yaml:"name_ja"`
 }
 
-// RoleMapSeed is one row of bangumi_role_map.gen.yaml. SourceRole is
-// "<subject_type>:<position_id>" (e.g. "4:1001"); Note keeps the original
-// Bangumi cn name of that position.
 type RoleMapSeed struct {
 	SourceRole string `yaml:"source_role"`
 	RoleID     int64  `yaml:"role_id"`
 	Note       string `yaml:"note"`
 }
 
-// GeneratedRoles bundles the two artifacts' content.
 type GeneratedRoles struct {
 	Roles    []RoleSeed
 	Mappings []RoleMapSeed
 }
 
-// roleIDBase is where generated role IDs start; 1-99 are reserved for future
-// hand-curated entries.
 const roleIDBase = 100
 
-// GenerateBangumiRoles derives the unified role vocabulary from the embedded
-// bangumi/common staff-position snapshot:
-//
-//   - the 246 (subject_type, position) entries are deduplicated by the
-//     normalized (EN, CN) name pair, merging same-named cross-media positions
-//     into one role;
-//   - key = deterministic slug of EN (of CN when EN is empty — 39 book/anime
-//     positions have no EN name); slug collisions (same EN, different CN) get
-//     -2/-3 suffixes in normalized-name order;
-//   - category / name_en / name_cn / name_ja = first NON-EMPTY value in walk
-//     order (subject_type asc, position asc) — plain first-occurrence would
-//     drop real data (e.g. "producer" first occurs in music with no category
-//     and no jp name, while the game occurrence carries both);
-//   - IDs are assigned from 100 in key order;
-//   - every (subject_type, position) gets a mapping row: 246-row coverage.
-//
-// Everything is order-stable, so the output is byte-reproducible.
 func GenerateBangumiRoles() (GeneratedRoles, error) {
 	staffs, err := bangumicommon.LoadStaffPositions()
 	if err != nil {
@@ -81,8 +49,6 @@ func GenerateBangumiRoles() (GeneratedRoles, error) {
 		occurrences []occurrence
 	}
 
-	// Walk in (subject_type asc, position asc) order — the deterministic
-	// "first occurrence" order every merge rule below refers to.
 	groups := make(map[nameKey]*roleGroup)
 	var groupOrder []*roleGroup
 	var walk []occurrence
@@ -101,7 +67,6 @@ func GenerateBangumiRoles() (GeneratedRoles, error) {
 		}
 	}
 
-	// Merge each group into one role (ID assigned later).
 	firstNonEmpty := func(g *roleGroup, get func(bangumicommon.StaffPosition) string) string {
 		for _, occ := range g.occurrences {
 			if v := strings.TrimSpace(get(occ.pos)); v != "" {
@@ -128,8 +93,6 @@ func GenerateBangumiRoles() (GeneratedRoles, error) {
 		roles = append(roles, r)
 	}
 
-	// Keys: slug of EN, falling back to CN; disambiguate same-slug groups
-	// with -2/-3 suffixes in normalized (EN, CN) order.
 	bySlug := make(map[string][]*roleGroup)
 	for _, g := range groupOrder {
 		src := g.key.en
@@ -165,13 +128,11 @@ func GenerateBangumiRoles() (GeneratedRoles, error) {
 		seen[r.Key] = true
 	}
 
-	// IDs: key order, from roleIDBase.
 	sort.Slice(roles, func(i, j int) bool { return roles[i].Key < roles[j].Key })
 	for i, r := range roles {
 		r.ID = roleIDBase + int64(i)
 	}
 
-	// Mappings: one row per (subject_type, position) in walk order.
 	mappings := make([]RoleMapSeed, 0, len(walk))
 	for _, occ := range walk {
 		k := nameKey{en: normalizeName(occ.pos.EN), cn: normalizeName(occ.pos.CN)}
@@ -189,19 +150,10 @@ func GenerateBangumiRoles() (GeneratedRoles, error) {
 	return out, nil
 }
 
-// normalizeName is the dedup normalization: trim + lower. The design asks for
-// NFKC + lower + trim; a stdlib NFKC does not exist and importing x/text
-// would change go.mod, so NFKC is elided after verifying it is an identity
-// transform on every EN/CN value of the frozen snapshot (the single
-// NFKC-unstable value in the data is a JP name, which never enters the dedup
-// key). Revisit if a snapshot refresh introduces width-variant EN/CN names —
-// the drift test will flag any refresh loudly.
 func normalizeName(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
-// slugify lowercases and keeps letters/digits (Latin and CJK alike), turning
-// every other run (spaces, '/', '・', '.', ...) into a single hyphen.
 func slugify(s string) string {
 	var b strings.Builder
 	pendingHyphen := false
@@ -234,15 +186,12 @@ const genHeader = `# Code generated by internal/platform/catalog/seed/gen from t
 # the diff, keep changes additive (see seed/rolegen.go).
 `
 
-// RenderRolesYAML renders roles.gen.yaml byte-exactly (shared by the
-// generator and the drift test).
 func RenderRolesYAML(roles []RoleSeed) ([]byte, error) {
 	return renderYAML(struct {
 		Roles []RoleSeed `yaml:"roles"`
 	}{roles})
 }
 
-// RenderRoleMapYAML renders bangumi_role_map.gen.yaml byte-exactly.
 func RenderRoleMapYAML(mappings []RoleMapSeed) ([]byte, error) {
 	return renderYAML(struct {
 		Mappings []RoleMapSeed `yaml:"mappings"`

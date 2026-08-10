@@ -11,7 +11,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// writer turns decided plans into alias rows and collects the touch set.
 type writer struct {
 	db        *gorm.DB
 	spec      laneSpec
@@ -22,17 +21,6 @@ type writer struct {
 	touched   []int64
 }
 
-// write plans (and in apply mode inserts) one entity's names.
-//
-// Two rules meet here:
-//
-//   - fill-missing is per (owner, name), NOT per language: the unique key is
-//     (owner_id, name, lang), so an owner that already has a zh-Hans name can
-//     still gain another one. A name it already carries is skipped.
-//   - the locale primary is claimed by at most one row, and only when the owner
-//     has none. The main `简体中文名` is first in the plan, so it is the one that
-//     claims it; an existing primary — a human edit or an earlier run — is never
-//     flipped.
 func (w *writer) write(ctx context.Context, p plan) {
 	state := w.existing[p.OwnerID]
 	if state == nil {
@@ -49,9 +37,6 @@ func (w *writer) write(ctx context.Context, p plan) {
 		w.stats.WouldInsert++
 		w.collect(p, name, primary)
 
-		// The decided plan must be identical in dry and apply: mark the name (and
-		// the primary claim) as taken either way, so the forecast does not count
-		// the same entity's second name as a second primary.
 		state.names[name] = true
 		state.hasPrimary = true
 		if !w.apply {
@@ -64,7 +49,7 @@ func (w *writer) write(ctx context.Context, p plan) {
 				"external", p.ExternalID, "name", name, "err", err)
 			continue
 		}
-		if !inserted { // concurrent writer / backstop — the row is already there
+		if !inserted {
 			w.stats.Conflict++
 			continue
 		}
@@ -74,7 +59,6 @@ func (w *writer) write(ctx context.Context, p plan) {
 		}
 		wroteAny = true
 	}
-	// One touch per entity that actually gained rows, however many it gained.
 	if wroteAny {
 		w.touched = append(w.touched, w.hostWorks[p.OwnerID]...)
 	}
@@ -96,10 +80,6 @@ func insertCharacterAlias(ctx context.Context, db *gorm.DB, characterID int64, n
 	return res.RowsAffected > 0, res.Error
 }
 
-// flushTouch bumps catalog_work.updated_at once per host work that actually
-// gained a name, and records how many distinct works that was. A run that wrote
-// nothing has an empty set and moves no watermark; a lane with no touch
-// discipline (label / person) never gets here at all.
 func (w *writer) flushTouch(ctx context.Context) error {
 	seen := make(map[int64]struct{}, len(w.touched))
 	ids := make([]int64, 0, len(w.touched))

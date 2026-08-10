@@ -13,20 +13,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// LocalOAuthClient is the fiber.Ctx Locals key under which OAuthClientBasicAuth
-// stores the authenticated *siteModel.OAuthClient for downstream handlers.
 const LocalOAuthClient = "oauth:client"
 
-// OAuthClientBasicAuth authenticates a service-to-service caller by HTTP Basic
-// Auth using OAuth client_id / client_secret stored in the `oauth_clients`
-// table. Intended for internal cross-service endpoints (like
-// `GET /api/v1/users/batch`) called by kungal / moyu / galgame_wiki backends.
-//
-// Pattern matches `internal/platform/image/middleware.ClientAuth` but without
-// image-specific feature gates (image_enabled / preset whitelist) — this is
-// for endpoints any registered OAuth Client can call.
-//
-// Stores the matched *OAuthClient under c.Locals(LocalOAuthClient).
 func OAuthClientBasicAuth(repo *siteRepo.OAuthClientRepository) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		clientID, secret, err := parseBasicAuth(c.Get("Authorization"))
@@ -48,8 +36,6 @@ func OAuthClientBasicAuth(repo *siteRepo.OAuthClientRepository) fiber.Handler {
 	}
 }
 
-// parseBasicAuth decodes "Basic <b64(user:pass)>" auth headers. Returns
-// the user/pass pair or a sentinel error.
 func parseBasicAuth(header string) (user, pass string, err error) {
 	if header == "" {
 		return "", "", stderrors.New("missing auth header")
@@ -69,8 +55,6 @@ func parseBasicAuth(header string) (user, pass string, err error) {
 	return u, p, nil
 }
 
-// OAuthClientFromCtx fetches the authenticated client (set by OAuthClientBasicAuth)
-// from a Fiber context. Returns nil if not authenticated.
 func OAuthClientFromCtx(c fiber.Ctx) *siteModel.OAuthClient {
 	v, _ := c.Locals(LocalOAuthClient).(*siteModel.OAuthClient)
 	return v

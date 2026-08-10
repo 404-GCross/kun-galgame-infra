@@ -14,24 +14,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration tests against a real Postgres (the catalog service_test.go
-// convention): TEST_DATABASE_DSN or a local default; missing database =
-// skip the whole package. The engine tables come from editing.AutoMigrate —
-// the exact production DDL — and the entity family is FAKED on purpose: a
-// scratch edit_test_widget table plus an EntityTypeSpec registered the same
-// way a real family would at its assembly point (charter ruling 1).
-
 var (
 	testDB  *gorm.DB
 	testCtx = context.Background()
 )
 
-// editSuiteLockKey ("edts") serializes the suites that TRUNCATE or write the
-// shared edit_* tables — this package, catalog/handler, and the galgameapp
-// propose suite — whenever they run against one database (unified
-// TEST_DATABASE_DSN). Distinct from every other suite key and from the
-// engine's business classid 0x65646974 (which uses the two-int4 lock form)
-// per the single-keyspace advisory-lock rule.
 const editSuiteLockKey int64 = 0x65647473
 
 func acquireEditSuiteLock(db *sql.DB) func() {
@@ -65,8 +52,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
 		os.Exit(0)
 	}
-	// The SKIP paths below os.Exit without releasing: process death closes the
-	// session and Postgres drops its advisory locks, so that is safe.
 	sqlDB, _ := db.DB()
 	release := acquireEditSuiteLock(sqlDB)
 	if err := editing.AutoMigrate(db); err != nil {
@@ -103,19 +88,6 @@ func cleanTables(t *testing.T) {
 	}
 }
 
-// --- fake family ------------------------------------------------------------
-
-// Field keys of the fake widget family. Policies cover the E0 matrix:
-//
-//	name         propose perm:edit.test.widget   review perm  automerge never   (spec default)
-//	olang        (default, enum-style validator)
-//	rating       (default, integer validator)
-//	open_note    propose open                    automerge always
-//	trusted_note propose open                    automerge trusted
-//	locked_code  locked
-//	legacy       deprecated
-//
-// Site overlay "overlay-site": open_note → locked, name → open+always.
 const (
 	fName    = "test.widget.name"
 	fOLang   = "test.widget.olang"
@@ -128,9 +100,7 @@ const (
 	permPropose = "edit.test.widget"
 	permReview  = "edit.test.widget.review"
 
-	overlaySite = "overlay-site"
-	// ownerReviewSite overlays ONLY name with OwnerReview (E3b): the asserted
-	// entity owner passes the review rule there — and nowhere else.
+	overlaySite     = "overlay-site"
 	ownerReviewSite = "owner-review-site"
 )
 
@@ -260,8 +230,6 @@ func loadWidget(t *testing.T, id int64) widgetRow {
 	}
 	return w
 }
-
-// --- actors -----------------------------------------------------------------
 
 func actorWith(uid int64, tier int16, perms ...string) editing.PolicyContext {
 	set := make(map[string]bool, len(perms))

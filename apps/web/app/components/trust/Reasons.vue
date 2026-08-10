@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Report-reason taxonomy: the global base plus per-site extensions. A reason
-// with no site is global; a site-scoped reason extends it. Reasons are created,
-// relabelled / reweighted, and deprecated — never deleted (the key persists as
-// a stable reference for reports and dispositions).
 import type {
   TrustReason,
   TrustCreateReasonRequest,
@@ -19,7 +15,6 @@ const { data, refresh, error } = await useApiFetch<TrustReason[]>(
 )
 const reasons = computed<TrustReason[]>(() => data.value ?? [])
 
-// Create
 const createOpen = ref(false)
 const form = reactive({ key: '', name_cn: '', severity: 1, site: '' })
 const creating = ref(false)
@@ -58,7 +53,6 @@ const create = async () => {
   }
 }
 
-// Edit
 const editOpen = ref(false)
 const editTarget = ref<TrustReason | null>(null)
 const editForm = reactive({ name_cn: '', severity: 1 })

@@ -11,8 +11,6 @@ import (
 
 const cbSecret = "trust-callback-secret"
 
-// D⑩ (signature): a valid HMAC within the window passes; bad signature, stale
-// timestamp, empty secret, and missing headers all fail closed.
 func TestVerifyTrustSignature(t *testing.T) {
 	body := []byte(`{"disposition_id":1,"action":1}`)
 	now := time.Now()
@@ -25,7 +23,6 @@ func TestVerifyTrustSignature(t *testing.T) {
 	if VerifyTrustSignature(cbSecret, ts, "deadbeef", body, now) {
 		t.Fatal("a bad signature must fail")
 	}
-	// A timestamp more than the window in the past → reject (replay guard).
 	stale := strconv.FormatInt(now.Add(-10*time.Minute).Unix(), 10)
 	if VerifyTrustSignature(cbSecret, stale, signTrustPayload(cbSecret, stale, body), body, now) {
 		t.Fatal("a stale timestamp must fail")
@@ -38,7 +35,6 @@ func TestVerifyTrustSignature(t *testing.T) {
 	}
 }
 
-// enqueuePending inserts a pending review item for a post (a prior forward).
 func enqueuePending(t *testing.T, site string, postID int64) int64 {
 	t.Helper()
 	source := model.ReviewSourceFlags
@@ -56,14 +52,10 @@ func callback(postID int64, action int16) TrustCallback {
 	}
 }
 
-// D⑩ (mapping): hide/remove/none enforce correctly, none never resurrects an
-// author-deleted post, unsupported actions are flagged, and the local item is
-// closed alongside — all idempotent on replay.
 func TestCallbackEnforcement(t *testing.T) {
 	ctx := context.Background()
 	svc := NewCallbackService(testDB)
 
-	// hide: a visible post → hidden; the local item closes rejected.
 	t.Run("hide", func(t *testing.T) {
 		cleanTables(t)
 		ts := NewThreadService(testDB, NoopSink{})
@@ -82,7 +74,6 @@ func TestCallbackEnforcement(t *testing.T) {
 		if reloadItem(t, itemID).Status != model.ReviewStatusRejected {
 			t.Fatal("hide must close the local item rejected")
 		}
-		// Replay is idempotent.
 		if _, err := svc.Handle(ctx, callback(post.ID, trustActionHide)); err != nil {
 			t.Fatalf("replay: %v", err)
 		}
@@ -91,7 +82,6 @@ func TestCallbackEnforcement(t *testing.T) {
 		}
 	})
 
-	// remove: any non-deleted post → tombstoned.
 	t.Run("remove", func(t *testing.T) {
 		cleanTables(t)
 		ts := NewThreadService(testDB, NoopSink{})
@@ -110,7 +100,6 @@ func TestCallbackEnforcement(t *testing.T) {
 		}
 	})
 
-	// none: a mod-hidden/held post → restored; the item closes approved.
 	t.Run("none_restores_held", func(t *testing.T) {
 		cleanTables(t)
 		ts := NewThreadService(testDB, NoopSink{})
@@ -129,7 +118,6 @@ func TestCallbackEnforcement(t *testing.T) {
 		}
 	})
 
-	// none: an author-deleted post must NEVER be resurrected.
 	t.Run("none_keeps_author_deleted", func(t *testing.T) {
 		cleanTables(t)
 		ts := NewThreadService(testDB, NoopSink{})
@@ -148,7 +136,6 @@ func TestCallbackEnforcement(t *testing.T) {
 		}
 	})
 
-	// unsupported actions (3/4/5) are flagged for manual handling, no change.
 	t.Run("unsupported", func(t *testing.T) {
 		cleanTables(t)
 		ts := NewThreadService(testDB, NoopSink{})

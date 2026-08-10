@@ -1,7 +1,3 @@
-// cmd/migrate-ai is the single migration entry point for the kun_ai database
-// (AI-gateway semantic layer, doc 20). The ai service itself never migrates on
-// startup — it only connects. Idempotent: AutoMigrate + CREATE INDEX IF NOT
-// EXISTS, so a per-deploy re-run is a fast no-op.
 package main
 
 import (
@@ -31,9 +27,6 @@ func main() {
 	}
 	defer db.Close()
 
-	// Schema (tables + idempotent index raw SQL) lives in the migrate package so
-	// the integration tests provision their database with the exact production
-	// schema.
 	slog.Info("running ai migrations...")
 	if err := migrate.Run(db.DB()); err != nil {
 		slog.Error("migration failed", "error", err)

@@ -16,26 +16,15 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// AdminServer holds the admin review-inbox dependencies.
 type AdminServer struct {
 	review       *service.ReviewService
 	registry     *service.RegistryService
 	dispositions *service.DispositionService
 	terms        *service.TermService
-	// policies owns the per-site moderation posture (step 07 M0).
-	policies *service.PolicyService
-	// clients resolves a site-scoped caller's token client to its catalog_site.
-	// Per-request main-DB lookup, no cache (章程 04 ruling 3 — admin volume).
-	clients clientSiteLookup
+	policies     *service.PolicyService
+	clients      clientSiteLookup
 }
 
-// SetupAdmin builds the admin review-inbox Huma API. Auth is applied by the
-// caller as path-scoped Fiber middleware (middleware.JWTAuth + trust.queue_access)
-// on the /api/v1/admin/trust prefix BEFORE this. The Tier0 terms sub-surface
-// additionally requires trust.term_manage, enforced in-handler (moderator is
-// admitted by the prefix gate but rejected there). clients supplies the
-// catalog_site binding for site-scoped callers. Callable with nil deps for spec
-// export (handlers are never invoked then).
 func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service.RegistryService, dispositions *service.DispositionService, terms *service.TermService, policies *service.PolicyService, clients clientSiteLookup) huma.API {
 	InstallErrorEnvelope()
 
@@ -55,10 +44,6 @@ func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service
 func (s *AdminServer) register(api huma.API) {
 	tags := []string{"trust-admin"}
 
-	// Site-scoping note (docs/auth/04): callers are one of two tiers. Platform
-	// staff (whose GLOBAL roles pass trust.queue_access) are UNRESTRICTED. A
-	// site-granted moderator (who reached this face only via the site-role union)
-	// is SITE-SCOPED to their token client's catalog_site.
 	const reviewScopeNote = "Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site."
 	const foreignNotFound = " A site-scoped moderator acting on another site's item receives 404 (existence is not leaked)."
 	const platformOnly = "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
@@ -110,23 +95,10 @@ func (s *AdminServer) register(api huma.API) {
 	s.registerPolicies(api)
 }
 
-// ---- scope resolution ----
-
-// adminScope is a resolved caller tier. site == "" means UNRESTRICTED (platform
-// staff, whose GLOBAL roles alone pass trust.queue_access); a non-empty site
-// means SITE-SCOPED (a site-granted moderator confined to that catalog_site).
 type adminScope struct{ site string }
 
 func (sc adminScope) siteScoped() bool { return sc.site != "" }
 
-// resolveScope classifies the caller. The Fiber gate already admitted anyone
-// holding trust.queue_access — but that includes a site "moderator" whose token
-// only passed via the site-role UNION (docs/auth/04). We split the two tiers
-// here: if the GLOBAL roles alone pass the resolver the caller is platform staff
-// (unrestricted); otherwise they only reached us through a site-role union, so
-// we confine them to their token client's catalog_site. A site-scoped caller
-// whose token carries no client, or whose client has no catalog_site binding, is
-// rejected fail-closed (403).
 func (s *AdminServer) resolveScope(ctx context.Context) (adminScope, *houseError) {
 	if trustPerm.Resolver.Can(globalRolesFromCtx(ctx), trustPerm.QueueAccess) {
 		return adminScope{}, nil
@@ -144,9 +116,6 @@ func (s *AdminServer) resolveScope(ctx context.Context) (adminScope, *houseError
 	return adminScope{site: client.CatalogSite}, nil
 }
 
-// requireUnrestricted resolves the scope and rejects site-scoped callers with a
-// 403 — the platform-ops guard for the registries and dead-letter surfaces,
-// which a site moderator has no business touching.
 func (s *AdminServer) requireUnrestricted(ctx context.Context) *houseError {
 	scope, he := s.resolveScope(ctx)
 	if he != nil {
@@ -159,11 +128,6 @@ func (s *AdminServer) requireUnrestricted(ctx context.Context) *houseError {
 	return nil
 }
 
-// requireTermManage gates the Tier0 word-list surface on trust.term_manage. The
-// prefix Fiber gate already admitted anyone with trust.queue_access (moderators
-// included) — but a term is a site-domain ban power, so we re-check the caller's
-// GLOBAL roles against the narrower term_manage (admin/ren only). A moderator, or
-// any site-scoped caller, is rejected 403 here.
 func (s *AdminServer) requireTermManage(ctx context.Context) *houseError {
 	if trustPerm.Resolver.Can(globalRolesFromCtx(ctx), trustPerm.TermManage) {
 		return nil
@@ -171,8 +135,6 @@ func (s *AdminServer) requireTermManage(ctx context.Context) *houseError {
 	return apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
 		"managing Tier0 terms requires trust.term_manage (admin/ren)")
 }
-
-// ---- review items ----
 
 type listReviewItemsInput struct {
 	Site   string `query:"site" doc:"filter to one site; empty = all sites"`
@@ -190,8 +152,6 @@ func (s *AdminServer) listReviewItems(ctx context.Context, in *listReviewItemsIn
 	if he != nil {
 		return nil, he
 	}
-	// A site-scoped caller sees only their own site — the requested site filter
-	// is FORCED, overriding whatever `site` param they passed.
 	site := in.Site
 	if scope.siteScoped() {
 		site = scope.site
@@ -220,8 +180,6 @@ func (s *AdminServer) getReviewItem(ctx context.Context, in *reviewItemIDInput) 
 	if he != nil {
 		return nil, he
 	}
-	// scope.site "" for platform staff (no restriction); a foreign-site item
-	// reads as not-found (404), never leaking that it exists.
 	item, reports, err := s.review.Get(ctx, in.ID, scope.site)
 	if err != nil {
 		return nil, mapAdminErr("get review item", err)
@@ -274,8 +232,6 @@ func (s *AdminServer) decideReviewItem(ctx context.Context, in *decideInput) (*d
 	return &decideOutput{Body: okEnvelope(decideData{Decided: true, DispositionID: dispID})}, nil
 }
 
-// ---- subject kinds ----
-
 type listSubjectKindsAdminInput struct {
 	Site string `query:"site" doc:"filter to one site; empty = all sites"`
 }
@@ -316,10 +272,6 @@ type batchSubjectKindsOutput struct {
 	Body Envelope[dto.EnsureSubjectKindsResponse]
 }
 
-// batchSubjectKinds is the human-ops counterpart of the S2S ensure: same
-// per-kind convergence, but the platform operator names the `site` explicitly
-// (they act for any site) and the registry admin gate (requireUnrestricted)
-// stands in for the client binding. Deprecated kinds are never revived.
 func (s *AdminServer) batchSubjectKinds(ctx context.Context, in *batchSubjectKindsInput) (*batchSubjectKindsOutput, error) {
 	if he := s.requireUnrestricted(ctx); he != nil {
 		return nil, he
@@ -360,8 +312,6 @@ func (s *AdminServer) patchSubjectKind(ctx context.Context, in *patchSubjectKind
 	}
 	return &subjectKindOutput{Body: okEnvelope(toSubjectKindView(*kind))}, nil
 }
-
-// ---- reasons ----
 
 type listReasonsInput struct {
 	Site string `query:"site" doc:"include this site's extensions alongside the global base; empty = all"`
@@ -416,8 +366,6 @@ func (s *AdminServer) patchReason(ctx context.Context, in *patchReasonInput) (*r
 	return &reasonOutput{Body: okEnvelope(toReasonView(*reason))}, nil
 }
 
-// ---- dispositions ----
-
 type listDispositionsInput struct {
 	CallbackStatus int16 `query:"callback_status" default:"-1" doc:"0=pending 1=delivered 2=dead_letter; -1 = all"`
 	Page           int   `query:"page"`
@@ -454,9 +402,6 @@ func (s *AdminServer) redeliverDisposition(ctx context.Context, in *dispositionI
 	return &okOutput{Body: okEnvelope(dto.OKResponse{OK: true})}, nil
 }
 
-// ---- helpers ----
-
-// optionalFilter maps the -1 wire sentinel to "no filter".
 func optionalFilter(v int16) *int16 {
 	if v < 0 {
 		return nil
@@ -464,7 +409,6 @@ func optionalFilter(v int16) *int16 {
 	return &v
 }
 
-// boolOr dereferences an optional bool with a default.
 func boolOr(p *bool, def bool) bool {
 	if p != nil {
 		return *p

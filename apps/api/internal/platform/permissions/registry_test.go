@@ -9,11 +9,6 @@ import (
 	sitePerm "api/internal/platform/site/perm"
 )
 
-// TestRegistryDescribesExactlyTheBundledKeys is the drift gate: the console can
-// only render, and the validator can only accept, keys the registry describes.
-// A key added to a bundle without a registry entry would be enforced in code
-// but invisible and un-grantable here; a registry entry with no bundle would be
-// a key that grants nothing anywhere. Both are caught before they ship.
 func TestRegistryDescribesExactlyTheBundledKeys(t *testing.T) {
 	for _, d := range permissions.Live().Domains() {
 		described := make(map[authz.Permission]bool, len(d.Keys))
@@ -47,14 +42,8 @@ func TestRegistryDescribesExactlyTheBundledKeys(t *testing.T) {
 	}
 }
 
-// TestRegistryExcludesRetiredGalgame pins that the retired galgame vocabulary
-// stays out of the console. Its keys have zero live enforcement points, so
-// offering them would let an operator grant a permission nothing checks.
 func TestRegistryExcludesRetiredGalgame(t *testing.T) {
 	reg := permissions.Live()
-	// Spelled as literals, not galgame/perm constants: importing that package
-	// here would itself violate the dependency direction the archtest pins
-	// (platform packages must not import the retired product domain).
 	for _, p := range []authz.Permission{
 		"galgame.publish_direct", "galgame.review", "galgame.admin_access",
 	} {
@@ -71,8 +60,6 @@ func TestRegistryExcludesRetiredGalgame(t *testing.T) {
 	}
 }
 
-// TestNonDelegableKeysAreRegistered pins the three keys the overlay may never
-// grant, through the registry's own view of them.
 func TestNonDelegableKeysAreRegistered(t *testing.T) {
 	reg := permissions.Live()
 	for _, p := range []authz.Permission{
@@ -82,21 +69,17 @@ func TestNonDelegableKeysAreRegistered(t *testing.T) {
 			t.Errorf("%q must be non-delegable", p)
 		}
 	}
-	// A delegable key for contrast — otherwise a bug that marks everything
-	// non-delegable would pass the assertions above.
 	if reg.IsNonDelegable(sitePerm.UsersPIIView) {
 		t.Errorf("%q must be delegable", sitePerm.UsersPIIView)
 	}
 }
 
-// TestUnknownKeyIsNonDelegable pins the fail-closed default.
 func TestUnknownKeyIsNonDelegable(t *testing.T) {
 	if !permissions.Live().IsNonDelegable(authz.Permission("nope.does.not.exist")) {
 		t.Error("an unknown key must be treated as non-delegable")
 	}
 }
 
-// TestEditableRolesExcludeUserAndRen pins the two immutable columns.
 func TestEditableRolesExcludeUserAndRen(t *testing.T) {
 	for _, r := range permissions.EditableRoles {
 		if r == permissions.RoleUser || r == permissions.RoleRen {
@@ -108,7 +91,6 @@ func TestEditableRolesExcludeUserAndRen(t *testing.T) {
 	}
 }
 
-// TestHighestRank pins the management axis, including that creator is NOT on it.
 func TestHighestRank(t *testing.T) {
 	cases := []struct {
 		roles []string

@@ -1,9 +1,3 @@
-// aggregate-user-playtime folds the per-user playtime reports
-// (catalog_user_playtime) into the public per-source estimate
-// (catalog_work_playtime, source `nextmoe`). Dry-run by default; writes are
-// change-detected upserts, so it is safe to run on a schedule.
-//
-//	go run ./cmd/aggregate-user-playtime --dsn "$CATALOG" [--min-reporters 3] [--exclude-client id,id] [--apply]
 package main
 
 import (

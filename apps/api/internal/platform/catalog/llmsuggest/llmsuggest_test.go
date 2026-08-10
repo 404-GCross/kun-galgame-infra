@@ -18,8 +18,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// mockLLM returns an httptest server whose /chat/completions replies with
-// whatever `content` returns for that call index, and a Client pointing at it.
 func mockLLM(t *testing.T, content func(call int) string) *Client {
 	t.Helper()
 	var calls atomic.Int64
@@ -50,7 +48,7 @@ func TestJudgeParsesVerdict(t *testing.T) {
 func TestJudgeRetriesThenSucceeds(t *testing.T) {
 	c := mockLLM(t, func(call int) string {
 		if call == 0 {
-			return "not json at all" // first attempt fails, must retry
+			return "not json at all"
 		}
 		return `{"verdict":"different","reason":"different people","confidence":0.8}`
 	})
@@ -62,7 +60,7 @@ func TestJudgeRetriesThenSucceeds(t *testing.T) {
 func TestJudgeRejectsOutOfEnum(t *testing.T) {
 	c := mockLLM(t, func(int) string { return `{"verdict":"maybe","reason":"x","confidence":0.5}` })
 	_, err := judge(context.Background(), c, "sys", "user", 256)
-	require.Error(t, err) // 3 attempts, all out-of-enum
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "out of enum")
 }
 
@@ -77,8 +75,6 @@ func TestExtractResidueValidatesJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"type":"Game","fields":[{"key":"名","value":"X"}]}`, string(out))
 }
-
-// --- DB-backed: schema + resume ---
 
 func testCatalogDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -99,7 +95,6 @@ func TestGoldsetPersistAndResume(t *testing.T) {
 	db := testCatalogDB(t)
 	c := mockLLM(t, func(int) string { return `{"verdict":"same","reason":"r","confidence":0.9}` })
 
-	// A tiny gold set on disk.
 	path := filepath.Join(t.TempDir(), "gold.jsonl")
 	f, err := os.Create(path)
 	require.NoError(t, err)
@@ -119,14 +114,12 @@ func TestGoldsetPersistAndResume(t *testing.T) {
 	db.Table("src_llm.name_pair_judgment").Count(&count)
 	assert.Equal(t, int64(3), count)
 
-	// Second run: everything already done → resume, zero new judgments.
 	judged2, _, err := RunGoldset(context.Background(), db, c, opts)
 	require.NoError(t, err)
 	assert.Zero(t, judged2, "resume must skip already-judged pairs")
 	db.Table("src_llm.name_pair_judgment").Count(&count)
 	assert.Equal(t, int64(3), count, "no duplicate rows on resume")
 
-	// Calibration reads the persisted verdicts.
 	metrics, err := Calibrate(db, "mock-model", PromptNamePairV1)
 	require.NoError(t, err)
 	assert.NotEmpty(t, metrics)

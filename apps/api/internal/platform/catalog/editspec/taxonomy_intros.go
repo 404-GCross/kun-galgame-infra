@@ -10,23 +10,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// The three vocabulary intro tables are the same table three times: an owner
-// id, a lang, an intro, a source_id, unique on (owner, lang, source). One
-// description of that shape drives all three Applies, because three copies of
-// the same twenty lines is how the curated-lane predicate ends up subtly
-// different in exactly one of them.
-//
-// Unlike catalog_work_intro these carry NO provenance column — there is no
-// machine-translation lane for vocabulary text — so the curated lane here is
-// simply source_id = curated.
 type introTable struct {
 	ownerCol string
-	// empty is a zero model value, used as GORM's table handle for delete.
-	empty func() any
-	// newRow builds one curated row.
-	newRow func(ownerID int64, lang, intro string) any
-	// read returns the owner's curated rows as lang→intro.
-	read func(ctx context.Context, db *gorm.DB, ownerID int64) (map[string]string, error)
+	empty    func() any
+	newRow   func(ownerID int64, lang, intro string) any
+	read     func(ctx context.Context, db *gorm.DB, ownerID int64) (map[string]string, error)
 }
 
 var introTableLabel = introTable{
@@ -90,9 +78,6 @@ func curatedIntroScope(ctx context.Context, db *gorm.DB, ownerCol string, ownerI
 	return db.WithContext(ctx).Where(ownerCol+" = ? AND source_id = ?", ownerID, curatedSourceID)
 }
 
-// applyEntityIntros builds the intros Apply for one of those tables: a full
-// replace of the curated lane. The parse is shared with catalog.work.intros, so
-// "an intro list" has one wire shape across every family.
 func applyEntityIntros(t introTable) editing.ApplyFunc {
 	return func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
 		intros, err := parseIntros(value)
@@ -112,8 +97,6 @@ func applyEntityIntros(t introTable) editing.ApplyFunc {
 	}
 }
 
-// loadEntityIntros reads the curated lane back in the declared language order —
-// the same canonical form catalog.work.intros returns, so the value round-trips.
 func loadEntityIntros(ctx context.Context, db *gorm.DB, t introTable, entityID int64) ([]any, error) {
 	byLang, err := t.read(ctx, db, entityID)
 	if err != nil {

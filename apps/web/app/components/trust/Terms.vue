@@ -1,13 +1,4 @@
 <script setup lang="ts">
-// Tier0 word-list registry (step 05/06): the deterministic banned/suspect terms
-// that back the synchronous /trust/check gate. A term is created (the raw word is
-// normalized server-side — we surface the stored normalized form on success),
-// filtered by site / kind / deprecation, searched by substring, and deprecated
-// (never hard-deleted, and never un-deprecated — deprecation is terminal). The
-// listing is paged: the registry is populated by the AI suspect-word importer
-// and runs to tens of thousands of entries. Managing terms requires
-// trust.term_manage (admin/主理人); a moderator gets a 403 the same way the other
-// trust panels surface a permission failure.
 import type {
   TrustTerm,
   TrustTermsResponse,
@@ -25,14 +16,8 @@ import {
 
 const api = useApi('trust')
 
-// Filters. The list is paged server-side: production carries 46k+ live terms,
-// so the whole registry is never a page's worth of data. `search` is the
-// SUBMITTED needle — typing alone does not fire a request, because each one is
-// a substring scan over the whole table.
 const site = ref('')
 const kind = ref<number>(TRUST_FILTER_ALL)
-// The two lexicons are maintained on completely different evidence, so they are
-// rarely audited together — filtering by purpose is how an operator works one.
 const purpose = ref<number>(TRUST_FILTER_ALL)
 const includeDeprecated = ref(false)
 const searchInput = ref('')
@@ -100,7 +85,6 @@ const kindCreateOptions = [
   { value: TERM_KIND.banned, label: TERM_KIND_LABELS[TERM_KIND.banned]! }
 ]
 
-// Create
 const createOpen = ref(false)
 const form = reactive({
   term: '',
@@ -136,8 +120,6 @@ const create = async () => {
     if (form.note.trim()) body.note = form.note.trim()
     const res = await api.post<TrustTerm>('/admin/trust/terms', body)
     if (res.code === 0) {
-      // Surface the server-normalized form so the operator sees exactly what was
-      // stored (case/width/space folding happens server-side).
       useKunMessage(`已创建,归一化为「${res.data.term_norm}」`, 'success')
       createOpen.value = false
       await refresh()
@@ -149,7 +131,6 @@ const create = async () => {
   }
 }
 
-// Deprecate (with confirm; terminal — no un-deprecate)
 const depOpen = ref(false)
 const depTarget = ref<TrustTerm | null>(null)
 const deprecating = ref(false)
@@ -268,8 +249,6 @@ const confirmDeprecate = async () => {
                 </KunChip>
               </td>
               <td class="px-2 py-2">
-                <!-- Compliance terms are exempt from precision-based retirement;
-                     the pruner can only nominate them for human review. -->
                 <KunChip
                   :color="TERM_PURPOSE_COLORS[t.purpose]"
                   variant="flat"

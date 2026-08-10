@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Daily calls trend (day×route rolled up per day). Uses the project's existing
-// nuxt-echarts BarChart convention (no new dependency) with SOLID bar colors —
-// zero gradients (iron rule 2). ECharts can't read our oklch CSS vars, so the
-// palette is mapped by color mode.
 import type { EChartsOption } from 'echarts'
 import type { AiDailySeries } from '~~/shared/types/ai'
 
@@ -14,11 +10,9 @@ const { data, status } = await useApiFetch<AiDailySeries>(
 )
 
 const points = computed(() => data.value?.points ?? [])
-// Unique calendar days in range, ascending.
 const dayList = computed(() =>
   [...new Set(points.value.map((p) => p.day))].sort()
 )
-// Sum calls per day (v0 has one route; the rollup is route-agnostic).
 const callsByDay = computed(() => {
   const m = new Map<string, number>()
   for (const p of points.value) m.set(p.day, (m.get(p.day) ?? 0) + p.calls)

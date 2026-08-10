@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// WorkService owns work registration and claiming (doc 17 R2).
 type WorkService struct {
 	db      *gorm.DB
 	resolve *ResolveService
@@ -20,57 +19,27 @@ func NewWorkService(db *gorm.DB, resolve *ResolveService) *WorkService {
 	return &WorkService{db: db, resolve: resolve}
 }
 
-// ExternalAnchor is one external identity the claiming product knows for the
-// work (a VNDB id, a Bangumi subject id, a DLsite workno, ...). Anchors ground
-// the claim lookup and become exact refs on a newly created work.
 type ExternalAnchor struct {
 	SourceID   int16
 	ExternalID string
-	// MatchedBy is the traceability tag written into external_ref
-	// ('rule:<id>' / 'import:<job>' / 'human:<uid>').
-	MatchedBy string
-	// EntityType is the anchor's level: model.EntityTypeRelease for a
-	// SKU-natured id (DLsite workno, VNDB release — R3/R5) or
-	// model.EntityTypeWork (the default) for a work-natured id. It only steers
-	// where a FRESH mint writes the ref; the adopt lookup matches both levels
-	// regardless. The zero value is treated as work-level, so callers that
-	// only ever carry work anchors need not set it.
+	MatchedBy  string
 	EntityType int16
 }
 
-// isReleaseLevel reports whether the anchor should be minted at the release
-// level. Only an explicit EntityTypeRelease counts; the zero value (and any
-// other value) is work-level.
 func (a ExternalAnchor) isReleaseLevel() bool { return a.EntityType == model.EntityTypeRelease }
 
-// ClaimWorkParams describes the product-side work doing the claiming.
 type ClaimWorkParams struct {
-	MediumID      int16
-	Site          string
-	ProductWorkID int64
-	DisplayName   string
-	// OLang defaults to "ja" when empty (the column carries no DB default
-	// on purpose).
-	OLang         string
-	ContentRating int16
-	Anchors       []ExternalAnchor
-	ActorID       *int64
-	// RejectedAnchor, when set, is consulted with the RESOLVED work id before an
-	// anchor is written or adopted through: a true result means the pairing is
-	// recorded negative knowledge (catalog_match_rejection) and the anchor is
-	// dropped. It gates CROSS-SOURCE identity claims (a curated bid/vndb anchor);
-	// a work born fresh here can carry no prior rejection, so this only ever
-	// fires on the adopt path (an existing work a human has since rejected). nil
-	// disables the check — the default for importers writing self-identity
-	// anchors, whose existence IS the identity and is never rejectable.
+	MediumID       int16
+	Site           string
+	ProductWorkID  int64
+	DisplayName    string
+	OLang          string
+	ContentRating  int16
+	Anchors        []ExternalAnchor
+	ActorID        *int64
 	RejectedAnchor func(workID int64, sourceID int16, externalID string) bool
 }
 
-// ConflictError carries the owning identity when a claim would collide with a
-// work another product already holds. It satisfies errors.Is(err,
-// ErrClaimConflict) so existing sentinel checks keep working, while the
-// handler can lift the structured owner (site + work id) into the 409 body so
-// the caller records the link instead of retrying.
 type ConflictError struct {
 	WorkID              int64
 	OwningSite          string
@@ -84,21 +53,8 @@ func (e *ConflictError) Error() string {
 	return fmt.Sprintf("%s: work %d is claimed by %s", ErrClaimConflict.Error(), e.WorkID, e.OwningSite)
 }
 
-// Is makes ConflictError match the ErrClaimConflict sentinel.
 func (e *ConflictError) Is(target error) bool { return target == ErrClaimConflict }
 
-// ClaimWork implements the claim semantics pinned on catalog_work: find an
-// existing registry row by external anchors FIRST and claim it — a claim
-// must never mint a second identity. Idempotent: the same (medium, site,
-// product_work_id) always returns the same work.
-//
-// Anchor matching spans both levels: a release-level anchor (a DLsite workno,
-// hung off the SKU per R3/R5) resolves through catalog_release.work_id to the
-// owning work, so a product claiming by workno adopts the existing registry
-// row (inheriting its EG refs / credits / labels / releases) instead of
-// minting a duplicate. On the fresh-mint path a release-level anchor lands on
-// a newly created release — never the work — so a later catalog import keyed
-// on release anchors finds this identity rather than splitting it.
 func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (int64, bool, error) {
 	if params.OLang == "" {
 		params.OLang = "ja"
@@ -106,7 +62,6 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 	var workID int64
 	var created bool
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// (1) Idempotency: this product work already claimed a row.
 		existing, err := repository.FindClaimed(tx, params.MediumID, params.Site, params.ProductWorkID)
 		if err != nil {
 			return err
@@ -116,11 +71,6 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 			return nil
 		}
 
-		// (2) Anchor lookup: an exact ref hit (followed through redirects)
-		// is the existing identity to claim. An anchor that resolves to a work
-		// a human has rejected for that pairing is recorded so step (3) never
-		// re-writes it onto a fresh work (which would resurrect the identity or
-		// collide with the surviving exact ref).
 		rejectedInAdopt := make(map[int]bool)
 		for ai, anchor := range params.Anchors {
 			id, found, err := repository.FindWorkIDByAnchor(tx, anchor.SourceID, anchor.ExternalID)
@@ -140,11 +90,11 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 			}
 			if params.RejectedAnchor != nil && params.RejectedAnchor(w.ID, anchor.SourceID, anchor.ExternalID) {
 				rejectedInAdopt[ai] = true
-				continue // never adopt a work through a human-rejected anchor
+				continue
 			}
 			if w.Site != nil {
 				if *w.Site == params.Site && w.ProductWorkID != nil && *w.ProductWorkID == params.ProductWorkID {
-					workID = w.ID // already ours (raced sibling call)
+					workID = w.ID
 					return nil
 				}
 				return &ConflictError{WorkID: w.ID, OwningSite: *w.Site, OwningProductWorkID: w.ProductWorkID}
@@ -164,8 +114,6 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 			return nil
 		}
 
-		// (3) No anchor hit → new registry row. Unclaimed-hygiene does not
-		// apply (the row is born claimed, hence live).
 		w := model.CatalogWork{
 			MediumID:        params.MediumID,
 			Site:            &params.Site,
@@ -180,14 +128,10 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 		if err := tx.Create(&w).Error; err != nil {
 			return err
 		}
-		// SKU-natured (release-level) anchors hang off a single freshly-created
-		// release, work-natured anchors off the work itself (R3/R5). The
-		// release is minted lazily so a claim with only work anchors adds no
-		// empty release.
 		var releaseID int64
 		for ai, anchor := range params.Anchors {
 			if rejectedInAdopt[ai] {
-				continue // an anchor rejected in (2) is never re-written here
+				continue
 			}
 			entityType, entityID := model.EntityTypeWork, w.ID
 			if anchor.isReleaseLevel() {

@@ -14,9 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The per-user read face over HTTP (wave 157): the wire shape downstream
-// products render 我的投稿 from, plus the two rejections a bad request gets.
-
 type userClaimsBody struct {
 	Data struct {
 		Items []struct {
@@ -42,7 +39,6 @@ func TestUserClaimsFace(t *testing.T) {
 	claims := service.NewClaimLifecycleService(db)
 	app := lifecycleApp(&siteModel.OAuthClient{ID: "kungal-client", CatalogSite: "kungal"}, claims)
 
-	// Two submissions by user 5: one declined, one still a draft.
 	var ids []int64
 	for i, name := range []string{"一作目", "二作目"} {
 		w := &model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: name, Status: model.WorkStatusLive}
@@ -76,8 +72,6 @@ func TestUserClaimsFace(t *testing.T) {
 	assert.Equal(t, "重複", *head.LastReason)
 	assert.Equal(t, 2, head.ActedCount, "the user's own moves on that work")
 
-	// The filter is the shared claim vocabulary, and `total` under it is the
-	// per-user statistic — no dedicated stats endpoint needed.
 	status, raw = editGet(t, app, "/api/v1/catalog/users/5/claims?claim_state=draft")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var drafts userClaimsBody
@@ -86,7 +80,6 @@ func TestUserClaimsFace(t *testing.T) {
 	assert.EqualValues(t, 1, drafts.Data.Total)
 	assert.Equal(t, ids[1], drafts.Data.Items[0].WorkID)
 
-	// The cursor walks down and then stops with an empty page.
 	status, raw = editGet(t, app, "/api/v1/catalog/users/5/claims?limit=1")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var first userClaimsBody
@@ -108,8 +101,6 @@ func TestUserClaimsFace(t *testing.T) {
 	assert.Empty(t, end.Data.Items)
 	assert.Zero(t, end.Data.NextBefore, "an exhausted cursor is 0, not a rewind")
 
-	// Another user's page is their own, and a state outside the vocabulary is a
-	// 400 rather than a silently widened gate.
 	status, raw = editGet(t, app, "/api/v1/catalog/users/6/claims")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var stranger userClaimsBody
@@ -121,8 +112,6 @@ func TestUserClaimsFace(t *testing.T) {
 	assert.Equal(t, fiber.StatusBadRequest, status)
 }
 
-// TestClaimEventFeedActorFilter pins the feed's new narrowing (wave 157) on the
-// wire: same cursor semantics, one actor's rows.
 func TestClaimEventFeedActorFilter(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"catalog_claim_event", "catalog_work_title", "catalog_work"} {

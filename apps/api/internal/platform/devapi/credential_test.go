@@ -5,20 +5,13 @@ import (
 	"testing"
 )
 
-// TestScopeGalgameWriteSelfServiceExcluded pins the 06a D3 invariant: the write
-// scope exists as a constant but is NEVER self-service-grantable — MintKey's
-// checkSelfServiceScopes gate must reject it (a write scope is minted only by
-// the admin console / SQL until the 06b proposal face + trust tiers are ready).
 func TestScopeGalgameWriteSelfServiceExcluded(t *testing.T) {
 	if ScopeGalgameWrite != "galgame:write" {
 		t.Errorf("ScopeGalgameWrite = %q, want %q", ScopeGalgameWrite, "galgame:write")
 	}
-	// The allow-list is the two public reads only — the write scope is absent.
 	if slices.Contains(selfServiceScopes, ScopeGalgameWrite) {
 		t.Errorf("selfServiceScopes must NOT contain %q (D3: write is never self-service)", ScopeGalgameWrite)
 	}
-	// The MintKey validation path (checkSelfServiceScopes) rejects a write scope,
-	// alone or mixed with an allowed read scope, and accepts the two reads.
 	if err := checkSelfServiceScopes([]string{ScopeGalgameWrite}); err != ErrScopeNotAllowed {
 		t.Errorf("checkSelfServiceScopes([write]) = %v, want ErrScopeNotAllowed", err)
 	}
@@ -40,7 +33,7 @@ func TestTierLimits(t *testing.T) {
 		{TierFree, 60, 50_000, false},
 		{TierTrusted, 600, 1_000_000, false},
 		{TierInternal, 0, 0, true},
-		{"garbage", 60, 50_000, false}, // unknown → tightest (fail-safe)
+		{"garbage", 60, 50_000, false},
 	}
 	for _, c := range cases {
 		r, q, u := TierLimits(c.tier)
@@ -51,7 +44,6 @@ func TestTierLimits(t *testing.T) {
 }
 
 func TestEffectiveRateQuota(t *testing.T) {
-	// Tier default when no override.
 	free := &Credential{Tier: TierFree}
 	if lim, unl := free.EffectiveRate(); lim != 60 || unl {
 		t.Errorf("free rate = (%d,%v), want (60,false)", lim, unl)
@@ -60,7 +52,6 @@ func TestEffectiveRateQuota(t *testing.T) {
 		t.Errorf("free quota = (%d,%v), want (50000,false)", lim, unl)
 	}
 
-	// Positive override wins over the tier default.
 	over := &Credential{Tier: TierFree, RateOverride: 5, QuotaOverride: 999}
 	if lim, _ := over.EffectiveRate(); lim != 5 {
 		t.Errorf("override rate = %d, want 5", lim)
@@ -69,7 +60,6 @@ func TestEffectiveRateQuota(t *testing.T) {
 		t.Errorf("override quota = %d, want 999", lim)
 	}
 
-	// Internal is unlimited regardless of override.
 	internal := &Credential{Tier: TierInternal, RateOverride: 5}
 	if _, unl := internal.EffectiveRate(); !unl {
 		t.Errorf("internal rate should be unlimited")

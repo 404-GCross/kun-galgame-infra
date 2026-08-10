@@ -6,23 +6,17 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// The projections in public_names.go are pure functions over alias rows, so the
-// per-locale election is pinned here directly rather than through a face: the
-// interesting cases (a primary losing to nothing, a translation beating a
-// spelling variant, a langless row) are all orderings, and driving them through
-// fixtures would hide the rule behind seed data.
 
 func alias(name, lang string, kind int16, primary, display bool) displayAlias {
 	return displayAlias{Name: name, Lang: lang, Kind: kind, IsPrimary: primary, IsDisplay: display}
 }
 
 func TestFlatAliasesExcludesDisplayAndDedupes(t *testing.T) {
-	// Arrives in (name, id) order, as entityAliases guarantees.
 	rows := []displayAlias{
-		alias("緒方剛志", "ja", model.AliasKindTranslation, false, true), // the display name
+		alias("緒方剛志", "ja", model.AliasKindTranslation, false, true),
 		alias("绪方刚", "zh-Hans", model.AliasKindTranslation, false, false),
 		alias("绪方刚志", "zh-Hans", model.AliasKindTranslation, true, false),
-		alias("绪方刚志", "", model.AliasKindSpellingVariant, false, false), // same spelling, other lang
+		alias("绪方刚志", "", model.AliasKindSpellingVariant, false, false),
 	}
 	got := flatAliases(rows)
 	if len(got) != 2 || got[0] != "绪方刚" || got[1] != "绪方刚志" {
@@ -41,7 +35,7 @@ func TestLocalizedNamesElection(t *testing.T) {
 	tests := []struct {
 		name string
 		rows []displayAlias
-		want map[string]string // locale → elected value
+		want map[string]string
 	}{{
 		name: "is_primary_for_locale wins even against an earlier row",
 		rows: []displayAlias{
@@ -64,9 +58,6 @@ func TestLocalizedNamesElection(t *testing.T) {
 		},
 		want: map[string]string{"zh-Hans": "绪方刚"},
 	}, {
-		// The whole point of the field: a row equal to the display name still
-		// answers "what is this called in Chinese?" and must NOT be dropped the
-		// way aliases[] drops it.
 		name: "a value equal to the display name is kept",
 		rows: []displayAlias{
 			alias("美坂栞", "zh-Hans", model.AliasKindTranslation, false, true),
@@ -79,24 +70,18 @@ func TestLocalizedNamesElection(t *testing.T) {
 		},
 		want: map[string]string{},
 	}, {
-		// catalog_label_alias id=2686 files lang as the literal string 日语.
-		// A key no locale negotiation can match is a leak, not vocabulary.
 		name: "a lang that is not a tag answers no locale",
 		rows: []displayAlias{
 			alias("株式会社ジャスト", "日语", model.AliasKindSpellingVariant, false, false),
 		},
 		want: map[string]string{},
 	}, {
-		// Stored as pt-br; BCP-47 defines only pt-BR, and that is what a
-		// consumer will look up by.
 		name: "a miscased tag is keyed canonically",
 		rows: []displayAlias{
 			alias("Fulano", "pt-br", model.AliasKindSpellingVariant, false, false),
 		},
 		want: map[string]string{"pt-BR": "Fulano"},
 	}, {
-		// Same tag, two spellings of it: they must not become two locales, or
-		// a consumer sees a name under a key it never asks for.
 		name: "casing variants of one tag collapse to one locale",
 		rows: []displayAlias{
 			alias("绪方刚", "ZH-hans", model.AliasKindSpellingVariant, false, false),
@@ -137,19 +122,19 @@ func TestLocalizedNamesEmptyIsNeverNil(t *testing.T) {
 func TestCanonicalLocale(t *testing.T) {
 	tests := []struct {
 		in   string
-		want string // "" means: not a language tag
+		want string
 	}{
 		{"ja", "ja"},
 		{"zh-Hans", "zh-Hans"},
 		{"pt-br", "pt-BR"},
 		{"ZH-HANS", "zh-Hans"},
 		{"zh-hant-hk", "zh-Hant-HK"},
-		{"es-419", "es-419"}, // three digits is a region
+		{"es-419", "es-419"},
 		{"", ""},
 		{"日语", ""},
-		{"zh_Hans", ""},   // underscore is not the BCP-47 separator
-		{"zh-", ""},       // an empty subtag
-		{"123", ""},       // the primary subtag must be alphabetic
+		{"zh_Hans", ""},
+		{"zh-", ""},
+		{"123", ""},
 		{"toolongsubtag", ""},
 	}
 	for _, tc := range tests {
@@ -173,8 +158,6 @@ func TestAliasKindKeyNeverInventsAKind(t *testing.T) {
 	if got := aliasKindKey(model.AliasKindSpellingVariant); got != "spelling_variant" {
 		t.Fatalf("spelling_variant rendered as %q", got)
 	}
-	// An unrecognised code must be visibly unknown rather than silently
-	// claiming to be a translation.
 	if got := aliasKindKey(99); got != "unknown_99" {
 		t.Fatalf("unknown kind rendered as %q, want a visibly unknown value", got)
 	}

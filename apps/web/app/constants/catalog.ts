@@ -1,8 +1,3 @@
-// Catalog review-queue vocabulary: display labels for the wire constants of
-// the catalog admin API (docs/catalog/admin-openapi.yaml). The numeric values
-// mirror apps/api/internal/platform/catalog/model/constants.go and are
-// persisted — never renumber. `-1` is the API's "no filter" sentinel for
-// optional query params.
 
 export const CATALOG_FILTER_ALL = -1
 
@@ -16,9 +11,6 @@ export const CATALOG_ENTITY_TYPES: Record<number, string> = {
   6: '版本'
 }
 
-// Named entity-type discriminants (mirrors model.EntityType* in
-// apps/api/internal/platform/catalog/model/constants.go). Only the values the
-// UI branches on are enumerated here; the full label set is CATALOG_ENTITY_TYPES.
 export const CATALOG_ENTITY_TYPE = {
   creditName: 1
 } as const
@@ -64,8 +56,6 @@ export const PROPOSAL_STATUS_LABELS: Record<number, string> = {
   4: '已撤回'
 }
 
-// Semantic chip colors (mirrors @kungal/ui-core's KunUIColor union — the
-// project palette only, never Tailwind built-ins).
 export type CatalogChipColor =
   | 'default'
   | 'primary'
@@ -91,7 +81,6 @@ export const PROPOSAL_STATUS_COLORS: Record<number, CatalogChipColor> = {
   4: 'default'
 }
 
-// matched_by provenance prefixes (rule:/import:/human:) → visual treatment.
 export const MATCHED_BY_KINDS: ReadonlyArray<{
   prefix: string
   label: string
@@ -102,7 +91,6 @@ export const MATCHED_BY_KINDS: ReadonlyArray<{
   { prefix: 'human:', label: '人工', color: 'success' }
 ]
 
-// catalog_source registry ids used in filters (seed-owned, stable).
 export const CATALOG_SOURCE_LABELS: Record<number, string> = {
   1: '人工',
   2: 'VNDB',
@@ -117,9 +105,6 @@ export const CATALOG_SOURCE_LABELS: Record<number, string> = {
   11: 'Pixiv'
 }
 
-// The catalog rows that can hold an image hash (the imagerefs registry on the
-// Go side). Shown in the image console's delete modal so an operator reads
-// "角色胸像 #123" instead of a raw kind token.
 export const CATALOG_IMAGE_REF_KIND_LABELS: Record<string, string> = {
   work_cover: '封面',
   work_screenshot: '截图',

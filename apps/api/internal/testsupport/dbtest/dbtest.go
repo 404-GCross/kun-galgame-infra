@@ -30,16 +30,8 @@ import (
 	"testing"
 )
 
-// RequireEnv names the variable a caller sets to assert "this run has a
-// database; treat its absence as a failure".
 const RequireEnv = "REQUIRE_DB_TESTS"
 
-// DSN returns the assigned test database DSN and whether the suite should run.
-//
-// ok=false means the DSN is unset and this run was not promised one — the caller
-// should skip. When REQUIRE_DB_TESTS is set, an unset DSN never returns: it is a
-// broken CI job or a mis-launched local run, and reporting `ok` for a suite that
-// did not execute is worse than stopping.
 func DSN() (dsn string, ok bool) {
 	dsn = os.Getenv("TEST_DATABASE_DSN")
 	if dsn != "" {
@@ -54,8 +46,6 @@ func DSN() (dsn string, ok bool) {
 	return "", false
 }
 
-// SkipMain is the TestMain half: it reports the skip on stderr and exits 0.
-// Package-level suites call it when DSN reports ok=false.
 func SkipMain(suite string) {
 	fmt.Fprintf(os.Stderr,
 		"SKIP: TEST_DATABASE_DSN unset — %s not run (set %s=1 to make this a failure)\n",
@@ -63,8 +53,6 @@ func SkipMain(suite string) {
 	os.Exit(0)
 }
 
-// Skip is the per-test half, for suites gated inside a test function rather than
-// in TestMain.
 func Skip(t *testing.T) {
 	t.Helper()
 	t.Skipf("TEST_DATABASE_DSN unset — DB-backed test not run (set %s=1 to make this a failure)", RequireEnv)

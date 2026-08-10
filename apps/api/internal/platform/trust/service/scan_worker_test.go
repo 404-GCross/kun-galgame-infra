@@ -10,9 +10,6 @@ import (
 	"api/internal/platform/trust/model"
 )
 
-// fakeGateway is a deterministic ScanGateway seam: a fixed verdict/error and a
-// configured toggle, counting calls so a test can assert the worker did (or did
-// not) dial.
 type fakeGateway struct {
 	configured bool
 	verdict    GatewayVerdict
@@ -26,16 +23,12 @@ func (g *fakeGateway) Moderate(_ context.Context, _ string, _ *int64) (GatewayVe
 	return g.verdict, g.err
 }
 
-// stubTier0 is a deterministic Tier0Matcher for the worker tests that do not
-// exercise the word list: it always reports "evaluated, no match" ([]).
 type stubTier0 struct{}
 
 func (stubTier0) Tier0Matches(_ context.Context, _, _ string) ([]string, error) {
 	return []string{}, nil
 }
 
-// seedPending inserts a pending scan row directly (the worker does not consult
-// the registry, so no kind registration is needed).
 func seedPending(t *testing.T, subject, text string) int64 {
 	t.Helper()
 	r := model.TrustScanResult{
@@ -59,9 +52,6 @@ func countScanStatus(t *testing.T, status int16) int64 {
 
 func f32(v float32) *float32 { return &v }
 
-// TestScanWorkerScoredAndShadow: a configured gateway returning a flagged verdict
-// drives the row to scored with every verdict field recorded — AND the SHADOW
-// ASSERTION holds: scoring a flagged row creates ZERO trust_review_item rows.
 func TestScanWorkerScoredAndShadow(t *testing.T) {
 	cleanTables(t)
 	id := seedPending(t, "s-scored", "abusive text")
@@ -71,7 +61,6 @@ func TestScanWorkerScoredAndShadow(t *testing.T) {
 	}}
 	w := NewScanWorker(testDB, g, stubTier0{})
 
-	// Review-inbox baseline BEFORE scoring (must not change).
 	var reviewBefore int64
 	testDB.Model(&model.TrustReviewItem{}).Count(&reviewBefore)
 
@@ -110,7 +99,6 @@ func TestScanWorkerScoredAndShadow(t *testing.T) {
 		t.Fatalf("categories = %v, want [harassment abuse]", cats)
 	}
 
-	// SHADOW ASSERTION: no review item was created (no enqueue, no enforcement).
 	var reviewAfter int64
 	testDB.Model(&model.TrustReviewItem{}).Count(&reviewAfter)
 	if reviewAfter != reviewBefore {
@@ -118,8 +106,6 @@ func TestScanWorkerScoredAndShadow(t *testing.T) {
 	}
 }
 
-// TestScanWorkerScoredNotFlagged: a clean verdict records flagged=false explicitly
-// (distinct from a pending/degraded NULL).
 func TestScanWorkerScoredNotFlagged(t *testing.T) {
 	cleanTables(t)
 	id := seedPending(t, "s-clean", "hello")
@@ -137,8 +123,6 @@ func TestScanWorkerScoredNotFlagged(t *testing.T) {
 	}
 }
 
-// TestScanWorkerGatewayDegraded: a gateway that reports degraded:true, and one
-// that errors, both drive the row to degraded with NO verdict fields.
 func TestScanWorkerGatewayDegraded(t *testing.T) {
 	cases := []struct {
 		name string
@@ -170,8 +154,6 @@ func TestScanWorkerGatewayDegraded(t *testing.T) {
 	}
 }
 
-// TestScanWorkerEnvEmpty: an unconfigured gateway (empty envs) drains the row to
-// degraded WITHOUT dialing — the queue drains even with no channel layer.
 func TestScanWorkerEnvEmpty(t *testing.T) {
 	cleanTables(t)
 	id := seedPending(t, "s-env", "text")
@@ -188,15 +170,13 @@ func TestScanWorkerEnvEmpty(t *testing.T) {
 	}
 }
 
-// TestScanWorkerDrainsNoBacklog: many pending rows, one pass → ZERO pending
-// remain (every row reaches a terminal state — no unbounded backlog).
 func TestScanWorkerDrainsNoBacklog(t *testing.T) {
 	cleanTables(t)
-	const total = scanBatchSize // one full batch
+	const total = scanBatchSize
 	for i := range total {
 		seedPending(t, subjID(i), "text")
 	}
-	g := &fakeGateway{configured: false} // env-empty → all drain to degraded
+	g := &fakeGateway{configured: false}
 	w := NewScanWorker(testDB, g, stubTier0{})
 	n, err := w.ScorePending(context.Background())
 	if err != nil {
@@ -213,8 +193,6 @@ func TestScanWorkerDrainsNoBacklog(t *testing.T) {
 	}
 }
 
-// blockingGateway announces entry into Moderate and blocks until released, so a
-// test can hold the row lock open while a second worker runs.
 type blockingGateway struct {
 	entered chan struct{}
 	release chan struct{}
@@ -229,9 +207,6 @@ func (g *blockingGateway) Moderate(_ context.Context, _ string, _ *int64) (Gatew
 	return GatewayVerdict{Flagged: false, Channel: "test"}, nil
 }
 
-// TestScanWorkerSkipLockedNoDoubleScore: while worker A holds a row's FOR UPDATE
-// lock (blocked inside the gateway call), worker B's SKIP LOCKED claim skips it —
-// so the row is scored EXACTLY once, never double-scored.
 func TestScanWorkerSkipLockedNoDoubleScore(t *testing.T) {
 	cleanTables(t)
 	id := seedPending(t, "s-lock", "text")
@@ -247,10 +222,8 @@ func TestScanWorkerSkipLockedNoDoubleScore(t *testing.T) {
 		doneA <- n
 	}()
 
-	// A has claimed the row (FOR UPDATE) and is now blocked inside Moderate.
 	<-blocking.entered
 
-	// B runs while A holds the lock: SKIP LOCKED must make B claim nothing.
 	gB := &fakeGateway{configured: true, verdict: GatewayVerdict{Flagged: false, Channel: "b"}}
 	wB := NewScanWorker(testDB, gB, stubTier0{})
 	nB, err := wB.ScorePending(context.Background())
@@ -264,7 +237,6 @@ func TestScanWorkerSkipLockedNoDoubleScore(t *testing.T) {
 		t.Fatalf("worker B must not have scored a locked row, %d calls", gB.calls.Load())
 	}
 
-	// Release A → it commits the single score.
 	close(blocking.release)
 	if err := <-errA; err != nil {
 		t.Fatalf("worker A score: %v", err)
@@ -280,15 +252,10 @@ func TestScanWorkerSkipLockedNoDoubleScore(t *testing.T) {
 	}
 }
 
-// subjID builds a distinct subject id for the drain fan-out.
 func subjID(i int) string {
 	return "drain-" + string(rune('a'+i%26)) + string(rune('0'+i/26))
 }
 
-// --- step 05: Tier0 recording on the scan worker ---------------------------
-
-// seedTerm inserts one active Tier0 term via the service so the shared match
-// cache is invalidated; returns nothing (the test only needs the row present).
 func seedTerm(t *testing.T, svc *TermService, site *string, raw string, kind int16) {
 	t.Helper()
 	if _, err := svc.Create(context.Background(), CreateTermParams{Site: site, Term: raw, Kind: kind}); err != nil {
@@ -296,7 +263,6 @@ func seedTerm(t *testing.T, svc *TermService, site *string, raw string, kind int
 	}
 }
 
-// tier0Of reloads a scan row and decodes its tier0_matched jsonb.
 func tier0Of(t *testing.T, id int64) (raw []byte, matched []string) {
 	t.Helper()
 	row := getScan(t, id)
@@ -309,13 +275,10 @@ func tier0Of(t *testing.T, id int64) (raw []byte, matched []string) {
 	return row.Tier0Matched, matched
 }
 
-// TestScanWorkerTier0RecordedOnScored: a scored row records the matched Tier0
-// terms as a JSON array — AND the shadow invariant still holds (zero review
-// items). tier0 recording never changes status semantics.
 func TestScanWorkerTier0RecordedOnScored(t *testing.T) {
 	cleanTables(t)
 	svc := NewTermService(testDB, nil)
-	seedTerm(t, svc, nil, "坏词", model.TermKindBanned) // global banned term
+	seedTerm(t, svc, nil, "坏词", model.TermKindBanned)
 
 	id := seedPending(t, "s-t0-hit", "这是一段含有坏词的文本")
 	g := &fakeGateway{configured: true, verdict: GatewayVerdict{Flagged: false, Channel: "qwen3guard"}}
@@ -337,7 +300,6 @@ func TestScanWorkerTier0RecordedOnScored(t *testing.T) {
 		t.Fatalf("tier0_matched = %v, want [坏词]", matched)
 	}
 
-	// Shadow invariant: tier0 recording created no review item.
 	var reviewAfter int64
 	testDB.Model(&model.TrustReviewItem{}).Count(&reviewAfter)
 	if reviewAfter != reviewBefore {
@@ -345,8 +307,6 @@ func TestScanWorkerTier0RecordedOnScored(t *testing.T) {
 	}
 }
 
-// TestScanWorkerTier0EmptyArrayOnNoMatch: a scored row with no Tier0 hit records
-// an empty JSON array (evaluated, no match) — NOT null (not-evaluated).
 func TestScanWorkerTier0EmptyArrayOnNoMatch(t *testing.T) {
 	cleanTables(t)
 	svc := NewTermService(testDB, nil)
@@ -367,15 +327,13 @@ func TestScanWorkerTier0EmptyArrayOnNoMatch(t *testing.T) {
 	}
 }
 
-// TestScanWorkerTier0RecordedOnEnvEmptyDegraded: even the env-empty degraded
-// drain records Tier0 (the calibration sample lands regardless of the gateway).
 func TestScanWorkerTier0RecordedOnEnvEmptyDegraded(t *testing.T) {
 	cleanTables(t)
 	svc := NewTermService(testDB, nil)
 	seedTerm(t, svc, nil, "坏词", model.TermKindSuspect)
 
 	id := seedPending(t, "s-t0-deg", "含坏词的降级文本")
-	g := &fakeGateway{configured: false} // env empty → degraded drain, no dial
+	g := &fakeGateway{configured: false}
 	w := NewScanWorker(testDB, g, svc)
 	if _, err := w.ScorePending(context.Background()); err != nil {
 		t.Fatalf("score: %v", err)

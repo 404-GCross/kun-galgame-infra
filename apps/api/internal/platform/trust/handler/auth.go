@@ -17,20 +17,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Auth plumbing, following the catalog/community split: auth runs as
-// path-scoped Fiber middleware; bridges lift the authenticated identity into
-// the Huma request context for the operation handlers.
-//
-// S2S intake face: Basic client credentials only. The tenant `site` is DERIVED
-// from the client's binding (oauth_clients.catalog_site — the shared per-client
-// site key), never taken from the request body, so a client can only report on
-// its own site.
-//
-// Admin face: the shared middleware.JWTAuth (accept-both verifier) + the
-// trust.queue_access permission gate the /api/v1/admin/trust prefix at the
-// Fiber layer; AdminBridge lifts the operator's user id for the decision
-// handlers.
-
 const localClient = "trust:oauth_client"
 
 type ctxKey string
@@ -42,15 +28,10 @@ const (
 	ctxKeyClientID    ctxKey = "trust:token_client_id"
 )
 
-// clientSiteLookup resolves an OAuth client id to its record, so the admin face
-// can derive a site-scoped caller's catalog_site. *siteRepo.OAuthClientRepository
-// satisfies it; a one-method seam keeps the admin scope logic unit-testable
-// without a main-DB oauth_clients fixture.
 type clientSiteLookup interface {
 	FindByClientID(ctx context.Context, clientID string) (*siteModel.OAuthClient, error)
 }
 
-// S2SAuth authenticates backend callers via "Basic <b64(client_id:secret)>".
 func S2SAuth(clients *siteRepo.OAuthClientRepository) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		client, err := authenticateBasic(c, clients)
@@ -86,7 +67,6 @@ func authenticateBasic(c fiber.Ctx, clients *siteRepo.OAuthClientRepository) (*s
 	return client, nil
 }
 
-// S2SBridge lifts the authenticated client into the Huma context.
 func S2SBridge(ctx huma.Context, next func(huma.Context)) {
 	fc := humafiber.Unwrap(ctx)
 	if client, ok := fc.Locals(localClient).(*siteModel.OAuthClient); ok {
@@ -100,8 +80,6 @@ func clientFromCtx(ctx context.Context) *siteModel.OAuthClient {
 	return c
 }
 
-// siteBinding returns the tenant site the authenticated client acts as, or a
-// 403 when the client is not bound to a site.
 func siteBinding(ctx context.Context) (string, *houseError) {
 	client := clientFromCtx(ctx)
 	if client == nil || client.CatalogSite == "" {
@@ -111,11 +89,6 @@ func siteBinding(ctx context.Context) (string, *houseError) {
 	return client.CatalogSite, nil
 }
 
-// AdminBridge lifts the authenticated operator's identity (set by
-// middleware.JWTAuth) into the Huma context: the user id (from TokenClaims.ID)
-// so decision endpoints can record who acted, plus the GLOBAL roles and token
-// client id the scope resolver uses to split platform staff from a site-scoped
-// moderator. The Fiber layer has already rejected non-staff (trust.queue_access).
 func AdminBridge(ctx huma.Context, next func(huma.Context)) {
 	fc := humafiber.Unwrap(ctx)
 	if id, ok := fc.Locals("user_id").(uint); ok {
@@ -135,15 +108,11 @@ func adminIDFromCtx(ctx context.Context) int64 {
 	return id
 }
 
-// globalRolesFromCtx returns the caller's GLOBAL roles (never the site union) —
-// the discriminator for the platform-staff vs site-scoped tier.
 func globalRolesFromCtx(ctx context.Context) []string {
 	roles, _ := ctx.Value(ctxKeyGlobalRoles).([]string)
 	return roles
 }
 
-// tokenClientIDFromCtx returns the OAuth client id the token was issued to
-// (empty for first-party tokens).
 func tokenClientIDFromCtx(ctx context.Context) string {
 	id, _ := ctx.Value(ctxKeyClientID).(string)
 	return id

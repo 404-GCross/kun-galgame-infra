@@ -9,13 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// miniScript reproduces every structural shape of the real userscript that the
-// parser has to survive, in ~60 lines: a decoy rule before the one we want, the
-// unlabelled hand-curated head section, a VNDB-character-page 精翻 section, a
-// VN-TAG section (excluded) whose tail turns into traits at a //特征
-// sub-heading, the 人物特征 section, an unlabelled trailing section (excluded),
-// quality markers, a commented-out entry, a trailing line comment, and a
-// duplicate key.
 const miniScript = `
 let mainMap = {
     "Ahoge": "不是特征页的呆毛",
@@ -87,18 +80,14 @@ func TestParseScriptReadsOnlyTheTraitSections(t *testing.T) {
 	got := asMap(mustParse(t, writeMini(t), parseOpts{}))
 
 	assert.Equal(t, map[string]string{
-		// hand-curated head section
-		"Hair":      "毛发",
-		"Voiced by": "声优",
-		"Ahoge":     "呆毛(アホげ)",
-		// chars#chars 精翻 section, quality markers stripped
+		"Hair":            "毛发",
+		"Voiced by":       "声优",
+		"Ahoge":           "呆毛(アホげ)",
 		"Coodere":         "冷娇(クウデレ)",
 		"Modern Tsundere": "现代傲娇",
 		"Rough Draft":     "粗翻",
-		// the //特征 tail of the VN-TAG section
-		"Albino": "白化病",
-		// 人物特征 section
-		"Quiver": "箭袋",
+		"Albino":          "白化病",
+		"Quiver":          "箭袋",
 	}, got)
 }
 
@@ -106,11 +95,11 @@ func TestParseScriptExcludesForeignVocabulary(t *testing.T) {
 	got := asMap(mustParse(t, writeMini(t), parseOpts{}))
 
 	for _, excluded := range []string{
-		"Decoy",                 // another rule entirely
-		"Protagonist's Bedroom", // VN-TAG section, before the //特征 tail
-		"Rape",                  // ditto — a tag sense, not the trait sense
-		"Amputee Hero",          // trailing unlabelled section
-		"Cosplay",               // commented-out entry
+		"Decoy",
+		"Protagonist's Bedroom",
+		"Rape",
+		"Amputee Hero",
+		"Cosplay",
 	} {
 		assert.NotContains(t, got, excluded, "%q must not be ingested", excluded)
 	}

@@ -1,19 +1,3 @@
-// image-gc is the TTL lifecycle worker (cold-candidate report →
-// soft-delete >365d unreferenced → hard-delete soft-deleted >30d).
-//
-// Thin shell: logic lives in internal/jobs (single source of truth) so
-// the in-process scheduler and this CLI run identical code. Run daily,
-// e.g.:
-//
-//	30 3 * * *  /usr/local/bin/kun-image-gc      # if scheduling externally
-//
-// Flags:
-//
-//	--cold-days=60     soft threshold to report as cold-storage candidates
-//	--soft-days=365    age (since last_referenced_at) to soft-delete at
-//	--hard-days=30     age (since deleted_at) to hard-delete at
-//	--dry-run          log only, do not mutate DB or S3
-//	--max=10000        max rows per phase per run
 package main
 
 import (

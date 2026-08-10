@@ -16,42 +16,19 @@ import (
 )
 
 const (
-	// coverPreset is the image-service preset these uploads use
-	// (configs/image_presets.yaml). The catalog image client's
-	// image_allowed_presets already contains it (the step-55 DLsite cover
-	// backfill uses the same preset over the same client) — no new preset.
 	coverPreset = "catalog_cover"
 
-	// uploaderSub stamps a machine identity onto first_uploader_sub so the
-	// backfilled image rows are traceable (there is no human uploader).
 	uploaderSub = "system:bangumi-cover-backfill"
 
-	// uploadRetries is how many times upload() retries a TRANSIENT image-service
-	// failure (connection refused / timeout / 5xx). The infra stack redeploys
-	// mid-run and recreates the image container (~30-90s unreachable, breaking
-	// in-flight connections); without retry those uploads are permanently skipped
-	// for the pass. Quota/moderation are terminal and never retried. Matches the
-	// step-55 machinery (internal/jobs/dlsitemedia).
 	uploadRetries = 6
 )
 
-// writeCover uploads a bodyless work's vertical Bangumi PORTRAIT cover from the
-// mirror and writes one catalog_work_cover row with portrait_pinned=true — the
-// value kungal/moyu read for the portrait-first UI. Returns quota=true when the
-// daily image quota is exhausted (caller aborts). The caller has already
-// classified this candidate as portrait (h > w) via dims; landscape/square
-// covers never reach here.
-//
-// Sexual is fixed at 0: Bangumi has no per-image content rating, and its
-// subject-level nsfw flag is not consulted (this tool is catalog + local-mirror
-// only). Bangumi covers are store/catalog images and are generally SFW, so 0 is
-// the conservative-yet-correct default (§任务, spec default). Violence is always 0.
 func (r *runner) writeCover(ctx context.Context, mirrorRoot string, c candidate, e dimsEntry, apply bool) (quota bool) {
-	if !isBodyless(c.Site) { // XOR guard (§8.D) — never materialise a claimed work
+	if !isBodyless(c.Site) {
 		r.c.coverRefused++
 		return false
 	}
-	if r.exist[c.WorkID] { // preloaded Bangumi cover → skip before any byte read
+	if r.exist[c.WorkID] {
 		r.c.coverExists++
 		return false
 	}
@@ -80,7 +57,7 @@ func (r *runner) writeCover(ctx context.Context, mirrorRoot string, c candidate,
 		slog.Warn("write bangumi cover row", "work", c.WorkID, "subject", c.SubjectID, "err", tx.Error)
 		return false
 	}
-	r.pingHashes = append(r.pingHashes, res.Hash) // keep the byte alive immediately
+	r.pingHashes = append(r.pingHashes, res.Hash)
 	if tx.RowsAffected == 0 {
 		r.c.coverDedup++
 		return false
@@ -91,12 +68,6 @@ func (r *runner) writeCover(ctx context.Context, mirrorRoot string, c candidate,
 	return false
 }
 
-// upload reads a mirrored cover and uploads it under the catalog_cover preset.
-// The bytes only ever come from the local mirror — this never dials Bangumi.
-// Retries transient failures across an image-container recreation with a fresh
-// bytes.Reader per attempt (the previous one is consumed); terminal errors
-// (quota / moderation) return immediately. Copied from the step-55 machinery so
-// the retry/backoff shape is identical, per the "match those patterns" contract.
 func (r *runner) upload(ctx context.Context, path string) (*imageclient.UploadResult, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -129,10 +100,6 @@ func (r *runner) upload(ctx context.Context, path string) (*imageclient.UploadRe
 	return nil, lastErr
 }
 
-// classifyUpload maps an upload error to a counter. Returns quota=true only for
-// ErrQuotaExceeded (the caller aborts the whole run); moderation rejection is
-// counted and the run continues; any other error (incl. a vanished file) counts
-// as a generic error.
 func (r *runner) classifyUpload(err error, c candidate) (quota bool) {
 	switch {
 	case stderrors.Is(err, imageclient.ErrQuotaExceeded):

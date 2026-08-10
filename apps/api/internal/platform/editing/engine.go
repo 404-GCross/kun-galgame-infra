@@ -9,9 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Engine is the editing state machine over the engine tables (edit_*) and
-// the injected registry. db is the engine pool (catalog DB, charter ruling
-// 2); entity bodies are reached only through each spec's own closures.
 type Engine struct {
 	db  *gorm.DB
 	reg *Registry
@@ -21,7 +18,6 @@ func NewEngine(db *gorm.DB, reg *Registry) *Engine {
 	return &Engine{db: db, reg: reg}
 }
 
-// Registry exposes the injected registry (schema endpoints project from it).
 func (e *Engine) Registry() *Registry { return e.reg }
 
 func (e *Engine) resolveSpec(entityType string) (*EntityTypeSpec, error) {
@@ -32,13 +28,6 @@ func (e *Engine) resolveSpec(entityType string) (*EntityTypeSpec, error) {
 	return spec, nil
 }
 
-// afterMerge fires a spec's post-commit OnMerge hook (registry.go) for a
-// revision the single write path just committed. Best-effort by construction:
-// it runs OUTSIDE the merge transaction, never propagates an error to the
-// caller (a failed reindex or contributor write must not undo a landed merge —
-// both are recoverable), and recovers from a misbehaving closure so a family
-// hook can never crash the request. rev is nil when no merge happened (an open
-// proposal that did not automerge), in which case this no-ops.
 func (e *Engine) afterMerge(ctx context.Context, rev *Revision) {
 	if rev == nil {
 		return
@@ -61,9 +50,6 @@ func (e *Engine) afterMerge(ctx context.Context, rev *Revision) {
 	}
 }
 
-// ownerSite resolves the entity's owner site through the spec's OwnerSite
-// hook when needed is true (some evaluated policy carries the owner rule).
-// Register guarantees the hook exists whenever an owner rule is registered.
 func (e *Engine) ownerSite(ctx context.Context, spec *EntityTypeSpec, entityID int64, needed bool) (*string, error) {
 	if !needed {
 		return nil, nil
@@ -75,16 +61,6 @@ func (e *Engine) ownerSite(ctx context.Context, spec *EntityTypeSpec, entityID i
 	return owner, nil
 }
 
-// deriveOwnership stamps pc.IsEntityOwner from the spec's OwnerUserID hook —
-// the one place ownership becomes a policy input without anyone asserting it
-// (wave 178). Every op that evaluates a policy against a KNOWN entity calls it
-// exactly once, before the first AllowsPropose/AllowsReview.
-//
-// It can only turn the flag ON. An S2S caller that already asserted ownership
-// keeps it (a product backend holding a fact the catalog does not — a family
-// whose spec registers no hook, a product-side notion of ownership — must not be
-// downgraded by a hook that returns nil), and derivation covers everyone else. entityID 0 (the
-// type-level schema projection) and an anonymous context derive nothing.
 func (e *Engine) deriveOwnership(ctx context.Context, spec *EntityTypeSpec, entityID int64, pc *PolicyContext) error {
 	if pc.IsEntityOwner || pc.UserID == 0 || entityID == 0 || spec.OwnerUserID == nil {
 		return nil
@@ -99,14 +75,6 @@ func (e *Engine) deriveOwnership(ctx context.Context, spec *EntityTypeSpec, enti
 	return nil
 }
 
-// ---- reads ----------------------------------------------------------------
-
-// CurrentSnapshot reads the entity's CURRENT registered-field state through
-// the spec's LoadSnapshot closure — the same view merge rebases against and
-// revert restores from (E3a: the BFF bootstrap's "current values" source; a
-// latest-revision snapshot would go stale under system writes that bypass
-// the engine, doc 21 §2.6). Read-only, no policy evaluation — the S2S face
-// gates access.
 func (e *Engine) CurrentSnapshot(ctx context.Context, entityType string, entityID int64) (map[string]any, error) {
 	spec, err := e.resolveSpec(entityType)
 	if err != nil {
@@ -115,8 +83,6 @@ func (e *Engine) CurrentSnapshot(ctx context.Context, entityType string, entityI
 	return spec.LoadSnapshot(ctx, entityID)
 }
 
-// GetProposal loads a proposal, its amendments (seq order), and the computed
-// effective patch.
 func (e *Engine) GetProposal(ctx context.Context, id int64) (*Proposal, []ProposalAmendment, map[string]any, error) {
 	var p Proposal
 	if err := e.db.WithContext(ctx).First(&p, id).Error; err != nil {
@@ -136,31 +102,20 @@ func (e *Engine) GetProposal(ctx context.Context, id int64) (*Proposal, []Propos
 	return &p, amendments, eff, nil
 }
 
-// ProposalFilter narrows ListProposals. Zero values mean "no filter" except
-// Status, which uses -1 as its no-filter sentinel (0 = open is meaningful).
 type ProposalFilter struct {
 	EntityType  string
 	EntityID    int64
 	Site        string
-	ProposerUID int64 // 0 = all proposers ("my proposals" BFF face, E1)
-	Status      int16 // -1 = all
-	Limit       int   // default 50, max 200
+	ProposerUID int64
+	Status      int16
+	Limit       int
 }
 
-// ListProposals returns proposals newest-first.
 func (e *Engine) ListProposals(ctx context.Context, f ProposalFilter) ([]Proposal, error) {
 	items, _, err := e.ListProposalsWithTotal(ctx, f)
 	return items, err
 }
 
-// ListProposalsWithTotal is ListProposals plus the count of rows the SAME
-// filter matches, ignoring the page limit (wave 162, 161 §6.P3-verdict STOP-4).
-//
-// A count is not a nicety here: a product's contribution statistics ("edits
-// merged", the creator-eligibility threshold) are a NUMBER, and reading it off
-// a capped page silently answers "50" forever. Wave 157 argued the per-user
-// claims face's total made a dedicated stats endpoint unnecessary; the same
-// argument only holds for edits once this face carries a total too.
 func (e *Engine) ListProposalsWithTotal(ctx context.Context, f ProposalFilter) ([]Proposal, int64, error) {
 	q := e.db.WithContext(ctx).Model(&Proposal{})
 	if f.EntityType != "" {
@@ -182,8 +137,6 @@ func (e *Engine) ListProposalsWithTotal(ctx context.Context, f ProposalFilter) (
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	// The count runs on a SESSION-forked query so the shared WHERE clauses are
-	// reused without the paging clauses leaking into either statement.
 	var total int64
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -195,7 +148,6 @@ func (e *Engine) ListProposalsWithTotal(ctx context.Context, f ProposalFilter) (
 	return out, total, nil
 }
 
-// ListRevisions returns an entity's revision log, newest-first.
 func (e *Engine) ListRevisions(ctx context.Context, entityType string, entityID int64, limit int) ([]Revision, error) {
 	spec, err := e.resolveSpec(entityType)
 	if err != nil {
@@ -213,25 +165,14 @@ func (e *Engine) ListRevisions(ctx context.Context, entityType string, entityID 
 	return out, nil
 }
 
-// RevisionFeedFilter narrows the GLOBAL revision cursor feed (wave 155 W3).
 type RevisionFeedFilter struct {
-	// Since is exclusive: rows with a greater id. The revision id is the only
-	// monotonic key that spans entities — seq is per-entity and created_at can
-	// repeat within a transaction — so it is the cursor.
 	Since        int64
-	EntityFamily string // "" = every family
-	EntityType   string // "" = every type
-	// Site restricts the feed to one tenant's revisions ("" = every site). A
-	// product backend replaying the log only ever wants its own.
-	Site  string
-	Limit int // default 200, max 1000
+	EntityFamily string
+	EntityType   string
+	Site         string
+	Limit        int
 }
 
-// RevisionsSince is the engine's read-only projection for downstream cursor
-// consumers: ascending by id, so a consumer stores one integer and can never
-// skip a row. It resolves NO spec — a feed must keep serving the history of an
-// entity type that has since been unregistered, which is exactly what the
-// N5 re-anchoring will produce.
 func (e *Engine) RevisionsSince(ctx context.Context, f RevisionFeedFilter) ([]Revision, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > 1000 {
@@ -254,9 +195,6 @@ func (e *Engine) RevisionsSince(ctx context.Context, f RevisionFeedFilter) ([]Re
 	return out, nil
 }
 
-// FieldDiff is one field's difference between two revisions, with the
-// registry's rendering hints attached (empty for keys that are no longer
-// registered — historic snapshots still render, just generically).
 type FieldDiff struct {
 	Key      string
 	Kind     FieldKind
@@ -265,8 +203,6 @@ type FieldDiff struct {
 	To       any
 }
 
-// Diff compares any two of an entity's revisions field-by-field (parity
-// hard line: any-two-versions diff).
 func (e *Engine) Diff(ctx context.Context, entityType string, entityID int64, fromSeq, toSeq int) ([]FieldDiff, error) {
 	spec, err := e.resolveSpec(entityType)
 	if err != nil {
@@ -325,27 +261,17 @@ func (e *Engine) revisionAt(ctx context.Context, spec *EntityTypeSpec, entityID 
 	return &rev, nil
 }
 
-// FieldProjection is one field of the edit-schema endpoint: the field's
-// shape plus the CALLER's evaluated capabilities — the UI renders exactly
-// this and holds zero policy logic (doc 21 §2.7).
 type FieldProjection struct {
-	Key        string
-	Kind       FieldKind
-	DiffHint   string
-	Deprecated bool
-	Locked     bool
-	CanPropose bool
-	CanReview  bool
-	// WouldAutomerge: a proposal by THIS caller would merge instantly (the
-	// direct-edit sugar); implies CanPropose.
+	Key            string
+	Kind           FieldKind
+	DiffHint       string
+	Deprecated     bool
+	Locked         bool
+	CanPropose     bool
+	CanReview      bool
 	WouldAutomerge bool
 }
 
-// SchemaProjection evaluates every registered field of an entity type
-// against the caller's policy context (site overlay included via pc.Site).
-// entityID makes the projection entity-aware: the owner automerge rule is
-// evaluated against that entity's owner site (0 = type-level projection —
-// owner rules conservatively project WouldAutomerge=false).
 func (e *Engine) SchemaProjection(ctx context.Context, entityType string, entityID int64, pc PolicyContext) ([]FieldProjection, error) {
 	spec, err := e.resolveSpec(entityType)
 	if err != nil {
@@ -385,8 +311,6 @@ func (e *Engine) SchemaProjection(ctx context.Context, entityType string, entity
 	return out, nil
 }
 
-// ---- shared internals ------------------------------------------------------
-
 func loadAmendments(db *gorm.DB, proposalID int64) ([]ProposalAmendment, error) {
 	var out []ProposalAmendment
 	if err := db.Where("proposal_id = ?", proposalID).Order("seq ASC").Find(&out).Error; err != nil {
@@ -395,7 +319,6 @@ func loadAmendments(db *gorm.DB, proposalID int64) ([]ProposalAmendment, error) 
 	return out, nil
 }
 
-// maxRevisionSeq returns the entity's highest revision seq (0 = none).
 func maxRevisionSeq(db *gorm.DB, spec *EntityTypeSpec, entityID int64) (int, error) {
 	var seq int
 	err := db.Model(&Revision{}).
