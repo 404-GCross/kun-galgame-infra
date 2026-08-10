@@ -1,9 +1,3 @@
-// import-work-aliases backfills bodyless works' alias titles (step 95): bgm
-// infobox 别名 → kind=alias rows; dlsite work_name_kana → kind=search_hint
-// rows for the anchored tail lacking one. Dry-run by default; ON CONFLICT DO
-// NOTHING (aliases are static facts — re-runs are no-ops).
-//
-//	go run ./cmd/import-work-aliases --dsn "$CATALOG" --dlsite-dsn "$DLSITE" [--source bgm|dlsite-kana|all] [--apply]
 package main
 
 import (

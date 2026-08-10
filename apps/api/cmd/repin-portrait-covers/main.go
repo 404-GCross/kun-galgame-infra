@@ -1,32 +1,3 @@
-// repin-portrait-covers re-decides which cover each work pins as its portrait,
-// and deletes the super-resolution products that enlarged something that was
-// never a cover.
-//
-// The retired cmd/pin-portrait-covers ranked candidates by pixel height and
-// used the cover KIND only to break ties, so a tall scan of a disc face, a box
-// back or a booklet page beat the actual front cover — and the GPU wave then
-// upscaled those picks. internal/jobs/repincovers holds the corrected ladder:
-// kind decides the tier (dig/main > pkgfront > unknown, box back and disc face
-// never), and size only orders within a tier.
-//
-//	# report + reviewable CSV (no writes; --plan-out URLs are for the eye)
-//	go run ./cmd/repin-portrait-covers --dsn "..." --plan-out /tmp/repin.csv
-//
-//	# export the under-1080 winners for upscale-bench
-//	go run ./cmd/repin-portrait-covers --dsn "..." --export-dir /exports/repin-in
-//
-//	# pin the winners that are already >= 1080
-//	go run ./cmd/repin-portrait-covers --dsn "..." --apply
-//
-//	# upload the upscaled products, write their rows and move the pins
-//	go run ./cmd/repin-portrait-covers --dsn "..." --apply --reinject-dir /exports/repin-out
-//
-//	# LAST, and the only destructive step: drop the bad enlargements
-//	go run ./cmd/repin-portrait-covers --dsn "..." --apply --purge-bad-upscales
-//
-// --dsn is REQUIRED. Bytes go to the CATALOG image scope under the
-// catalog_cover preset; the first wave's galgame_wiki upload path is retired
-// and that key is off limits.
 package main
 
 import (
@@ -57,7 +28,7 @@ func main() {
 	uploadGap := flag.Duration("upload-gap", 0, "min delay between uploads (0 = none)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
 	workIDs, err := parseIDs(*ids)
 	if err != nil {
@@ -93,7 +64,6 @@ func main() {
 	}
 }
 
-// parseIDs reads a comma-separated work id list.
 func parseIDs(s string) ([]int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {

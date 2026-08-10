@@ -20,7 +20,6 @@ import (
 
 const defaultPageLimit = 50
 
-// Server holds the community S2S operation dependencies.
 type Server struct {
 	threads   *service.ThreadService
 	posts     *service.PostService
@@ -31,9 +30,6 @@ type Server struct {
 	review    *service.ReviewService
 }
 
-// Setup builds the community S2S Huma API over the Fiber app. S2SAuth is applied
-// by the caller as path-scoped Fiber middleware BEFORE this. Callable with nil
-// services for spec export (handlers are never invoked then).
 func Setup(app *fiber.App, threads *service.ThreadService, posts *service.PostService, reactions *service.ReactionService, feedback *service.FeedbackService, flags *service.FlagService, trust *service.TrustService, review *service.ReviewService) huma.API {
 	InstallErrorEnvelope()
 
@@ -104,8 +100,6 @@ func (s *Server) register(api huma.API) {
 		Summary: "Reject a queue item (remove the content; tombstone the post)", Tags: review}, s.rejectReview)
 }
 
-// --- read ------------------------------------------------------------------
-
 type resolveCommentsInput struct{ Body dto.CommentsResolveRequest }
 type threadWithPostsOutput struct {
 	Body Envelope[dto.ThreadWithPosts]
@@ -158,10 +152,6 @@ func (s *Server) listThreads(ctx context.Context, in *listThreadsInput) (*thread
 	if err != nil {
 		return nil, mapErr("list threads", err)
 	}
-	// Project each thread's opening-post status + author so an embed can hide an
-	// opening post that must not leak its title (a held one is author-only, a
-	// self-deleted one is gone). The thread's own status stays open in both
-	// cases, so the list cannot filter on community_thread.status alone.
 	ids := make([]int64, len(threads))
 	for i := range threads {
 		ids[i] = threads[i].ID
@@ -190,9 +180,6 @@ func (s *Server) getThread(ctx context.Context, in *threadPostsInput) (*threadWi
 	if err != nil {
 		return nil, mapErr("get thread", err)
 	}
-	// A missing thread AND a cross-tenant site-local thread both answer 404, so a
-	// caller cannot tell "belongs to another site" from "does not exist" (ruling
-	// 4). Catalog-anchored threads are shared cross-site and pass the guard.
 	if thread == nil || service.CrossTenant(site, thread.Site, thread.AnchorKind) {
 		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
 	}
@@ -216,9 +203,6 @@ func (s *Server) listPosts(ctx context.Context, in *threadPostsInput) (*postList
 	if he != nil {
 		return nil, he
 	}
-	// listPosts is thread-addressed but loads only posts, so resolve the thread
-	// once to enforce the tenant guard (ruling 4): a cross-tenant / missing thread
-	// answers 404 rather than an empty page.
 	thread, err := s.threads.Get(in.ID)
 	if err != nil {
 		return nil, mapErr("get thread", err)
@@ -236,8 +220,6 @@ func (s *Server) listPosts(ctx context.Context, in *threadPostsInput) (*postList
 		Posts: views, NextCursor: postsPageCursor(views, limit),
 	})}, nil
 }
-
-// --- write -----------------------------------------------------------------
 
 type openTopicInput struct{ Body dto.OpenTopicRequest }
 type threadOutput struct {
@@ -323,10 +305,6 @@ func (s *Server) editPost(ctx context.Context, in *editPostInput) (*postOutput, 
 	return &postOutput{Body: okEnvelope(dto.PostResponse{Post: toPostView(post)})}, nil
 }
 
-// deletePost carries the acting author in a query param (not a body): DELETE
-// stays body-free — matching the codebase's only other DELETE (deleteArtifact) —
-// and author_id is a non-secret scalar the calling BFF already holds.
-// as_moderator is the mod-actor variant (mirrors EditPostRequest).
 type deletePostInput struct {
 	ID          int64 `path:"id"`
 	AuthorID    int64 `query:"author_id" doc:"the acting user (the post author, or the moderator when as_moderator)"`
@@ -423,8 +401,6 @@ func (s *Server) mergeFeedback(ctx context.Context, in *feedbackMergeInput) (*ok
 	return &okOutput{Body: okEnvelope(dto.OKResponse{OK: true})}, nil
 }
 
-// --- trust / moderation ----------------------------------------------------
-
 type recordActivityInput struct{ Body dto.ActivityReceiptRequest }
 type trustOutput struct {
 	Body Envelope[dto.TrustView]
@@ -506,8 +482,6 @@ func (s *Server) rejectReview(ctx context.Context, in *reviewDecisionInput) (*ok
 	return &okOutput{Body: okEnvelope(dto.OKResponse{OK: true})}, nil
 }
 
-// --- helpers ---------------------------------------------------------------
-
 func clampLimit(limit int) int {
 	if limit <= 0 || limit > 100 {
 		return defaultPageLimit
@@ -526,7 +500,6 @@ func hashesJSON(hashes []string) datatypes.JSON {
 	return datatypes.JSON(b)
 }
 
-// mapErr translates a service error into the house error envelope.
 func mapErr(op string, err error) *houseError {
 	var sandbox *service.SandboxError
 	switch {

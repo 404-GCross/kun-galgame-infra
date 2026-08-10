@@ -10,9 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestRegistrationCounts_Integration exercises the real Postgres aggregation
-// (incl. the `AT TIME ZONE ?` parameter binding). Skipped unless TEST_PG_DSN
-// points at a populated kun_galgame_infra DB.
 func TestRegistrationCounts_Integration(t *testing.T) {
 	dsn := os.Getenv("TEST_PG_DSN")
 	if dsn == "" {

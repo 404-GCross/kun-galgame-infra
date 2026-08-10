@@ -1,15 +1,3 @@
-// import-galgame-credits lands the first entity-layer data — persons (as
-// orphan credit names), characters and credit edges — from Bangumi,
-// erogamespace and VNDB into the catalog Gold tables, identity-gated
-// (Bangumi = every exact Bangumi work anchor, step-69 widened from the
-// step-12 bid-audit pass layer; EG = eg-vndb-rosetta; VNDB = every exact VNDB
-// work anchor, step 73 — vn_staff non-VA credits + vn_seiyuu VA credits routed
-// through the step-47 roster character anchors). Orphan-name-first,
-// self-anchored, whole-source-rollbackable; no person rows, no auto-merge.
-//
-//	go run ./cmd/migrate-catalog                              # land the EG + VNDB role maps
-//	go run ./cmd/import-galgame-credits --source all          # dry-run
-//	go run ./cmd/import-galgame-credits --source all --apply  # write (×2 = idempotent)
 package main
 
 import (
@@ -48,7 +36,6 @@ func main() {
 	}
 	defer catalogDB.Close()
 
-	// EG is needed for the eg / eg-music / all waves and for the shared-handle candidates.
 	var egDB *gorm.DB
 	if *source == "eg" || *source == "eg-music" || *source == "all" {
 		egDB = openEG(cfg, *egDSN)
@@ -75,7 +62,6 @@ func main() {
 		"errors", stats.Errors,
 	)
 
-	// Cross-source candidates need both waves imported + the EG connection.
 	if *source == "all" && egDB != nil {
 		cs, err := im.RunCandidates()
 		if err != nil {

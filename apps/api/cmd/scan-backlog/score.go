@@ -11,10 +11,6 @@ import (
 	"api/internal/platform/ai/service"
 )
 
-// process runs the worker pool over the queued records. Workers score in
-// parallel; a single collector goroutine (this one) appends each result to out
-// as it lands and accumulates the successes for the summary basis. It returns
-// the success rows and the failure count.
 func process(ctx context.Context, cfg scanConfig, client scorer, jobs []inputRecord, out io.Writer) ([]scoredRow, int, error) {
 	if len(jobs) == 0 {
 		return nil, 0, nil
@@ -81,8 +77,6 @@ func process(ctx context.Context, cfg scanConfig, client scorer, jobs []inputRec
 	return successes, failed, nil
 }
 
-// scoreWithRetry scores one text, retrying once on any failure (transport OR
-// parse). After the retry budget it returns the last error → an error row.
 func scoreWithRetry(ctx context.Context, client scorer, text string) (verdict, error) {
 	var lastErr error
 	for attempt := 0; attempt <= retryBudget; attempt++ {
@@ -103,11 +97,6 @@ func scoreOnce(ctx context.Context, client scorer, text string) (verdict, error)
 	return parseVerdict(res.Content)
 }
 
-// parseVerdict tolerantly parses the upstream JSON verdict, mirroring
-// internal/platform/ai/service.parseModeration (copied — the spec sanctions
-// exporting only the prompt constant, not the parser). It extracts the first
-// {...} span (servers sometimes wrap JSON in prose) then unmarshals the known
-// fields, so the output is shape-comparable to production moderate-text.
 func parseVerdict(content string) (verdict, error) {
 	raw := extractJSON(content)
 	var v verdict
@@ -117,9 +106,6 @@ func parseVerdict(content string) (verdict, error) {
 	return v, nil
 }
 
-// extractJSON returns the substring from the first '{' to the last '}', or the
-// input unchanged when no braces are present. Copied from
-// internal/platform/ai/service.extractJSON.
 func extractJSON(s string) string {
 	i := strings.IndexByte(s, '{')
 	j := strings.LastIndexByte(s, '}')

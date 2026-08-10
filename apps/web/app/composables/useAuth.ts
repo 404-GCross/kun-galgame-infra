@@ -8,8 +8,6 @@ export const useAuth = () => {
     secure: !import.meta.dev
   })
 
-  // Note: refresh_token is managed by the backend as an httpOnly cookie.
-  // We cannot read it from JS, which is the point — it's secure from XSS.
 
   const setAccessToken = (token: string) => {
     accessToken.value = token
@@ -32,17 +30,6 @@ export const useAuth = () => {
     return response
   }
 
-  // Two-step registration — see docs/integration/oauth/05-registration.md.
-  //
-  // 1) sendRegisterCode: pre-checks name/email uniqueness on the server
-  //    side, generates a 6-digit code, emails it to the prospective
-  //    address. Returns `{ code: 0, message }` on success, business
-  //    errors on conflict / rate-limit.
-  // 2) register: submits name + email + password + the 6-digit code.
-  //    On success the backend issues tokens + sets refresh cookie and
-  //    we drop straight into the logged-in state (auto-login) so the
-  //    unified-registration redirect chain can immediately continue
-  //    into /oauth/authorize.
   const sendRegisterCode = async (name: string, email: string) => {
     return api.post('/auth/register/send-code', { name, email })
   }
@@ -75,13 +62,6 @@ export const useAuth = () => {
     }
   }
 
-  // logoutSilent clears the OP session WITHOUT the navigateTo — used by the
-  // /auth/logout RP-initiated-logout page, which does its own validated
-  // redirect afterwards. We refresh first so the auth-gated POST /auth/logout
-  // is accepted even when the access_token already expired (the httpOnly
-  // refresh cookie is still valid); if refresh fails there's no live session
-  // to clear server-side, and clearAuth still wipes local state.
-  // See docs/integration/oauth/07-logout.md.
   const logoutSilent = async () => {
     try {
       await refreshAccessToken()
@@ -93,18 +73,6 @@ export const useAuth = () => {
     }
   }
 
-  // Probe-style call: returns true/false without side effects so callers
-  // (Container.vue's /oauth/authorize check, middleware/auth.ts, etc.)
-  // can branch on session liveness. We deliberately DON'T route through
-  // `useApi` — its 401 handler auto-navigateTo's /auth/login without a
-  // redirect param, which would clobber the caller's own state-management
-  // (e.g. Container's needsLogin prompt) and lose the OAuth flow URL.
-  //
-  // The actual /auth/refresh call goes through the shared, SINGLE-FLIGHTED
-  // requestTokenRefresh so that this path and useApi's 401 retry (and the
-  // boot plugin) never fire competing refreshes that race the backend's
-  // token rotation. On failure we don't clearAuth here — an active session
-  // shouldn't be wiped by a transient blip; the caller decides.
   const refreshAccessToken = async () => {
     const token = await requestTokenRefresh()
     if (token) {
@@ -116,15 +84,10 @@ export const useAuth = () => {
 
   const fetchUser = async () => {
     if (!accessToken.value) {
-      // No access token — try refreshing (httpOnly cookie may still be valid)
       const refreshed = await refreshAccessToken()
       if (!refreshed) return null
     }
 
-    // useApi.request never throws: it catches fetch errors internally (incl. a
-    // single-flighted refresh + one retry on 401) and always resolves to the
-    // house envelope, signalling failure via a non-zero `code`. There's no
-    // throw to catch and no second refresh path to run here.
     const response = await api.get<User>('/auth/me')
     if (response.code === 0) {
       userStore.setUser(response.data)
@@ -156,12 +119,6 @@ export const useAuth = () => {
     return api.put('/auth/email', { code, new_email: newEmail })
   }
 
-  // PATCH /auth/me — partial self-service profile update. Pointer/optional
-  // semantics on the server: only the keys present in `payload` change;
-  // empty string clears the field. On success the response IS the fresh
-  // UserResponse, so we push it straight into the store (no extra /auth/me
-  // round-trip). Email/password are NOT here — they have their own
-  // verified flows (changeEmail / changePassword).
   const updateProfile = async (payload: {
     name?: string
     bio?: string

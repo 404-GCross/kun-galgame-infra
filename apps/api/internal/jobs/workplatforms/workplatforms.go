@@ -1,25 +1,3 @@
-// Package workplatforms backfills platform facts (step 96, refs/proj/96):
-//
-//   - dlsite lane: galgame-medium releases with an EXACT dlsite anchor and an
-//     EMPTY platform column (the step-14/55 stubs the step-76 vndb lane never
-//     touched) → primary code into catalog_release.platform + the full mapped
-//     array into extra.platforms — the exact shape step 76 wrote. Mirror
-//     product_json.platform maps pc→win / android→and / ios→ios; smartphone
-//     and play are DLsite VIEWER flags, not OS ports (measured: game domain
-//     is pc 14,520/14,520; android 166 / ios 19 are true ports) — skipped.
-//     ASMR/manga stubs are left alone: media≠OS-platform semantics.
-//   - bgm lane: bodyless works with an EXACT bgm work anchor whose subject
-//     infobox carries a 平台 field → catalog_work_platform rows (source_id=
-//     bgm). Bangumi carries platforms on the SUBJECT and its bodyless works
-//     mostly have no releases (1,875/13,293) — the work level is that
-//     source's natural grain. Values normalize through aliasMap over the
-//     measured distribution (PC 10,969 / Android 573 / Web 494 / NS 322 …);
-//     a lowercase direct hit on a registry key also passes. Unmapped values
-//     are counted and surfaced, never guessed (Steam = a store, not a
-//     platform; bare PS/Xbox = ambiguous generations).
-//
-// Platforms are static facts — dlsite writes are guarded on platform still
-// being empty, bgm writes are ON CONFLICT DO NOTHING; re-runs are no-ops.
 package workplatforms
 
 import (
@@ -37,33 +15,30 @@ import (
 	"gorm.io/gorm"
 )
 
-// Opts configures a run. Source selects the lane: "dlsite" | "bgm" | "all".
 type Opts struct {
 	Apply     bool
-	DSN       string // catalog DB (hosts src_bangumi) — REQUIRED
-	DlsiteDSN string // dlsite mirror — REQUIRED for the dlsite/all lanes
+	DSN       string
+	DlsiteDSN string
 	Source    string
 }
 
-// Stats reports a run. Planned counters are identical in dry and apply.
 type Stats struct {
-	DlCandidates int // anchored galgame releases with an empty platform column
-	DlNoMirror   int // workno absent from the mirror (or no platform array)
+	DlCandidates int
+	DlNoMirror   int
 	DlPlanned    int
 	DlWritten    int
-	DlRaced      int // platform got filled between plan and write (guard hit)
+	DlRaced      int
 
-	BgmWorks    int // bodyless works whose subject carries a 平台 field
+	BgmWorks    int
 	BgmPlanned  int
 	BgmWritten  int
-	BgmConflict int // identical row already there (re-run)
+	BgmConflict int
 
-	Unmapped map[string]int // raw bgm 平台 values that resolved to nothing
+	Unmapped map[string]int
 
 	Errors int
 }
 
-// Run executes the backfill.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
@@ -105,8 +80,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// loadRegistry reads the catalog_platform vocabulary — the seed is the single
-// owner of the code set; the importer never hardcodes it.
 func loadRegistry(ctx context.Context, db *gorm.DB) (map[string]struct{}, error) {
 	var keys []string
 	if err := db.WithContext(ctx).Raw(
@@ -123,9 +96,6 @@ func loadRegistry(ctx context.Context, db *gorm.DB) (map[string]struct{}, error)
 	return reg, nil
 }
 
-// aliasMap normalizes the observed bgm 平台 spellings onto registry codes.
-// Keys are lowercase; lookups lowercase+trim first. Deliberately absent:
-// Steam (a store), bare ps/xbox (ambiguous generation), 手机 (ambiguous era).
 var aliasMap = map[string]string{
 	"pc": "win", "windows": "win", "microsoft windows": "win", "win": "win",
 	"android": "and", "web": "web", "browser": "web",
@@ -152,8 +122,6 @@ var aliasMap = map[string]string{
 	"gbc": "gbc", "game boy color": "gbc",
 	"fc": "nes", "famicom": "nes", "sfc": "sfc", "super famicom": "sfc",
 	"md": "smd", "mega drive": "smd", "pc engine": "pce", "pce": "pce",
-	// Measured spelling tail (refs/proj/96 addendum: 313 unmapped kinds / 510
-	// rows surveyed) — exact aliases for the unambiguous ones.
 	"mac os x": "mac", "macosx": "mac", "macos x": "mac", "mac osx": "mac", "macintosh": "mac",
 	"pc-fx": "pcf", "snes": "sfc", "ds": "nds", "3do": "tdo",
 	"sega mega drive": "smd", "segasaturn": "sat", "sega cd": "scd",
@@ -163,19 +131,11 @@ var aliasMap = map[string]string{
 	"浏览器": "web", "网页": "web", "在线网页": "web", "安卓": "and",
 }
 
-// heuristicRules run AFTER an exact aliasMap/registry miss, in order — the
-// bounded prefix families with overwhelming evidence in the measured tail
-// (Windows version strings alone are ~½ of it). Matching is on the lowercased,
-// ®/™-stripped string. A compound string maps to its LEADING platform only
-// (partial capture is honest — one raw string yields one code). Deliberately
-// still unmapped: Steam (store), bare PS/Xbox (generation), Mobile/手机 (era),
-// VR/arcade/NeoGeo/C64 (no registry code) — counted and surfaced, never
-// guessed.
 var heuristicRules = []struct {
 	re   *regexp.Regexp
 	code string
 }{
-	{regexp.MustCompile(`^(nintendo|nitendo) sw`), "swi"}, // ™/Lite/compound/typos
+	{regexp.MustCompile(`^(nintendo|nitendo) sw`), "swi"},
 	{regexp.MustCompile(`^xbox ?360`), "xb3"},
 	{regexp.MustCompile(`^xbox (series|x/s)`), "xxs"},
 	{regexp.MustCompile(`^xbox one`), "xbo"},
@@ -186,34 +146,23 @@ var heuristicRules = []struct {
 	{regexp.MustCompile(`^play ?station ?3\b`), "ps3"},
 	{regexp.MustCompile(`^play ?station ?4\b`), "ps4"},
 	{regexp.MustCompile(`^play ?station ?5\b`), "ps5"},
-	{regexp.MustCompile(`^pc-?98`), "p98"}, // PC9801VM以降 / PC-9821 / PC98-21 …
+	{regexp.MustCompile(`^pc-?98`), "p98"},
 	{regexp.MustCompile(`^pc-?88`), "p88"},
 	{regexp.MustCompile(`^pc-engine`), "pce"},
 	{regexp.MustCompile(`^msx`), "msx"},
-	{regexp.MustCompile(`^fm-?7`), "fm7"}, // FM-7 / FM-77
+	{regexp.MustCompile(`^fm-?7`), "fm7"},
 	{regexp.MustCompile(`^fm-?8\b`), "fm8"},
 	{regexp.MustCompile(`^(fm-?towns|towns)`), "fmt"},
 	{regexp.MustCompile(`^(sharp ?x1|x1$)`), "x1s"},
-	{regexp.MustCompile(`^(sharp ?)?x68`), "x68"}, // X68000 / X68K
-	{regexp.MustCompile(`^mac`), "mac"},           // MacOS… / Macのみ / mac/pc compounds
+	{regexp.MustCompile(`^(sharp ?)?x68`), "x68"},
+	{regexp.MustCompile(`^mac`), "mac"},
 	{regexp.MustCompile(`^web|^浏览器`), "web"},
 	{regexp.MustCompile(`^安卓`), "and"},
-	// Windows version tail: Win95/98, WindowsXP, WIndows 10, Window 7… The
-	// bare ^win prefix is safe in a platform field — the one real trap,
-	// Windows Phone (a mobile OS), is guarded in normalize before this table.
 	{regexp.MustCompile(`^win`), "win"},
-	// pc followed by a non-alphanumeric = the "PC、PS2" / "PC (Windows…)" /
-	// "PC（Steam）" compound family — leading platform is the PC. Ordered after
-	// pc-98/pc-88/pc-engine so those stay specific.
 	{regexp.MustCompile(`^pc([^a-z0-9]|$)`), "win"},
-	// contains-windows fallback (DVD-ROM／Windows, 日本語版Windows®3.1/95,
-	// Microsoft-Windows…) — last so leading-platform prefixes win first.
 	{regexp.MustCompile(`windows`), "win"},
 }
 
-// normalize maps one raw 平台 string to a registry code, or "" if unmapped:
-// exact aliasMap → registry-key direct hit → ®/™-stripped retry → bounded
-// heuristicRules. Unmapped stays "" and is counted, never guessed.
 func normalize(raw string, registry map[string]struct{}) string {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	if s == "" {
@@ -223,15 +172,14 @@ func normalize(raw string, registry map[string]struct{}) string {
 		return code
 	}
 	if _, ok := registry[s]; ok {
-		return s // already a registry code (psv, swi, …)
+		return s
 	}
-	// Trademark glyphs glue tokens together (PlayStation®Vita) — strip, retry.
 	stripped := strings.TrimSpace(strings.NewReplacer("®", "", "™", "").Replace(s))
 	if code, ok := aliasMap[stripped]; ok {
 		return code
 	}
 	if strings.Contains(stripped, "phone") {
-		return "" // Windows Phone = mobile OS, not win
+		return ""
 	}
 	for _, r := range heuristicRules {
 		if r.re.MatchString(stripped) {
@@ -241,12 +189,10 @@ func normalize(raw string, registry map[string]struct{}) string {
 	return ""
 }
 
-// runDlsite: anchored galgame releases with an empty platform × mirror
-// product_json.platform → platform + extra.platforms (the step-76 shape).
 func runDlsite(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	var rows []struct {
 		ReleaseID int64  `gorm:"column:release_id"`
-		WorkID    int64  `gorm:"column:work_id"` // host work — carried so a fill can touch it
+		WorkID    int64  `gorm:"column:work_id"`
 		Workno    string `gorm:"column:workno"`
 	}
 	if err := db.WithContext(ctx).Raw(`
@@ -275,7 +221,6 @@ func runDlsite(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	for _, r := range rows {
 		worknos = append(worknos, r.Workno)
 	}
-	// mirrorCodes: workno → mapped registry codes, win-first stable order.
 	mirrorCodes := map[string][]string{}
 	for _, chunk := range chunkStr(worknos, 10000) {
 		var t []struct {
@@ -293,9 +238,6 @@ func runDlsite(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 	}
 
-	// touched collects works whose release really gained a platform, so the lane
-	// bumps their catalog_work.updated_at once and the public changes feed sees
-	// the fill. Races, skips and dry-runs contribute nothing.
 	var touched []int64
 	for _, r := range rows {
 		codes, ok := mirrorCodes[r.Workno]
@@ -312,8 +254,6 @@ func runDlsite(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 			st.Errors++
 			continue
 		}
-		// Guard on platform still being empty — idempotent; a second run finds
-		// zero candidates, and a concurrent fill loses gracefully (DlRaced).
 		res := db.WithContext(ctx).Exec(`UPDATE catalog_release
 			SET platform = ?, extra = extra || jsonb_build_object('platforms', ?::jsonb)
 			WHERE id = ? AND coalesce(platform, '') = ''`, codes[0], string(arr), r.ReleaseID)
@@ -332,8 +272,6 @@ func runDlsite(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	return repository.TouchWorks(ctx, db, touched)
 }
 
-// mapDlsite maps a mirror product_json.platform array onto registry codes,
-// win-first (pc is 100% of the game domain; android/ios are the port tail).
 func mapDlsite(raw []byte) []string {
 	if len(raw) == 0 {
 		return nil
@@ -351,7 +289,6 @@ func mapDlsite(raw []byte) []string {
 			has["and"] = true
 		case "ios":
 			has["ios"] = true
-			// smartphone / play / dlsiteplay etc: viewer flags, not OS ports.
 		}
 	}
 	var out []string
@@ -363,7 +300,6 @@ func mapDlsite(raw []byte) []string {
 	return out
 }
 
-// infobox mirrors the wiki-parser output shape (only what this lane reads).
 type infobox struct {
 	Fields []struct {
 		Key   string `json:"Key"`
@@ -375,14 +311,13 @@ type infobox struct {
 	} `json:"Fields"`
 }
 
-// platformsFrom extracts the trimmed 平台 strings of one subject.
 func platformsFrom(raw []byte) []string {
 	if len(raw) == 0 {
 		return nil
 	}
 	var ib infobox
 	if err := json.Unmarshal(raw, &ib); err != nil {
-		return nil // malformed rows are skipped, never fatal
+		return nil
 	}
 	var out []string
 	for _, f := range ib.Fields {
@@ -400,8 +335,6 @@ func platformsFrom(raw []byte) []string {
 	return out
 }
 
-// runBgm: bodyless works × exact bgm anchors × infobox 平台 →
-// catalog_work_platform rows (source_id = bgm).
 func runBgm(ctx context.Context, db *gorm.DB, opts Opts, registry map[string]struct{}, st *Stats) error {
 	var bgmSourceID int16
 	if err := db.WithContext(ctx).Raw(
@@ -453,7 +386,7 @@ func runBgm(ctx context.Context, db *gorm.DB, opts Opts, registry map[string]str
 		}
 	}
 
-	var touched []int64 // works that really gained a platform row (see runDlsite)
+	var touched []int64
 	for _, c := range cands {
 		st.BgmPlanned++
 		if !opts.Apply {
@@ -476,8 +409,6 @@ func runBgm(ctx context.Context, db *gorm.DB, opts Opts, registry map[string]str
 	return repository.TouchWorks(ctx, db, touched)
 }
 
-// TopUnmapped renders the unmapped 平台 values, count-descending, for the
-// run report (the vocabulary-expansion feedstock).
 func (st *Stats) TopUnmapped(n int) []string {
 	type kv struct {
 		k string

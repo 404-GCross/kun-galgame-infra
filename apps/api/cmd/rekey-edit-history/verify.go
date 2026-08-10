@@ -11,13 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// runVerify is the invariant suite. It runs automatically after an --apply and
-// can be run on its own (--verify-only) against any database, before or after
-// the migration — every check is phrased over the CURRENT state, so a failure
-// is a fact about the database and not about this process's bookkeeping.
-//
-// A failing check is an error, not a warning: these are the four things that,
-// if broken, make the history unreadable or the engine unsafe.
 func runVerify(ctx context.Context, db *gorm.DB) error {
 	checks := []struct {
 		name string
@@ -47,12 +40,6 @@ func runVerify(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// sampleDiffs renders real diffs through the ENGINE's read path — the same
-// Engine.Diff the history page calls — over n migrated entities picked at
-// random among those holding at least two revisions. It is the only check that
-// exercises the migrated JSONB end to end rather than counting rows: a
-// snapshot that decodes but renders as nothing, or a spec whose field lookup
-// blows up on a retired key, shows up here and nowhere else.
 func sampleDiffs(ctx context.Context, db *gorm.DB, n int) error {
 	var picks []struct {
 		EntityID int64 `gorm:"column:entity_id"`
@@ -88,10 +75,6 @@ func sampleDiffs(ctx context.Context, db *gorm.DB, n int) error {
 	return nil
 }
 
-// verifyLeftovers reports the wiki rows still present. This is NOT a failure by
-// itself — residue is expected to stay until the T phase dumps and deletes it —
-// so it only fails when a leftover row belongs to an entity that DID get a
-// catalog counterpart, which would mean a chain was cut in half.
 func verifyLeftovers(ctx context.Context, db *gorm.DB) (string, error) {
 	var counts struct {
 		Revisions int64 `gorm:"column:revisions"`
@@ -121,10 +104,6 @@ func verifyLeftovers(ctx context.Context, db *gorm.DB) (string, error) {
 	return "", nil
 }
 
-// verifyChains: a revision that names a proposal must sit on the same entity as
-// that proposal. This is what "the proposal↔revision chain is preserved" means
-// operationally, and it is the invariant a per-row (rather than per-entity)
-// residue rule would break.
 func verifyChains(ctx context.Context, db *gorm.DB) (string, error) {
 	var broken int64
 	if err := db.WithContext(ctx).Raw(
@@ -143,9 +122,6 @@ func verifyChains(ctx context.Context, db *gorm.DB) (string, error) {
 	return "", nil
 }
 
-// verifySeq: per entity, seq must order the revisions the same way their ids
-// do. The unique index already forbids duplicates; what it cannot see is a
-// migration that renumbered a chain out of order.
 func verifySeq(ctx context.Context, db *gorm.DB) (string, error) {
 	var bad int64
 	if err := db.WithContext(ctx).Raw(
@@ -164,9 +140,6 @@ func verifySeq(ctx context.Context, db *gorm.DB) (string, error) {
 	return "", nil
 }
 
-// verifyEntities: every catalog.work revision must address a row that exists.
-// Soft-deleted works are fine — history outlives the entity, deliberately (the
-// claim-event table makes the same choice) — but a phantom id is not.
 func verifyEntities(ctx context.Context, db *gorm.DB) (string, error) {
 	var orphans int64
 	if err := db.WithContext(ctx).Raw(

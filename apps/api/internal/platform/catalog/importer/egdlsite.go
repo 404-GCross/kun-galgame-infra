@@ -11,40 +11,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// The EG×DLsite rosetta wave (step 28, doc 17 R3/R5 cross-source payoff):
-// EG.dlsite_id is EG's community link from an erogame to its DLsite SKU. For
-// every such workno that resolves to a real DLsite work, we land the DLsite
-// release under the RIGHT catalog work — PARSE FIRST, THEN MINT:
-//
-//   - already: the workno already carries a release anchor (an ASMR-wave
-//     collision, or a step-28 re-run) → skip, count.
-//   - attach: the EG game is already reconciled to a claimed wiki work W
-//     (rule:eg-vndb-rosetta) → add the DLsite release to W (SKU anchor + maker
-//     label + attribution edge + creater credits + a search-hint title). No
-//     new work: the three-source identity chain wiki↔EG↔DLsite closes.
-//   - mint: nobody claims it → mint an UNCLAIMED galgame work (EG-known erogame)
-//     with the full step-14 kit PLUS a PROBABLE EG work-ref (the EG↔DLsite
-//     identity is community structural data — R8 probable, promotion deferred).
-//
-// medium=galgame throughout: EG only catalogues erogames, so this dodges the
-// "generic game medium" decision. mediumGalgame is the catalog_medium key id.
 const (
 	mediumGalgame int16 = 1
 	ruleEGDLsite        = "rule:eg-dlsite-rosetta"
 )
 
-// EGDLsiteStats is the wave tally.
 type EGDLsiteStats struct {
-	Attached  int // releases attached to an existing claimed work
-	Minted    int // new unclaimed galgame works
-	Already   int // workno already has a release anchor
-	Ambiguous int // dlsite_id claimed by >1 EG game (skipped; 0 when resolving)
-	Missing   int // EG dlsite_id not found in the local DLsite staging
+	Attached  int
+	Minted    int
+	Already   int
+	Ambiguous int
+	Missing   int
 
-	// Step-29 ambiguity resolution (only when ResolveAmbiguous):
-	AmbB1        int // exactly one claimant is wiki-matched → attached
-	AmbB2        int // no claimant is wiki-matched → minted without an EG ref
-	AmbConflicts int // several claimants map to different wiki works → exported
+	AmbB1        int
+	AmbB2        int
+	AmbConflicts int
 
 	ReleasesCreated     int
 	TitlesCreated       int
@@ -52,23 +33,21 @@ type EGDLsiteStats struct {
 	NamesCreated        int
 	CreditsWritten      int
 	EdgesWritten        int
-	EGRefsWritten       int // probable EG work-refs (mint path)
+	EGRefsWritten       int
 	Stubs               int
 	SkippedUnmappedRole int
 	Errors              int
 }
 
-// egdlItem is one hit workno with its disposition resolved.
 type egdlItem struct {
 	dw       dlWork
 	egGame   int64
-	workID   int64 // attach target; 0 = mint
+	workID   int64
 	attach   bool
 	nameFold string
-	noEGRef  bool // B2: minted without an EG probable ref (unattributable)
+	noEGRef  bool
 }
 
-// dlRow mirrors the DLsite staging columns plus the SQL-computed name fold.
 type dlRow struct {
 	Workno    string         `gorm:"column:workno"`
 	WorkName  string         `gorm:"column:work_name"`
@@ -81,8 +60,6 @@ type dlRow struct {
 	NameFold  string         `gorm:"column:name_fold"`
 }
 
-// RunEGDLsite executes the wave. dlsiteDB is the DLsite staging connection; the
-// EG connection is im.eg.
 func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 	var st EGDLsiteStats
 	if im.eg == nil {
@@ -109,7 +86,6 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 		return st, err
 	}
 
-	// EG dlsite_id → the EG games claiming it (multiplicity guard input).
 	dlsiteToEG, err := im.loadEGDlsiteClaims()
 	if err != nil {
 		return st, err
@@ -124,10 +100,9 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 		candidates = append(candidates, did)
 	}
 	if !im.resolveAmbiguous {
-		st.Ambiguous = len(ambiguousIDs) // one dlsite_id, several EG games → human review
+		st.Ambiguous = len(ambiguousIDs)
 	}
 
-	// The DLsite hit set among the candidate worknos.
 	rows, err := loadDLWorks(dlsiteDB, candidates, im.limit)
 	if err != nil {
 		return st, err
@@ -138,11 +113,10 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 	}
 	for _, did := range candidates {
 		if _, ok := found[did]; !ok {
-			st.Missing++ // EG knows a dlsite_id the local staging does not carry
+			st.Missing++
 		}
 	}
 
-	// Partition + collect the shared entities to create.
 	makers := map[string]dlNamed{}
 	makerKind := map[string]int16{}
 	creaters := map[string]dlNamed{}
@@ -173,8 +147,6 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 		}
 	}
 
-	// Step-29: resolve the ambiguous groups into B1 (attach) / B2 (mint without
-	// EG ref) / B3 (conflict export).
 	var conflicts []conflictRow
 	if im.resolveAmbiguous {
 		if err := im.resolveAmbiguousGroups(dlsiteDB, ambiguousIDs, dlsiteToEG, egWork, relAnchor,
@@ -203,7 +175,7 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 			if it.dw.stub {
 				st.Stubs++
 			}
-			st.TitlesCreated++ // official
+			st.TitlesCreated++
 			if !it.noEGRef {
 				st.EGRefsWritten++
 			}
@@ -211,13 +183,12 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 		}
 		for _, it := range attach {
 			st.CreditsWritten += len(it.dw.credits)
-			st.TitlesCreated++ // a would-be search-hint title (upper bound; fold check at apply)
+			st.TitlesCreated++
 		}
-		st.EdgesWritten = len(attach) + len(mint) // upper bound (works carrying a maker)
+		st.EdgesWritten = len(attach) + len(mint)
 		return st, nil
 	}
 
-	// Shared labels + creater credit names (own tx), then update anchors.
 	if err := im.createEGDLShared(newLabels, newNames, makerKind, labelAnchor, cnAnchor); err != nil {
 		return st, err
 	}
@@ -237,8 +208,6 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 	return st, nil
 }
 
-// parseDLRow builds a dlWork and folds its per-creater credit plan into the
-// shared creaters map (role-mapped; unmapped roles counted).
 func parseDLRow(r dlRow, roleMap map[string]int64, creaters map[string]dlNamed, st *EGDLsiteStats) dlWork {
 	dw := dlWork{
 		workno: r.Workno, name: r.WorkName, kana: r.Kana, makerExt: r.MakerID,
@@ -259,10 +228,6 @@ func parseDLRow(r dlRow, roleMap map[string]int64, creaters map[string]dlNamed, 
 	return dw
 }
 
-// egdlLabelKind maps a DLsite maker id to a label kind. RG = doujin circle
-// (RJ/doujin site); VG (DLsite pro/商業) and the rare BG = publisher. This is a
-// minimal extension over dlLabelKind for the VJ commercial makers step 14's
-// voice subset never carried — dlLabelKind (ASMR path) is left untouched.
 func egdlLabelKind(makerID string) int16 {
 	if strings.HasPrefix(makerID, "VG") || strings.HasPrefix(makerID, "BG") {
 		return model.LabelKindPublisher

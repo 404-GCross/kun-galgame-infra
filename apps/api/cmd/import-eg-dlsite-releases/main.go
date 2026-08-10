@@ -1,16 +1,3 @@
-// import-eg-dlsite-releases lands the EG×DLsite rosetta wave (step 28): for
-// every EG.dlsite_id that resolves to a real DLsite work, attach the DLsite
-// release to the already-claimed wiki work when the EG game is reconciled
-// (rule:eg-vndb-rosetta), else mint an unclaimed galgame work (EG-known
-// erogame) with a probable EG work-ref. Parse first, then mint — no duplicate
-// works. Reuses the step-14 DLsite importer machinery; medium=galgame.
-//
-//	go run ./cmd/import-eg-dlsite-releases                    # dry-run (default)
-//	go run ./cmd/import-eg-dlsite-releases --run              # write (×2 = idempotent)
-//
-// The EG staging DSN enters via --eg-dsn (default: erogamespace db on the
-// catalog server), the DLsite staging via --dlsite-dsn (default: dlsite db),
-// mirroring steps 11/14.
 package main
 
 import (

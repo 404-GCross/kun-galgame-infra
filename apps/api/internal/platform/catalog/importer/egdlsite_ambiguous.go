@@ -10,9 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// conflictRow is one B3 conflict: a dlsite SKU whose several EG claimants
-// resolve to DIFFERENT wiki works — both a SKU-ownership question and a
-// wiki-duplicate clue.
 type conflictRow struct {
 	workno, name string
 	y, m, d      *int16
@@ -23,13 +20,6 @@ type conflictClaimant struct {
 	egGame, workID int64
 }
 
-// resolveAmbiguousGroups splits the dlsite_ids claimed by several EG games into
-// three layers by how many DISTINCT wiki works their claimants resolve to:
-//
-//   - 1 distinct work → B1: attach the release there (the other claimants are
-//     EG version/duplicate rows for the same title);
-//   - 0 → B2: mint an unclaimed work with NO EG ref (unattributable);
-//   - ≥2 → B3: a genuine conflict, exported for review (never auto-decided).
 func (im *Importer) resolveAmbiguousGroups(dlsiteDB *gorm.DB, ambiguousIDs []string,
 	dlsiteToEG map[string][]int64, egWork map[int64]int64, relAnchor map[string]int64,
 	roleMap map[string]int64, collectMaker func(id, name string), creaters map[string]dlNamed,
@@ -57,7 +47,7 @@ func (im *Importer) resolveAmbiguousGroups(dlsiteDB *gorm.DB, ambiguousIDs []str
 		dw := parseDLRow(r, roleMap, creaters, st)
 		collectMaker(r.MakerID, r.MakerName)
 
-		matched := map[int64]int64{} // distinct wiki work → a representative claimant
+		matched := map[int64]int64{}
 		for _, g := range dlsiteToEG[r.Workno] {
 			if w, ok := egWork[g]; ok {
 				matched[w] = g
@@ -86,9 +76,6 @@ func (im *Importer) resolveAmbiguousGroups(dlsiteDB *gorm.DB, ambiguousIDs []str
 	return nil
 }
 
-// exportConflicts writes the B3 worklist: one row per SKU with its conflicting
-// claimants (EG game → wiki work + title) joined, for human review of both the
-// SKU ownership and the wiki-duplicate clue.
 func (im *Importer) exportConflicts(conflicts []conflictRow, path string) error {
 	workIDs := map[int64]struct{}{}
 	for _, c := range conflicts {

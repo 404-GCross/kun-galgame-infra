@@ -10,22 +10,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// PasswordResetRepository handles password reset data access
 type PasswordResetRepository struct {
 	db *gorm.DB
 }
 
-// NewPasswordResetRepository creates a new PasswordResetRepository
 func NewPasswordResetRepository(db *gorm.DB) *PasswordResetRepository {
 	return &PasswordResetRepository{db: db}
 }
 
-// Create creates a new password reset token
 func (r *PasswordResetRepository) Create(ctx context.Context, reset *model.PasswordReset) error {
 	return r.db.WithContext(ctx).Create(reset).Error
 }
 
-// FindByToken finds a password reset by token
 func (r *PasswordResetRepository) FindByToken(ctx context.Context, token string) (*model.PasswordReset, error) {
 	var reset model.PasswordReset
 	if err := r.db.WithContext(ctx).Where("token = ?", token).First(&reset).Error; err != nil {
@@ -34,7 +30,6 @@ func (r *PasswordResetRepository) FindByToken(ctx context.Context, token string)
 	return &reset, nil
 }
 
-// FindValidByToken finds a valid (not expired, not used) password reset by token
 func (r *PasswordResetRepository) FindValidByToken(ctx context.Context, token string) (*model.PasswordReset, error) {
 	var reset model.PasswordReset
 	if err := r.db.WithContext(ctx).
@@ -47,11 +42,6 @@ func (r *PasswordResetRepository) FindValidByToken(ctx context.Context, token st
 	return &reset, nil
 }
 
-// MarkAsUsed atomically claims a password reset token as used. The
-// `used_at IS NULL` guard makes it a single-use claim: a second concurrent /
-// replayed reset finds 0 rows affected and gets ErrAuthInvalidToken, so the
-// same link can't be used twice even if the caller consumes it before
-// writing the new password.
 func (r *PasswordResetRepository) MarkAsUsed(ctx context.Context, id uint) error {
 	res := r.db.WithContext(ctx).Model(&model.PasswordReset{}).
 		Where("id = ? AND used_at IS NULL", id).
@@ -65,14 +55,12 @@ func (r *PasswordResetRepository) MarkAsUsed(ctx context.Context, id uint) error
 	return nil
 }
 
-// DeleteExpired deletes expired password reset tokens
 func (r *PasswordResetRepository) DeleteExpired(ctx context.Context) error {
 	return r.db.WithContext(ctx).
 		Where("expires_at < ?", time.Now()).
 		Delete(&model.PasswordReset{}).Error
 }
 
-// DeleteByUserID deletes all password reset tokens for a user
 func (r *PasswordResetRepository) DeleteByUserID(ctx context.Context, userID uint) error {
 	return r.db.WithContext(ctx).
 		Where("user_id = ?", userID).

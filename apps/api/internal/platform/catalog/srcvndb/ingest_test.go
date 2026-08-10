@@ -12,8 +12,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// --- hermetic COPY-unescape tests -----------------------------------------
-
 func TestCopyUnescape(t *testing.T) {
 	v, isNull := copyUnescape(`\N`)
 	assert.True(t, isNull)
@@ -23,13 +21,10 @@ func TestCopyUnescape(t *testing.T) {
 	assert.False(t, isNull)
 	assert.Equal(t, "plain", v)
 
-	// Escaped newline/tab/backslash decode to their real bytes.
 	v, isNull = copyUnescape(`Line1\nLine2\tX\\Y`)
 	assert.False(t, isNull)
 	assert.Equal(t, "Line1\nLine2\tX\\Y", v)
 }
-
-// --- integration (real Postgres, fixture dump) -----------------------------
 
 var testDB *gorm.DB
 
@@ -55,7 +50,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	report, err := Run(testDB, "testdata", "")
 	require.NoError(t, err)
 
-	// Read-row counts. images: 3 read, 1 non-ch (cv99) skipped → 2 loaded.
 	assert.Equal(t, int64(2), report.PerFile["vn"].Rows)
 	assert.Equal(t, int64(2), report.PerFile["chars"].Rows)
 	assert.Equal(t, int64(3), report.PerFile["chars_names"].Rows)
@@ -72,7 +66,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.Equal(t, int64(2), count("src_vndb.chars"))
 	assert.Equal(t, int64(2), count("src_vndb.images"), "only ch rows loaded")
 
-	// vn: verbatim description, \N cover ids → empty, escaped newline decoded.
 	var v1 VN
 	require.NoError(t, testDB.First(&v1, "id = ?", "v1").Error)
 	assert.Equal(t, "ja", v1.OLang)
@@ -83,8 +76,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.Equal(t, "", v2.Image, `\N cover id → empty`)
 	assert.Equal(t, "Second\nline description.", v2.Description, "escaped newline decoded")
 
-	// Numeric fields parse (the getInt16/present bug regression): c2.main_spoil=2,
-	// image ch2 sexual=150 violence=200; \N → empty/zero.
 	var c2 Char
 	require.NoError(t, testDB.First(&c2, "id = ?", "c2").Error)
 	assert.Equal(t, "c1", c2.Main, "instance_of base")
@@ -101,7 +92,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.EqualValues(t, 150, ch2.SexualAvg)
 	assert.EqualValues(t, 200, ch2.ViolenceAvg)
 
-	// chars_names: \N latin → empty; spoil parsed on chars_vns.
 	var enName CharName
 	require.NoError(t, testDB.Where("id = ? AND lang = ?", "c1", "en").First(&enName).Error)
 	assert.Equal(t, "", enName.Latin, `\N latin → empty`)
@@ -109,31 +99,26 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	require.NoError(t, testDB.Raw(`SELECT max(spoil) FROM src_vndb.chars_vns`).Scan(&maxSpoil).Error)
 	assert.EqualValues(t, 2, maxSpoil)
 
-	// --- step-72 expansion tables -----------------------------------------
 	for table, want := range map[string]int64{
-		"src_vndb.vn_relations":       2,
-		"src_vndb.staff":              2,
-		"src_vndb.staff_alias":        3,
-		"src_vndb.vn_staff":           3,
-		"src_vndb.vn_seiyuu":          2,
-		"src_vndb.traits":             3,
-		"src_vndb.traits_parents":     2,
-		"src_vndb.chars_traits":       3,
-		"src_vndb.tags":               2,
-		"src_vndb.tags_parents":       1,
-		"src_vndb.tags_vn":            3,
-		"src_vndb.producers":          2,
-		"src_vndb.releases":           2,
-		"src_vndb.releases_vn":        2,
-		"src_vndb.releases_producers": 2,
-		"src_vndb.releases_platforms": 3,
-		// wave 167: the getchu anchor supply. Three links of which one is a
-		// getchu id, and three release edges over two releases.
-		"src_vndb.extlinks":          3,
-		"src_vndb.releases_extlinks": 3,
-		"src_vndb.releases_titles":   2,
-		// wave 186: the remaining extlink junctions plus the producer relation
-		// graph, which VNDB exports mirrored (one row per direction).
+		"src_vndb.vn_relations":        2,
+		"src_vndb.staff":               2,
+		"src_vndb.staff_alias":         3,
+		"src_vndb.vn_staff":            3,
+		"src_vndb.vn_seiyuu":           2,
+		"src_vndb.traits":              3,
+		"src_vndb.traits_parents":      2,
+		"src_vndb.chars_traits":        3,
+		"src_vndb.tags":                2,
+		"src_vndb.tags_parents":        1,
+		"src_vndb.tags_vn":             3,
+		"src_vndb.producers":           2,
+		"src_vndb.releases":            2,
+		"src_vndb.releases_vn":         2,
+		"src_vndb.releases_producers":  2,
+		"src_vndb.releases_platforms":  3,
+		"src_vndb.extlinks":            3,
+		"src_vndb.releases_extlinks":   3,
+		"src_vndb.releases_titles":     2,
 		"src_vndb.vn_extlinks":         3,
 		"src_vndb.producers_extlinks":  2,
 		"src_vndb.staff_extlinks":      1,
@@ -142,8 +127,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 		assert.Equal(t, want, count(table), table)
 	}
 
-	// chars full columns (step 72): pointer columns keep NULL ≠ 0 (weight/age),
-	// the 0-means-unset dump columns stay plain ints.
 	assert.Equal(t, "a", c1.BloodT)
 	assert.EqualValues(t, 88, c1.SBust)
 	assert.EqualValues(t, 920, c1.Birthday, "mmdd birthday")
@@ -157,7 +140,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.EqualValues(t, 43, *c2.Weight)
 	assert.Nil(t, c2.Age, `\N age → NULL`)
 
-	// staff: \N prod → empty; escaped description decoded.
 	var s1 Staff
 	require.NoError(t, testDB.First(&s1, "id = ?", "s1").Error)
 	assert.Equal(t, "p42", s1.Prod)
@@ -167,14 +149,12 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.Equal(t, "", s2.Prod, `\N prod → empty`)
 	assert.EqualValues(t, 3, s2.Main, "primary alias aid")
 
-	// staff_alias: natural PK aid; \N latin → empty.
 	var alias2 StaffAlias
 	require.NoError(t, testDB.First(&alias2, "aid = ?", 2).Error)
 	assert.Equal(t, "s1", alias2.ID)
 	assert.Equal(t, "玄", alias2.Name)
 	assert.Equal(t, "", alias2.Latin)
 
-	// vn_staff: NULL eid (base edition) ≠ edition 0 — the pointer distinction.
 	var scenario, art VNStaff
 	require.NoError(t, testDB.First(&scenario, "role = ?", "scenario").Error)
 	assert.Nil(t, scenario.EID, `\N eid → NULL (base edition)`)
@@ -183,7 +163,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.EqualValues(t, 0, *art.EID, "edition 0 is a real edition")
 	assert.Equal(t, "cover only", art.Note)
 
-	// traits: \N gid (root) → empty; bool + spoiler columns parse.
 	var i1, i3 Trait
 	require.NoError(t, testDB.First(&i1, "id = ?", "i1").Error)
 	assert.Equal(t, "", i1.GID, "root trait")
@@ -196,8 +175,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.EqualValues(t, 2, ct.Spoil)
 	assert.True(t, ct.Lie)
 
-	// tags carry their description (canonicalization feedstock); tags_vn keeps
-	// negative votes and NULL vs explicit spoiler/lie/uid.
 	var g1 Tag
 	require.NoError(t, testDB.First(&g1, "id = ?", "g1").Error)
 	assert.Equal(t, "This game features fantasy.\nSecond line.", g1.Description)
@@ -216,8 +193,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.True(t, anon.Ignore)
 	assert.Equal(t, "escaped\tnote", anon.Notes, "escaped tab decoded")
 
-	// releases: NULL minage (unknown) ≠ minage 0 (all-ages) — the pointer
-	// distinction — plus nullable ani_*/uncensored and int64 gtin.
 	var r1, r2 Release
 	require.NoError(t, testDB.First(&r1, "id = ?", "r1").Error)
 	assert.EqualValues(t, 4946569500413, r1.GTIN)
@@ -238,14 +213,12 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.Equal(t, "Note\nline", r2.Notes)
 	assert.Equal(t, "Ren'Py", r2.Engine)
 
-	// releases_titles: \N title → empty (latin-only release); mtl parses.
 	var rt ReleaseTitle
 	require.NoError(t, testDB.Where("id = ? AND lang = ?", "r2", "en").First(&rt).Error)
 	assert.Equal(t, "", rt.Title)
 	assert.Equal(t, "Latin Only Title", rt.Latin)
 	assert.True(t, rt.MTL)
 
-	// producers: \N latin → empty. vn_relations: official bool.
 	var p2 Producer
 	require.NoError(t, testDB.First(&p2, "id = ?", "p2").Error)
 	assert.Equal(t, "", p2.Latin)
@@ -255,8 +228,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.Equal(t, "seq", rel.Relation)
 	assert.True(t, rel.Official)
 
-	// wave 186 extlink junctions: each row round-trips on its natural composite
-	// key (entity id + extlinks.id), and one entity may carry several links.
 	var vlink VNExtlink
 	require.NoError(t, testDB.Where("id = ? AND link = ?", "v1", 3).First(&vlink).Error)
 	var v1Links int64
@@ -267,15 +238,12 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	var slink StaffExtlink
 	require.NoError(t, testDB.Where("id = ? AND link = ?", "s1", 3).First(&slink).Error)
 
-	// producers_relations arrives mirrored: both directions are present with the
-	// inverse relation code (par/sub), so a consumer never has to invert an edge.
 	var sub, par ProducerRelation
 	require.NoError(t, testDB.Where("id = ? AND pid = ?", "p1", "p2").First(&sub).Error)
 	assert.Equal(t, "sub", sub.Relation)
 	require.NoError(t, testDB.Where("id = ? AND pid = ?", "p2", "p1").First(&par).Error)
 	assert.Equal(t, "par", par.Relation, "mirrored direction carries the inverse code")
 
-	// Re-run reproduces identical counts (whole-table replacement).
 	_, err = Run(testDB, "testdata", "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count("src_vndb.chars"))
@@ -286,7 +254,6 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	assert.Equal(t, int64(3), count("src_vndb.vn_extlinks"))
 	assert.Equal(t, int64(2), count("src_vndb.producers_relations"))
 
-	// --only reloads a single file.
 	_, err = Run(testDB, "testdata", "chars")
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count("src_vndb.chars"))

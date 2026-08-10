@@ -1,39 +1,9 @@
 package wikizh
 
-// The adversarial pass, for the works three ordinary rounds pointed opposite
-// ways on (523 of 7,636: 291 compare, 232 usable).
-//
-// Re-running the SAME prompt more times would only resample the same coin. Each
-// bucket instead gets a re-framing aimed at the specific reason its rounds are
-// unstable.
-//
-// COMPARE — the hypothesis is position bias, and it is testable. Across all
-// three rounds the model chose B 8,718 times and A 2,390: an overwhelming
-// preference for the machine text, which is either a real quality finding or an
-// artefact of B being the text it read last. Swapping the two positions
-// separates those:
-//
-//	verdict follows the TEXT     → the judgement is about the writing; take it
-//	verdict follows the POSITION → the two are indistinguishable to the judge,
-//	                               so there is no quality gain to bank; keep the
-//	                               machine text (the zero-risk default)
-//
-// Note this also vouches for what already shipped: the 259 promotions won three
-// unanimous rounds AGAINST that prevailing preference, which makes them the
-// most robust verdicts in the set rather than the least.
-//
-// USABLE — there is no A/B, so position bias cannot be the cause. Here the
-// instability is that "is this publishable?" invites a vibe. The re-framing
-// makes it evidentiary: name a concrete disqualifying defect and quote it, or
-// concede there is none. A prosecution that cannot produce evidence loses.
 const adversarialPromptVersion = "wiki-zh-adversarial-v1"
 
-// AdversarialPromptVersion identifies the pinned adversarial prompt set.
 func AdversarialPromptVersion() string { return adversarialPromptVersion }
 
-// compareSwapSystem is compareSystem with the roles exchanged: A is now the
-// MACHINE text and B the user's. The verdict is mapped back by SwapVerdict, so
-// verdict files stay in the one vocabulary the apply pass understands.
 const compareSwapSystem = `你是 galgame 资料站的资深编辑。下面给你一部作品的原文简介(日文或英文),以及两份候选中文简介 A 和 B。请判断:作为该作品对外发布的中文简介,A 和 B 哪一个更好?
 
 判定要点(这些是本项目实测出来的高频情况,务必遵守):
@@ -48,7 +18,6 @@ const compareSwapSystem = `你是 galgame 资料站的资深编辑。下面给�
 输出要求:只输出一个 JSON 对象,不要代码块围栏、不要多余文字:
 {"key":"<原样回填给你的 key>","verdict":"a_better|b_better|equivalent|unsure","confidence":0.0-1.0,"reason":"一句话中文理由"}`
 
-// usableAdversarialSystem asks for evidence instead of an impression.
 const usableAdversarialSystem = `你是 galgame 资料站的资深编辑,现在担任**审查方**。下面给你一部作品的原文简介(日文或英文),以及站内用户早年手写的中文简介。
 
 你的任务不是给出印象,而是**举证**:这段中文是否存在**足以阻止它对外发布**的具体缺陷?
@@ -72,7 +41,6 @@ const usableAdversarialSystem = `你是 galgame 资料站的资深编辑,现在�
 输出要求:只输出一个 JSON 对象,不要代码块围栏、不要多余文字:
 {"key":"<原样回填给你的 key>","verdict":"usable|unusable|unsure","confidence":0.0-1.0,"reason":"一句话中文理由(判 unusable 必须含缺陷类别与引用)"}`
 
-// AdversarialSystemPrompt returns the pinned adversarial prompt for a bucket.
 func AdversarialSystemPrompt(b Bucket) string {
 	if b == BucketCompare {
 		return compareSwapSystem
@@ -80,20 +48,12 @@ func AdversarialSystemPrompt(b Bucket) string {
 	return usableAdversarialSystem
 }
 
-// BatchAdversarialSystemPrompt is the chunked form.
 func BatchAdversarialSystemPrompt(b Bucket) string {
 	return AdversarialSystemPrompt(b) + batchSuffix
 }
 
-// swapNote prefixes the reason on a swapped verdict. The verdict is mapped
-// back to the canonical vocabulary but the prose cannot be — in it, "A" is the
-// machine text and "B" the user's, the reverse of everywhere else.
 const swapNote = "[位置对调:文中 A=机翻 B=用户] "
 
-// SwapVerdict maps a verdict produced under swapped positions back onto the
-// canonical vocabulary, where a_better always means "the user's text wins".
-// Applied the moment the reply is parsed, so nothing downstream — the verdict
-// file, the fold, the apply pass — ever has to know a swap happened.
 func SwapVerdict(v string) string {
 	switch v {
 	case VerdictABetter:
@@ -105,9 +65,6 @@ func SwapVerdict(v string) string {
 	}
 }
 
-// AdversarialPacket renders a candidate for the adversarial pass. For compare
-// it exchanges the two texts; for usable it is the ordinary packet, since the
-// re-framing there lives entirely in the system prompt.
 func AdversarialPacket(c Candidate) string {
 	if c.Bucket != BucketCompare {
 		return UserPacket(c)

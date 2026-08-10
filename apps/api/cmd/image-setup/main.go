@@ -1,26 +1,3 @@
-// image-setup —— 一次性初始化 image service 所需的 PG 资源。
-//
-// 全部幂等。重复运行无副作用。
-//
-// 它做三件事：
-//
-//  1. 在 PG 上 CREATE DATABASE <KUN_IMAGES_PG_DATABASE>（已存在则跳过）
-//  2. 在 image 库里 AutoMigrate `images` / `image_site_usage` / `image_moderation_queue`
-//  3. 在 oauth 库里 AutoMigrate `oauth_clients`，确保 image_* 列已存在
-//
-// 加 --seed-test-client 还会写入测试用的 OAuth client：
-//
-//	client_id     = kungal-test
-//	client_secret = test-secret-dev
-//	site_key      = kungal
-//	presets       = ["avatar","topic","galgame_banner"]
-//
-// 用法:
-//
-//	go run ./cmd/image-setup                       # 仅初始化结构
-//	go run ./cmd/image-setup --seed-test-client    # 初始化 + 写测试 client
-//
-// 跑完后用 `go run ./cmd/image` 启动服务。
 package main
 
 import (
@@ -102,8 +79,6 @@ func main() {
 	slog.Info("image-setup done")
 }
 
-// ensureDatabaseExists 连到 PG 系统库 (template1)，若目标库不存在就 CREATE 一下。
-// 用 sql/gorm 而非 shell psql，方便跨平台 + 复用 .env 配置。
 func ensureDatabaseExists(cfg config.DatabaseConfig) error {
 	systemCfg := cfg
 	systemCfg.DBName = "template1"
@@ -130,7 +105,6 @@ func ensureDatabaseExists(cfg config.DatabaseConfig) error {
 		return nil
 	}
 
-	// pg_database 名不能用 placeholder，只能直接拼。cfg.DBName 来自 .env，可控。
 	if err := db.Exec(fmt.Sprintf(`CREATE DATABASE %q`, cfg.DBName)).Error; err != nil {
 		return err
 	}
@@ -138,9 +112,6 @@ func ensureDatabaseExists(cfg config.DatabaseConfig) error {
 	return nil
 }
 
-// seedTestClient inserts (or refreshes) the kungal-test OAuth client used
-// for local smoke tests. All presets enabled so any can be exercised
-// without re-seeding.
 func seedTestClient(db *gorm.DB) error {
 	allowedPresets, _ := datatypes.JSON(`["avatar","topic","galgame_banner","message"]`).MarshalJSON()
 	emptyJSON, _ := datatypes.JSON(`[]`).MarshalJSON()
@@ -154,8 +125,8 @@ func seedTestClient(db *gorm.DB) error {
 		ImageEnabled:         true,
 		ImageSiteKey:         "kungal",
 		ImageQuotaDaily:      10000,
-		ImageQuotaBytesDaily: 10737418240, // 10GB
-		ImageMaxFileSize:     10485760,    // 10MB
+		ImageQuotaBytesDaily: 10737418240,
+		ImageMaxFileSize:     10485760,
 		ImageAllowedPresets:  allowedPresets,
 	}
 	return db.Clauses(clause.OnConflict{

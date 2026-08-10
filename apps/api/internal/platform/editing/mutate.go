@@ -10,21 +10,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// This file is the single merge path (lifetime pillar 1): every write that
-// lands on an entity — reviewer merge, direct-edit automerge sugar, revert —
-// flows through mergeLocked, so revision/audit semantics can never fork.
-//
-// Transaction posture: the ENGINE transaction (engine pool) covers proposal
-// state + revision append; field Applies run inside a transaction on the
-// FAMILY's own pool (spec.Txn), opened as the LAST step inside the engine
-// transaction. An Apply failure rolls everything back. The residual window —
-// the family tx commits but the engine commit itself fails — cannot be
-// closed while entity bodies may live on other pools/databases (charter
-// ruling 2 accepts this); the revision unique index keeps history itself
-// consistent under every race.
-
-// CreateProposalInput carries one proposal creation. Actor.Site is both the
-// proposal's tenant and the policy-overlay key.
 type CreateProposalInput struct {
 	EntityType string
 	EntityID   int64
@@ -33,22 +18,8 @@ type CreateProposalInput struct {
 	Actor      PolicyContext
 }
 
-// editAdvisoryClassID is the int4 classid of the engine's per-entity advisory
-// lock space ("edit" in ASCII). Advisory locks share ONE keyspace across the
-// whole cluster (session and xact variants alike; see the trust "trst"/"trua"
-// lesson) — trust's keys live in the single-arg int64 space (0x747273xx),
-// while the two-arg form used here maps to (classid<<32 | objid), so the
-// resulting 64-bit keys (0x65646974_xxxxxxxx) cannot collide with them.
 const editAdvisoryClassID = 0x65646974
 
-// lockEntity serializes entity mutation: every revision writer (direct edit,
-// proposal merge, revert, birth record) takes a transaction-scoped advisory
-// lock on (entity_type, entity_id) BEFORE reading the current snapshot or
-// allocating the next revision seq. Without it two concurrent merges can both
-// pass the read-then-check no-op/rebase guards: the loser's snapshot read can
-// land after the winner's commit, so it allocates the NEXT seq and "succeeds"
-// as a duplicate write (CI caught exactly this interleaving in the claim
-// arbitration test; locally the unique-index path always won the race).
 func lockEntity(etx *gorm.DB, entityType string, entityID int64) error {
 	// The id is stringified Go-side: with a `?::text` cast pgx infers the
 	// param as TEXT and has no encode plan for an int64 bound to it.
@@ -58,10 +29,6 @@ func lockEntity(etx *gorm.DB, entityType string, entityID int64) error {
 	).Error
 }
 
-// CreateProposal validates and files a proposal. When every patched field's
-// automerge rule passes for the proposer, the proposal is created and merged
-// atomically (the direct-edit sugar) and the produced revision is returned;
-// otherwise the proposal stays open and the revision is nil.
 func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*Proposal, *Revision, error) {
 	spec, err := e.resolveSpec(in.EntityType)
 	if err != nil {
@@ -70,7 +37,6 @@ func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*P
 	if len(in.Patch) == 0 {
 		return nil, nil, ErrEmptyPatch
 	}
-	// Ownership is derived once, before any field's policy is evaluated.
 	if err := e.deriveOwnership(ctx, spec, in.EntityID, &in.Actor); err != nil {
 		return nil, nil, err
 	}
@@ -96,9 +62,6 @@ func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*P
 			needOwner = true
 		}
 	}
-	// The owner site is resolved AT MOST ONCE per create, and only when some
-	// patched field carries the owner rule. A hook error fails the create
-	// (never a silent downgrade to an open proposal — the caller retries).
 	owner, err := e.ownerSite(ctx, spec, in.EntityID, needOwner)
 	if err != nil {
 		return nil, nil, err
@@ -110,8 +73,6 @@ func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*P
 			break
 		}
 	}
-	// The entity must exist (and this read anchors nothing else — the merge
-	// path re-reads its own base snapshot).
 	if _, err := spec.LoadSnapshot(ctx, in.EntityID); err != nil {
 		return nil, nil, err
 	}
@@ -152,14 +113,10 @@ func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*P
 	if err != nil {
 		return nil, nil, err
 	}
-	// Post-commit, best-effort: fire the spec's OnMerge side effects (search
-	// reindex + contributor recording for galgame.game). rev is non-nil here
-	// only on the automerge path; an open proposal changed nothing to react to.
 	e.afterMerge(ctx, rev)
 	return prop, rev, nil
 }
 
-// AmendInput is one maintainer edit on an open proposal.
 type AmendInput struct {
 	Set   map[string]any
 	Unset []string
@@ -167,10 +124,6 @@ type AmendInput struct {
 	Actor PolicyContext
 }
 
-// AmendProposal appends a patch delta (doc 21 §2.3): set = correct/add a
-// field, unset = reject a field. Amend requires the REVIEW rule on every
-// touched field (charter ruling: amend 权限 = review 权); policies evaluate
-// against the PROPOSAL's site.
 func (e *Engine) AmendProposal(ctx context.Context, proposalID int64, in AmendInput) (*ProposalAmendment, error) {
 	if len(in.Set) == 0 && len(in.Unset) == 0 {
 		return nil, ErrEmptyDelta
@@ -212,7 +165,6 @@ func (e *Engine) AmendProposal(ctx context.Context, proposalID int64, in AmendIn
 				return err
 			}
 			pol := spec.EffectivePolicy(key, prop.Site)
-			// An amendment must not smuggle in a field nobody may propose.
 			if pol.Propose == ProposeLocked {
 				return &LockedFieldError{Key: key}
 			}
@@ -242,8 +194,6 @@ func (e *Engine) AmendProposal(ctx context.Context, proposalID int64, in AmendIn
 			ProposalID: proposalID, Seq: len(amendments) + 1,
 			PatchDelta: rawDelta, AmenderUID: in.Actor.UserID, Note: in.Note,
 		}
-		// The (proposal_id, seq) unique index makes concurrent amenders
-		// collide; the proposal row lock above already serializes them.
 		return etx.Create(amendment).Error
 	})
 	if err != nil {
@@ -252,10 +202,6 @@ func (e *Engine) AmendProposal(ctx context.Context, proposalID int64, in AmendIn
 	return amendment, nil
 }
 
-// MergeProposal merges an open proposal: per-field rebase against the
-// revisions after its base (silently fast-forwarding disjoint fields,
-// rejecting un-readjudicated conflicts with the field list), then the single
-// merge path. The reviewer needs the review rule on every effective field.
 func (e *Engine) MergeProposal(ctx context.Context, proposalID int64, actor PolicyContext, note string) (*Revision, error) {
 	var rev *Revision
 	err := e.db.WithContext(ctx).Transaction(func(etx *gorm.DB) error {
@@ -266,9 +212,6 @@ func (e *Engine) MergeProposal(ctx context.Context, proposalID int64, actor Poli
 		if prop.Status != StatusOpen {
 			return ErrNotOpen
 		}
-		// Lock order is globally proposal→entity (amend takes only the
-		// proposal lock, direct/revert take only the entity lock), so no
-		// deadlock cycle exists.
 		if err := lockEntity(etx, prop.EntityType, prop.EntityID); err != nil {
 			return err
 		}
@@ -302,8 +245,6 @@ func (e *Engine) MergeProposal(ctx context.Context, proposalID int64, actor Poli
 				return &ValidationError{Key: key, Reason: err.Error()}
 			}
 		}
-		// Rebase (doc 21 §2.3): fields changed since base that no amendment
-		// re-adjudicated are conflicts; everything else fast-forwards.
 		drifted, err := driftedFields(etx, spec, prop.EntityID, prop.BaseRevisionSeq)
 		if err != nil {
 			return err
@@ -330,16 +271,10 @@ func (e *Engine) MergeProposal(ctx context.Context, proposalID int64, actor Poli
 	if err != nil {
 		return nil, err
 	}
-	// Post-commit, best-effort: the spec's OnMerge side effects (search reindex
-	// + contributor recording for galgame.game) read the just-committed state.
 	e.afterMerge(ctx, rev)
 	return rev, nil
 }
 
-// DeclineProposal closes an open proposal without landing it. Requires the
-// review rule on every effective-patch field (original fields when the
-// amendments emptied the patch). The reason lands in decision_note (parity:
-// 审核队列与拒绝理由消息).
 func (e *Engine) DeclineProposal(ctx context.Context, proposalID int64, actor PolicyContext, note string) error {
 	return e.db.WithContext(ctx).Transaction(func(etx *gorm.DB) error {
 		prop, err := lockProposal(etx, proposalID)
@@ -381,7 +316,6 @@ func (e *Engine) DeclineProposal(ctx context.Context, proposalID int64, actor Po
 	})
 }
 
-// WithdrawProposal lets the PROPOSER close their own open proposal.
 func (e *Engine) WithdrawProposal(ctx context.Context, proposalID int64, actor PolicyContext) error {
 	return e.db.WithContext(ctx).Transaction(func(etx *gorm.DB) error {
 		prop, err := lockProposal(etx, proposalID)
@@ -398,11 +332,6 @@ func (e *Engine) WithdrawProposal(ctx context.Context, proposalID int64, actor P
 	})
 }
 
-// mergeLocked lands an effective patch: no-op fields are filtered against a
-// fresh base snapshot (changed_fields precision), the revision is appended
-// (snapshot = base ⊕ changes, double signature), the proposal is closed as
-// merged, and the field Applies run on the family pool. Callers hold the
-// proposal row lock inside etx.
 func (e *Engine) mergeLocked(
 	ctx context.Context, etx *gorm.DB, spec *EntityTypeSpec, prop *Proposal,
 	eff map[string]any, action int16, amenderUID *int64, decidedBy int64, decisionNote string,
@@ -446,24 +375,17 @@ func (e *Engine) mergeLocked(
 		ActorUID: prop.ProposerUID, AmenderUID: amenderUID, ProposalID: &prop.ID,
 		Site: prop.Site,
 	}
-	// The (entity_ref, seq) unique index turns a concurrent merge on the
-	// same entity into a hard error instead of forked history.
 	if err := etx.Create(rev).Error; err != nil {
 		return nil, err
 	}
 	if err := closeProposal(etx, prop.ID, StatusMerged, decidedBy, decisionNote); err != nil {
 		return nil, err
 	}
-	// Mirror the DB close onto the caller's struct so every path returns the
-	// post-merge state.
 	now := time.Now()
 	prop.Status = StatusMerged
 	prop.DecidedByUID = &decidedBy
 	prop.DecidedAt = &now
 	prop.DecisionNote = decisionNote
-	// Family-pool transaction LAST: its failure rolls the engine tx back.
-	// The proposer's uid rides the context so Apply closures can attribute
-	// apply-level side rows (see ActorFromContext).
 	err = spec.Txn(withActor(ctx, prop.ProposerUID), func(atx *gorm.DB) error {
 		for _, key := range changed {
 			f, _ := spec.Field(key)
@@ -498,7 +420,6 @@ func closeProposal(etx *gorm.DB, id int64, status int16, decidedBy int64, note s
 	}).Error
 }
 
-// driftedFields unions the changed_fields of every revision after baseSeq.
 func driftedFields(etx *gorm.DB, spec *EntityTypeSpec, entityID int64, baseSeq int) (map[string]struct{}, error) {
 	var revs []Revision
 	if err := etx.Select("changed_fields").

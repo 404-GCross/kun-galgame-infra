@@ -1,13 +1,3 @@
-// import-bangumi-relations lands the Bangumi game-domain subject relations as
-// catalog work↔work edges (step 30): for every relation whose BOTH subjects
-// carry an exact bangumi work anchor, write one directed catalog_work_relation
-// (inverse pairs folded, symmetric types normalized a<b). Cross-media edges are
-// excluded by construction (the other end is unregistered → unanchored).
-//
-//	go run ./cmd/import-bangumi-relations           # dry-run (default)
-//	go run ./cmd/import-bangumi-relations --run      # write (×2 = idempotent)
-//
-// Single connection: src_bangumi.subject_relation lives in the catalog DB.
 package main
 
 import (

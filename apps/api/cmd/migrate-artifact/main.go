@@ -1,11 +1,3 @@
-// migrate-artifact creates/updates the artifact service's dedicated database
-// (kun_artifacts): the `artifacts` and `manifests` tables. Split from the main
-// cmd/migrate so the artifact DB can be provisioned WITHOUT object-storage
-// credentials (B2 can be configured later) — cmd/artifact also AutoMigrates
-// these on boot, but it requires S3 to start, so this is the DB-first path for
-// local dev and pre-storage prod setup. See docs/artifact/.
-//
-//	go run ./cmd/migrate-artifact
 package main
 
 import (

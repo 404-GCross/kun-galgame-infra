@@ -11,9 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The vote service's own refusals and its batched tally (wave 175) — the
-// invariants that hold whether or not an HTTP schema gate runs in front.
-
 func seedVoteWork(t *testing.T) (workID, coverID int64) {
 	t.Helper()
 	for _, tbl := range []string{"catalog_cover_vote", "catalog_work_cover", "catalog_work"} {
@@ -26,8 +23,6 @@ func seedVoteWork(t *testing.T) (workID, coverID int64) {
 	return w.ID, c.ID
 }
 
-// TestCoverVote_ActorRequired: a vote is somebody's taste — the uid 0 the claim
-// log accepts as "the system did it" has no meaning here, on either op.
 func TestCoverVote_ActorRequired(t *testing.T) {
 	workID, coverID := seedVoteWork(t)
 	svc := NewCoverVoteService(testDB)
@@ -44,8 +39,6 @@ func TestCoverVote_ActorRequired(t *testing.T) {
 	assert.EqualValues(t, 0, rows)
 }
 
-// TestCoverVote_TallyIsBatchedAndViewerScoped: one query answers the page, the
-// count is everybody's and the flag is only the asker's.
 func TestCoverVote_TallyIsBatchedAndViewerScoped(t *testing.T) {
 	workID, coverID := seedVoteWork(t)
 	second := model.CatalogWorkCover{WorkID: workID, ImageHash: strings.Repeat("f", 64), SortOrder: 1, SourceID: 2}

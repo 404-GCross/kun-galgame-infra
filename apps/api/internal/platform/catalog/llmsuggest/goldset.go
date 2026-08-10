@@ -11,29 +11,23 @@ import (
 	"gorm.io/gorm"
 )
 
-// GoldPair is one labeled name pair in the calibration set. source_rule records
-// the derivation layer so the calibration report can break metrics down per
-// axis (the reviewer's nail #2: a single aggregate P/R hides per-axis weakness).
 type GoldPair struct {
 	A          string `json:"a"`
 	B          string `json:"b"`
-	Label      string `json:"label"` // "same" | "different"
+	Label      string `json:"label"`
 	SourceRule string `json:"source_rule"`
 }
 
-// GoldSetStats reports the per-layer composition (nail #1: written to the report).
 type GoldSetStats struct {
-	Layers   map[string]int `json:"layers"`
-	Positive int            `json:"positive"`
-	Negative int            `json:"negative"`
-	Total    int            `json:"total"`
-	// Layer-b paren filtering audit.
-	ParenFilteredRole    int `json:"paren_filtered_role"`
-	ParenFilteredCircle  int `json:"paren_filtered_circle"`
-	ParenFilteredPersona int `json:"paren_filtered_persona"`
+	Layers               map[string]int `json:"layers"`
+	Positive             int            `json:"positive"`
+	Negative             int            `json:"negative"`
+	Total                int            `json:"total"`
+	ParenFilteredRole    int            `json:"paren_filtered_role"`
+	ParenFilteredCircle  int            `json:"paren_filtered_circle"`
+	ParenFilteredPersona int            `json:"paren_filtered_persona"`
 }
 
-// Row structs for the source queries.
 type aRow struct {
 	Name string `gorm:"column:name"`
 	CN   string `gorm:"column:cn"`
@@ -47,18 +41,15 @@ type egRow struct {
 	Betumei *int   `gorm:"column:betumei"`
 }
 
-// per-layer budgets — total lands in the 200-500 band, roughly balanced.
 const (
-	budgetLayerA        = 90 // bangumi CN↔JP
-	budgetLayerATrivial = 18 // ≤20% of layer a may be pure-kanji trad/simp folds
-	budgetLayerC        = 90 // bangumi 别名 JP↔JP 名义
-	budgetLayerB        = 30 // EG paren (after filtering)
-	budgetEasyNegEach   = 60 // per domain (bangumi, eg)
-	budgetHardNegEach   = 40 // per domain
+	budgetLayerA        = 90
+	budgetLayerATrivial = 18
+	budgetLayerC        = 90
+	budgetLayerB        = 30
+	budgetEasyNegEach   = 60
+	budgetHardNegEach   = 40
 )
 
-// roleDisambiguators are parenthetical role tags that are NOT aliases —
-// "七瀬(声優)" means "the voice actor named 七瀬", not an alternate name.
 var roleDisambiguators = map[string]bool{
 	"声優": true, "声优": true, "歌手": true, "原画": true, "シナリオ": true,
 	"音楽": true, "監督": true, "脚本": true, "作曲": true, "編曲": true,
@@ -66,14 +57,10 @@ var roleDisambiguators = map[string]bool{
 	"イラスト": true, "絵": true, "画": true, "文": true, "曲": true, "歌": true,
 }
 
-// BuildGoldSet derives the layered calibration set from the local Bangumi
-// (catalog) and erogamespace (eg) sources and writes it as JSONL. Selection is
-// deterministic (ordered by id, first-N per layer) so the artifact is
-// reproducible against the same local dumps.
 func BuildGoldSet(catalog, eg *gorm.DB, path string) (GoldSetStats, error) {
 	stats := GoldSetStats{Layers: map[string]int{}}
 	var pairs []GoldPair
-	seen := map[string]bool{} // dedup by unordered normalized key
+	seen := map[string]bool{}
 
 	add := func(a, b, label, rule string) bool {
 		a, b = strings.TrimSpace(a), strings.TrimSpace(b)
@@ -90,7 +77,6 @@ func BuildGoldSet(catalog, eg *gorm.DB, path string) (GoldSetStats, error) {
 		return true
 	}
 
-	// --- Layer a: Bangumi 简体中文名 ↔ JP name (CN↔JP) ---
 	var aRows []aRow
 	if err := catalog.Raw(`
 		WITH src AS MATERIALIZED (
@@ -107,8 +93,6 @@ func BuildGoldSet(catalog, eg *gorm.DB, path string) (GoldSetStats, error) {
 		if nonTrivial+trivial >= budgetLayerA {
 			break
 		}
-		// "trivial" proxy for 繁简折叠: JP name is pure-CJK (no kana/latin), so
-		// the CN name is almost always just a trad→simp fold. Cap these ≤20%.
 		if isPureCJK(r.Name) {
 			if trivial >= budgetLayerATrivial {
 				continue
@@ -126,7 +110,6 @@ func BuildGoldSet(catalog, eg *gorm.DB, path string) (GoldSetStats, error) {
 		}
 	}
 
-	// --- Layer c: Bangumi 别名 array ↔ JP name (JP↔JP 名义) ---
 	var cRows []cRow
 	if err := catalog.Raw(`
 		WITH src AS MATERIALIZED (
@@ -146,15 +129,12 @@ func BuildGoldSet(catalog, eg *gorm.DB, path string) (GoldSetStats, error) {
 		add(r.Name, r.Alias, VerdictSame, "bangumi-alias")
 	}
 
-	// --- Layer b: EG creaters name "A(B)" paren split (with semantic filter) ---
 	var egNames []egRow
 	if err := eg.Raw(`SELECT raw->>'name' AS name,
 		CASE WHEN jsonb_typeof(raw->'betumei')='number' THEN (raw->>'betumei')::int END AS betumei
 		FROM creaters WHERE btrim(coalesce(raw->>'name',''))<>'' ORDER BY id`).Scan(&egNames).Error; err != nil {
 		return stats, err
 	}
-	// Scan ALL paren rows so the filter tally is complete (reviewer nail #1b),
-	// admitting up to the budget.
 	for _, r := range egNames {
 		main, inner, ok := splitParen(r.Name)
 		if !ok {
@@ -181,18 +161,14 @@ func BuildGoldSet(catalog, eg *gorm.DB, path string) (GoldSetStats, error) {
 		}
 	}
 
-	// --- betumei layer: the 5 EG integer alias links (truth is fine, just few) ---
 	if err := addBetumei(eg, add); err != nil {
 		return stats, err
 	}
 
-	// --- Negatives ---
-	// Easy: deterministic cross-person / cross-creater pairs.
 	bangumiNames := distinctNames(cRows, aRows)
 	addEasyNegatives(bangumiNames, "cross-person-bangumi", budgetEasyNegEach, add)
 	egPlain := plainEGNames(egNames)
 	addEasyNegatives(egPlain, "cross-creater-eg", budgetEasyNegEach, add)
-	// Hard: same leading-char (surname) but different person.
 	addHardNegatives(bangumiNames, "same-surname-bangumi", budgetHardNegEach, add)
 	addHardNegatives(egPlain, "same-surname-eg", budgetHardNegEach, add)
 
@@ -207,7 +183,6 @@ func BuildGoldSet(catalog, eg *gorm.DB, path string) (GoldSetStats, error) {
 	return stats, writeJSONL(path, pairs)
 }
 
-// addBetumei adds the (name, betumei-target.name) same-person pairs.
 func addBetumei(eg *gorm.DB, add func(a, b, label, rule string) bool) error {
 	var rows []struct {
 		Name       string `gorm:"column:name"`
@@ -226,8 +201,6 @@ func addBetumei(eg *gorm.DB, add func(a, b, label, rule string) bool) error {
 	return nil
 }
 
-// addEasyNegatives pairs name[i] with name[i+len/2] — two clearly different
-// people, deterministic.
 func addEasyNegatives(names []string, rule string, budget int, add func(a, b, label, rule string) bool) {
 	n := len(names)
 	if n < 2 {
@@ -245,17 +218,10 @@ func addEasyNegatives(names []string, rule string, budget int, add func(a, b, la
 	}
 }
 
-// addHardNegatives pairs two different names sharing the same leading rune
-// (surname) but differing in the remainder — the "same surname, different
-// person" trap.
 func addHardNegatives(names []string, rule string, budget int, add func(a, b, label, rule string) bool) {
 	byHead := map[rune][]string{}
 	for _, nm := range names {
 		r := []rune(nm)
-		// Group by the leading rune only when it is a Han ideograph — a real
-		// Japanese surname character. This keeps "same surname, different
-		// person" meaningful and rejects symbol/latin-prefixed group names
-		// (&CAST, .LIVE) that merely share leading punctuation.
 		if len(r) < 2 || !unicode.Is(unicode.Han, r[0]) {
 			continue
 		}
@@ -318,8 +284,6 @@ func plainEGNames(egNames []egRow) []string {
 	return out
 }
 
-// splitParen splits "A(B)" / "A（B）" into (A, B). Returns ok=false when there
-// is no trailing parenthetical.
 func splitParen(name string) (main, inner string, ok bool) {
 	name = strings.TrimSpace(name)
 	var openR, closeR rune
@@ -342,8 +306,6 @@ func splitParen(name string) (main, inner string, ok bool) {
 	return main, inner, true
 }
 
-// isPureCJK reports whether s is entirely CJK ideographs (no kana, latin,
-// digits) — the marker of a name whose CN rendering is a mere trad→simp fold.
 func isPureCJK(s string) bool {
 	has := false
 	for _, r := range s {
@@ -354,7 +316,7 @@ func isPureCJK(s string) bool {
 		if unicode.IsSpace(r) {
 			continue
 		}
-		return false // kana / latin / digit / punct
+		return false
 	}
 	return has
 }
@@ -383,7 +345,6 @@ func writeJSONL(path string, pairs []GoldPair) error {
 	return w.Flush()
 }
 
-// LoadGoldSet reads a goldset JSONL file.
 func LoadGoldSet(path string) ([]GoldPair, error) {
 	f, err := os.Open(path)
 	if err != nil {

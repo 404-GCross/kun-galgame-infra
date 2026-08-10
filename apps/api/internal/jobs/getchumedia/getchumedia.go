@@ -1,47 +1,8 @@
-// Package getchumedia fills catalog work SCREENSHOT galleries from the Getchu
-// crawler's mirrored sample images (refs/proj/167 §9).
-//
-// WHY. Works carrying an exact Getchu release anchor have Getchu sample CG
-// staged (16,340 images) that nothing else on the platform carries: Getchu's
-// official sample CG is its own lane, distinct from VNDB game screenshots and
-// from DLsite's samples.
-//
-// ADMISSION IS PER-SOURCE FILL-MISSING (wave 188, the user's 2026-08-07 ruling,
-// which OVERTURNED the old "Getchu is a FALLBACK for works with zero
-// screenshots, never a supplement" doctrine of refs/proj/125). A work is a
-// candidate iff it has no GETCHU-sourced screenshot row; rows from vndb, dlsite,
-// curated or the rescued wiki lane no longer exclude it. The read face groups
-// the gallery per source, so the lanes sit side by side instead of interleaving.
-// See loadCandidates.
-//
-// WHAT IT IS NOT. The other three staged image kinds are out of scope, each for
-// its own reason:
-//   - package (17,753) is the store cover, and the anchored population is
-//     ALREADY at 100% cover coverage. The entire kind would fill five gaps.
-//   - nameplate (75,133, a 250x300 bust crop) and portrait (39,617, 500x500
-//     full-body standing art) are character art, not work galleries. The bust
-//     goes on catalog_character.image_hash — see internal/jobs/getchuportraits.
-//
-// THE ORDINAL TRAP, recorded so nobody tries the shortcut. It is tempting to
-// match character art positionally: item_characters.ordinal N ←→ the Nth
-// nameplate/portrait. Measured, that holds for only 8,013 of 13,127 items on
-// nameplate and 3,667 on portrait — a wrong link on ~39% of items, which is
-// exactly the kind of guess getchuchars refuses to make. No such guess is
-// needed: the parser DOES record the page's own pairing, on
-// item_characters.nameplate_url / portrait_url (each character sits in one <tr>
-// with its own image), and getchuportraits reads it from there.
-//
-// DISCIPLINE, from internal/jobs/dlsitemedia:
-//   - Bytes come ONLY from the local mirror (--mirror-dir), produced by
-//     kun-getchu-api's `mirror` phase. This job never dials getchu.com.
-//   - Both DSNs are explicit; a bare run cannot touch a live DB.
-//   - Idempotent: a work with a getchu screenshot is not a candidate at all, and
-//     the (work_id, image_hash) unique index — which spans every source — is the
-//     backstop. A second --apply writes zero.
-//   - Fresh hashes are reference-pinged immediately — an image sits at TTL from
-//     upload time, so waiting for the nightly refping risks losing the bytes.
-//   - Only works that actually gained a row are touched, so a second --apply
-//     moves no watermark on the public changes feed.
+// Matching character art positionally (item_characters.ordinal N <-> the Nth
+// nameplate/portrait) holds for only 8,013 of 13,127 items, so it would misfile
+// ~39%. No guess is needed: the parser records the page's own pairing on
+// item_characters.nameplate_url / portrait_url, which is what getchuportraits
+// reads.
 package getchumedia
 
 import (
@@ -58,35 +19,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// Opts configures a run.
 type Opts struct {
-	DSN        string // catalog — REQUIRED
-	GetchuDSN  string // crawler staging — REQUIRED
-	MirrorDir  string // local mirror root — REQUIRED in apply mode
+	DSN        string
+	GetchuDSN  string
+	MirrorDir  string
 	Apply      bool
-	Limit      int // max WORKS to process (0 = all)
+	Limit      int
 	Offset     int
-	UploadGap  time.Duration // min delay between uploads
-	ImageBase  string        // image service base override (local dev)
-	MaxPerWork int           // cap the gallery size per work (0 = no cap)
-	// Workers is how many WORKS upload concurrently (0/1 = serial). The image
-	// service answers an upload in ~2s at 5% CPU — the wait is the object store,
-	// not compute — so a few in flight is the whole speedup. Never parallelises
-	// within one work: see runner.run.
-	Workers int
+	UploadGap  time.Duration
+	ImageBase  string
+	MaxPerWork int
+	Workers    int
 }
 
-// Stats reports one run.
 type Stats struct {
-	Works    int // anchored works with no getchu-sourced screenshot today
-	NoStaged int // ...of which none has a mirrored sample image
-	Planned  int // images decided
+	Works    int
+	NoStaged int
+	Planned  int
 	Uploaded int
-	Missing  int // staged row exists but the bytes are not in the mirror dir
-	Dedup    int // the same bytes were already on this work
-	Rejected int // moderation said no
+	Missing  int
+	Dedup    int
+	Rejected int
 	Errors   int
-	Quota    bool // the daily image quota stopped the run
+	Quota    bool
 }
 
 func (s Stats) String() string {
@@ -94,7 +49,6 @@ func (s Stats) String() string {
 		s.Works, s.NoStaged, s.Planned, s.Uploaded, s.Missing, s.Dedup, s.Rejected, s.Errors, s.Quota)
 }
 
-// Run resolves the candidates and forecasts (dry) or uploads (apply).
 func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 	if opts.DSN == "" || opts.GetchuDSN == "" {
 		return nil, fmt.Errorf("--dsn and --getchu-dsn are both REQUIRED; refusing to guess either")
@@ -156,7 +110,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 			ClientID: clientCfg.ClientID, ClientSecret: clientCfg.ClientSecret,
 			Timeout: defaultTimeout,
 		})
-		// Fail before the first byte rather than after 16,000 upload attempts.
 		hctx, hcancel := context.WithTimeout(ctx, 5*time.Second)
 		defer hcancel()
 		if err := r.cli.Health(hctx); err != nil {
@@ -196,7 +149,6 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// window slices whole works for chunked runs.
 func window(c []candidate, limit, offset int) []candidate {
 	if offset > 0 {
 		if offset >= len(c) {

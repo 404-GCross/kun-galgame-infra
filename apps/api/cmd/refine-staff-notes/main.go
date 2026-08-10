@@ -1,27 +1,3 @@
-// refine-staff-notes is the backfill half of the staff-note refinement wave:
-// it moves catalog_credit edges out of the 其他 bucket (role 2) onto the real
-// role(s) their VNDB note names, using the SAME resolver the VNDB credits
-// importer applies at plan time (importer/staffnotes.go — one resolver, two
-// writers, no drift). It enumerates every distinct folded note in the bucket
-// and asks RefineVNDBStaffRoles; unresolved notes stay put.
-//
-// A single-position note moves the row in place (role_id only; note, source
-// and ids stay, so provenance is intact and the move is reversible by note).
-// A composite note ("Planning, script") first INSERTS a copy of the row for
-// each secondary position, then moves the original onto the primary one —
-// insert-before-update, because the copies select from the still-role-2 rows.
-//
-// A row whose target credit already exists (same work, name, character —
-// typically Bangumi credited the classified role first) is SKIPPED, not
-// deleted: the doc-10 unique index would reject the move, the read faces
-// already fold the duplicate away, and a re-import plans the refined roles so
-// the skipped row is never re-minted either way.
-//
-// Discipline (QA-track charter): the DSN is ALWAYS explicit via --dsn; dry-run
-// is the DEFAULT and prints the per-note move/insert/skip plan; --apply writes.
-//
-//	go run ./cmd/refine-staff-notes --dsn '<dsn>'            # dry-run plan
-//	go run ./cmd/refine-staff-notes --dsn '<dsn>' --apply    # move the edges
 package main
 
 import (
@@ -70,8 +46,6 @@ func main() {
 		}
 	}
 
-	// Every distinct folded note still in the bucket, resolved by the shared
-	// resolver; unresolved ones drop out here.
 	var distinct []struct{ Note string }
 	if err := db.Raw(`SELECT DISTINCT lower(btrim(note)) AS note
 		FROM catalog_credit WHERE role_id = ? AND btrim(note) <> ''`, otherStaffRoleID).
@@ -88,15 +62,13 @@ func main() {
 		resolved[d.Note] = roles
 		notes = append(notes, d.Note)
 	}
-	sort.Strings(notes) // deterministic order: same-target notes resolve conflicts identically across runs
+	sort.Strings(notes)
 
 	var totalMove, totalInsert, totalSkip int64
 	for _, note := range notes {
 		roles := resolved[note]
 		primary, extras := roles[0], roles[1:]
 
-		// Secondary positions of a composite: copy the row per extra role,
-		// BEFORE the primary move empties the role-2 source set.
 		var inserted int64
 		for _, extra := range extras {
 			if *apply {

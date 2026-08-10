@@ -6,31 +6,26 @@ import (
 	"time"
 )
 
-// TestPruneUsageBefore: the retention prune deletes rollup rows strictly older
-// than the cutoff day and keeps rows on/after it — the `day < today−400` policy,
-// exercised at the exact boundary (cutoff survives, cutoff−1 is pruned) with a
-// dry-run count and an idempotent re-run.
 func TestPruneUsageBefore(t *testing.T) {
 	cleanupSelf(t)
 	repo := NewRepository(testDB)
 	ctx := context.Background()
 
 	now := time.Now().UTC()
-	cutoff := RetentionCutoffDay(now) // oldest day still KEPT = today − 400
+	cutoff := RetentionCutoffDay(now)
 	dayStr := func(offset int) string { return now.AddDate(0, 0, offset).Format("2006-01-02") }
 
 	seed := []DeveloperAPIUsage{
-		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: dayStr(-500), Count: 5, UpdatedAt: now}, // ancient → prune
-		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: dayStr(-401), Count: 3, UpdatedAt: now}, // one past cutoff → prune
-		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: cutoff, Count: 7, UpdatedAt: now},       // exactly cutoff → keep
-		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: dayStr(-10), Count: 9, UpdatedAt: now},  // recent → keep
-		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: dayStr(0), Count: 1, UpdatedAt: now},    // today → keep
+		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: dayStr(-500), Count: 5, UpdatedAt: now},
+		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: dayStr(-401), Count: 3, UpdatedAt: now},
+		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: cutoff, Count: 7, UpdatedAt: now},
+		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: dayStr(-10), Count: 9, UpdatedAt: now},
+		{ClientID: "ret_a", KeyID: 1, Face: "catalog", Day: dayStr(0), Count: 1, UpdatedAt: now},
 	}
 	if err := testDB.Create(&seed).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	// Dry-run: count the prunable rows without deleting.
 	would, err := repo.CountUsageBefore(ctx, cutoff)
 	if err != nil {
 		t.Fatalf("count: %v", err)
@@ -60,7 +55,6 @@ func TestPruneUsageBefore(t *testing.T) {
 		}
 	}
 
-	// Re-running the prune is a no-op — nothing remains older than the cutoff.
 	again, err := repo.PruneUsageBefore(ctx, cutoff)
 	if err != nil {
 		t.Fatalf("prune again: %v", err)

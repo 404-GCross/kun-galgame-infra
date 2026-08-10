@@ -6,8 +6,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// RevertInput asks for the entity's registered fields to be restored to the
-// state captured by revision ToSeq.
 type RevertInput struct {
 	EntityType string
 	EntityID   int64
@@ -16,17 +14,11 @@ type RevertInput struct {
 	Actor      PolicyContext
 }
 
-// Revert builds the reverse patch (target snapshot vs current state,
-// registered writable fields only) and lands it through the SAME merge path
-// as everything else — action=reverted, history untouched (doc 21 §2.4).
-// Gated on the review rule per field: a reverter could equally file the
-// patch as a proposal and merge it, so this is the same authority.
 func (e *Engine) Revert(ctx context.Context, in RevertInput) (*Proposal, *Revision, error) {
 	spec, err := e.resolveSpec(in.EntityType)
 	if err != nil {
 		return nil, nil, err
 	}
-	// Ownership is derived once, before the per-field review check below.
 	if err := e.deriveOwnership(ctx, spec, in.EntityID, &in.Actor); err != nil {
 		return nil, nil, err
 	}
@@ -42,8 +34,6 @@ func (e *Engine) Revert(ctx context.Context, in RevertInput) (*Proposal, *Revisi
 	if err != nil {
 		return nil, nil, err
 	}
-	// Deprecated / no-longer-registered keys in old snapshots are skipped:
-	// they still render in history but have no write path anymore.
 	patch := make(map[string]any)
 	for _, key := range sortedKeys(targetSnap) {
 		if _, err := spec.fieldForWrite(key); err != nil {
@@ -92,8 +82,6 @@ func (e *Engine) Revert(ctx context.Context, in RevertInput) (*Proposal, *Revisi
 	if err != nil {
 		return nil, nil, err
 	}
-	// Post-commit, best-effort: a revert is a merge too, so it fires the same
-	// OnMerge side effects (search reindex + contributor recording).
 	e.afterMerge(ctx, rev)
 	return prop, rev, nil
 }

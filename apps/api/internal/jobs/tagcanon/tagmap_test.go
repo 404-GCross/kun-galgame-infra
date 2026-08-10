@@ -6,11 +6,6 @@ import (
 	"testing"
 )
 
-// TestParseTagMapShapes pins the four shapes docs/tagMap.ts actually uses. The
-// parser moved here when the wiki platform package was retired, and its own
-// package's tests all covered the DB half that left with the tables — so the
-// half that survived arrived untested. Each case below is a real shape from the
-// file, and a miss is silent: an unparsed key just keeps its English name.
 func TestParseTagMapShapes(t *testing.T) {
 	const src = `export const tagMap = {
   'Protagonist': '主人公',
@@ -32,10 +27,10 @@ func TestParseTagMapShapes(t *testing.T) {
 	}
 	want := map[string]string{
 		"Protagonist":                  "主人公",
-		"Protagonist's Pronoun Choice": "主角自称", // double-quoted, because the key has an apostrophe
-		"Pokémon":                      "宝可梦",  // bareword, non-ASCII
+		"Protagonist's Pronoun Choice": "主角自称",
+		"Pokémon":                      "宝可梦",
 		"ADV":                          "文字冒险",
-		"Some Very Long English Tag Name That Prettier Wraps": "被折行的条目", // wrapped onto two lines
+		"Some Very Long English Tag Name That Prettier Wraps": "被折行的条目",
 		"Trailing": "结尾",
 	}
 	for k, v := range want {
@@ -48,8 +43,6 @@ func TestParseTagMapShapes(t *testing.T) {
 	}
 }
 
-// TestParseTagMapMissingFile: a missing tagMap is an error the caller must see,
-// not an empty map that silently leaves every tag under its English name.
 func TestParseTagMapMissingFile(t *testing.T) {
 	if _, err := ParseTagMap(filepath.Join(t.TempDir(), "nope.ts")); err == nil {
 		t.Fatal("want an error for a missing tagMap, got nil")

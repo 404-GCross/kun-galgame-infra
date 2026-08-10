@@ -39,8 +39,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: catalog seeding failed: %v\n", err)
 		os.Exit(0)
 	}
-	// src_vndb is rebuildable staging outside the catalog migration order, so
-	// the audit's mirror side has to be provisioned explicitly.
 	if err := srcvndb.EnsureSchema(db); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: src_vndb schema failed: %v\n", err)
 		os.Exit(0)
@@ -83,8 +81,6 @@ func seedAnchor(t *testing.T, workID int64, externalID string, dead bool) {
 	}
 }
 
-// seedMirror fills src_vndb.vn with n synthetic entries v1..vn, plus any extra
-// ids named. The count matters only for the guardrail, so the rows are minimal.
 func seedMirror(t *testing.T, n int, extra ...string) {
 	t.Helper()
 	ids := make([]string, 0, n+len(extra))
@@ -107,8 +103,6 @@ func deadAt(t *testing.T, externalID string) *string {
 	return got
 }
 
-// The two directions, in one apply: an anchor whose VNDB entry is gone gets
-// dead_at; an anchor previously marked dead whose entry is back is cleared.
 func TestAuditMarksDeadAndClearsRevived(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -131,14 +125,12 @@ func TestAuditMarksDeadAndClearsRevived(t *testing.T) {
 	assert.Nil(t, deadAt(t, "vback"), "a restored anchor must be cleared back to live")
 	assert.Nil(t, deadAt(t, "vlive"), "a live anchor must be left alone")
 
-	// Re-runnable: a second pass over the same mirror writes nothing.
 	st, err = audit(ctx, testDB, true, 5)
 	require.NoError(t, err)
 	assert.EqualValues(t, 0, st.Marked)
 	assert.EqualValues(t, 0, st.Cleared)
 }
 
-// The dry run reports both directions and writes nothing.
 func TestAuditDryRunWritesNothing(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -154,16 +146,13 @@ func TestAuditDryRunWritesNothing(t *testing.T) {
 	assert.Nil(t, deadAt(t, "vgone"), "a dry run must not write dead_at")
 }
 
-// The guardrail: an implausibly small mirror (the mid-reload window) must make
-// --apply REFUSE rather than mark every anchor dead. A dry run against the
-// same mirror is still allowed — it writes nothing, so it cannot do harm.
 func TestAuditRefusesApplyAgainstUndersizedMirror(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 
 	w := seedWork(t, "would be wrongly killed")
 	seedAnchor(t, w, "vgone", false)
-	seedMirror(t, 3) // far below the floor asked for below
+	seedMirror(t, 3)
 
 	_, err := audit(ctx, testDB, true, 50_000)
 	require.Error(t, err)

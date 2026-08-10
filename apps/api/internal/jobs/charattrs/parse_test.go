@@ -11,7 +11,7 @@ import (
 
 func deref(p *int16) int16 {
 	if p == nil {
-		return -1 // sentinel for "nil" in table assertions
+		return -1
 	}
 	return *p
 }
@@ -21,8 +21,6 @@ func derefS(p *string) string {
 	}
 	return *p
 }
-
-// --- VNDB decoders ---
 
 func TestVNDBSexGender(t *testing.T) {
 	cases := map[string]int16{
@@ -51,7 +49,7 @@ func TestVNDBBirthday(t *testing.T) {
 	m, d = vndbBirthday(101)
 	assert.Equal(t, int16(1), deref(m))
 	assert.Equal(t, int16(1), deref(d))
-	for _, bad := range []int16{0, -5, 1350 /*m=13*/, 900 /*d=0*/, 1500} {
+	for _, bad := range []int16{0, -5, 1350, 900, 1500} {
 		m, d = vndbBirthday(bad)
 		assert.Nil(t, m, "birthday=%d month", bad)
 		assert.Nil(t, d, "birthday=%d day", bad)
@@ -68,8 +66,6 @@ func TestVNDBGatesAndCup(t *testing.T) {
 	assert.Nil(t, vndbCup(""), "empty cup")
 }
 
-// --- BGM parsers ---
-
 func TestParseBGMBirthday(t *testing.T) {
 	type want struct {
 		m, d    int16
@@ -78,14 +74,14 @@ func TestParseBGMBirthday(t *testing.T) {
 	cases := map[string]want{
 		"6月17日":      {6, 17, false},
 		"3月3日":       {3, 3, false},
-		"2000年6月17日": {6, 17, true},  // year dropped from columns → keep raw
-		"6月17日（B型）":  {6, 17, true},  // trailing text → keep raw
-		"6月":         {6, -1, false}, // month-only, clean
+		"2000年6月17日": {6, 17, true},
+		"6月17日（B型）":  {6, 17, true},
+		"6月":         {6, -1, false},
 		"不明":         {-1, -1, false},
 		"？":          {-1, -1, false},
-		"夏":          {-1, -1, true}, // non-sentinel, unparseable
-		"1月35日":      {1, -1, true},  // day out of range → keep raw
-		"2月14日ごろ":    {2, 14, true},  // trailing text
+		"夏":          {-1, -1, true},
+		"1月35日":      {1, -1, true},
+		"2月14日ごろ":    {2, 14, true},
 	}
 	for in, w := range cases {
 		got := parseBGMBirthday(in)
@@ -112,8 +108,8 @@ func TestBGMGender(t *testing.T) {
 		"雄性": model.GenderMale, "♂": model.GenderMale, "公": model.GenderMale,
 		"女": model.GenderFemale, "女性": model.GenderFemale, "雌": model.GenderFemale,
 		"♀": model.GenderFemale, "母": model.GenderFemale,
-		"男/女": -1, "男→女": -1, "雄性50%｜雌性50%": -1, // both markers → not asserted
-		"无性别": -1, "扶她": -1, "不明": -1, "？": -1, "": -1, // neither / sentinel
+		"男/女": -1, "男→女": -1, "雄性50%｜雌性50%": -1,
+		"无性别": -1, "扶她": -1, "不明": -1, "？": -1, "": -1,
 	}
 	for in, want := range cases {
 		assert.Equal(t, want, deref(bgmGender(in)), "gender=%q", in)
@@ -172,22 +168,17 @@ func TestParseBGMBWH(t *testing.T) {
 	assert.True(t, got.oor)
 }
 
-// --- exclusion set ---
-
 func TestExclusion(t *testing.T) {
 	excluded := []string{"别名", "简体中文名", "引用来源", "CV", "声优", "动画版CV", "PC版CV", "配音", "画师", "中文CV"}
 	for _, k := range excluded {
 		assert.True(t, isExcludedKey(k), "%q should be excluded", k)
 	}
-	// Attributes that MUST reach extra (not identity/alias/VA despite containing 名/来源).
 	kept := []string{"星座", "年龄", "属性", "趣味", "能力名", "攻击名", "スキル名", "压力来源", "种族", "职业"}
 	for _, k := range kept {
 		assert.False(t, isExcludedKey(k), "%q should NOT be excluded", k)
 		assert.False(t, isPromotionKey(k), "%q is long-tail, not promotion", k)
 	}
 }
-
-// --- infobox walk: promotion + extra + preservation ---
 
 func TestParseBGMInfobox(t *testing.T) {
 	raw := datatypes.JSON(`{"Type":"Crt","Fields":[
@@ -214,7 +205,6 @@ func TestParseBGMInfobox(t *testing.T) {
 	assert.Equal(t, "E", derefS(res.attrs.cup))
 	assert.Equal(t, 1, res.outOfRange, "the 9999cm height")
 
-	// extra: long-tail + preserved raws; excluded keys absent.
 	assert.Equal(t, "双子座", res.extra["星座"])
 	assert.Equal(t, []string{"飞行", "隐身"}, res.extra["能力"], "Array folded")
 	assert.Equal(t, "2000年6月17日", res.extra["生日"], "year preserved")

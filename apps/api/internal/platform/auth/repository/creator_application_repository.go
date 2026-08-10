@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreatorApplicationRepository is the data access for creator role applications.
 type CreatorApplicationRepository struct {
 	db *gorm.DB
 }
@@ -22,8 +21,6 @@ func (r *CreatorApplicationRepository) Create(ctx context.Context, app *model.Cr
 	return r.db.WithContext(ctx).Create(app).Error
 }
 
-// FindLatestByUser returns the user's most recent application (any status), or
-// gorm.ErrRecordNotFound if they've never applied.
 func (r *CreatorApplicationRepository) FindLatestByUser(ctx context.Context, userID uint) (*model.CreatorApplication, error) {
 	var app model.CreatorApplication
 	if err := r.db.WithContext(ctx).
@@ -53,9 +50,6 @@ func (r *CreatorApplicationRepository) ListByStatus(ctx context.Context, status 
 	return items, total, err
 }
 
-// Review atomically transitions a PENDING application to approved/declined and
-// stamps the reviewer + time. Returns rows affected: 0 means it was already
-// reviewed (lost a concurrent race) — the caller treats that as not-pending.
 func (r *CreatorApplicationRepository) Review(ctx context.Context, id uint, status string, reviewerID uint, reason string) (int64, error) {
 	res := r.db.WithContext(ctx).Model(&model.CreatorApplication{}).
 		Where("id = ? AND status = ?", id, model.CreatorAppPending).

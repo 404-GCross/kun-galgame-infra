@@ -6,10 +6,6 @@ import (
 	"text/tabwriter"
 )
 
-// printForecast writes the per-work forecast table plus its totals. It runs in
-// BOTH modes on purpose: in a dry run it is the deliverable, and in an --apply
-// run it is the record of what the run was about to do before the first byte
-// moved (the log then reports what actually happened).
 func printForecast(plan []planRow, opts Opts) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	mode := "DRY RUN — no downloads, no uploads, no writes"
@@ -44,7 +40,6 @@ func printForecast(plan []planRow, opts Opts) {
 	w.Flush()
 }
 
-// printTotals summarises a finished run in the same block as the table.
 func printTotals(s *Stats) {
 	fmt.Printf("totals: candidates=%d with_image=%d no_image=%d portrait=%d landscape=%d uploaded=%d dedup=%d rejected=%d errors=%d\n",
 		s.Candidates, s.Planned, s.NoImage, s.Portrait, s.Landscape, s.Uploaded, s.Dedup, s.Rejected, s.Errors)

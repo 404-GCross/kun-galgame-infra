@@ -10,21 +10,14 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// CandidateStats reports the cross-source shared-handle matching.
 type CandidateStats struct {
-	Twitter          int // distinct twitter handles seen
+	Twitter          int
 	Pixiv            int
 	Written          int
 	Already          int
-	AmbiguousSkipped int // a handle shared by too many entities (placeholder)
+	AmbiguousSkipped int
 }
 
-// RunCandidates proposes cross-source "same person" match candidates using ONLY
-// structural anchors — shared twitter/pixiv handles (T0.6). Name-only matching
-// is deliberately NOT produced: step-12's trust map showed the model's recall
-// on no-literal-overlap pen names is 0.478, far too low to seed candidates.
-// The LLM is never consulted here. Candidates are between the two sources'
-// orphan credit_names (entity_type=credit_name), reason=shared_external_id.
 func (im *Importer) RunCandidates() (CandidateStats, error) {
 	var st CandidateStats
 	cnAnchor, err := im.loadAnchors(model.EntityTypeCreditName)
@@ -32,7 +25,6 @@ func (im *Importer) RunCandidates() (CandidateStats, error) {
 		return st, err
 	}
 
-	// namespace|handle → set of credit_name ids, split by source.
 	bangumi := map[string]map[int64]bool{}
 	eg := map[string]map[int64]bool{}
 	add := func(m map[string]map[int64]bool, handle string, cnID int64) {
@@ -45,7 +37,6 @@ func (im *Importer) RunCandidates() (CandidateStats, error) {
 		m[handle][cnID] = true
 	}
 
-	// Bangumi: twitter/pixiv from the infobox of IMPORTED persons only.
 	var brows []struct {
 		PID int64  `gorm:"column:pid"`
 		K   string `gorm:"column:k"`
@@ -65,7 +56,6 @@ func (im *Importer) RunCandidates() (CandidateStats, error) {
 		add(bangumi, handleOf(r.K, r.V), cnID)
 	}
 
-	// EG: twitter_username + pixiv from creaters, resolved to imported cn ids.
 	var erows []struct {
 		ID string `gorm:"column:id"`
 		TW string `gorm:"column:tw"`
@@ -83,7 +73,6 @@ func (im *Importer) RunCandidates() (CandidateStats, error) {
 		add(eg, handleOf("pixiv", r.PX), cnID)
 	}
 
-	// Count distinct handles by namespace (informational).
 	for h := range union(bangumi, eg) {
 		if strings.HasPrefix(h, "tw:") {
 			st.Twitter++
@@ -92,7 +81,6 @@ func (im *Importer) RunCandidates() (CandidateStats, error) {
 		}
 	}
 
-	// Build candidates for handles shared across the two sources.
 	var cands []model.CatalogMatchCandidate
 	seen := map[[2]int64]bool{}
 	for h, bset := range bangumi {
@@ -100,7 +88,7 @@ func (im *Importer) RunCandidates() (CandidateStats, error) {
 		if !ok {
 			continue
 		}
-		if len(bset) > 5 || len(eset) > 5 { // placeholder / reused handle
+		if len(bset) > 5 || len(eset) > 5 {
 			st.AmbiguousSkipped++
 			continue
 		}
@@ -147,8 +135,6 @@ func (im *Importer) RunCandidates() (CandidateStats, error) {
 
 var reNonDigit = regexp.MustCompile(`\D+`)
 
-// handleOf normalizes a twitter/pixiv field value to a namespaced key
-// ("tw:<handle>" / "px:<id>"); returns "" when nothing usable is present.
 func handleOf(key, value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -157,7 +143,7 @@ func handleOf(key, value string) string {
 	k := strings.ToLower(key)
 	switch {
 	case strings.Contains(k, "pixiv"):
-		id := reNonDigit.ReplaceAllString(value, "") // pixiv identity is the numeric id
+		id := reNonDigit.ReplaceAllString(value, "")
 		if id == "" {
 			return ""
 		}
@@ -168,7 +154,6 @@ func handleOf(key, value string) string {
 	return ""
 }
 
-// twitterKey extracts the bare @handle from a handle / URL / @handle form.
 func twitterKey(v string) string {
 	v = strings.ToLower(strings.TrimSpace(v))
 	for _, host := range []string{"twitter.com/", "x.com/"} {
@@ -180,7 +165,6 @@ func twitterKey(v string) string {
 	if i := strings.IndexAny(v, "/?#& "); i >= 0 {
 		v = v[:i]
 	}
-	// A valid twitter handle is 1-15 word chars.
 	if v == "" || len(v) > 15 || !isHandle(v) {
 		return ""
 	}

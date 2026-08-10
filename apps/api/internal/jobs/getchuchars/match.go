@@ -8,8 +8,6 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Match levels, recorded on every write so a later audit can ask "which rule
-// produced this link" without re-deriving it.
 const (
 	MatchDisplayName = "name"
 	MatchAlias       = "alias"
@@ -18,19 +16,12 @@ const (
 
 var reSpace = regexp.MustCompile(`[[:space:]　]`)
 
-// normKey is the one normalization both sides go through: NFKC (so fullwidth
-// and halfwidth forms meet), all whitespace removed (Getchu writes "九條 都"
-// with an ideographic space where the catalog may hold "九條都"), lowercased.
-//
-// Deliberately nothing more. Kana folding or romaji transliteration would widen
-// the net past what a within-work roster can safely disambiguate.
 func normKey(s string) string {
 	return strings.ToLower(norm.NFKC.String(reSpace.ReplaceAllString(s, "")))
 }
 
-// rosterIndex is one work's name forms, keyed for lookup.
 type rosterIndex struct {
-	byName  map[string][]int64 // normalized display name → character ids
+	byName  map[string][]int64
 	byAlias map[string][]int64
 }
 
@@ -61,27 +52,19 @@ func appendUnique(xs []int64, v int64) []int64 {
 	return append(xs, v)
 }
 
-// MatchStats reports how a run's matching went. Every crawled character lands
-// in exactly one bucket, so the numbers always add up to the input.
 type MatchStats struct {
 	Input        int
-	NoWork       int // the getchu item has no anchored catalog work
+	NoWork       int
 	Matched      int
 	ByName       int
 	ByAlias      int
 	ByReading    int
-	Ambiguous    int // one name, several roster characters
-	Collided     int // several rows of the SAME getchu item claim one character
-	Deduped      int // the same character described by several EDITIONS of one work
-	NoNameInWork int // roster exists, no form matched
+	Ambiguous    int
+	Collided     int
+	Deduped      int
+	NoNameInWork int
 }
 
-// match resolves crawled characters against the roster index.
-//
-// Ambiguity is resolved by DROPPING, never by picking. Within one work the
-// plausible collisions are twins, siblings sharing a surname, and a nickname a
-// relative also answers to — precisely the cases where a wrong link looks
-// right.
 func match(chars []getchuChar, idx map[string]*rosterIndex) ([]Candidate, MatchStats) {
 	st := MatchStats{Input: len(chars)}
 	type hit struct {
@@ -89,7 +72,7 @@ func match(chars []getchuChar, idx map[string]*rosterIndex) ([]Candidate, MatchS
 		ok   bool
 	}
 	hits := make([]hit, len(chars))
-	claims := map[int64]int{} // character id → how many getchu rows claimed it
+	claims := map[int64]int{}
 
 	for i, c := range chars {
 		ri := idx[c.GetchuID]
@@ -125,8 +108,6 @@ func match(chars []getchuChar, idx map[string]*rosterIndex) ([]Candidate, MatchS
 		claims[ids[0]]++
 	}
 
-	// Group by catalog character to separate the two reasons several crawled
-	// rows can point at one.
 	byChar := map[int64][]Candidate{}
 	for _, h := range hits {
 		if h.ok {
@@ -137,12 +118,6 @@ func match(chars []getchuChar, idx map[string]*rosterIndex) ([]Candidate, MatchS
 	out := make([]Candidate, 0, len(chars))
 	for _, group := range byChar {
 		if len(group) > 1 {
-			// Several rows of the SAME getchu item claiming one character is
-			// real ambiguity — drop them. Rows from DIFFERENT items are the
-			// same product's 限定版 / 通常版 / DL版, whose rosters are
-			// identical by construction: 3,108 works carry more than one getchu
-			// id, and treating those as ambiguity threw away a third of the
-			// match set on the first real run.
 			sameItem := true
 			for _, c := range group[1:] {
 				if c.GetchuID != group[0].GetchuID {
@@ -180,9 +155,6 @@ func match(chars []getchuChar, idx map[string]*rosterIndex) ([]Candidate, MatchS
 	return out, st
 }
 
-// withEditions records every roster row that resolved to this character,
-// ordered richest-first and then by (getchu_id, ordinal) so the list is
-// reproducible rather than map-iteration order.
 func withEditions(chosen Candidate, group []Candidate) Candidate {
 	eds := make([]Edition, 0, len(group))
 	eds = append(eds, Edition{GetchuID: chosen.GetchuID, Ordinal: chosen.Ordinal})
@@ -205,10 +177,6 @@ func withEditions(chosen Candidate, group []Candidate) Candidate {
 	return chosen
 }
 
-// richest picks which edition's copy of a character to keep: the longest
-// profile wins (editions differ mainly by one carrying fuller text), with
-// (getchu_id, ordinal) as the tie-break so the choice is reproducible rather
-// than map-iteration order.
 func richest(group []Candidate) Candidate {
 	best := group[0]
 	for _, c := range group[1:] {

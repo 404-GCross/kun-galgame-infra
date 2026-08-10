@@ -1,28 +1,3 @@
-// tag-canon-pair is the 70b driver for the tag canonical layer's LLM pairing +
-// human-review + single-source admission (refs/proj/87, design refs/proj/70). It
-// sits ON TOP of the 74 deterministic layer (cmd/build-tag-canonical): 74 minted
-// the cross-source EXACT-name groups; 70b uses an LLM to converge the remaining
-// unmatched vocabulary and to admit high-usage single-source names.
-//
-// Three phases (each writes files or the DB, never both live-LLM + apply in one
-// call). The DSN is ALWAYS explicit; the LLM is reached only through the Matcher
-// seam, so --mock proves the whole chain offline.
-//
-//	# 1) propose — blocking → candidate pairs → LLM → verdict JSONL
-//	#    (+ single-source tier/kind proposals). --dlsite-dsn is OPTIONAL and only
-//	#    enriches dlsite names with their ja original; --mock for the offline run.
-//	go run ./cmd/tag-canon-pair -mode propose --dsn "$DSN" --out verdicts.jsonl \
-//	    --dlsite-dsn "$DLSITE_DSN" --mock
-//	go run ./cmd/tag-canon-pair -mode propose --dsn "$DSN" --out verdicts.jsonl \
-//	    --llm-base http://one-api:3000/v1 --llm-token "$TOK" --model glm-5.2 --workers 8
-//
-//	# 2) review — bucket by confidence → human md + machine decisions JSONL
-//	go run ./cmd/tag-canon-pair -mode review --in verdicts.jsonl \
-//	    --md refs/proj/87-review.md --decisions decisions.jsonl
-//
-//	# 3) apply-reviewed — consume approved decisions → groups/maps/single rows +
-//	#    tier finalization. Dry by default; --apply writes (ON CONFLICT idempotent).
-//	go run ./cmd/tag-canon-pair -mode apply --dsn "$DSN" --decisions decisions.jsonl --apply
 package main
 
 import (
@@ -110,9 +85,6 @@ func main() {
 	}
 }
 
-// selectMatcher wires the LLM seam: mock (offline rehearsal) or the configured
-// HTTP gateway. propose always needs a matcher (unlike an apply dry-run), so an
-// unconfigured live gateway is a BLOCKED precondition, not a crash.
 func selectMatcher(_ bool, mock bool, base, token, model string, maxTokens int) tagcanon.Matcher {
 	if mock {
 		slog.Warn("MOCK matcher active — rehearsal only; verdicts are NOT real judgments")

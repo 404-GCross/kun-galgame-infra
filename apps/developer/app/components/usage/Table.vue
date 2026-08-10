@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import type { DevUsageDayFace } from '~~/shared/types/dev'
 
-// Basic usage figures: (day, face) rows with request / 4xx / 5xx counts, as
-// returned by GET /dev/apps/:client_id/usage (ordered day DESC, face ASC). MVP
-// numbers only — curves are a later phase.
 defineProps<{ rows: DevUsageDayFace[] }>()
 
 const faceLabel: Record<string, string> = {

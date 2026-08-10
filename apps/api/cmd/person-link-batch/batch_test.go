@@ -42,8 +42,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// --- fold / classify (pure) ------------------------------------------------
-
 func TestFoldAndAliases(t *testing.T) {
 	assert.Equal(t, "test", foldName(" Te st (歌手) "))
 	assert.Equal(t, "緒方剛志", foldName("緒方剛志(ぼうのうと)"))
@@ -56,20 +54,18 @@ func TestClassify(t *testing.T) {
 	cases := []struct {
 		a, b, want string
 	}{
-		{"水樹奈々", "水樹奈々", ruleA1},                      // literal identical
-		{"緒方剛志", "緒方剛志(ぼうのうと)", ruleA1},               // identical after dropping parens
-		{"ささきむつみ", "藤宮博也(ささきむつみ)", ruleA2},            // paren alias names the other
-		{"野村美月", "村中志帆(今井楓人、野村美月)", ruleA2},           // 、-separated alias list
-		{"FAVORITE", "有限会社フェイバリット(有限会社FAVORITE)", ""}, // substring, NOT whole name → miss
-		{"riya", "eufonius", ""}, // true pen name / unit → miss
-		{"", "", ""},             // empty is never a match
+		{"水樹奈々", "水樹奈々", ruleA1},
+		{"緒方剛志", "緒方剛志(ぼうのうと)", ruleA1},
+		{"ささきむつみ", "藤宮博也(ささきむつみ)", ruleA2},
+		{"野村美月", "村中志帆(今井楓人、野村美月)", ruleA2},
+		{"FAVORITE", "有限会社フェイバリット(有限会社FAVORITE)", ""},
+		{"riya", "eufonius", ""},
+		{"", "", ""},
 	}
 	for _, c := range cases {
 		assert.Equalf(t, c.want, classify(c.a, c.b), "%q ↔ %q", c.a, c.b)
 	}
 }
-
-// --- batch dispatch (real catalog DB) --------------------------------------
 
 func cleanCatalog(t *testing.T) {
 	t.Helper()
@@ -111,9 +107,6 @@ func candStatus(t *testing.T, a, b int64) int16 {
 	return s
 }
 
-// A matching candidate is linked through DecideCandidate; a non-matching one is
-// left untouched. Dry writes nothing; --run is idempotent; the auto-built link
-// is fully reversible via DetachName.
 func TestBatchLinksMechanicalOnly(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no catalog test DB")
@@ -122,20 +115,18 @@ func TestBatchLinksMechanicalOnly(t *testing.T) {
 	ctx := context.Background()
 
 	a := mkName(t, "緒方剛志")
-	b := mkName(t, "緒方剛志(ぼうのうと)") // A1 with a
+	b := mkName(t, "緒方剛志(ぼうのうと)")
 	c := mkName(t, "riya")
-	d := mkName(t, "eufonius") // no rule → untouched
+	d := mkName(t, "eufonius")
 	mkCandidate(t, a, b)
 	mkCandidate(t, c, d)
 
-	// Dry: classifies but writes nothing.
 	st, err := run(ctx, testDB, io.Discard, 7, false, ruleSetShared)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.A1Hits)
 	assert.Equal(t, 1, st.Unmatched)
 	assert.Nil(t, personIDOf(t, a), "dry writes nothing")
 
-	// Apply: the A1 pair links, the unmatched pair stays pending & orphan.
 	st, err = run(ctx, testDB, io.Discard, 7, true, ruleSetShared)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.LinkedCreated)
@@ -148,15 +139,12 @@ func TestBatchLinksMechanicalOnly(t *testing.T) {
 	assert.Nil(t, personIDOf(t, d))
 	assert.Equal(t, model.CandidateStatusPending, candStatus(t, c, d), "remaining candidate stays in the human queue")
 
-	// Idempotent: a second --run sees only the still-pending unmatched pair
-	// (the accepted candidate is filtered out at load), so it links nothing new.
 	st, err = run(ctx, testDB, io.Discard, 7, true, ruleSetShared)
 	require.NoError(t, err)
 	assert.Zero(t, st.A1Hits+st.A2Hits+st.LinkedCreated+st.Errors, "re-run links nothing new")
 	assert.Equal(t, 1, st.Unmatched)
 	assert.Equal(t, model.CandidateStatusAccepted, candStatus(t, a, b), "the earlier link is intact")
 
-	// Reversible: detaching both names removes the auto-built person.
 	q := adminQueue(testDB)
 	actor := int64(7)
 	require.NoError(t, q.DetachName(ctx, a, &actor))
@@ -168,8 +156,6 @@ func TestBatchLinksMechanicalOnly(t *testing.T) {
 	assert.Zero(t, persons, "empty auto-linked person hard-deleted")
 }
 
-// The three-state rule flows through the batch: a name already on a different
-// person yields needs_manual, never a force-merge.
 func TestBatchNeedsManual(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no catalog test DB")
@@ -182,7 +168,7 @@ func TestBatchNeedsManual(t *testing.T) {
 	require.NoError(t, testDB.Create(p1).Error)
 	require.NoError(t, testDB.Create(p2).Error)
 	a := mkName(t, "藤宮博也(ささきむつみ)")
-	b := mkName(t, "ささきむつみ") // A2 with a
+	b := mkName(t, "ささきむつみ")
 	require.NoError(t, testDB.Model(&model.CatalogCreditName{}).Where("id=?", a).Update("person_id", p1.ID).Error)
 	require.NoError(t, testDB.Model(&model.CatalogCreditName{}).Where("id=?", b).Update("person_id", p2.ID).Error)
 	mkCandidate(t, a, b)

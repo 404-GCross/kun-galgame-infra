@@ -19,16 +19,10 @@ import (
 	"api/internal/platform/ai/upstream"
 )
 
-// The tests drive a REAL upstream.Client against an httptest stub (no DB, no
-// DSN). The stub scores a request from a directive embedded in the user text
-// (`score=` / `flag=1` / `cats=a|b`) and can simulate failures (`HTTPFAIL` = 5xx
-// always; `FLAKY` = 5xx on the first sight of that text, then success), so the
-// retry and error-row paths are exercised deterministically.
-
 type stubServer struct {
 	*httptest.Server
 	mu   sync.Mutex
-	hits map[string]int // per user-text request count (retry accounting)
+	hits map[string]int
 }
 
 func newStub(t *testing.T) *stubServer {
@@ -86,7 +80,6 @@ func (s *stubServer) hitCount(user string) int {
 	return s.hits[user]
 }
 
-// directive parses the fixture scoring directive out of the user text.
 func directive(content string) (bool, float64, []string) {
 	var flagged bool
 	var score float64
@@ -113,7 +106,6 @@ func recLine(id, site, kind, text string) string {
 	return string(b)
 }
 
-// readScored splits an -out JSONL into its success rows and error rows.
 func readScored(t *testing.T, path string) ([]scoredRow, []errorRow) {
 	t.Helper()
 	f, err := os.Open(path)
@@ -177,23 +169,20 @@ func byID(rows []scoredRow) map[string]scoredRow {
 	return m
 }
 
-// --- Group 1: scoring / counting / histogram / top correctness -------------
-
 func TestRunScoresCountsHistogramTop(t *testing.T) {
 	stub := newStub(t)
 	client := upstream.NewClient(stub.URL, "", "stub-model")
 
-	// d carries a >200-rune body to prove worklist rune truncation.
 	longBody := "score=0.95 flag=1 cats=abuse " + strings.Repeat("あ", 400)
 	lines := []string{
 		recLine("a", "forum", "topic", "score=0.05 flag=0 hello world"),
 		recLine("b", "forum", "reply", "score=0.35 flag=0 meh"),
 		recLine("c", "kungal", "topic", "score=0.95 flag=1 cats=abuse|spam you are trash"),
 		recLine("d", "kungal", "reply", longBody),
-		`{"id":"e"`,                      // bad JSON
-		`{"id":"f","text":""}`,           // empty text -> bad
-		string([]byte{0x7b, 0xff, 0x7d}), // invalid utf-8 line
-		"",                               // blank -> ignored
+		`{"id":"e"`,
+		`{"id":"f","text":""}`,
+		string([]byte{0x7b, 0xff, 0x7d}),
+		"",
 	}
 	input := strings.NewReader(strings.Join(lines, "\n") + "\n")
 
@@ -224,7 +213,6 @@ func TestRunScoresCountsHistogramTop(t *testing.T) {
 		t.Errorf("a score = %v, want ~0.05", m["a"].Score)
 	}
 
-	// Histogram: a→[0.0), b→[0.3), c,d→[0.9]. flagged = c,d = 2.
 	h, flagged := histogram(res.allScored)
 	if h[0] != 1 || h[3] != 1 || h[9] != 2 {
 		t.Errorf("histogram buckets = %v, want [0]=1 [3]=1 [9]=2", h)
@@ -236,13 +224,11 @@ func TestRunScoresCountsHistogramTop(t *testing.T) {
 		t.Errorf("summary missing flagged=2:\n%s", summary.String())
 	}
 
-	// Top categories: abuse (c,d) = 2, spam (c) = 1.
 	cats := topCategories(res.allScored, 10)
 	if len(cats) == 0 || cats[0].name != "abuse" || cats[0].count != 2 {
 		t.Errorf("top category = %+v, want abuse×2", cats)
 	}
 
-	// Worklist top-2: c then d (both flagged 0.95, id tie-break c<d); d truncated.
 	items := readWorklist(t, worklistPathFor(cfg.outPath))
 	if len(items) != 2 || items[0].ID != "c" || items[1].ID != "d" {
 		t.Fatalf("worklist = %+v, want [c, d]", items)
@@ -251,8 +237,6 @@ func TestRunScoresCountsHistogramTop(t *testing.T) {
 		t.Errorf("worklist d text = %d runes, want %d (truncated)", n, worklistTextRunes)
 	}
 }
-
-// --- Group 2: resume idempotency + -limit ----------------------------------
 
 func TestRunResumeIdempotentWithLimit(t *testing.T) {
 	stub := newStub(t)
@@ -266,7 +250,6 @@ func TestRunResumeIdempotentWithLimit(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "out.jsonl")
 
-	// Run 1: -limit 2 scores only a, b (proves -limit processes the first N).
 	res1, err := run(context.Background(),
 		scanConfig{outPath: outPath, workers: 2, topN: 100, limit: 2},
 		client, strings.NewReader(joined), io.Discard)
@@ -281,7 +264,6 @@ func TestRunResumeIdempotentWithLimit(t *testing.T) {
 		t.Fatalf("run1 out rows = %d, want 2", len(rows1))
 	}
 
-	// Run 2: full — a,b resume-skipped, only c scored.
 	res2, err := run(context.Background(),
 		scanConfig{outPath: outPath, workers: 2, topN: 100},
 		client, strings.NewReader(joined), io.Discard)
@@ -291,12 +273,10 @@ func TestRunResumeIdempotentWithLimit(t *testing.T) {
 	if res2.skippedResume != 2 || res2.enqueued != 1 || res2.succeeded != 1 {
 		t.Fatalf("run2 counters = %+v, want skipped=2 enqueued=1 succeeded=1", res2)
 	}
-	// The merged basis reflects the whole backlog (2 resumed + 1 fresh).
 	if len(res2.allScored) != 3 {
 		t.Errorf("run2 allScored = %d, want 3", len(res2.allScored))
 	}
 
-	// The out file has exactly one success row per id — no duplicates.
 	rows2, _ := readScored(t, outPath)
 	counts := map[string]int{}
 	for _, r := range rows2 {
@@ -306,8 +286,6 @@ func TestRunResumeIdempotentWithLimit(t *testing.T) {
 		t.Fatalf("out id counts = %v, want each of a,b,c exactly once", counts)
 	}
 }
-
-// --- Group 3: retry + error rows -------------------------------------------
 
 func TestRunRetryAndErrorRows(t *testing.T) {
 	stub := newStub(t)
@@ -339,7 +317,6 @@ func TestRunRetryAndErrorRows(t *testing.T) {
 	if errs[0].ID != "dead" || errs[0].Error == "" {
 		t.Errorf("error row = %+v, want id=dead with a non-empty error", errs[0])
 	}
-	// flaky recovered on the retry; both texts saw exactly 2 upstream requests.
 	if got := stub.hitCount(flakyText); got != 2 {
 		t.Errorf("flaky upstream hits = %d, want 2 (fail once then succeed)", got)
 	}
@@ -351,8 +328,6 @@ func TestRunRetryAndErrorRows(t *testing.T) {
 		t.Errorf("flaky not scored despite retry recovery")
 	}
 }
-
-// --- dup ids in the input ---------------------------------------------------
 
 func TestRunDupInputIds(t *testing.T) {
 	stub := newStub(t)

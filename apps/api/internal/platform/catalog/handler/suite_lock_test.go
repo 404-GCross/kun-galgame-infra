@@ -11,14 +11,6 @@ import (
 	glogger "gorm.io/gorm/logger"
 )
 
-// TestMain exists solely to hold the "edts" advisory suite lock for the whole
-// package run: the edit/read/admin tests TRUNCATE shared tables that the
-// editing and galgameapp propose suites also write, which races whenever the
-// suites target one database (unified TEST_DATABASE_DSN, or `go test ./...`
-// without -p 1). The key matches those suites and is distinct from the editing
-// engine's business classid 0x65646974 (two-int4 lock form) per the
-// single-keyspace advisory-lock rule. A missing database changes nothing:
-// no lock is taken and each test keeps its own connect-and-skip behavior.
 const editSuiteLockKey int64 = 0x65647473
 
 func TestMain(m *testing.M) {

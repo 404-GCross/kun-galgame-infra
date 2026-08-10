@@ -1,19 +1,3 @@
-// catalog-clean-strings is the P0 correction of the QA data-quality track
-// (refs/qa/01-audit.md, class 1): it strips zero-width / bidi-control invisible
-// characters and trims leading/trailing whitespace from the catalog_* name and
-// title columns. ~377 rows across 9 columns; every change is cosmetic, safe and
-// reversible (the visible text is never altered, internal spacing is preserved,
-// and no row is ever emptied).
-//
-// Discipline (charter): the DSN is ALWAYS explicit via --dsn — never config — so
-// the tool can only ever touch the database you name (rehearse on
-// kun_catalog_rehearsal; the live kun_catalog and prod are off-limits until an
-// explicit GO). Dry-run is the DEFAULT; --apply writes. Each UPDATE is guarded on
-// the CURRENT column value (idempotent + safe against a concurrent edit), and
-// every old→new change is appended to a TSV log (the reverse record).
-//
-//	go run ./cmd/catalog-clean-strings --dsn '<rehearsal dsn>'            # dry-run preview
-//	go run ./cmd/catalog-clean-strings --dsn '<rehearsal dsn>' --apply    # write + log
 package main
 
 import (
@@ -33,14 +17,12 @@ import (
 // controls, the word joiner and the BOM/ZWNBSP. U+FE0F (emoji variation
 // selector) is deliberately NOT here — it is part of legitimate emoji like ⚠️.
 var stripRunes = []rune{
-	0x200B, 0x200C, 0x200D, 0x200E, 0x200F, // ZWSP ZWNJ ZWJ LRM RLM
-	0x202A, 0x202B, 0x202C, 0x202D, 0x202E, // LRE RLE PDF LRO RLO
-	0x2060, 0x2066, 0x2067, 0x2068, 0x2069, // WJ LRI RLI FSI PDI
-	0xFEFF, // BOM / ZWNBSP
+	0x200B, 0x200C, 0x200D, 0x200E, 0x200F,
+	0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+	0x2060, 0x2066, 0x2067, 0x2068, 0x2069,
+	0xFEFF,
 }
 
-// trimRunes are trimmed from the edges only (internal spacing is meaningful in
-// Japanese "surname given" names and is preserved).
 var trimRunes = []rune{' ', '\t', '\n', '\r', '　'}
 
 var stripSet = func() map[rune]bool {
@@ -78,8 +60,6 @@ var targets = []target{
 	{"catalog_release", "id", "title"},
 }
 
-// dirtyWhere: rows containing a strip rune OR carrying edge whitespace. The
-// invisible class is built from chr() so no raw invisible bytes live in source.
 func dirtyWhere(col string) string {
 	chrs := make([]string, len(stripRunes))
 	for i, r := range stripRunes {
@@ -138,7 +118,7 @@ func main() {
 				os.Exit(1)
 			}
 			nv := clean(val)
-			if nv == val || nv == "" { // guard: never empty a name, never a no-op
+			if nv == val || nv == "" {
 				continue
 			}
 			cand++

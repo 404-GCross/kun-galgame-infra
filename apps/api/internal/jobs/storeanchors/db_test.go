@@ -1,12 +1,5 @@
 package storeanchors
 
-// DB-backed tests. TEST_DATABASE_DSN is the ONLY database these touch.
-//
-// TestMain deliberately does NOT os.Exit(0) when the DSN is missing: that turns
-// an unreachable database into a whole-package `ok` and hides both the unit
-// tests and the fact that nothing ran. Instead the pure tests always run and
-// each DB test skips loudly on its own.
-
 import (
 	"context"
 	"fmt"
@@ -78,8 +71,6 @@ func sourceID(t *testing.T, key string) int16 {
 	return id
 }
 
-// fixture builds one work + release, a vndb release anchor at the given tier,
-// and the VNDB extlink chain hanging off it. It returns the release id.
 func fixture(t *testing.T, name, vndbReleaseID string, tier int16, links map[string]string) (int64, int64) {
 	t.Helper()
 	var medium int16
@@ -125,9 +116,6 @@ func refsFor(t *testing.T, entityID int64, source int16) []model.CatalogExternal
 	return out
 }
 
-// TestLanesWriteExactReleaseAnchors is the wave-197 core: every lane reads
-// VNDB's release extlink and lands an EXACT anchor on the release itself, and a
-// second apply writes nothing.
 func TestLanesWriteExactReleaseAnchors(t *testing.T) {
 	db := requireDB(t)
 	ctx := context.Background()
@@ -141,13 +129,11 @@ func TestLanesWriteExactReleaseAnchors(t *testing.T) {
 		map[string]string{"dlsite": "RJ264149"})
 	relEN, _ := fixture(t, "dlsite-en-release", "r400", model.LinkKindExact,
 		map[string]string{"dlsiteen": "RE245678"})
-	// A store this job does not own, on an otherwise valid release.
 	relOther, _ := fixture(t, "itch-only", "r500", model.LinkKindExact,
 		map[string]string{"itch": "somegame.itch.io/x"})
 
 	beforeTouch := workUpdatedAt(t, workSteam)
 
-	// --- dry run decides everything and writes nothing.
 	st, err := RunWithDB(ctx, db, Opts{})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Lanes[LaneSteam].Planned)
@@ -162,7 +148,6 @@ func TestLanesWriteExactReleaseAnchors(t *testing.T) {
 		[]int16{steam, dmm, dlsite}).Scan(&n).Error)
 	assert.EqualValues(t, 0, n)
 
-	// --- apply.
 	st, err = RunWithDB(ctx, db, Opts{Apply: true})
 	require.NoError(t, err)
 	for name, ls := range st.Lanes {
@@ -192,11 +177,9 @@ func TestLanesWriteExactReleaseAnchors(t *testing.T) {
 
 	assert.Empty(t, refsFor(t, relOther, steam), "itch is not this job's business")
 
-	// The work that gained an anchor was touched, so the changes feed sees it.
 	assert.True(t, workUpdatedAt(t, workSteam).After(beforeTouch),
 		"the parent work is touched when its release gains an anchor")
 
-	// --- second apply plans and writes zero.
 	st, err = RunWithDB(ctx, db, Opts{Apply: true})
 	require.NoError(t, err)
 	for name, ls := range st.Lanes {
@@ -206,8 +189,6 @@ func TestLanesWriteExactReleaseAnchors(t *testing.T) {
 	}
 }
 
-// TestProbableVndbAnchorIsNotAChain pins the one place the trust argument could
-// leak: a PROBABLE vndb anchor must never mint an EXACT store one.
 func TestProbableVndbAnchorIsNotAChain(t *testing.T) {
 	db := requireDB(t)
 	fixture(t, "probable-vndb", "r600", model.LinkKindProbable, map[string]string{"steam": "999999"})
@@ -218,8 +199,6 @@ func TestProbableVndbAnchorIsNotAChain(t *testing.T) {
 	assert.Zero(t, st.Lanes[LaneSteam].Written)
 }
 
-// TestNeverRegradesAnExistingAnchor: a row someone else wrote — at a different
-// tier, pointing somewhere else — is left exactly as it is.
 func TestNeverRegradesAnExistingAnchor(t *testing.T) {
 	db := requireDB(t)
 	steam := sourceID(t, "steam")
@@ -239,9 +218,6 @@ func TestNeverRegradesAnExistingAnchor(t *testing.T) {
 	assert.Equal(t, "human:review", got[0].MatchedBy)
 }
 
-// TestValueHeldByAnotherReleaseIsSkipped pins the uq_catalog_external_ref_exact
-// cap: the id is already someone else's identity, so this job counts it and
-// walks away instead of racing the unique index.
 func TestValueHeldByAnotherReleaseIsSkipped(t *testing.T) {
 	db := requireDB(t)
 	dlsite := sourceID(t, "dlsite")
@@ -261,9 +237,6 @@ func TestValueHeldByAnotherReleaseIsSkipped(t *testing.T) {
 	assert.Empty(t, refsFor(t, claimant, dlsite))
 }
 
-// TestAmbiguousValueIsSkippedNotArbitrated: one appid on two anchored releases
-// yields no write at all — the unique index admits one winner and there is no
-// evidence for choosing it.
 func TestAmbiguousValueIsSkippedNotArbitrated(t *testing.T) {
 	db := requireDB(t)
 	steam := sourceID(t, "steam")
@@ -280,8 +253,6 @@ func TestAmbiguousValueIsSkippedNotArbitrated(t *testing.T) {
 	assert.Empty(t, refsFor(t, relB, steam))
 }
 
-// TestRejectionBlocksReassertion pins step-21: negative knowledge is consumed,
-// not only written.
 func TestRejectionBlocksReassertion(t *testing.T) {
 	db := requireDB(t)
 	steam := sourceID(t, "steam")
@@ -298,8 +269,6 @@ func TestRejectionBlocksReassertion(t *testing.T) {
 	assert.Empty(t, refsFor(t, rel, steam))
 }
 
-// TestMalformedValueIsNeverGuessed: a DMM landing page carries no content id,
-// so nothing is written and the value is counted, not parsed into a guess.
 func TestMalformedValueIsNeverGuessed(t *testing.T) {
 	db := requireDB(t)
 	dmm := sourceID(t, "dmm")
@@ -315,9 +284,6 @@ func TestMalformedValueIsNeverGuessed(t *testing.T) {
 	assert.Empty(t, refsFor(t, rel, dmm))
 }
 
-// TestMultipleIdsOnOneRelease: a release listed at two DMM shops legitimately
-// holds two cids — the PK is per (entity, source, external_id), and nothing in
-// the doctrine says a release has one store id per store.
 func TestMultipleIdsOnOneRelease(t *testing.T) {
 	db := requireDB(t)
 	dmm := sourceID(t, "dmm")

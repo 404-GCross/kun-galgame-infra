@@ -6,10 +6,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// group is one canonical tag decided this wave: a norm shared by ≥2 distinct
-// sources. Members is one entry per (source, original-name) — several members
-// may share a source (Galgame/galgame both under bangumi), each getting its own
-// map row.
 type group struct {
 	Norm          string
 	CanonicalName string
@@ -19,10 +15,6 @@ type group struct {
 	sourceCount   int
 }
 
-// buildGroups folds the non-junk vocabulary on Norm and keeps the norms spanning
-// ≥2 distinct sources (doc 74 §确定性预配-3). Groups are returned sorted by Norm
-// so a --limit small-sample apply is deterministic. Junk entries are skipped
-// entirely (never grouped, never mapped).
 func buildGroups(vocab []vocabEntry) []group {
 	byNorm := map[string][]vocabEntry{}
 	for _, e := range vocab {
@@ -38,9 +30,8 @@ func buildGroups(vocab []vocabEntry) []group {
 			srcs[m.SourceID] = struct{}{}
 		}
 		if len(srcs) < 2 {
-			continue // single-source name — 70b's domain, no row this wave
+			continue
 		}
-		// Deterministic member order (source, then name) for stable map writes.
 		sort.Slice(members, func(i, j int) bool {
 			if members[i].SourceID != members[j].SourceID {
 				return members[i].SourceID < members[j].SourceID
@@ -50,7 +41,7 @@ func buildGroups(vocab []vocabEntry) []group {
 		g := group{
 			Norm:          norm,
 			CanonicalName: pickCanonicalName(members),
-			Tier:          model.TagTierCore, // cross-source ≥2 = core (user ruling)
+			Tier:          model.TagTierCore,
 			Kind:          model.TagKindContent,
 			Members:       members,
 			sourceCount:   len(srcs),
@@ -64,11 +55,6 @@ func buildGroups(vocab []vocabEntry) []group {
 	return out
 }
 
-// pickCanonicalName chooses the group's display form deterministically: the
-// original string that the MOST distinct sources agree on, tie-broken by the
-// highest total usage, then lexicographically smallest. (Galgame vs galgame:
-// galgame is in vndb+bangumi = 2 sources, Galgame only bangumi = 1, so galgame
-// wins — the form the sources agree on.)
 func pickCanonicalName(members []vocabEntry) string {
 	type agg struct {
 		sources map[int16]struct{}
@@ -99,35 +85,28 @@ func pickCanonicalName(members []vocabEntry) string {
 	return best
 }
 
-// Bucket is one usage-threshold count of the single-source distribution.
 type Bucket struct {
 	GE100 int
 	GE50  int
 	GE20  int
 	GE10  int
-	Total int // all single-source non-junk names of the source
+	Total int
 }
 
-// NameUsage is one (name, usage) sample.
 type NameUsage struct {
 	Name  string
 	Usage int
 }
 
-// SourceDist is a source's single-source usage distribution + top samples — the
-// input for pinning the single-source core-tier threshold (doc 74 §统计交付).
 type SourceDist struct {
 	SourceID int16
 	Key      string
 	Buckets  Bucket
-	Top      []NameUsage // highest-usage single-source names first, capped
+	Top      []NameUsage
 }
 
 const maxTopSamples = 50
 
-// singleSourceDist computes, per source, the usage distribution over names that
-// did NOT converge into a cross-source group (norm spanning <2 sources) and are
-// not junk — the population a single-source core threshold would select from.
 func singleSourceDist(vocab []vocabEntry, groups []group, srcKeys map[int16]string) []SourceDist {
 	inGroup := map[string]struct{}{}
 	for _, g := range groups {

@@ -12,24 +12,17 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// edgeKindFor maps a label kind to the work_label attribution kind, following
-// the established writer convention (survey of existing catalog_work_label):
-// game brand → brand, doujin circle / group → circle, publisher → publisher.
 func edgeKindFor(labelKind int16) int16 {
 	switch labelKind {
 	case model.LabelKindGameBrand:
 		return model.WorkLabelKindBrand
 	case model.LabelKindPublisher:
 		return model.WorkLabelKindPublisher
-	default: // doujin circle, group
+	default:
 		return model.WorkLabelKindCircle
 	}
 }
 
-// mintLabel creates a new label for a source org with works but no matching
-// label (裁定5): the label row + a self exact anchor + an imported revision +
-// one work_label edge per work in W(O). Returns the number of edges written.
-// Wrapped in a transaction so a partial mint never lands.
 func mintLabel(ctx context.Context, db *gorm.DB, source int16, o *orgRec) (int, error) {
 	rule := ruleSetFor(source).newLabel
 	edgeKind := edgeKindFor(o.newKind)
@@ -66,11 +59,6 @@ func mintLabel(ctx context.Context, db *gorm.DB, source int16, o *orgRec) (int, 
 		}).Error; err != nil {
 			return err
 		}
-		// Edges follow the ATTRIBUTABLE set, not the evidence set: the works
-		// this org is responsible for, not every work it stood next to. Only a
-		// source with no edition layer at all falls back to the evidence set —
-		// never a source that HAS one and found nothing attributable, which is
-		// a real answer (see orgRec.editionAware).
 		attrib := o.attribWorks
 		if !o.editionAware {
 			attrib = o.works
@@ -88,10 +76,6 @@ func mintLabel(ctx context.Context, db *gorm.DB, source int16, o *orgRec) (int, 
 				return res.Error
 			}
 			edgesWritten = int(res.RowsAffected)
-			// The label id is brand new, so every edge here is a first
-			// attribution for its work — bump the hosts so the public changes
-			// feed shows them. A re-run never reaches this function again (the
-			// org is anchored by then), so nothing drifts.
 			if edgesWritten > 0 {
 				if err := repository.TouchWorks(ctx, tx, attrib); err != nil {
 					return err
@@ -103,8 +87,6 @@ func mintLabel(ctx context.Context, db *gorm.DB, source int16, o *orgRec) (int, 
 	return edgesWritten, err
 }
 
-// mintProvenance records which importer minted the label's fields (裁定5). R8
-// array shape ({"<field>":[{"source","at"}]}), matching the charattrs writer.
 func mintProvenance(source int16, o *orgRec) datatypes.JSON {
 	entry := []map[string]string{{"source": srcKey(source), "at": nowUTC().Format("2006-01-02T15:04:05Z")}}
 	prov := map[string]any{
@@ -121,13 +103,11 @@ func mintProvenance(source int16, o *orgRec) datatypes.JSON {
 	return b
 }
 
-// labelSnapshot is the full-entity revision-1 snapshot (importer convention).
 func labelSnapshot(label model.CatalogLabel) datatypes.JSON {
 	b, _ := json.Marshal(map[string]any{"label": label, "aliases": []any{}})
 	return b
 }
 
-// ruleSetFor returns the four matched_by strings for a source.
 func ruleSetFor(source int16) ruleSet {
 	switch source {
 	case sourceVNDB:

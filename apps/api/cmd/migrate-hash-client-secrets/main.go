@@ -1,16 +1,3 @@
-// cmd/migrate-hash-client-secrets converts plaintext oauth_clients.secret
-// values to the hashed at-rest form ("sha256:<hex>") so a DB-read breach can no
-// longer hand out usable s2s credentials.
-//
-// Idempotent + re-runnable: rows already prefixed "sha256:" are skipped. Safe to
-// run live — downstream clients keep their existing plaintext secret in config
-// and it still verifies (model.OAuthClient.VerifySecret hashes the presented
-// value before comparing). Run once after deploying the secret-hashing change.
-//
-// Usage:
-//
-//	go run ./cmd/migrate-hash-client-secrets            # hash plaintext rows
-//	go run ./cmd/migrate-hash-client-secrets -dry-run   # report only, no writes
 package main
 
 import (

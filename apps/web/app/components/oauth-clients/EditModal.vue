@@ -7,10 +7,6 @@ const emit = defineEmits<{ updated: [] }>()
 const open = defineModel<boolean>('open', { required: true })
 const api = useApi()
 
-// Ren-only scopes (image:upload / artifact:upload) + auto_consent are ren（莲）-
-// only (server-enforced). For a non-ren editor we hide the controls; any
-// existing sensitive values stay in the submitted payload unchanged (the API's
-// no-escalation guard permits keeping them — only ADDING is blocked).
 const { isRen } = useAuth()
 const scopeOptions = computed(() =>
   isRen.value ? KNOWN_SCOPES : KNOWN_SCOPES.filter((s) => !REN_ONLY_SCOPES.includes(s))
@@ -21,15 +17,8 @@ const redirectUris = ref<string[]>([])
 const grants = ref<string[]>([])
 const allowedScopes = ref<string[]>([])
 const refreshTokenTtlDays = ref(DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400)
-// is_public is set at create time; toggling it post-hoc is dangerous
-// (changes the auth model). We surface it read-only here — if someone
-// really needs to flip it, they should recreate the client.
 const isPublicReadonly = computed(() => props.client?.is_public ?? false)
-// auto_consent IS editable post-hoc — it only affects consent-screen
-// rendering, no token semantics change.
 const autoConsent = ref(false)
-// App-directory (生态一键登录) display fields. listed/logo/tagline are
-// admin-settable; display_order is ren-only.
 const listed = ref(false)
 const logoUrl = ref('')
 const tagline = ref('')
@@ -37,7 +26,6 @@ const displayOrder = ref<number | null>(0)
 const error = ref('')
 const isLoading = ref(false)
 
-// Kept mounted (v-model); (re)load the form from the client each time it opens.
 const initForm = (c: OAuthClient) => {
   name.value = c.name
   redirectUris.value = [...c.redirect_uris]
@@ -54,14 +42,7 @@ const initForm = (c: OAuthClient) => {
   error.value = ''
 }
 
-// Logo upload — POSTs a cropped square Blob to image_service and fills logoUrl
-// with the returned CDN URL. Uploading is the only way to set a logo — an
-// arbitrary external URL would leave the app directory hotlinking a host we
-// don't control. The current logo is shown by feeding logoUrl back into
-// KunUpload as its initial image.
 const { uploading: logoUploading, error: logoError, upload: uploadLogo } = useClientLogoUpload()
-// KunUpload keeps its picked image in internal state with no reset API, so we
-// remount it via :key to clear the preview after a successful upload.
 const logoUploadKey = ref(0)
 
 const onLogoPicked = async (blob: Blob) => {

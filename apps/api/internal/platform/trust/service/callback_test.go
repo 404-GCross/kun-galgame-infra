@@ -12,8 +12,6 @@ import (
 	"api/internal/platform/trust/model"
 )
 
-// actionCallbackItem opens an item on a callback-configured kind and actions it,
-// returning the pending disposition id.
 func actionCallbackItem(t *testing.T, subject, callbackURL, secret string) int64 {
 	t.Helper()
 	registerKind(t, tSite, tKind, &callbackURL, &secret)
@@ -28,7 +26,6 @@ func actionCallbackItem(t *testing.T, subject, callbackURL, secret string) int64
 	if dispID == nil {
 		t.Fatal("expected a disposition id")
 	}
-	// A callback kind must queue the disposition pending.
 	var disp model.TrustDisposition
 	testDB.Take(&disp, *dispID)
 	if disp.CallbackStatus == nil || *disp.CallbackStatus != model.CallbackStatusPending {
@@ -46,7 +43,6 @@ func dispStatus(t *testing.T, id int64) (status *int16, attempts int32) {
 	return d.CallbackStatus, d.CallbackAttempts
 }
 
-// E8a: a 2xx endpoint → delivered, and the signature verifies with the secret.
 func TestCallbackDelivered(t *testing.T) {
 	cleanTables(t)
 	const secret = "s3cr3t-hmac"
@@ -84,12 +80,10 @@ func TestCallbackDelivered(t *testing.T) {
 	assertAudit(t, "callback_delivered")
 }
 
-// E8b: a persistently-failing endpoint → dead_letter after 5 attempts; then
-// redeliver revives it and a now-healthy endpoint delivers.
 func TestCallbackDeadLetterAndRedeliver(t *testing.T) {
 	cleanTables(t)
 	const secret = "s3cr3t-hmac"
-	var healthy atomic.Bool // starts false = 500
+	var healthy atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if healthy.Load() {
 			w.WriteHeader(http.StatusOK)
@@ -101,7 +95,6 @@ func TestCallbackDeadLetterAndRedeliver(t *testing.T) {
 
 	dispID := actionCallbackItem(t, "cbfail", srv.URL, secret)
 
-	// Zero backoff so next_attempt_at is immediately due between passes.
 	w := NewCallbackWorker(testDB)
 	w.backoff = []time.Duration{0, 0, 0, 0, 0}
 
@@ -119,7 +112,6 @@ func TestCallbackDeadLetterAndRedeliver(t *testing.T) {
 	}
 	assertAudit(t, "callback_dead_letter")
 
-	// Redeliver → pending, attempts reset; a healthy endpoint then delivers.
 	if err := NewDispositionService(testDB).Redeliver(context.Background(), 9, dispID); err != nil {
 		t.Fatalf("redeliver: %v", err)
 	}
@@ -137,7 +129,6 @@ func TestCallbackDeadLetterAndRedeliver(t *testing.T) {
 	}
 }
 
-// TestRedeliverGuards pins the not-found / not-dead-letter guards.
 func TestRedeliverGuards(t *testing.T) {
 	cleanTables(t)
 	svc := NewDispositionService(testDB)

@@ -11,11 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Snapshot shapes: FULL entity state including nested children, so unmerge
-// can rebuild an entity from its merged_source revision without touching any
-// other table. changed_fields is always provided by the caller at edit time,
-// never reconstructed by diffing snapshots (the galgame_revision lesson).
-
 type creditNameSnapshot struct {
 	CreditName model.CatalogCreditName  `json:"credit_name"`
 	Aliases    []model.CatalogNameAlias `json:"aliases"`
@@ -41,7 +36,6 @@ type workSnapshot struct {
 	Titles []model.CatalogWorkTitle `json:"titles"`
 }
 
-// takeSnapshot builds the full nested snapshot of an entity.
 func takeSnapshot(tx *gorm.DB, entityType int16, id int64) (datatypes.JSON, error) {
 	var doc any
 	switch entityType {
@@ -113,9 +107,6 @@ func takeSnapshot(tx *gorm.DB, entityType int16, id int64) (datatypes.JSON, erro
 	return datatypes.JSON(raw), nil
 }
 
-// writeRevision appends one revision row inside the caller's transaction —
-// revision numbering is per-entity monotonic (see repository.NextRevision
-// for the locking contract).
 func writeRevision(tx *gorm.DB, entityType int16, entityID int64, action int16,
 	snapshot datatypes.JSON, changedFields datatypes.JSON, actorID *int64, note string) error {
 	rev, err := repository.NextRevision(tx, entityType, entityID)
@@ -135,8 +126,6 @@ func writeRevision(tx *gorm.DB, entityType int16, entityID int64, action int16,
 	}).Error
 }
 
-// marshalChangedFields encodes the caller-collected changed-field map;
-// nil map → NULL column.
 func marshalChangedFields(changed map[string]any) (datatypes.JSON, error) {
 	if len(changed) == 0 {
 		return nil, nil

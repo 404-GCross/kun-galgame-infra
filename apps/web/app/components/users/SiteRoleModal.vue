@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Site-scoped role grants (docs/integration/oauth/12-site-roles.md): grant a
-// role that applies only on ONE site (e.g. "letmoe moderator"), never any
-// cross-site power. Grantable names exclude user/admin/ren and follow the
-// site-name pattern; the server re-validates every call — this UI only guides.
 import { roleColor } from '~/constants/roles'
 
 const open = defineModel<boolean>('open', { required: true })
@@ -39,8 +35,6 @@ const siteOptions = computed(() =>
   sites.value.map((s) => ({ value: s.id, label: `${s.name} (${s.domain})` }))
 )
 
-// The two same-named global roles are the common site grants; custom bundle
-// names (e.g. event_organizer) are typed freely.
 const QUICK_ROLES = ['moderator', 'creator']
 
 const grantKey = (g: SiteRole) => `${g.site_id}:${g.role_name}`
@@ -125,7 +119,6 @@ const revoke = async (g: SiteRole) => {
         </p>
       </div>
 
-      <!-- Grant form -->
       <div class="border-default-200 space-y-3 rounded-lg border p-3">
         <KunSelect
           v-model="siteId"
@@ -171,7 +164,6 @@ const revoke = async (g: SiteRole) => {
         </div>
       </div>
 
-      <!-- Current grants -->
       <div class="space-y-2">
         <p class="text-default-400 text-xs">当前授予</p>
         <p v-if="loading" class="text-default-400 text-sm">加载中…</p>

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Recent overlay writes. The matrix shows the current state; this shows how it
-// got there — the only place a grant that was later revoked is still visible.
 import type { PermissionAuditEntry } from '~~/shared/types/permission'
 import { roleLabel } from '~/constants/roles'
 import {

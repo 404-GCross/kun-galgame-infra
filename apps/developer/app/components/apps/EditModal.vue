@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import type { DevApp } from '~~/shared/types/dev'
 
-// Edit an app's name / description (PATCH /dev/apps/:client_id). tier / nsfw /
-// quota are admin-only and NOT editable here (self-service face is read-only for
-// those). PATCH semantics: only changed fields are sent.
 const props = defineProps<{ app: DevApp }>()
 const emit = defineEmits<{ close: []; updated: [DevApp] }>()
 
@@ -27,7 +24,6 @@ const handleSubmit = async () => {
   }
   isLoading.value = true
   try {
-    // Wire body mirrors the 06a PATCH /dev/apps/:client_id contract.
     const body: Record<string, unknown> = {
       name: name.value.trim(),
       description: description.value.trim()

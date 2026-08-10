@@ -12,9 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// registry holds the catalog registry ids this backfill needs, resolved by key
-// (never hardcoded) so a rehearsal / prod DB with different auto-increment
-// seeds still works — the bgmsummaries / dlsitemedia discipline.
 type registry struct {
 	galgameMedium int16
 	bangumiSource int16
@@ -43,8 +40,6 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// bgmCandidate is one galgame work joined to its EXACT Bangumi anchor's subject
-// score block.
 type bgmCandidate struct {
 	WorkID       int64   `gorm:"column:work_id"`
 	SubjectID    int64   `gorm:"column:subject_id"`
@@ -53,14 +48,6 @@ type bgmCandidate struct {
 	ScoreDetails []byte  `gorm:"column:score_details"`
 }
 
-// loadBgmCandidates resolves galgame works carrying an EXACT Bangumi work anchor — matched_by UNRESTRICTED (every exact tier asserts identity, the
-// 66/69/71 ruling; the bgmworkmeta precedent) — joined to the anchored
-// subject's score/rank/score_details, the same join shape as
-// bgmsummaries.loadCandidates (src_bangumi is a schema inside the catalog DB,
-// single DSN). DISTINCT ON keeps ONE anchor per work (the lowest external_id);
-// the external_id→bigint cast is safe (surveyed: zero non-numeric exact bgm
-// work anchors — the 69 verification). Limit/Offset window the distinct-work
-// list in Go (the dlsitemedia chunking discipline).
 func loadBgmCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]bgmCandidate, error) {
 	var out []bgmCandidate
 	if err := db.WithContext(ctx).
@@ -79,18 +66,11 @@ func loadBgmCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, of
 	return window(out, limit, offset), nil
 }
 
-// egCandidate is one galgame work with its EG exact work anchors (several when a
-// work carries >1 EG exact anchor — pickBest collapses them).
 type egCandidate struct {
 	WorkID int64
 	EgIDs  []int64
 }
 
-// loadEgCandidates resolves galgame works carrying EG EXACT work anchors —
-// cmd/enrich-eg-scores' anchor query with its claim filter removed. A non-numeric
-// external_id becomes the -1 sentinel so it is counted missing_in_mirror rather
-// than silently dropped (same tool's convention). Grouped one candidate per work,
-// ordered by work id; Limit/Offset window the per-work list in Go.
 func loadEgCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]egCandidate, error) {
 	var rows []struct {
 		WorkID     int64   `gorm:"column:work_id"`
@@ -131,14 +111,11 @@ func loadEgCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, off
 	return window(out, limit, offset), nil
 }
 
-// egData is one EG mirror games row (median nullable — NULL vs a real low 0
-// must stay distinct; count2 → votes, 0 when NULL).
 type egData struct {
 	median *int
 	votes  int
 }
 
-// loadEGMirror batch-loads the EG mirror games rows for the referenced ids.
 func loadEGMirror(ctx context.Context, egDB *gorm.DB, ids []int64) (map[int64]egData, error) {
 	out := map[int64]egData{}
 	type row struct {
@@ -164,10 +141,6 @@ func loadEGMirror(ctx context.Context, egDB *gorm.DB, ids []int64) (map[int64]eg
 	return out, nil
 }
 
-// pickBest chooses the representative EG game for a work with several exact
-// anchors: most-voted wins (biggest count2 = most reliable median), tie-break
-// higher median, then id; ids absent from the mirror sort last — the
-// cmd/enrich-eg-scores rule verbatim.
 func pickBest(egIDs []int64, mirror map[int64]egData) int64 {
 	best := egIDs[0]
 	for _, id := range egIDs[1:] {
@@ -178,12 +151,11 @@ func pickBest(egIDs []int64, mirror map[int64]egData) int64 {
 	return best
 }
 
-// worse reports whether a is a WORSE representative than b.
 func worse(a, b int64, mirror map[int64]egData) bool {
 	da, oka := mirror[a]
 	db, okb := mirror[b]
 	if oka != okb {
-		return !oka // present beats absent
+		return !oka
 	}
 	if !oka {
 		return a < b
@@ -205,9 +177,6 @@ func derefOr(p *int, fallback int) int {
 	return *p
 }
 
-// ratingTotal sums the score_details buckets ({"1": n, …, "10": n}) — the dump
-// has NO total field, so the vote count is derived exactly like
-// galgame_bangumi_meta.total (bangumienrich.ratingTotal).
 func ratingTotal(details []byte) int {
 	if len(details) == 0 {
 		return 0
@@ -223,8 +192,6 @@ func ratingTotal(details []byte) int {
 	return total
 }
 
-// window applies the offset/limit chunking to an already-distinct candidate
-// list (slicing keeps it obviously correct — the bgmsummaries discipline).
 func window[T any](in []T, limit, offset int) []T {
 	if offset > 0 {
 		if offset >= len(in) {

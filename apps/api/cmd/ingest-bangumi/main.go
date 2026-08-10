@@ -1,11 +1,3 @@
-// Command ingest-bangumi loads a Bangumi Archive dump (Bronze) into the
-// src_bangumi schema of kun_catalog (Silver), deterministically and
-// re-runnably (whole-table replacement per file). See the srcbangumi package
-// doc for the pipeline discipline.
-//
-//	go run ./cmd/ingest-bangumi --dump-dir ../../refs/bangumi-dump          # from apps/api
-//	go run ./apps/api/cmd/ingest-bangumi --dump-dir refs/bangumi-dump      # from the repo root
-//	go run ./cmd/ingest-bangumi --dump-dir ../../refs/bangumi-dump --only subject
 package main
 
 import (
@@ -28,8 +20,6 @@ func main() {
 	only := flag.String("only", "", "ingest a single file (e.g. subject, subject-relations)")
 	flag.Parse()
 
-	// config.Load reads .env from the CURRENT directory; also try the
-	// apps/api location so the tool runs from the repo root too.
 	_ = godotenv.Load("apps/api/.env")
 
 	cfg, err := config.Load()
@@ -74,8 +64,6 @@ func main() {
 	slog.Info("bangumi ingest completed", "total", report.Duration.String())
 }
 
-// resolveDumpDir accepts the directory as given, or relative to the repo
-// root when running from apps/api (and vice versa).
 func resolveDumpDir(dir string) (string, error) {
 	for _, candidate := range []string{dir, filepath.Join("..", "..", dir)} {
 		if st, err := os.Stat(candidate); err == nil && st.IsDir() {

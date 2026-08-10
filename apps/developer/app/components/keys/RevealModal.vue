@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import type { DevKeyMinted } from '~~/shared/types/dev'
 
-// Show-once plaintext reveal (安全关键). The plaintext lives ONLY in the `minted`
-// prop held by the parent's component-local ref; it is never written to
-// store/localStorage/URL/logs. Closing the modal clears the parent state.
 defineProps<{ minted: DevKeyMinted; rotated?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 

@@ -1,12 +1,3 @@
-// works_facets_test.go — the A2-1d loaders that feed the works index's
-// product-search axes.
-//
-// The service-layer suite proves the search face filters correctly over
-// documents; nothing there proves the REINDEXER produces those documents from
-// the registry. That is what this file covers: the edge SQL parses, resolves
-// tags through the canonical map, and is scoped to the same population the
-// index carries — a work outside it (soft-deleted, non-LIVE, wrong medium)
-// must contribute no facet rows at all.
 package main
 
 import (
@@ -46,11 +37,6 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	facetTestDB = db
-	// This package TRUNCATEs catalog_work and its facet tables, which the
-	// catalog service / handler / editing / galgameapp suites also write. They
-	// all hold 0x65647473 ("edts") — advisory keys share one key space per
-	// instance, so joining THAT key is what actually serializes us against
-	// them; a fresh key would serialize against nothing.
 	release := acquireSuiteLock(db)
 	code := m.Run()
 	release()
@@ -112,8 +98,6 @@ func acquireSuiteLock(db *gorm.DB) func() {
 		return func() {}
 	}
 	ctx := context.Background()
-	// A session-scoped lock lives on ONE connection, so it must not come from
-	// the pool at large.
 	conn, err := sqlDB.Conn(ctx)
 	if err != nil {
 		return func() {}
@@ -156,11 +140,6 @@ func mkWork(t *testing.T, name string, status int16, medium int16) int64 {
 	return w.ID
 }
 
-// TestWorksFacetLoadersScopeAndResolve is the reindexer's contract in one case:
-// every axis loads for the LIVE galgame work and for NOBODY else, tag ids come
-// back CANONICAL (resolved through catalog_tag_source_map, so an unmapped
-// source tag contributes nothing), and the release ordinal is the earliest
-// dated one at whatever precision it carries.
 func TestWorksFacetLoadersScopeAndResolve(t *testing.T) {
 	truncateFacetTables(t)
 
@@ -173,8 +152,6 @@ func TestWorksFacetLoadersScopeAndResolve(t *testing.T) {
 	}
 	outOfScope := []int64{stub, asmr, deleted}
 
-	// A canonical tag reachable through the source map, plus a source tag with
-	// NO mapping (it must not produce a facet row).
 	tag := &model.CatalogTag{Name: "純愛", Tier: model.TagTierCore, Kind: model.TagKindContent}
 	if err := facetTestDB.Create(tag).Error; err != nil {
 		t.Fatalf("create tag: %v", err)
@@ -227,9 +204,6 @@ func TestWorksFacetLoadersScopeAndResolve(t *testing.T) {
 		}
 	}
 
-	// Two releases on the live work: a later dated one and the earliest, which
-	// carries MONTH precision (day unknown → ordinal ...00). Plus an undated
-	// release, which must not win.
 	mkRelease(t, live, 2024, 12, 25)
 	mkRelease(t, live, 2020, 6, 0)
 	mkRelease(t, live, 0, 0, 0)
@@ -258,7 +232,6 @@ func TestWorksFacetLoadersScopeAndResolve(t *testing.T) {
 		t.Fatalf("released ordinal = %d, want 20200600 (earliest DATED release, month precision)", got)
 	}
 
-	// Nothing outside the index population contributes anything, on any axis.
 	for _, id := range outOfScope {
 		if len(facets.tagIDs[id])+len(facets.labelIDs[id])+len(facets.engineIDs[id])+len(facets.seriesIDs[id]) != 0 {
 			t.Fatalf("out-of-population work %d produced facet rows", id)
@@ -268,8 +241,6 @@ func TestWorksFacetLoadersScopeAndResolve(t *testing.T) {
 		}
 	}
 
-	// A work with no dated release must be ABSENT from the map (not 0), which
-	// is what leaves released_ord off its document.
 	bare := mkWork(t, "Undated", model.WorkStatusLive, galgameMedium)
 	mkRelease(t, bare, 0, 0, 0)
 	facets, err = loadWorksFacets(facetTestDB)
@@ -280,8 +251,6 @@ func TestWorksFacetLoadersScopeAndResolve(t *testing.T) {
 		t.Fatalf("undated work %d must have NO release ordinal entry", bare)
 	}
 
-	// The tag popularity signal counts DISTINCT works in the same population —
-	// so the three out-of-scope works carrying the same tag do not inflate it.
 	counts, err := loadTagWorkCounts(facetTestDB)
 	if err != nil {
 		t.Fatalf("loadTagWorkCounts: %v", err)

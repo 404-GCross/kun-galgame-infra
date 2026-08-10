@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-// bs turns string patterns into the [][]byte Build expects; pattern k gets
-// payload k, matching how the term matcher aligns payloads with term indexes.
 func bs(ss ...string) [][]byte {
 	out := make([][]byte, len(ss))
 	for i, s := range ss {
@@ -18,9 +16,6 @@ func bs(ss ...string) [][]byte {
 	return out
 }
 
-// brute is the reference oracle: the linear per-pattern strings.Contains scan
-// this package replaces. It returns ascending distinct hit indexes, skipping
-// empty patterns exactly as Build does.
 func brute(patterns [][]byte, text []byte) []int {
 	s := string(text)
 	var res []int
@@ -35,8 +30,6 @@ func brute(patterns [][]byte, text []byte) []int {
 	return res
 }
 
-// TestClassicOverlap pins the textbook he/she/his/hers overlap: "ushers" holds
-// he, she and hers (via fail/dictionary links) but not his.
 func TestClassicOverlap(t *testing.T) {
 	m := Build(bs("he", "she", "his", "hers"))
 	if got := m.Match([]byte("ushers")); !slices.Equal(got, []int{0, 1, 3}) {
@@ -50,8 +43,6 @@ func TestClassicOverlap(t *testing.T) {
 	}
 }
 
-// TestMutualPrefixSuffix pins nested patterns where each is a prefix/suffix of
-// another: over "abcd" every one fires.
 func TestMutualPrefixSuffix(t *testing.T) {
 	m := Build(bs("ab", "abc", "bc", "c", "abcd", "bcd", "cd", "d"))
 	got := m.Match([]byte("abcd"))
@@ -59,16 +50,12 @@ func TestMutualPrefixSuffix(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("abcd → %v, want %v", got, want)
 	}
-	// A single 'a' only fires nothing here (no bare "a" pattern).
 	if got := m.Match([]byte("a")); got != nil {
 		t.Fatalf("a → %v, want nil", got)
 	}
 }
 
-// TestCJKMultiByte pins that byte-level matching handles multi-byte UTF-8 CJK,
-// including a pattern that spans two adjacent characters' bytes.
 func TestCJKMultiByte(t *testing.T) {
-	// 坏词 / 词的 overlap in 含坏词的文本; 好 is absent.
 	m := Build(bs("坏词", "词的", "好"))
 	if got := m.Match([]byte("含坏词的文本")); !slices.Equal(got, []int{0, 1}) {
 		t.Fatalf("含坏词的文本 → %v, want [0 1]", got)
@@ -78,8 +65,6 @@ func TestCJKMultiByte(t *testing.T) {
 	}
 }
 
-// TestMultiHitDedupe pins that a pattern occurring many times yields its payload
-// exactly once, and distinct patterns are each reported once.
 func TestMultiHitDedupe(t *testing.T) {
 	m := Build(bs("ab", "ba"))
 	if got := m.Match([]byte("abababab")); !slices.Equal(got, []int{0, 1}) {
@@ -91,9 +76,6 @@ func TestMultiHitDedupe(t *testing.T) {
 	}
 }
 
-// TestDuplicatePatterns pins that two patterns sharing the same string both emit
-// their payloads — the property the term matcher relies on when two terms (e.g. a
-// global and a per-site one) normalize to the same norm.
 func TestDuplicatePatterns(t *testing.T) {
 	m := Build(bs("dup", "dup", "other"))
 	if got := m.Match([]byte("a dup b")); !slices.Equal(got, []int{0, 1}) {
@@ -101,9 +83,6 @@ func TestDuplicatePatterns(t *testing.T) {
 	}
 }
 
-// TestEmptyAutomaton pins the degenerate builds: no patterns, and all-empty
-// patterns — both match nothing. An empty pattern interleaved with a real one is
-// skipped (strings.Contains(x,"") would be true, which is never the intent).
 func TestEmptyAutomaton(t *testing.T) {
 	if got := Build(nil).Match([]byte("anything")); got != nil {
 		t.Fatalf("nil patterns → %v, want nil", got)
@@ -115,18 +94,11 @@ func TestEmptyAutomaton(t *testing.T) {
 	if got := m.Match([]byte("zzabczz")); !slices.Equal(got, []int{1}) {
 		t.Fatalf("empty-interleaved → %v, want [1] (empties never match)", got)
 	}
-	// An empty text never matches a non-empty pattern.
 	if got := Build(bs("abc")).Match(nil); got != nil {
 		t.Fatalf("empty text → %v, want nil", got)
 	}
 }
 
-// TestDifferentialVsBrute is the acceptance oracle for correctness: over many
-// random pattern-set × text trials the automaton's hit set must equal the linear
-// strings.Contains scan's, byte-for-byte. The alphabet mixes ASCII with shared
-// high bytes (fragments of multi-byte UTF-8) so fail/dictionary links and byte-
-// level overlaps are heavily exercised, including sequences that are not valid
-// UTF-8 (strings.Contains is a byte oracle, so this stays a fair comparison).
 func TestDifferentialVsBrute(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	alphabet := []byte{'a', 'b', 'c', 0xE7, 0x95, 0x8c}
@@ -143,7 +115,7 @@ func TestDifferentialVsBrute(t *testing.T) {
 		nPat := rng.Intn(12)
 		patterns := make([][]byte, nPat)
 		for i := range patterns {
-			patterns[i] = tok(5) // length 0..5 (empties exercised too)
+			patterns[i] = tok(5)
 		}
 		text := tok(48)
 		got := Build(patterns).Match(text)
@@ -154,16 +126,13 @@ func TestDifferentialVsBrute(t *testing.T) {
 	}
 }
 
-// syntheticCorpus builds a large, realistic corpus: nTerms distinct terms over a
-// mixed ASCII+CJK alphabet, and an 8000-rune text with real terms scattered in so
-// matches actually occur. Deterministic (fixed seed) for repeatable benchmarks.
 func syntheticCorpus(nTerms int) (patterns [][]byte, text []byte) {
 	rng := rand.New(rand.NewSource(42))
 	alphabet := []rune("abcdefghijklmnopqrstuvwxyz0123456789的一是不了在人有我他这中大来")
 	patterns = make([][]byte, 0, nTerms)
 	seen := make(map[string]struct{}, nTerms)
 	for len(patterns) < nTerms {
-		l := 3 + rng.Intn(8) // 3..10 runes
+		l := 3 + rng.Intn(8)
 		rs := make([]rune, l)
 		for j := range rs {
 			rs[j] = alphabet[rng.Intn(len(alphabet))]
@@ -177,7 +146,7 @@ func syntheticCorpus(nTerms int) (patterns [][]byte, text []byte) {
 	}
 	trs := make([]rune, 0, 8000)
 	for len(trs) < 8000 {
-		if rng.Intn(25) == 0 { // ~4% of the time splice in a real term → guaranteed hits
+		if rng.Intn(25) == 0 {
 			trs = append(trs, []rune(string(patterns[rng.Intn(nTerms)]))...)
 		} else {
 			trs = append(trs, alphabet[rng.Intn(len(alphabet))])
@@ -186,10 +155,6 @@ func syntheticCorpus(nTerms int) (patterns [][]byte, text []byte) {
 	return patterns, []byte(string(trs[:8000]))
 }
 
-// TestPerformanceRegression is a loose-bound guard against an algorithmic
-// regression (e.g. accidental per-check rebuild or a quadratic scan): building
-// 30k terms stays well under 2s and a single 8000-rune match well under 50ms.
-// The bounds are deliberately slack so the test guards the algorithm, not jitter.
 func TestPerformanceRegression(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping perf regression in -short")

@@ -5,21 +5,12 @@ import {
   useRefreshTransient
 } from '~/composables/useTokenRefresh'
 
-// Global recovery UI for a TRANSIENT token-refresh failure (network blip /
-// IdP 5xx): the session is still alive — the refresh paths deliberately do not
-// log the user out (REFRESH_TRANSIENT contract, §9.1) — but until now the only
 // signal was silently empty pages. This banner names the state and offers a
-// one-click retry; it never shows for a dead session (that path bounces to
-// /login instead of raising the flag).
 const transient = useRefreshTransient()
 const auth = useAuth()
 const userStore = useUserStore()
 const accessToken = useCookie('access_token')
 
-// Only show with evidence of a signed-in session: auth_mode is written on
-// every login (both modes) and cleared on logout / dead session. Without this
-// gate an anonymous visitor could see the banner when the IdP hiccups during
-// the boot plugin's speculative refresh.
 const authMode = useCookie('auth_mode')
 const visible = computed(() => transient.value && Boolean(authMode.value))
 
@@ -31,8 +22,6 @@ const retry = async () => {
   try {
     const result = await requestTokenRefresh()
     if (typeof result === 'string') {
-      // Healthy again: land the token (this clears the flag), rehydrate the
-      // user, and refetch every useFetch payload that rendered degraded.
       auth.setAccessToken(result)
       await auth.fetchUser()
       await refreshNuxtData()
@@ -41,8 +30,6 @@ const retry = async () => {
     if (result === REFRESH_TRANSIENT) {
       return // still down — the flag stays up, the user can retry again
     }
-    // The session turned out dead after all: clear local state and bounce to
-    // /login preserving the current location (mirrors useApi's 401 path).
     accessToken.value = null
     authMode.value = null
     userStore.clearUser()

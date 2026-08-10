@@ -19,9 +19,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test: catalog Gold schema + src_bangumi Silver schema + a
-// minimal dlsite mirror fixture in its OWN schema (workaliases_dl) via a
-// search_path DSN (the workratings/workseries pattern).
 var (
 	testDB    *gorm.DB
 	testDSN   string
@@ -128,17 +125,12 @@ func mkDlsiteRelAnchor(t *testing.T, workID int64, workno string) {
 
 func strPtr(s string) *string { return &s }
 
-// TestImportWorkAliases pins both lanes end to end: the Items/Value dual
-// infobox shape, the any-kind (work,title) dedup, the claimed exclusion, the
-// kana fill-only-missing gate, and second-apply idempotence.
 func TestImportWorkAliases(t *testing.T) {
 	clean(t)
 	medium := mediumID(t)
 
-	// bgm lane: bodyless work, subject with Array-form 别名 (2 items, 1 collides
-	// with the official title) + scalar-form on another work + claimed excluded.
 	wA := mkWork(t, medium, "本体A", nil)
-	mkTitle(t, wA, "ja", "オフィシャルA", 0) // official — the colliding alias must be skipped
+	mkTitle(t, wA, "ja", "オフィシャルA", 0)
 	mkBgmAnchor(t, wA, "1001")
 	mkSubject(t, 1001, `{"Fields":[{"Key":"别名","Array":true,"Value":"","Items":[{"Value":"アリアスA1"},{"Value":"オフィシャルA"},{"Value":"  "}]}]}`)
 
@@ -150,8 +142,6 @@ func TestImportWorkAliases(t *testing.T) {
 	mkBgmAnchor(t, wClaimed, "1003")
 	mkSubject(t, 1003, `{"Fields":[{"Key":"别名","Array":false,"Value":"クレイム別名","Items":null}]}`)
 
-	// kana lane: anchored bodyless work with NO kind=3 (candidate), one WITH
-	// kind=3 (not a candidate), one whose mirror row has no kana.
 	wK := mkWork(t, medium, "カナ待ち", nil)
 	mkDlsiteRelAnchor(t, wK, "RJ900001")
 	wHasKana := mkWork(t, medium, "カナ持ち", nil)
@@ -167,7 +157,6 @@ func TestImportWorkAliases(t *testing.T) {
 	ctx := context.Background()
 	opts := Opts{DSN: testDSN, DlsiteDSN: dlTestDSN, Source: "all"}
 
-	// Dry: plan only.
 	st, err := Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 2, st.BgmWorks, "claimed excluded")
@@ -180,7 +169,6 @@ func TestImportWorkAliases(t *testing.T) {
 	require.NoError(t, testDB.Table("catalog_work_title").Where("kind = 1").Count(&n).Error)
 	assert.Zero(t, n, "dry run must not write")
 
-	// Apply.
 	opts.Apply = true
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
@@ -197,11 +185,9 @@ func TestImportWorkAliases(t *testing.T) {
 	require.Len(t, titles, 1)
 	assert.Equal(t, "カナマチ", titles[0].Title)
 	assert.Equal(t, "ja", titles[0].Lang)
-	// claimed work got nothing.
 	require.NoError(t, testDB.Table("catalog_work_title").Where("work_id = ?", wClaimed).Count(&n).Error)
 	assert.Zero(t, n)
 
-	// Second apply: zero writes (dedup set now contains the landed rows).
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Zero(t, st.BgmWritten+st.KanaWritten, "idempotent re-run")

@@ -7,9 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestParseFieldsGuard pins the dirty-value guard: only a real Fields ARRAY is
-// readable. The scalar case is not hypothetical — src_bangumi carries such rows
-// (the step-81 charattrs finding).
 func TestParseFieldsGuard(t *testing.T) {
 	for name, raw := range map[string]string{
 		"empty":          ``,
@@ -33,8 +30,6 @@ func TestParseFieldsGuard(t *testing.T) {
 	assert.Equal(t, "鲁路修·兰佩路基", fields[0].Value)
 }
 
-// TestIsChineseName pins the sorting heuristic: Han required, kana vetoed, and
-// the Katakana-block punctuation that is script Common must NOT read as kana.
 func TestIsChineseName(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -59,9 +54,6 @@ func TestIsChineseName(t *testing.T) {
 	}
 }
 
-// TestProjectNames drives the real Lelouch infobox (bangumi character 1): the
-// main name leads, the Chinese-declaring alias item follows, and every
-// non-Chinese sibling — English, Japanese, and the UNTAGGED items — is refused.
 func TestProjectNames(t *testing.T) {
 	const lelouch = `{"Type":"Crt","Fields":[
 		{"Key":"简体中文名","Value":"鲁路修·兰佩路基","Items":null},
@@ -85,10 +77,6 @@ func TestProjectNames(t *testing.T) {
 	assert.Zero(t, rejected, "the refused items are refused by KEY, not by the Chinese test")
 }
 
-// TestProjectNamesSorting covers the remaining decisions in one infobox: the
-// Chinese test rejecting a declared-Chinese value, a Japanese-kanji 日文名 that
-// the key filter must stop (the heuristic alone could not), whitespace
-// trimming, and de-duplication inside one character.
 func TestProjectNamesSorting(t *testing.T) {
 	const raw = `{"Fields":[
 		{"Key":"简体中文名","Value":"  夏娜  ","Items":null},
@@ -109,8 +97,6 @@ func TestProjectNamesSorting(t *testing.T) {
 	assert.NotContains(t, names, "渡辺汐里", "a Japanese-kanji 日文名 is stopped by the key filter")
 }
 
-// TestProjectNamesNoSupply pins the empty case: an infobox with only
-// non-Chinese name fields yields nothing at all.
 func TestProjectNamesNoSupply(t *testing.T) {
 	fields, ok := parseFields([]byte(`{"Fields":[
 		{"Key":"别名","Value":"","Items":[{"Key":"日文名","Value":"ルルーシュ"},{"Key":"罗马字","Value":"Lelouch"}]},

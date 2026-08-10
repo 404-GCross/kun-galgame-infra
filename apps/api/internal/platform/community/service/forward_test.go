@@ -13,8 +13,6 @@ import (
 	"api/pkg/trustclient"
 )
 
-// fakeForwarder records forward/resolve calls and signals each on a channel so
-// the async ForwardingSink goroutine can be awaited deterministically.
 type fakeForwarder struct {
 	mu          sync.Mutex
 	forwards    []trustclient.ForwardRequest
@@ -67,7 +65,6 @@ func (f *fakeForwarder) forwardCount() int {
 	return len(f.forwards)
 }
 
-// waitCall blocks until the fake records a call, or fails the test after 2s.
 func waitCall(t *testing.T, f *fakeForwarder) {
 	t.Helper()
 	select {
@@ -77,12 +74,8 @@ func waitCall(t *testing.T, f *fakeForwarder) {
 	}
 }
 
-// heldReply creates a fresh-author (held) first post and returns its review item.
 func heldReply(t *testing.T, ps *PostService, threadID, author int64, body string) (*model.CommunityPost, *model.CommunityReviewItem) {
 	t.Helper()
-	// Wave 07 retired the blanket newcomer hold, so producing a held post now
-	// requires SAYING the author is on hold. These tests are about what happens to
-	// a held post, not about who gets held.
 	seedTrust(t, author, model.TrustLevelNew, 2)
 	p, err := ps.Reply(context.Background(), ReplyParams{ThreadID: threadID, AuthorID: author, BodyRaw: body})
 	if err != nil {
@@ -94,8 +87,6 @@ func heldReply(t *testing.T, ps *PostService, threadID, author int64, body strin
 	return p, pendingReviewForPost(t, p.ID)
 }
 
-// D⑧: the outbox sweep forwards un-forwarded items and back-fills trust ids; a
-// failing forward bumps forward_attempts without back-filling; disabled = no-op.
 func TestForwardSweep(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()
@@ -105,12 +96,10 @@ func TestForwardSweep(t *testing.T) {
 	_, it1 := heldReply(t, ps, th.ID, 700, "hello one")
 	p2, it2 := heldReply(t, ps, th.ID, 701, "hello two")
 
-	// Disabled forwarder → sweep is a no-op.
 	if n, err := NewForwardService(testDB, nil).Sweep(ctx); err != nil || n != 0 {
 		t.Fatalf("disabled sweep: n=%d err=%v", n, err)
 	}
 
-	// A failing forwarder bumps forward_attempts, leaves trust id NULL.
 	failing := newFakeForwarder()
 	failing.failForward = true
 	fsvc := NewForwardService(testDB, failing)
@@ -125,7 +114,6 @@ func TestForwardSweep(t *testing.T) {
 		t.Fatalf("forward_attempts = %d, want 1 after one failed sweep", got.ForwardAttempts)
 	}
 
-	// A succeeding forwarder back-fills both rows and reports the count.
 	fake := newFakeForwarder()
 	svc := NewForwardService(testDB, fake)
 	n, err := svc.Sweep(ctx)
@@ -137,7 +125,6 @@ func TestForwardSweep(t *testing.T) {
 			t.Fatalf("item %d not back-filled after sweep", id)
 		}
 	}
-	// The context note carries the source label + post id + author + excerpt.
 	found := false
 	for _, req := range fake.forwards {
 		if req.SubjectKind != forwardSubjectKind {
@@ -155,9 +142,6 @@ func TestForwardSweep(t *testing.T) {
 	}
 }
 
-// D⑦: a threshold-crossing flag forwards the freshly-enqueued item AFTER the
-// creating transaction commits — proven because the immediate forward (via the
-// sink goroutine) can only load the row once it is committed.
 func TestForwardImmediateAfterCommit(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()
@@ -188,8 +172,6 @@ func TestForwardImmediateAfterCommit(t *testing.T) {
 	}
 }
 
-// D⑨: a local approve/reject on a forwarded item best-effort resolves the trust
-// item with the matching outcome; an un-forwarded item resolves to nothing.
 func TestForwardResolveOnDecide(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()
@@ -202,7 +184,6 @@ func TestForwardResolveOnDecide(t *testing.T) {
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
 	post, item := heldReply(t, ps, th.ID, 700, "held post")
-	// Mark it forwarded so the decision resolves the trust item.
 	if err := testDB.Model(&model.CommunityReviewItem{}).Where("id = ?", item.ID).
 		Update("trust_review_item_id", int64(555)).Error; err != nil {
 		t.Fatalf("mark forwarded: %v", err)
@@ -221,7 +202,6 @@ func TestForwardResolveOnDecide(t *testing.T) {
 		t.Fatal("approve should still restore the post locally")
 	}
 
-	// An un-forwarded item → resolveItem is a no-op (no trust call).
 	_, item2 := heldReply(t, ps, th.ID, 701, "another held")
 	if err := fwd.resolveItem(ctx, item2.ID, outcomeRejected, 1); err != nil {
 		t.Fatalf("resolve un-forwarded: %v", err)
@@ -234,7 +214,6 @@ func TestForwardResolveOnDecide(t *testing.T) {
 	}
 }
 
-// reloadItem re-reads a community review item for assertions.
 func reloadItem(t *testing.T, id int64) *model.CommunityReviewItem {
 	t.Helper()
 	var it model.CommunityReviewItem

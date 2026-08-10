@@ -1,26 +1,12 @@
-// Package model holds the kun_ai schema: the per-call usage ledger (ai_usage)
-// and the per-route daily budget fuse (ai_route_budget). The AI gateway never
-// stores UGC (doc 20 invariant 5) — only the accounting and the fuse config.
 package model
 
-// Semantic route names. v0 ships ONLY moderate-text; the dispatch registry
-// (internal/platform/ai/route) admits a new route as one table row, so the
-// route name lives here as the shared constant.
 const RouteModerateText = "moderate-text"
 
-// AIUsage.Status values — the terminal state of one gateway call, metered per
-// call (doc 20 §5). moderate-text is fail-open, so 1/2/4 all still returned an
-// allow (flagged:false) to the caller; the status is the audit trail of WHY.
 const (
-	StatusOK            int16 = 0 // upstream scored the text normally
-	StatusUpstreamError int16 = 1 // upstream 5xx / timeout / unparseable → fail-open allow
-	StatusBudgetDenied  int16 = 2 // over the route×site daily cap → fail-open allow (v0 record-don't-block)
-	StatusRateLimited   int16 = 3 // reserved: v0 has no rate limiter (budget fuse is the only soft gate)
-	StatusDegraded      int16 = 4 // upstream env empty → degraded, no call dialled → fail-open allow
-	// StatusTruncated is a reply the token ceiling cut off mid-JSON. It used to
-	// meter as StatusUpstreamError, which is why a 16-day, 50%-loss config fault
-	// read as ordinary upstream flakiness: 186 truncations and 70 genuine
-	// failures wore the same label. Truncation is OUR fault and is fixed by
-	// raising moderateMaxTokens; upstream_error is theirs. Never merge them again.
-	StatusTruncated int16 = 5 // reply hit max_tokens mid-JSON → fail-open allow
+	StatusOK            int16 = 0
+	StatusUpstreamError int16 = 1
+	StatusBudgetDenied  int16 = 2
+	StatusRateLimited   int16 = 3
+	StatusDegraded      int16 = 4
+	StatusTruncated     int16 = 5
 )

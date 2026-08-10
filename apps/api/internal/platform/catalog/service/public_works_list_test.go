@@ -1,6 +1,3 @@
-// public_works_list_test.go — doc 106 W2 query coverage: the works browse
-// lane (filters + keyset), the changes feed (order + cursor resume), and the
-// canonical tag detail (works attach). Integration against kun_catalog_test.
 package service
 
 import (
@@ -10,9 +7,6 @@ import (
 	"api/internal/platform/catalog/repository"
 )
 
-// cleanTagTables truncates the tag facet + canonical vocabulary tables that
-// cleanTables (service_test.go) does not cover — the W2 tag/tag-map/work-tag
-// rows this suite creates.
 func cleanTagTables(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{"catalog_work_tag", "catalog_tag_source_map", "catalog_tag", "catalog_work_platform", "catalog_series_member", "catalog_series"} {
@@ -27,15 +21,12 @@ func TestWorksListFiltersAndKeyset(t *testing.T) {
 	cleanTagTables(t)
 	svc := newPublicSvc()
 
-	// Three galgame works: one bodyless all-ages, one claimed sensitive, one
-	// r18. Plus one ASMR work (medium 5) that must never appear.
 	wA := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "Alpha")
 	wB := createWorkX(t, 1, model.ContentRatingSensitive, model.WorkStatusLive, "Bravo")
 	claimWork(t, wB.ID, "galgame_wiki", 42)
 	_ = createWorkX(t, 1, model.ContentRatingR18, model.WorkStatusLive, "Roughage")
 	_ = createWorkX(t, 5, model.ContentRatingAllAges, model.WorkStatusLive, "ASMRthing")
 
-	// Default (sfw): the two non-r18 galgame works, id ASC.
 	page, err := svc.WorksList(t.Context(), WorksListFilter{Sort: "id"}, "", 50)
 	if err != nil {
 		t.Fatalf("WorksList sfw: %v", err)
@@ -50,7 +41,6 @@ func TestWorksListFiltersAndKeyset(t *testing.T) {
 		t.Fatalf("claimed brief missing claimed_by pointer")
 	}
 
-	// nsfw=1: r18 work now visible.
 	page, err = svc.WorksList(t.Context(), WorksListFilter{Sort: "id", NSFW: true}, "", 50)
 	if err != nil {
 		t.Fatalf("WorksList nsfw: %v", err)
@@ -59,7 +49,6 @@ func TestWorksListFiltersAndKeyset(t *testing.T) {
 		t.Fatalf("nsfw page = %d items, want 3", len(page.Items))
 	}
 
-	// claimed=true → only wB.
 	cl := true
 	page, err = svc.WorksList(t.Context(), WorksListFilter{Sort: "id", Claimed: &cl, NSFW: true}, "", 50)
 	if err != nil {
@@ -69,7 +58,6 @@ func TestWorksListFiltersAndKeyset(t *testing.T) {
 		t.Fatalf("claimed=true = %+v, want only %d", page.Items, wB.ID)
 	}
 
-	// claimed=false → wA, wR (bodyless).
 	cl2 := false
 	page, err = svc.WorksList(t.Context(), WorksListFilter{Sort: "id", Claimed: &cl2, NSFW: true}, "", 50)
 	if err != nil {
@@ -79,7 +67,6 @@ func TestWorksListFiltersAndKeyset(t *testing.T) {
 		t.Fatalf("claimed=false = %d, want 2 (wA,wR)", len(page.Items))
 	}
 
-	// Keyset: limit 1 walks the sfw set in two pages then stops.
 	page, err = svc.WorksList(t.Context(), WorksListFilter{Sort: "id"}, "", 1)
 	if err != nil {
 		t.Fatalf("keyset p1: %v", err)
@@ -102,16 +89,13 @@ func TestWorksListFiltersAndKeyset(t *testing.T) {
 		t.Fatalf("keyset p3 should be empty terminal page: items=%d cursor=%v", len(page3.Items), page3.NextCursor)
 	}
 
-	// A malformed cursor is ErrBadCursor.
 	if _, err := svc.WorksList(t.Context(), WorksListFilter{Sort: "id"}, "!!!not-base64!!!", 50); err != ErrBadCursor {
 		t.Fatalf("bad cursor err = %v, want ErrBadCursor", err)
 	}
-	// A cursor minted for the id lane must not replay on the updated lane.
 	if _, err := svc.WorksList(t.Context(), WorksListFilter{Sort: "updated"}, *page.NextCursor, 50); err != ErrBadCursor {
 		t.Fatalf("cross-lane cursor err = %v, want ErrBadCursor", err)
 	}
 
-	// released_after: only wA carries a 2020 release; wB a 2010 one.
 	createRelease(t, wA.ID, 2020, 3, 1)
 	createRelease(t, wB.ID, 2010, 0, 0)
 	page, err = svc.WorksList(t.Context(), WorksListFilter{Sort: "id", ReleasedAfter: 2015 * 10000}, "", 50)
@@ -132,7 +116,6 @@ func TestChangesFeedOrderAndResume(t *testing.T) {
 
 	wA := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "First")
 	wB := createWorkX(t, 1, model.ContentRatingR18, model.WorkStatusLive, "Second")
-	// Force a deterministic updated_at ordering (wA older than wB).
 	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = ? WHERE id = ?`, "2026-01-01T00:00:00Z", wA.ID).Error; err != nil {
 		t.Fatalf("stamp wA: %v", err)
 	}
@@ -140,7 +123,6 @@ func TestChangesFeedOrderAndResume(t *testing.T) {
 		t.Fatalf("stamp wB: %v", err)
 	}
 
-	// The changes feed does NOT nsfw-gate: both ids appear (r18 wB included).
 	page, err := svc.Changes(t.Context(), "", 1)
 	if err != nil {
 		t.Fatalf("Changes p1: %v", err)
@@ -158,7 +140,6 @@ func TestChangesFeedOrderAndResume(t *testing.T) {
 	if len(page2.Items) != 1 || page2.Items[0].ID != wB.ID {
 		t.Fatalf("changes p2 = %+v, want [work %d]", page2.Items, wB.ID)
 	}
-	// A short/empty page echoes the cursor back (poll-for-new semantics).
 	page3, err := svc.Changes(t.Context(), page2.NextCursor, 1)
 	if err != nil {
 		t.Fatalf("Changes p3: %v", err)
@@ -168,17 +149,12 @@ func TestChangesFeedOrderAndResume(t *testing.T) {
 	}
 }
 
-// TestChangesFeedWatermarkLag pins the cleanup-wave safety lag: updated_at is
-// statement time, not commit time, so the feed refuses to serve rows younger
-// than 5 seconds — a row committed by a slow transaction can never land behind
-// an already-advanced consumer cursor and be skipped forever.
 func TestChangesFeedWatermarkLag(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
 
 	settled := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "Settled")
 	fresh := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "Fresh")
-	// settled is older than the lag; fresh keeps its creation-time stamp (now()).
 	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = now() - interval '1 minute' WHERE id = ?`, settled.ID).Error; err != nil {
 		t.Fatalf("stamp settled: %v", err)
 	}
@@ -192,8 +168,6 @@ func TestChangesFeedWatermarkLag(t *testing.T) {
 			page.Items, settled.ID, fresh.ID)
 	}
 
-	// Once the fresh row ages past the lag it enters the feed — held back, never
-	// dropped.
 	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = now() - interval '30 seconds' WHERE id = ?`, fresh.ID).Error; err != nil {
 		t.Fatalf("age fresh: %v", err)
 	}
@@ -205,8 +179,6 @@ func TestChangesFeedWatermarkLag(t *testing.T) {
 		t.Fatalf("changes after aging = %d items, want 2", len(page.Items))
 	}
 
-	// The lag applies to the CHANGES feed only — the works-list updated lane is
-	// a browse lane, not a sync watermark, and still shows the fresh row.
 	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = now() WHERE id = ?`, fresh.ID).Error; err != nil {
 		t.Fatalf("refresh fresh: %v", err)
 	}
@@ -224,7 +196,6 @@ func TestTagDetailWorksAttach(t *testing.T) {
 	cleanTagTables(t)
 	svc := newPublicSvc()
 
-	// Canonical tag 'fantasy' (core/content), mapped from a bangumi source tag.
 	if err := testDB.Create(&model.CatalogTag{Name: "fantasy", Tier: model.TagTierCore, Kind: model.TagKindContent}).Error; err != nil {
 		t.Fatalf("create tag: %v", err)
 	}
@@ -245,7 +216,6 @@ func TestTagDetailWorksAttach(t *testing.T) {
 		}
 	}
 
-	// Head only (no include=works).
 	rec, found, err := svc.TagDetail(t.Context(), tagID, false, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("TagDetail head: found=%v err=%v", found, err)
@@ -257,7 +227,6 @@ func TestTagDetailWorksAttach(t *testing.T) {
 		t.Fatalf("works must be nil without include")
 	}
 
-	// include=works, sfw: only wA (r18 dropped).
 	rec, _, err = svc.TagDetail(t.Context(), tagID, true, false, 50, 0)
 	if err != nil {
 		t.Fatalf("TagDetail works sfw: %v", err)
@@ -266,7 +235,6 @@ func TestTagDetailWorksAttach(t *testing.T) {
 		t.Fatalf("tag works sfw = %+v, want only %d", rec.Works, wA.ID)
 	}
 
-	// include=works, nsfw: both.
 	rec, _, err = svc.TagDetail(t.Context(), tagID, true, true, 50, 0)
 	if err != nil {
 		t.Fatalf("TagDetail works nsfw: %v", err)
@@ -275,18 +243,11 @@ func TestTagDetailWorksAttach(t *testing.T) {
 		t.Fatalf("tag works nsfw = %d, want 2", len(rec.Works))
 	}
 
-	// Unknown id → not found.
 	if _, found, _ := svc.TagDetail(t.Context(), 999999, false, false, 50, 0); found {
 		t.Fatalf("unknown tag id should be found=false")
 	}
 }
 
-// TestChangesFeedSeesFacetOnlyWrites is the wave-117 end-to-end: a facet write
-// lands in a SIDE table (here catalog_work_tag), so nothing about catalog_work
-// changes on its own and the feed — which walks catalog_work on an
-// (updated_at, id) keyset — would never tell a downstream mirror to re-pull.
-// repository.TouchWorks is what closes that gap; this pins the whole chain from
-// facet row to resumed cursor.
 func TestChangesFeedSeesFacetOnlyWrites(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -294,12 +255,10 @@ func TestChangesFeedSeesFacetOnlyWrites(t *testing.T) {
 
 	host := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "FacetHost")
 	bystander := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "Bystander")
-	// Both settled well behind the feed's freshness lag.
 	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = now() - interval '1 hour'`).Error; err != nil {
 		t.Fatalf("settle works: %v", err)
 	}
 
-	// Drain the feed: the consumer is now caught up on both works.
 	page, err := svc.Changes(t.Context(), "", 50)
 	if err != nil {
 		t.Fatalf("Changes drain: %v", err)
@@ -312,7 +271,6 @@ func TestChangesFeedSeesFacetOnlyWrites(t *testing.T) {
 		t.Fatalf("caught-up poll = %+v err=%v, want empty", follow, err)
 	}
 
-	// A pure facet write: one tag row on host, nothing on catalog_work.
 	if err := testDB.Create(&model.CatalogWorkTag{WorkID: host.ID, Name: "純愛", Count: 3, SourceID: 1}).Error; err != nil {
 		t.Fatalf("write facet row: %v", err)
 	}
@@ -320,13 +278,9 @@ func TestChangesFeedSeesFacetOnlyWrites(t *testing.T) {
 		t.Fatalf("facet row alone must not move the feed: %+v err=%v", quiet, err)
 	}
 
-	// The importer discipline: touch the host work it just wrote a facet for.
 	if err := repository.TouchWorks(t.Context(), testDB, []int64{host.ID}); err != nil {
 		t.Fatalf("TouchWorks: %v", err)
 	}
-	// TouchWorks stamps now(), which the feed's freshness lag holds back on
-	// purpose (a separate mechanism, pinned by TestChangesFeedWatermarkLag);
-	// age it just past the lag so this test is about the touch, not the lag.
 	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = updated_at - interval '10 seconds' WHERE id = ?`, host.ID).Error; err != nil {
 		t.Fatalf("age touched row: %v", err)
 	}

@@ -1,10 +1,3 @@
-// curated_lanes_test.go — the two rulings about which title/series rows a human
-// full-replace may touch (wave 155 rulings 3a/3b).
-//
-// These lived in guard_test.go beside the mirror gate and outlived it: the gate
-// was a temporary fence around facets with two writers, while these are
-// permanent boundaries between the CURATED lane and the importer lanes. Wave
-// 161 retired the gate; nothing about these changed.
 package editspec_test
 
 import (
@@ -19,8 +12,6 @@ func titlesValue(title string) []any {
 	return []any{map[string]any{"lang": "ja", "title": title, "kind": float64(0)}}
 }
 
-// directEdit files and lands a patch in one call by merging it immediately —
-// the shape every gated write takes on the real face.
 func directEdit(t *testing.T, e *editing.Engine, workID int64, patch map[string]any) error {
 	t.Helper()
 	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
@@ -33,9 +24,6 @@ func directEdit(t *testing.T, e *editing.Engine, workID int64, patch map[string]
 	return err
 }
 
-// The dlsite search-hint lane is an IMPORTER lane: a human full-replace must
-// neither carry it nor reap it (wave 155 ruling 3b). Independent of the mirror
-// gate — it stays true after N5 removes the gate.
 func TestTitlesReplaceLeavesTheSearchHintLane(t *testing.T) {
 	e := newEngine(t)
 	work := createWork(t, "検索補助")
@@ -45,7 +33,6 @@ func TestTitlesReplaceLeavesTheSearchHintLane(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The snapshot the editor bootstraps from does not show the lane at all …
 	snap, err := e.CurrentSnapshot(testCtx, editspec.TypeWork, work.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +42,6 @@ func TestTitlesReplaceLeavesTheSearchHintLane(t *testing.T) {
 			t.Fatal("search_hint must not appear in the titles value")
 		}
 	}
-	// … a caller cannot write one …
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeWork, EntityID: work.ID,
 		Patch: map[string]any{editspec.FieldWorkTitles: []any{
@@ -66,7 +52,6 @@ func TestTitlesReplaceLeavesTheSearchHintLane(t *testing.T) {
 	}); err == nil {
 		t.Fatal("kind=3 must be rejected")
 	}
-	// … and a full replace of the editorial kinds leaves it standing.
 	if err := directEdit(t, e, work.ID, map[string]any{
 		editspec.FieldWorkTitles: titlesValue("新題"),
 	}); err != nil {
@@ -83,8 +68,6 @@ func TestTitlesReplaceLeavesTheSearchHintLane(t *testing.T) {
 	}
 }
 
-// Renaming a series an importer reconciles is refused (wave 155 ruling 3a):
-// jobs/workseries rewrites — and deletes — dlsite-sourced series rows.
 func TestSeriesNameIsCuratedOnly(t *testing.T) {
 	e := newTaxonomyEngine(t)
 	dlsiteSource := int16(4)

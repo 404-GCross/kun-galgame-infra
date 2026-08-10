@@ -1,17 +1,3 @@
-// backfill-character-instances projects the VNDB cross-universe variant links
-// (src_vndb.chars.main — "this char is an INSTANCE of that one, and the link
-// itself may be a spoiler (main_spoil)") onto catalog_character.instance_of
-// (doc 17 R6; refs/proj/106). The column was born with the C2 wave but never
-// filled; the S2S read face (characters.instance_of) and the dedup guard
-// (catalog-dedup-batch vndb-instance detox) both consume it.
-//
-// Idempotent change-detected UPDATE: instance_of is (re)pointed at the CURRENT
-// exact-anchor holder of the main char id, so a re-run after a character merge
-// heals stale pointers (execute-day checklist item). A vndb char with no main
-// claim never touches its catalog row.
-//
-//	go run ./cmd/backfill-character-instances --dsn "..."           # dry
-//	go run ./cmd/backfill-character-instances --dsn "..." --apply
 package main
 
 import (
@@ -22,8 +8,6 @@ import (
 	"api/internal/infrastructure/database"
 )
 
-// pairJoin is the resolved (instance, main) projection: both ends carry a live
-// EXACT vndb char anchor. Self-loops (both ids converged post-merge) drop.
 const pairJoin = `
 	FROM catalog_external_ref ri
 	JOIN catalog_source s ON s.id = ri.source_id AND s.key = 'vndb'

@@ -5,9 +5,6 @@ import { roleColor } from '~/constants/roles'
 const auth = useAuth()
 const user = auth.user
 
-// KunAvatar takes a plain `avatar` URL (it does not resolve hashes itself), so
-// resolve the image_service hash → legacy fallback here, matching the admin
-// users Table. Without this an image_service-uploaded avatar never renders.
 const cdnBase = useRuntimeConfig().public.imageCdnBase as string
 const avatarSrc = computed(() =>
   resolveAvatarUrl(user.value ?? null, { cdnBase, variant: '256' }, '')

@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// OAuth redirect landing. Validates state (CSRF), posts { code, code_verifier }
-// to the server exchange route (which lands the session cookies), seeds the
-// access_token ref + user store, then continues to the stored redirect (or the
-// console). On any failure it shows a retry that reopens the login modal.
 import { isSafeInternalPath } from '~/utils/safe-path'
 
 definePageMeta({ layout: false })
@@ -49,8 +45,6 @@ onMounted(async () => {
       error.value = res.message || '登录失败，请重试'
       return
     }
-    // Seed the client cookie ref (the server Set-Cookie won't update it), then
-    // hydrate the user before leaving this page.
     auth.setAccessToken(res.data.access_token)
     await auth.fetchUser()
   } catch {

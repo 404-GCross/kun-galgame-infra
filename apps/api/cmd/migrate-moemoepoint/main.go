@@ -1,31 +1,3 @@
-// cmd/migrate-moemoepoint backfills a one-time "inheritance" ledger row for
-// users whose moemoepoint balance was seeded by the cross-site identity merge
-// (cmd/migrate-users summed kungal + moyu into users.moemoepoint) but who have
-// no audit row explaining that balance.
-//
-// For each such user it writes ONE moemoepoint_log row:
-//
-//	reason          = "migration"
-//	note            = "从 鲲 Galgame 论坛 和 鲲 Galgame 补丁 继承"
-//	delta           = users.moemoepoint − SUM(existing log deltas)
-//	idempotency_key = "oauth:migration:v1:<userId>"
-//	source_app      = "oauth", actor_user_id = 0
-//
-// `delta` is the *unexplained remainder*: the current balance minus whatever
-// existing log rows already account for. For the common case (balance seeded,
-// no log rows yet) that is the full balance; for a user who already earned
-// points post-merge it is only the portion no log explains — so the ledger
-// sums back to the balance EXACTLY after this backfill.
-//
-// It does NOT change users.moemoepoint (already correct) and is idempotent +
-// re-runnable: the stable idempotency_key + ON CONFLICT DO NOTHING make a
-// second run a no-op, and users whose balance is already fully explained
-// (remainder == 0) are skipped.
-//
-// Usage:
-//
-//	go run ./cmd/migrate-moemoepoint            # backfill
-//	go run ./cmd/migrate-moemoepoint -dry-run   # report only, no writes
 package main
 
 import (
@@ -45,11 +17,6 @@ const (
 	migrationSource = "oauth"
 )
 
-// candidateSQL is the FROM/JOIN/WHERE shared by the dry-run preview and the
-// real insert, so the dry-run count is exactly what the insert will write.
-// The LEFT JOIN sums existing log deltas; `inherited` is balance minus that.
-// NOT EXISTS skips users already carrying a migration row (re-run safety, in
-// addition to the unique idempotency_key).
 const candidateSQL = `
 	FROM users u
 	LEFT JOIN (
@@ -82,7 +49,6 @@ func main() {
 	defer db.Close()
 	gdb := db.DB()
 
-	// Preview (also the dry-run output).
 	var preview struct {
 		Users      int64
 		TotalDelta int64
@@ -103,8 +69,6 @@ func main() {
 		return
 	}
 
-	// Set-based, idempotent insert. ON CONFLICT on the unique idempotency_key
-	// makes re-runs a no-op even if a concurrent run raced us.
 	res := gdb.Exec(`
 		INSERT INTO moemoepoint_log
 			(user_id, delta, reason, source_app, ref, actor_user_id, idempotency_key, note, created_at)

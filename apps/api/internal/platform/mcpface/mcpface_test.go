@@ -11,14 +11,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// expectedTools is the frozen tool surface (design §4; the M1 five that survive
-// + catalog_name_get + the canonical-W1 trio + the eight A2 read ops + the
-// wave-189 trio + the wave-196 pair). If this list changes, the design doc and
-// portal docs page must change with it.
-//
-// galgame_search / galgame_get left the surface at wave 146 (2026-07-30) with
-// the /v1/galgame face they proxied; this list doubles as the assertion that
-// they are really unregistered, since TestToolRegistry pins it exactly.
 var expectedTools = []string{
 	"catalog_calendar",
 	"catalog_calendar_pending",
@@ -44,8 +36,6 @@ var expectedTools = []string{
 	"catalog_works_search",
 }
 
-// TestToolRegistry drives the built server through an in-memory MCP client and
-// asserts the full tool surface is present with a non-empty input schema each.
 func TestToolRegistry(t *testing.T) {
 	ctx := context.Background()
 	server := NewServer(NewUpstream("http://127.0.0.1:0"))
@@ -90,8 +80,6 @@ func TestToolRegistry(t *testing.T) {
 	}
 }
 
-// TestBearerTokenFormCheck covers the three states the design calls out: missing
-// key, malformed prefix, and a well-formed key passed through untouched.
 func TestBearerTokenFormCheck(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -116,8 +104,6 @@ func TestBearerTokenFormCheck(t *testing.T) {
 	}
 }
 
-// TestUpstreamGetPassthrough asserts the client forwards the path, query and
-// Authorization header verbatim and returns the upstream status + body.
 func TestUpstreamGetPassthrough(t *testing.T) {
 	var gotPath, gotQuery, gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +139,6 @@ func TestUpstreamGetPassthrough(t *testing.T) {
 	}
 }
 
-// TestMapUpstream covers the 200 passthrough plus the 404/429 error mappings.
 func TestMapUpstream(t *testing.T) {
 	if r := mapUpstream(200, []byte(`{"x":1}`)); r.IsError {
 		t.Error("200 must not be an error result")
@@ -170,14 +155,11 @@ func TestMapUpstream(t *testing.T) {
 			t.Errorf("status %d result should carry the upstream body, got %q", status, txt)
 		}
 	}
-	// The rate-limit hint must mention the portal so the caller can act.
 	if txt := textOf(t, mapUpstream(429, nil)); !contains(txt, devPortalURL) {
 		t.Errorf("429 hint missing portal pointer: %q", txt)
 	}
 }
 
-// TestUpstreamGetTimeout asserts a slow upstream surfaces as a transport error
-// (mapped to a tool error by the handler) rather than hanging.
 func TestUpstreamGetTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(300 * time.Millisecond)
@@ -193,9 +175,6 @@ func TestUpstreamGetTimeout(t *testing.T) {
 	}
 }
 
-// TestHandlerEndToEnd exercises a full tool handler: the auth form check, the
-// pass-through GET (query params serialized), and the success mapping — plus the
-// missing-key rejection path.
 func TestHandlerEndToEnd(t *testing.T) {
 	var gotPath, gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +186,6 @@ func TestHandlerEndToEnd(t *testing.T) {
 	tl := &tools{up: NewUpstream(srv.URL)}
 	ctx := context.Background()
 
-	// Happy path: a well-formed key + query params.
 	req := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{
 		Header: http.Header{"Authorization": {"Bearer nm_test_smoke"}},
 	}}
@@ -225,8 +203,6 @@ func TestHandlerEndToEnd(t *testing.T) {
 		t.Errorf("query = %q (want type=works, q=fate and limit=10)", gotQuery)
 	}
 
-	// Missing-key path: no Authorization → the form check rejects before any
-	// upstream call, returning a tool error pointing at the portal.
 	noKey := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: http.Header{}}}
 	res2, _, err := tl.catalogWorkGet(ctx, noKey, catalogWorkGetInput{ID: 1})
 	if err != nil {
@@ -240,7 +216,6 @@ func TestHandlerEndToEnd(t *testing.T) {
 	}
 }
 
-// textOf extracts the first TextContent from a tool result.
 func textOf(t *testing.T, r *mcp.CallToolResult) string {
 	t.Helper()
 	if len(r.Content) == 0 {

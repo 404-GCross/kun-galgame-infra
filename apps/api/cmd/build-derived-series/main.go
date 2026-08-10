@@ -1,31 +1,3 @@
-// build-derived-series materializes series the catalog already implied but
-// never stored: connected components over the series-ish work relation edges
-// ({sequel_of, side_story_of, fandisc_of, same_series}), written under source
-// `derived` (18) with external_id "comp:<smallest member work id>". Logic lives
-// in internal/jobs/derivedseries.
-//
-// It is a REAPER, not a seeder — run it as often as the relation import grows
-// the graph. Members are inserted-absent and deleted-stale, a series that falls
-// below 2 members is deleted whole, display_name is recomputed every pass (the
-// builder is this lane's only writer), and a run over an unchanged graph writes
-// nothing and touches nothing.
-//
-// It never touches the dlsite or curated lanes: a component that overlaps an
-// existing series there is refused and written to the worklist instead, along
-// with any component still 30+ works after the strong-edge split. Those two
-// files are the human's half of the wave.
-//
-// Dry-run is the DEFAULT (repo convention); pass --apply to write. --dsn is
-// REQUIRED and never defaulted.
-//
-//	# dry-run: bucket counts + the worklist, nothing written
-//	go run ./cmd/build-derived-series --worklist /tmp/derived-worklist.jsonl \
-//	    --dsn "host=localhost port=5432 user=postgres dbname=kun_catalog sslmode=disable"
-//
-//	# the real build, with receipts
-//	go run ./cmd/build-derived-series --apply \
-//	    --receipts /tmp/derived-series.jsonl --worklist /tmp/derived-worklist.jsonl \
-//	    --dsn "host=localhost port=5432 user=postgres dbname=kun_catalog sslmode=disable"
 package main
 
 import (
@@ -48,9 +20,8 @@ func main() {
 	worklist := flag.String("worklist", "", "path to a jsonl log of the components this run refused to build")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
-	// config drives logging only; the catalog DB is reached exclusively via --dsn.
 	if cfg, err := config.Load(); err == nil {
 		logger.Init(cfg.Server.Env)
 	}

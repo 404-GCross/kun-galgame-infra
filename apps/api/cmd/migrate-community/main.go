@@ -27,10 +27,6 @@ func main() {
 	}
 	defer db.Close()
 
-	// Schema (tables + idempotent raw SQL) lives in the migrate package so the
-	// integration test provisions its database with the exact production
-	// schema. This step has no seeds — the default board is planted per-site at
-	// letmoe cut-over.
 	slog.Info("running community migrations...")
 	if err := migrate.Run(db.DB()); err != nil {
 		slog.Error("migration failed", "error", err)

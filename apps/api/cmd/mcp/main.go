@@ -1,17 +1,3 @@
-// Command mcp is the NextMoe MCP (Model Context Protocol) server — a thin,
-// stateless protocol adapter that re-exposes the already-public /v1 read faces
-// as MCP tools for AI agents. It holds NO state of its own: every tool call is a
-// pass-through GET to the public /v1 face (KUN_MCP_UPSTREAM_BASE), forwarding the
-// caller's API key verbatim, so all authz / rate-limit / quota / usage metering
-// happens upstream on the same key. No database, no cache (design:
-// docs/developer-platform/09-mcp-server.md).
-//
-// Routes:
-//
-//	POST/GET /mcp       — the Streamable HTTP MCP endpoint (stateless)
-//	GET      /healthz   — liveness, no auth
-//
-// The `healthcheck` subcommand (container HEALTHCHECK) probes /healthz and exits.
 package main
 
 import (
@@ -39,8 +25,6 @@ const (
 func main() {
 	port := envInt("KUN_MCP_PORT", defaultPort)
 
-	// Container HEALTHCHECK path: probe the already-running server and exit. Must
-	// run before anything else (it needs no config beyond the port).
 	health.MaybeProbe(port, healthPath)
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
@@ -58,9 +42,6 @@ func main() {
 	up := mcpface.NewUpstream(upstreamBase)
 	server := mcpface.NewServer(up)
 
-	// Stateless Streamable HTTP: no session stickiness, so the process scales
-	// horizontally like every other Fiber service (design §2). JSONResponse keeps
-	// single-shot tool calls as plain application/json (spec §2.1.5).
 	handler := mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },
 		&mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true},
@@ -89,7 +70,6 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown on SIGINT/SIGTERM.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
@@ -102,7 +82,6 @@ func main() {
 	}
 }
 
-// envInt reads an integer env var, falling back to def when unset or unparseable.
 func envInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {

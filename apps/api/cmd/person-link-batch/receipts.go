@@ -17,28 +17,21 @@ import (
 )
 
 type receiptStats struct {
-	Linked      int // link → created or attached
+	Linked      int
 	NeedsManual int
 	Rejected    int
-	Skipped     int // blank / skip decision
-	Already     int // candidate already decided
+	Skipped     int
+	Already     int
 	NotFound    int
 	Errors      int
-	Unknown     int // unrecognized decision token
+	Unknown     int
 }
 
-// receiptRow is one filled worklist line.
 type receiptRow struct {
 	AID, BID int64
-	Decision string // link | reject | skip | ""
+	Decision string
 }
 
-// runReceipts applies a filled T2 worklist. The verdicts reuse the SAME service
-// path the admin bucket does — DecideCandidate(accept) for link (step-22
-// three-state), DecideCandidate(reject) for reject (status flip; the PK keeps
-// it from resurfacing, step 21) — so a receipt is exactly equivalent to admin
-// clicks. Works on ANY pending credit_name candidate, not just alias_declared.
-// Dry-run predicts from the candidate's current state without writing.
 func runReceipts(ctx context.Context, db *gorm.DB, w io.Writer, path string, actor int64, apply bool) (receiptStats, error) {
 	rows, err := parseReceipts(path)
 	if err != nil {
@@ -91,7 +84,7 @@ func (st *receiptStats) tallyReceipt(w io.Writer, r receiptRow, outcome *service
 	case err == nil:
 		st.Linked++
 	case stderrors.Is(err, service.ErrProposalState):
-		st.Already++ // already decided (idempotent re-run)
+		st.Already++
 	case stderrors.Is(err, service.ErrNotFound):
 		st.NotFound++
 	default:
@@ -100,7 +93,6 @@ func (st *receiptStats) tallyReceipt(w io.Writer, r receiptRow, outcome *service
 	}
 }
 
-// tallyDryReceipt predicts a verdict from the candidate's current state.
 func (st *receiptStats) tallyDryReceipt(db *gorm.DB, ctx context.Context, r receiptRow) {
 	var row struct {
 		Status  int16  `gorm:"column:status"`
@@ -132,8 +124,6 @@ func (st *receiptStats) tallyDryReceipt(db *gorm.DB, ctx context.Context, r rece
 	st.Linked++
 }
 
-// candidateExists disambiguates a zero-status pending row from a missing one
-// (status pending == 0, so the scalar scan alone is ambiguous).
 func candidateExists(db *gorm.DB, ctx context.Context, r receiptRow) bool {
 	var n int64
 	_ = db.WithContext(ctx).Raw(`SELECT count(*) FROM catalog_match_candidate
@@ -142,7 +132,6 @@ func candidateExists(db *gorm.DB, ctx context.Context, r receiptRow) bool {
 	return n > 0
 }
 
-// parseReceipts reads a filled worklist TSV keyed by header name.
 func parseReceipts(path string) ([]receiptRow, error) {
 	f, err := os.Open(path)
 	if err != nil {

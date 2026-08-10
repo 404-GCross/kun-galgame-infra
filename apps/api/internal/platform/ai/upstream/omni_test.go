@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// TestOmniConfigured — the Tier1 gate: configured only when BOTH base URL and
-// token are set. Empty either → Tier1 off (the cascade runs the LLM path).
 func TestOmniConfigured(t *testing.T) {
 	cases := []struct {
 		base, token string
@@ -28,9 +26,6 @@ func TestOmniConfigured(t *testing.T) {
 	}
 }
 
-// TestOmniModerateNormal — a stubbed /v1/moderations server: the client POSTs
-// {base}/v1/moderations with a bearer token and {model,input}, and parses
-// results[0]'s flagged/categories/category_scores + the response model channel.
 func TestOmniModerateNormal(t *testing.T) {
 	var gotAuth, gotPath string
 	var gotBody map[string]any
@@ -79,8 +74,6 @@ func TestOmniModerateNormal(t *testing.T) {
 	}
 }
 
-// TestOmniModerate5xx — an upstream 5xx surfaces as an error, which the cascade
-// meters status=upstream_error and turns into a fall-through to the LLM path.
 func TestOmniModerate5xx(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
@@ -94,8 +87,6 @@ func TestOmniModerate5xx(t *testing.T) {
 	}
 }
 
-// TestOmniModerateChannelFallback — when the response omits `model`, the
-// requested model id is recorded as the channel.
 func TestOmniModerateChannelFallback(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"results":[{"flagged":false,"categories":{},"category_scores":{}}]}`)
@@ -112,8 +103,6 @@ func TestOmniModerateChannelFallback(t *testing.T) {
 	}
 }
 
-// TestOmniModerateNoResults — a 200 with an empty results array is an error (no
-// verdict to read), which the cascade treats as an omni failure.
 func TestOmniModerateNoResults(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"model":"omni-moderation-latest","results":[]}`)

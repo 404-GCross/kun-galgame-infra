@@ -6,14 +6,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// StatsService computes the internal-browser dashboard counts (step 19). All
-// reads; every query is an index-ready aggregate.
 type StatsService struct{ db *gorm.DB }
 
 func NewStatsService(db *gorm.DB) *StatsService { return &StatsService{db: db} }
 
-// WorksCellRow / EntityCountRow / etc. are the raw aggregate rows; the handler
-// maps them to DTOs.
 type Overview struct {
 	WorksTotal   int64
 	WorksCells   []WorksCellRow
@@ -64,7 +60,6 @@ type FreshnessRow struct {
 	LatestRef string `gorm:"column:latest_ref"`
 }
 
-// Overview runs the dashboard aggregate queries.
 func (s *StatsService) Overview(ctx context.Context) (*Overview, error) {
 	db := s.db.WithContext(ctx)
 	o := &Overview{}
@@ -109,8 +104,6 @@ func (s *StatsService) Overview(ctx context.Context) (*Overview, error) {
 	if err := db.Raw(`SELECT count(*) FROM catalog_match_rejection`).Scan(&o.Rejections).Error; err != nil {
 		return nil, err
 	}
-	// src_llm may be absent on a fresh env (the LLM schema ships with the dump,
-	// not migrate-catalog) — tolerate a missing table by leaving the slice nil.
 	if s.tableExists("src_llm", "bid_identity_verdict") {
 		if err := db.Raw(`SELECT CASE WHEN verdict = '' THEN 'deterministic' ELSE verdict END AS key, count(*) AS count
 			FROM src_llm.bid_identity_verdict GROUP BY 1 ORDER BY 2 DESC`).Scan(&o.LLMBid).Error; err != nil {

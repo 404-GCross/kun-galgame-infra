@@ -1,5 +1,3 @@
-// Package middleware holds Fiber v3 middleware for the image service:
-// client authentication, quota enforcement, and logging helpers.
 package middleware
 
 import (
@@ -19,36 +17,16 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Locals keys written by ClientAuth into fiber.Ctx.
 const (
 	LocalOAuthClient = "image:oauth_client"
 	LocalSiteKey     = "image:site_key"
-	LocalUserSub     = "image:user_sub"   // uploader user uuid (JWT path only)
-	LocalAuthMethod  = "image:auth_method" // "basic" or "jwt"
+	LocalUserSub     = "image:user_sub"
+	LocalAuthMethod  = "image:auth_method"
 )
 
-// ClientHeaderID is the header the frontend includes to name the target
-// OAuth client. Used only by the JWT auth path (backend Basic Auth embeds
-// the client_id in the auth header itself).
 const ClientHeaderID = "X-Kun-Image-Client-Id"
 
-// ClientAuth returns a Fiber v3 middleware that authenticates the caller
-// via one of two supported paths:
-//
-//  1. "Basic <b64(client_id:secret)>" — backend Server-to-Server path.
-//     Mirrors OAuth Client Credentials without issuing a token.
-//
-//  2. "Bearer <user_jwt>" + "X-Kun-Image-Client-Id: <client_id>" header —
-//     frontend direct upload. The user JWT must contain `image:upload` in
-//     its scope, and the named client must belong to the same SiteID as
-//     the JWT (prevents cross-site token misuse).
-//
-// On success it writes *OAuthClient to Locals under LocalOAuthClient and
-// the site key under LocalSiteKey. The auth method used is written to
-// LocalAuthMethod so handlers can tell them apart (e.g. for logging).
 func ClientAuth(clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) fiber.Handler {
-	// Accept-both verifier (ES256/RS256 via the OP's JWKS + legacy HS256).
-	// HS256-only when KUN_OIDC_JWKS_URL is unset. Built once at startup.
 	verifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -72,9 +50,6 @@ func ClientAuth(clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) 
 		}
 
 		if err != nil {
-			// Translate known sentinel errors; fall back to generic 401/403.
-			// A key-store outage (JWKS unreachable) is a 503, not a 401 — the
-			// token may be perfectly valid.
 			if stderrors.Is(err, oidctoken.ErrKeyUnavailable) {
 				return response.Error(c, fiber.StatusServiceUnavailable, errors.ErrImageUnauthorized, "token verification temporarily unavailable")
 			}
@@ -105,7 +80,6 @@ func ClientAuth(clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) 
 	}
 }
 
-// ---- auth path implementations ----
 
 var (
 	errBadClient        = stderrors.New("bad client")
@@ -116,7 +90,6 @@ var (
 	errSiteMismatch     = stderrors.New("site mismatch")
 )
 
-// authenticateBasic handles the Basic auth backend path.
 func authenticateBasic(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHeader string) (*siteModel.OAuthClient, error) {
 	clientID, secret, err := parseBasicAuth(authHeader)
 	if err != nil {
@@ -141,13 +114,10 @@ func authenticateBasic(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHe
 	return client, nil
 }
 
-// authenticateJWT handles the Bearer JWT frontend path.
 func authenticateJWT(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHeader string, verifier *oidctoken.Verifier) (*siteModel.OAuthClient, string, error) {
 	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 	claims, err := verifier.Parse(c.Context(), tokenStr)
 	if err != nil {
-		// Wrap rather than replace: errBadClient keeps the wire code, while a
-		// wrapped oidctoken.ErrKeyUnavailable lets the caller return 503.
 		return nil, "", fmt.Errorf("%w: %w", errBadClient, err)
 	}
 
@@ -190,8 +160,6 @@ func authenticateJWT(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHead
 	return client, claims.UserUUID, nil
 }
 
-// parseBasicAuth parses an HTTP Basic auth header. Returns the decoded
-// user:password pair. Accepts "Basic <b64>" only.
 func parseBasicAuth(header string) (user, pass string, err error) {
 	if header == "" {
 		return "", "", stderrors.New("missing auth header")
@@ -211,19 +179,16 @@ func parseBasicAuth(header string) (user, pass string, err error) {
 	return u, p, nil
 }
 
-// ClientFromCtx is a convenience helper for handlers.
 func ClientFromCtx(c fiber.Ctx) *siteModel.OAuthClient {
 	v, _ := c.Locals(LocalOAuthClient).(*siteModel.OAuthClient)
 	return v
 }
 
-// SiteKeyFromCtx is a convenience helper for handlers.
 func SiteKeyFromCtx(c fiber.Ctx) string {
 	v, _ := c.Locals(LocalSiteKey).(string)
 	return v
 }
 
-// UserSubFromCtx returns the user uuid when auth was via JWT; "" otherwise.
 func UserSubFromCtx(c fiber.Ctx) string {
 	v, _ := c.Locals(LocalUserSub).(string)
 	return v

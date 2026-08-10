@@ -1,23 +1,3 @@
-// Package workaliases backfills BODYLESS works' alias titles (step 95,
-// refs/proj/95):
-//
-//   - bgm lane: bodyless works with an EXACT bgm work anchor whose subject
-//     infobox carries a 别名 field → catalog_work_title kind=alias, lang=”
-//     (zh/ja mixed, no reliable per-string language). The wiki-parser field
-//     shape: Array=true → strings in Items[].Value, else in Value.
-//   - dlsite-kana lane: bodyless galgame works with a dlsite RELEASE anchor
-//     but NO kind=search_hint row (the B1-minted tail the step-14/55 imports
-//     predate) → mirror work_name_kana as kind=search_hint, lang='ja' (the
-//     existing 156,918-row convention).
-//
-// CLAIMED works are excluded on principle: their alias surface lives on the
-// wiki face (galgame_alias, vndb-synced + step-10 bgm append) — the vndb lane
-// is closed entirely as negative knowledge (62,220/62,222 vndb anchors sit on
-// claimed works; the bodyless remainder is 2).
-//
-// Aliases are static facts — writes are ON CONFLICT DO NOTHING (no refresh
-// semantics needed); an alias whose (work_id, title) already exists under ANY
-// kind is skipped (a duplicate of the official/search-hint row is noise).
 package workaliases
 
 import (
@@ -33,34 +13,30 @@ import (
 	"gorm.io/gorm"
 )
 
-// maxAliasLen rejects degenerate strings (surveyed: 0 over 500 in the supply).
 const maxAliasLen = 500
 
-// Opts configures a run. Source selects the lane: "bgm" | "dlsite-kana" | "all".
 type Opts struct {
 	Apply     bool
-	DSN       string // catalog DB (hosts src_bangumi) — REQUIRED
-	DlsiteDSN string // dlsite mirror — REQUIRED for the dlsite-kana/all lanes
+	DSN       string
+	DlsiteDSN string
 	Source    string
 }
 
-// Stats reports a run. Planned counters are identical in dry and apply.
 type Stats struct {
-	BgmWorks      int // bodyless works whose subject carries >=1 usable alias
+	BgmWorks      int
 	BgmPlanned    int
-	BgmSkippedDup int // (work_id, title) already present under any kind
+	BgmSkippedDup int
 	BgmWritten    int
-	BgmConflict   int // lost the unique-key race (identical row already there)
+	BgmConflict   int
 
-	KanaWorks   int // candidate works lacking a kind=3 row
-	KanaNoKana  int // mirror row has no work_name_kana
+	KanaWorks   int
+	KanaNoKana  int
 	KanaPlanned int
 	KanaWritten int
 
 	Errors int
 }
 
-// Run executes the backfill.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
@@ -96,7 +72,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// infobox mirrors the wiki-parser output shape (only what this lane reads).
 type infobox struct {
 	Fields []struct {
 		Key   string `json:"Key"`
@@ -108,14 +83,13 @@ type infobox struct {
 	} `json:"Fields"`
 }
 
-// aliasesFrom extracts the trimmed, deduplicated 别名 strings of one subject.
 func aliasesFrom(raw []byte) []string {
 	if len(raw) == 0 {
 		return nil
 	}
 	var ib infobox
 	if err := json.Unmarshal(raw, &ib); err != nil {
-		return nil // malformed rows are skipped, never fatal
+		return nil
 	}
 	seen := map[string]struct{}{}
 	var out []string
@@ -145,7 +119,6 @@ func aliasesFrom(raw []byte) []string {
 	return out
 }
 
-// runBgm: bodyless works × exact bgm anchors × infobox 别名 → kind=1 rows.
 func runBgm(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	var rows []struct {
 		WorkID  int64  `gorm:"column:work_id"`
@@ -181,7 +154,6 @@ func runBgm(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 	}
 
-	// Existing (work_id, title) pairs under ANY kind — the dedup set.
 	existing := map[string]struct{}{}
 	ids := make([]int64, 0, len(workIDs))
 	for id := range workIDs {
@@ -201,9 +173,6 @@ func runBgm(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 	}
 
-	// touched collects works that actually gained a title row, so the lane can
-	// bump their catalog_work.updated_at once and put them on the public changes
-	// feed. Dups, conflicts and dry-runs contribute nothing.
 	var touched []int64
 	for _, c := range cands {
 		if _, dup := existing[titleKey(c.workID, c.alias)]; dup {
@@ -231,8 +200,6 @@ func runBgm(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	return repository.TouchWorks(ctx, db, touched)
 }
 
-// runKana: anchored bodyless galgame works lacking a kind=3 row × mirror
-// work_name_kana → kind=3 rows (the step-14/55 convention).
 func runKana(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	var rows []struct {
 		WorkID int64  `gorm:"column:work_id"`
@@ -282,7 +249,7 @@ func runKana(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 	}
 
-	var touched []int64 // works that really gained a kana title (see runBgm)
+	var touched []int64
 	for _, r := range rows {
 		k, ok := kana[r.Workno]
 		if !ok {

@@ -5,10 +5,6 @@ import {
   devTierLimitHint,
 } from '~/constants/devapi'
 
-// Enable-into-platform flow (裁定 2): pick an existing OAuth client that is not
-// yet dev_enabled, choose a starting tier, then PATCH dev_enabled=true. The
-// candidate list is the OAuth-client management data source (`/oauth/clients`)
-// minus the already-enabled apps, supplied by the parent.
 const props = defineProps<{ candidates: OAuthClient[] }>()
 const emit = defineEmits<{ enabled: [] }>()
 
@@ -24,7 +20,6 @@ const clientOptions = computed(() =>
   props.candidates.map((c) => ({ value: c.id, label: `${c.name}（${c.id}）` }))
 )
 
-// Kept mounted (v-model), so reset the form each time it opens.
 watch(open, (v) => {
   if (!v) return
   clientId.value = ''

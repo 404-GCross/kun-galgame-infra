@@ -3,12 +3,6 @@ import { cn } from '@kungal/ui-core'
 
 import { CATALOG_IMAGE_REF_KIND_LABELS } from '~/constants/catalog'
 
-// Deleting an image is the one console action that can destroy data nobody
-// asked to lose: the image service keys bytes by hash while catalog keys
-// references by row, so bytes deleted out from under a live catalog row leave
-// a blank frame that becomes permanent 30 days later. This modal asks catalog
-// who holds the hash BEFORE the delete, and offers to let those references go
-// in the same breath.
 const props = defineProps<{
   hash: string
   force: boolean
@@ -23,8 +17,6 @@ const catalogApi = useApi('catalog')
 
 const refs = ref<CatalogImageReferenceItem[]>([])
 const refsLoading = ref(false)
-// The check itself failing is a third state: "no references" and "we could not
-// find out" must never render the same, or silence reads as safety.
 const refsFailed = ref(false)
 const detachRefs = ref(true)
 const deleting = ref(false)
@@ -53,8 +45,6 @@ const loadReferences = async (hash: string) => {
   }
 }
 
-// The parent reuses one modal instance for every row, so the reference check
-// keys off the hash rather than the mount.
 watch(
   () => [open.value, props.hash] as const,
   ([isOpen, hash]) => {
@@ -67,9 +57,6 @@ const confirmDelete = async () => {
   deleting.value = true
   try {
     if (detachRefs.value && refs.value.length > 0) {
-      // Detach first: an image deleted while catalog still names it is the
-      // exact failure this modal exists to prevent, so a failed detach stops
-      // the whole action rather than proceeding half-done.
       const detached = await catalogApi.post<CatalogDetachImageReferencesData>(
         '/admin/catalog/image-references/detach',
         { hash: props.hash }

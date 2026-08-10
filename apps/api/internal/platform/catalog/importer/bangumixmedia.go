@@ -10,31 +10,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Bangumi cross-media registration wave (step 31, doc 17 C-03). Step 30 imported
-// the game↔game relation graph and deliberately skipped the cross-media
-// adaptation edge (relation_type 1, 改编) because its target medium was not yet
-// registered. This wave registers the anime/manga/novel subjects REACHABLE from
-// an exact-anchored galgame via the 改编 relation, then lays the adaptation edge.
-//
-// Evidence gate (step-28 discipline — only a corroborated subset, no blind
-// wave): the subject on the other end of a 改编 relation from an anchored galgame.
-// Bangumi stores 改编 bidirectionally with the same id on both sides (verified:
-// 775/781 rows carry a mirror), so the row direction does NOT encode which work
-// is the original — we take the canonical galgame→cross-media direction (the
-// registered anime/manga/novel is the adaptation OF the galgame), matching the
-// step's CLANNAD/Fate anchoring. (A minority of galgames are themselves based on
-// a novel; the symmetric 改编 gives no signal to reverse those, so they default
-// to the common direction — a documented limitation.)
-//
-// Registration is identity-level only: work + titles + a bid self-anchor + an
-// adaptation edge. NO credits/characters/persons — those belong to each
-// medium's own product wave (same "归属后置" rationale as step 14).
-
-// xmediaMedium routes a Bangumi (subject_type, platform) to a catalog medium.
-// type 2 (anime) → anime; type 1 (book) by platform: 1001 漫画 → manga, 1002
-// 小说 → novel. Every other book platform (1003 画集 / 1004 绘本 / 1005 写真 /
-// 1006 公式书 / 0 其他) is a non-adaptation merchandise book — skipped, not
-// force-fit into manga/novel.
 func xmediaMedium(stype, platform int) (int16, bool) {
 	switch stype {
 	case 2:
@@ -56,21 +31,19 @@ const (
 	mediumAnime int16 = 4
 )
 
-// XmediaStats is the wave tally.
 type XmediaStats struct {
 	RegisteredAnime int
 	RegisteredManga int
 	RegisteredNovel int
-	Edges           int // NEW adaptation edges written
-	EdgesWritten    int // actual inserts (== Edges on --run; 0 on dry)
-	AlreadyEdge     int // adaptation edge already present (idempotent)
-	AlreadyWork     int // the cross-media subject already carries a bangumi anchor
-	SkippedPlatform int // a book whose platform is not manga/novel
-	SkippedNoTitle  int // subject has no name at all (cannot register)
+	Edges           int
+	EdgesWritten    int
+	AlreadyEdge     int
+	AlreadyWork     int
+	SkippedPlatform int
+	SkippedNoTitle  int
 	Errors          int
 }
 
-// xmediaSubject is a cross-media subject to register.
 type xmediaSubject struct {
 	sid      int64
 	stype    int
@@ -80,9 +53,6 @@ type xmediaSubject struct {
 	medium   int16
 }
 
-// RunBangumiXmedia registers the anime/manga/novel subjects reachable from an
-// anchored galgame via the 改编 relation and lays the adaptation edges.
-// Idempotent (bid self-anchor + ON CONFLICT edges); dry by default.
 func (im *Importer) RunBangumiXmedia() (XmediaStats, error) {
 	var st XmediaStats
 
@@ -91,7 +61,6 @@ func (im *Importer) RunBangumiXmedia() (XmediaStats, error) {
 		return st, err
 	}
 
-	// The 改编 rows touching an anchored galgame → (galgame work, cross-media sid).
 	var rows []struct {
 		Subject int64 `gorm:"column:subject_id"`
 		Related int64 `gorm:"column:related_subject_id"`
@@ -100,7 +69,7 @@ func (im *Importer) RunBangumiXmedia() (XmediaStats, error) {
 		FROM src_bangumi.subject_relation WHERE relation_type = 1`).Scan(&rows).Error; err != nil {
 		return st, err
 	}
-	pairs := make(map[[2]int64]struct{}) // (galgameWork, xSid)
+	pairs := make(map[[2]int64]struct{})
 	xSids := make(map[int64]struct{})
 	consider := func(gW, xSid int64) {
 		pairs[[2]int64{gW, xSid}] = struct{}{}
@@ -115,14 +84,12 @@ func (im *Importer) RunBangumiXmedia() (XmediaStats, error) {
 		}
 	}
 
-	// Load the candidate subjects; keep only the anime/book ones with a medium.
 	subs, err := im.loadXmediaSubjects(xSids)
 	if err != nil {
 		return st, err
 	}
 
-	// Register the fresh cross-media works; resolve every candidate to a work id.
-	xWork := make(map[int64]int64, len(subs)) // xSid → work id (registered or already)
+	xWork := make(map[int64]int64, len(subs))
 	var toRegister []xmediaSubject
 	for _, s := range subs {
 		if w, ok := allAnchor[s.sid]; ok {
@@ -148,15 +115,12 @@ func (im *Importer) RunBangumiXmedia() (XmediaStats, error) {
 			return st, err
 		}
 	} else {
-		// Dry: give each would-be work a distinct placeholder id so the edge
-		// count below is accurate (a real re-run assigns real ids).
 		for i, s := range toRegister {
 			countMedium(&st, s.medium)
 			xWork[s.sid] = int64(-(i + 1))
 		}
 	}
 
-	// Adaptation edges: the cross-media work is the adaptation OF the galgame.
 	existing, err := im.loadExistingWorkRelations()
 	if err != nil {
 		return st, err
@@ -167,7 +131,7 @@ func (im *Importer) RunBangumiXmedia() (XmediaStats, error) {
 		gW, xSid := p[0], p[1]
 		xW, ok := xWork[xSid]
 		if !ok {
-			continue // the subject was skipped (not anime/book, or platform-skipped)
+			continue
 		}
 		key := [3]int64{xW, gW, relAdaptationOf}
 		if _, in := existing[key]; in {
@@ -189,9 +153,6 @@ func (im *Importer) RunBangumiXmedia() (XmediaStats, error) {
 	}
 	st.EdgesWritten = int(res.RowsAffected)
 	st.AlreadyEdge += st.Edges - st.EdgesWritten
-	// Edges here are the planned-NEW set (stored pairs were filtered out above),
-	// and the galgame end is a pre-existing work that just gained an adaptation
-	// link. A re-run plans no edges and returns before this point.
 	if err := touchWorks(im.catalog, relationEndpoints(edges)); err != nil {
 		return st, err
 	}
@@ -209,8 +170,6 @@ func countMedium(st *XmediaStats, medium int16) {
 	}
 }
 
-// registerXmedia creates each cross-media work + its titles + a bid self-anchor
-// + an imported revision, chunked, and fills xWork with the new ids.
 func (im *Importer) registerXmedia(subs []xmediaSubject, xWork map[int64]int64, st *XmediaStats) error {
 	const chunk = 1000
 	for start := 0; start < len(subs); start += chunk {
@@ -260,9 +219,6 @@ func (im *Importer) registerXmedia(subs []xmediaSubject, xWork map[int64]int64, 
 	return nil
 }
 
-// loadBangumiAnchorsByMedium returns the exact bangumi work anchors split into
-// the galgame-only map (the gate's galgame side) and the full map (to detect a
-// cross-media subject that is already registered).
 func (im *Importer) loadBangumiAnchorsByMedium() (galgame, all map[int64]int64, err error) {
 	var rows []struct {
 		Ext    string `gorm:"column:external_id"`
@@ -290,8 +246,6 @@ func (im *Importer) loadBangumiAnchorsByMedium() (galgame, all map[int64]int64, 
 	return galgame, all, nil
 }
 
-// loadXmediaSubjects loads the type-1/2 (book/anime) subjects among the
-// candidate ids.
 func (im *Importer) loadXmediaSubjects(sids map[int64]struct{}) ([]xmediaSubject, error) {
 	if len(sids) == 0 {
 		return nil, nil

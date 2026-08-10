@@ -8,13 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// EG has no company/group distinction on creaters (they are treated as
-// credited names uniformly) — so the EG wave creates only credit_names and
-// characters, no labels. appearance_actors is the unofficial-VA culture (T0.4):
-// its names are ORPHAN credit names and get zero person link in this step; the
-// sensitivity of 裏名義 (a VA's hidden alias) is precisely why linking a name
-// to a person is deferred to the human-review step under the doc-10 §10
-// visibility policy — never done automatically here.
 func (im *Importer) runEG() (Stats, error) {
 	var st Stats
 	workMap, err := im.loadEGRosettaWorkMap()
@@ -37,8 +30,6 @@ func (im *Importer) runEG() (Stats, error) {
 		return st, err
 	}
 
-	// Load the EG staging tables whole and filter by the rosetta gate in Go
-	// (avoids a 15k-id IN clause; the tables are a few MB).
 	var staff []struct {
 		Game    int64 `gorm:"column:game"`
 		Creater int64 `gorm:"column:creater_id"`
@@ -71,7 +62,6 @@ func (im *Importer) runEG() (Stats, error) {
 		return st, err
 	}
 
-	// --- Pass A: collect new entities (gated + deduped) ---
 	newNames, seenName := []nameItem{}, map[int64]bool{}
 	addCreater := func(id int64) {
 		if seenName[id] {
@@ -107,7 +97,7 @@ func (im *Importer) runEG() (Stats, error) {
 	for _, s := range staff {
 		workID, ok := workMap[s.Game]
 		if !ok {
-			continue // outside the rosetta gate
+			continue
 		}
 		if s.Shubetu == nil {
 			st.SkippedUnmappedRole++
@@ -181,7 +171,6 @@ func (im *Importer) runEG() (Stats, error) {
 	return st, err
 }
 
-// egNameMap loads an EG id → name map from a raw jsonb-name query.
 func (im *Importer) egNameMap(query string) (map[int64]string, error) {
 	var rows []struct {
 		ID   int64  `gorm:"column:id"`

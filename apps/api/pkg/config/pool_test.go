@@ -1,15 +1,3 @@
-// pool_test.go — every database in the process must be bounded.
-//
-// On 2026-08-09 the fleet ran on database/sql's defaults: unlimited open
-// connections and two idle ones. One service took 66 of postgres' 100 slots and
-// everything else — the other services, the deploy's migrate job, psql itself —
-// spent an hour and a half being told "sorry, too many clients already".
-//
-// The bound is applied in one loop in Load(), which fixes the databases that
-// exist today and does nothing for the one somebody adds next month. So the
-// test below does not enumerate them: it walks Config by reflection and fails
-// on any DatabaseConfig that Load left unbounded, which is the only version of
-// this test that still works after the code it guards has been forgotten.
 package config
 
 import (
@@ -18,8 +6,6 @@ import (
 )
 
 func TestEveryDatabaseConfigIsBounded(t *testing.T) {
-	// Load validates the secrets it cannot invent; supply the minimum so the
-	// pool assertions below are what fails, if anything does.
 	t.Setenv("KUN_PG_PASSWORD", "test")
 	t.Setenv("JWT_SECRET", "test")
 	cfg, err := Load()
@@ -55,9 +41,6 @@ func TestEveryDatabaseConfigIsBounded(t *testing.T) {
 	}
 }
 
-// TestPoolBoundsAreOverridable: the numbers are a default, not a law. An
-// operator draining a saturated server has to be able to shrink them without a
-// rebuild.
 func TestPoolBoundsAreOverridable(t *testing.T) {
 	t.Setenv("KUN_PG_MAX_OPEN_CONNS", "3")
 	t.Setenv("KUN_PG_MAX_IDLE_CONNS", "1")

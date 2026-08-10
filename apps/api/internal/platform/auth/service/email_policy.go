@@ -6,52 +6,34 @@ import (
 	"api/pkg/errors"
 )
 
-// allowedEmailDomains is the allowlist of email providers accepted for NEW
-// emails — i.e. registration and email-change. It is deliberately NOT applied
-// to login, forgot-password, or admin edits, so existing accounts on other
-// providers keep working. Keys are lowercase and matched exactly against the
-// part after the final "@".
 var allowedEmailDomains = map[string]struct{}{
-	// Tencent
-	"qq.com":      {},
-	"foxmail.com": {},
-	// NetEase
-	"163.com":  {},
-	"126.com":  {},
-	"yeah.net": {},
-	// Sina / Sohu
-	"sina.com": {},
-	"sina.cn":  {},
-	"sohu.com": {},
-	// Alibaba / CN carriers
-	"aliyun.com": {},
-	"139.com":    {},
-	"189.cn":     {},
-	// Google
+	"qq.com":         {},
+	"foxmail.com":    {},
+	"163.com":        {},
+	"126.com":        {},
+	"yeah.net":       {},
+	"sina.com":       {},
+	"sina.cn":        {},
+	"sohu.com":       {},
+	"aliyun.com":     {},
+	"139.com":        {},
+	"189.cn":         {},
 	"gmail.com":      {},
 	"googlemail.com": {},
-	// Microsoft
-	"outlook.com": {},
-	"hotmail.com": {},
-	"live.com":    {},
-	"msn.com":     {},
-	// Apple
-	"icloud.com": {},
-	"me.com":     {},
-	"mac.com":    {},
-	// Yahoo
-	"yahoo.com":   {},
-	"yahoo.co.jp": {},
-	// Proton
+	"outlook.com":    {},
+	"hotmail.com":    {},
+	"live.com":       {},
+	"msn.com":        {},
+	"icloud.com":     {},
+	"me.com":         {},
+	"mac.com":        {},
+	"yahoo.com":      {},
+	"yahoo.co.jp":    {},
 	"proton.me":      {},
 	"protonmail.com": {},
 	"pm.me":          {},
 }
 
-// checkEmailDomainAllowed returns an AppError when email's domain isn't in
-// allowedEmailDomains. Returns nil for an accepted domain. The email is
-// assumed to already be syntactically valid (DTO `validate:"email"`), so a
-// missing "@" is treated as an invalid email rather than a domain rejection.
 func checkEmailDomainAllowed(email string) error {
 	at := strings.LastIndexByte(email, '@')
 	if at < 0 || at == len(email)-1 {

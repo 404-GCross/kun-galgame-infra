@@ -27,7 +27,6 @@ func TestCookKeepsLegitimateMarkdown(t *testing.T) {
 			t.Errorf("cooked HTML should contain %q, got: %s", want, got)
 		}
 	}
-	// UGC policy adds rel=nofollow to links.
 	if !contains(got, "nofollow") {
 		t.Errorf("links should be rel=nofollow, got: %s", got)
 	}

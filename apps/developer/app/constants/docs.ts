@@ -1,11 +1,5 @@
-// Presentation vocabulary for the self-built API reference (/docs/**). The
-// documentation data itself is the generated docs model (app/generated/
-// docs-model.ts); this file only maps model values to UI (badge colors, icons).
 import type { DocsMethod, DocsFaceKey } from '~~/shared/types/docs'
 
-// HTTP method → badge classes. Semantic palette only (no gradients): GET reads
-// as safe/success, POST as a primary action, PUT/PATCH as a caution, DELETE as
-// danger. Full literal class strings so Tailwind's JIT scanner keeps them.
 export const DOCS_METHOD_BADGE: Record<DocsMethod, string> = {
   get: 'bg-success-50 text-success-600',
   post: 'bg-primary-50 text-primary-600',
@@ -14,7 +8,6 @@ export const DOCS_METHOD_BADGE: Record<DocsMethod, string> = {
   delete: 'bg-danger-50 text-danger-600'
 }
 
-// Per-face chrome for the docs home + face overview cards.
 export const DOCS_FACE_META: Record<
   DocsFaceKey,
   { icon: string; tagline: string }

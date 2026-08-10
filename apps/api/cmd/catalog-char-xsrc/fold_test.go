@@ -13,12 +13,12 @@ func TestFoldName(t *testing.T) {
 		a, b  string
 		equal bool
 	}{
-		{"蓮佛雪之進", "蓮仏 雪之進", true},          // itaiji + space (the reported pair)
-		{"冬月十夜", "冬月 十夜", true},            // whitespace fold
-		{"硯川・e・涙香", "硯川・E・涙香", true},       // middot + case
-		{"髙橋しょう子", "高橋しょう子", true},         // itaiji 髙
-		{"硯川・e・涙香", "硯川・ユーフラジー・涙香", false}, // transliteration is NOT a fold
-		{"蓮見榛佳", "蓮見槇夏", false},            // sisters sharing a surname
+		{"蓮佛雪之進", "蓮仏 雪之進", true},
+		{"冬月十夜", "冬月 十夜", true},
+		{"硯川・e・涙香", "硯川・E・涙香", true},
+		{"髙橋しょう子", "高橋しょう子", true},
+		{"硯川・e・涙香", "硯川・ユーフラジー・涙香", false},
+		{"蓮見榛佳", "蓮見槇夏", false},
 	}
 	for _, c := range cases {
 		if got := foldName(c.a) == foldName(c.b); got != c.equal {
@@ -32,11 +32,11 @@ func TestNamesSimilar(t *testing.T) {
 		a, b    string
 		similar bool
 	}{
-		{"硯川・e・涙香", "硯川・ユーフラジー・涙香", true}, // two shared segments
-		{"蓮見榛佳", "蓮見槇夏", true},            // shared surname run — the LLM's job to refuse
-		{"アリス", "有栖", false},              // different scripts, no common run
-		{"雪子", "雪美", false},               // single shared rune is below the short-name floor
-		{"エリカ", "エリナ", true},              // short names, LCS 2 qualifies
+		{"硯川・e・涙香", "硯川・ユーフラジー・涙香", true},
+		{"蓮見榛佳", "蓮見槇夏", true},
+		{"アリス", "有栖", false},
+		{"雪子", "雪美", false},
+		{"エリカ", "エリナ", true},
 	}
 	for _, c := range cases {
 		if got := namesSimilar([]string{c.a}, []string{c.b}); got != c.similar {
@@ -45,24 +45,15 @@ func TestNamesSimilar(t *testing.T) {
 	}
 }
 
-// TestRunEmit exercises the full emit path: auto gate, low-confidence and
-// unsure review routing, the instance guard, the same-source group guard, and
-// the survivor rule.
 func TestRunEmit(t *testing.T) {
 	dir := t.TempDir()
 	pairs := []pairMeta{
-		// auto: high-confidence merge; B is richer (portrait) → survivor.
 		{A: 10, B: 20, Tier: 1, Works: []int64{1}, AName: "a", BName: "b",
 			ASources: []string{"vndb"}, BSources: []string{"bangumi"}, BRich: richness{Img: true}},
-		// low confidence → review.
 		{A: 30, B: 40, Tier: 3, Works: []int64{1}, ASources: []string{"vndb"}, BSources: []string{"bangumi"}},
-		// unsure → review.
 		{A: 50, B: 60, Tier: 2, Works: []int64{2}, ASources: []string{"vndb"}, BSources: []string{"erogamespace"}},
-		// instance flagged → never auto even at high confidence.
 		{A: 70, B: 80, Tier: 1, Works: []int64{3}, ASources: []string{"vndb"}, BSources: []string{"bangumi"}, Instance: true},
-		// distinct → dropped.
 		{A: 90, B: 91, Tier: 3, Works: []int64{4}, ASources: []string{"vndb"}, BSources: []string{"bangumi"}},
-		// chain 100-110-120 where 100 and 120 share a source → whole group deferred.
 		{A: 100, B: 110, Tier: 1, Works: []int64{5}, ASources: []string{"vndb"}, BSources: []string{"bangumi"}},
 		{A: 110, B: 120, Tier: 1, Works: []int64{5}, ASources: []string{"bangumi"}, BSources: []string{"vndb"}},
 	}

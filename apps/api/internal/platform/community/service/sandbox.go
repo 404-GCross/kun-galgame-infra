@@ -8,8 +8,6 @@ import (
 	"api/internal/platform/community/sanitize"
 )
 
-// TL0 newcomer sandbox — doc 11 §6 layer 2, day-1. Constants (tunable); the
-// engine that promotes a user out of TL0 and grants starter boosts is step 04.
 const (
 	tl0MaxLinks         = 2
 	tl0MaxImages        = 1
@@ -19,11 +17,8 @@ const (
 	sandboxWindow       = 24 * time.Hour
 )
 
-// isSandboxed reports whether a user is under the TL0 sandbox (TL≥1 is exempt).
-// A missing trust row is treated as TL0.
 func isSandboxed(level int16) bool { return level < model.TrustLevelBasic }
 
-// checkContentSandbox enforces the per-post content caps for a TL0 author.
 func checkContentSandbox(level int16, cooked sanitize.Cooked) error {
 	if !isSandboxed(level) {
 		return nil
@@ -39,7 +34,6 @@ func checkContentSandbox(level int16, cooked sanitize.Cooked) error {
 	return nil
 }
 
-// trustLevel resolves a user's trust level, defaulting a missing row to TL0.
 func trustLevel(trusts *repository.TrustRepository, userID int64) (int16, error) {
 	t, err := trusts.GetTrust(userID)
 	if err != nil {

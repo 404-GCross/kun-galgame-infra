@@ -17,33 +17,19 @@ import (
 	"gorm.io/datatypes"
 )
 
-// SigningKeyService owns the OIDC signing-key lifecycle: bootstrap, JWKS
-// assembly, and access to the active signer. Private keys are decrypted only
-// in-process, never exposed.
-//
-// Design: docs/auth/03-oidc-standardization-design.md §4.
 type SigningKeyService struct {
 	repo *authrepo.SigningKeyRepository
 	kek  []byte
 
-	// pubCache is the parsed published public keys (kid -> key), the local
-	// implementation of oidctoken.Resolver for the OP's own verification.
 	mu         sync.RWMutex
 	pubCache   map[string]crypto.PublicKey
 	lastReload time.Time
 }
 
-// NewSigningKeyService creates the service. kekSecret is KUN_OIDC_KEY_ENC_KEY;
-// it is stretched to a 32-byte AES key. Callers must ensure kekSecret is
-// non-empty (cmd/oauth gates OIDC key infra on it).
 func NewSigningKeyService(repo *authrepo.SigningKeyRepository, kekSecret string) *SigningKeyService {
 	return &SigningKeyService{repo: repo, kek: oidckeys.DeriveKEK(kekSecret)}
 }
 
-// EnsureBootstrapped generates an initial active key for each supported alg if
-// none exists. Idempotent — safe to call on every startup. ES256 is the active
-// signer; RS256 is published too so verifiers that require RS256 (OIDC Core
-// §15.1 mandatory-to-implement) can validate.
 func (s *SigningKeyService) EnsureBootstrapped(ctx context.Context) error {
 	for _, alg := range []string{oidckeys.AlgES256, oidckeys.AlgRS256} {
 		n, err := s.repo.CountActive(ctx, alg)
@@ -61,7 +47,6 @@ func (s *SigningKeyService) EnsureBootstrapped(ctx context.Context) error {
 	return nil
 }
 
-// generate creates, encrypts, and stores a new key in the given state.
 func (s *SigningKeyService) generate(ctx context.Context, alg, state string) error {
 	km, err := oidckeys.Generate(alg)
 	if err != nil {
@@ -90,7 +75,6 @@ func (s *SigningKeyService) generate(ctx context.Context, alg, state string) err
 	return s.repo.Create(ctx, k)
 }
 
-// JWKS returns the public JWK Set: {"keys":[...]} of all published keys.
 func (s *SigningKeyService) JWKS(ctx context.Context) (map[string]any, error) {
 	keys, err := s.repo.FindPublished(ctx)
 	if err != nil {
@@ -103,8 +87,6 @@ func (s *SigningKeyService) JWKS(ctx context.Context) (map[string]any, error) {
 	return map[string]any{"keys": out}, nil
 }
 
-// Key implements oidctoken.Resolver: it maps a JWS kid to the published public
-// key, reloading the cache on a miss (e.g. after a rotation adds a new key).
 func (s *SigningKeyService) Key(ctx context.Context, kid string) (crypto.PublicKey, error) {
 	s.mu.RLock()
 	k := s.pubCache[kid]
@@ -127,10 +109,6 @@ func (s *SigningKeyService) Key(ctx context.Context, kid string) (crypto.PublicK
 func (s *SigningKeyService) reloadPublic(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Reload throttle (mirrors JWKSResolver.minRefresh): an unknown-kid miss
-	// hits the signing_keys table at most once per window, so a spray of
-	// garbage-kid tokens can't amplify into per-request queries on the
-	// primary DB.
 	if s.pubCache != nil && time.Since(s.lastReload) < 30*time.Second {
 		return nil
 	}
@@ -155,8 +133,6 @@ func (s *SigningKeyService) reloadPublic(ctx context.Context) error {
 	return nil
 }
 
-// ActiveSigner returns the parsed private key + kid + alg for the active key
-// of the given algorithm (ES256 → access tokens, RS256 → id_tokens).
 func (s *SigningKeyService) ActiveSigner(ctx context.Context, alg string) (kid string, key any, err error) {
 	k, err := s.repo.FindActive(ctx, alg)
 	if err != nil {

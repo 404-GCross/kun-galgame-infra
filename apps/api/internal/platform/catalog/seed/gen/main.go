@@ -1,12 +1,3 @@
-// Command gen regenerates the checked-in role vocabulary artifacts
-// (seed/data/roles.gen.yaml + seed/data/bangumi_role_map.gen.yaml) from the
-// embedded bangumicommon snapshot. Run from apps/api:
-//
-//	go run ./internal/platform/catalog/seed/gen
-//
-// Review the diff before committing — role IDs are frozen once generated and
-// changes must stay additive (the drift test in the seed package fails if the
-// artifacts don't match the generation logic).
 package main
 
 import (

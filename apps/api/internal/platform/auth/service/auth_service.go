@@ -24,17 +24,13 @@ import (
 	"api/pkg/utils"
 )
 
-// emailChangeData stores the verification code and new email in Redis
 type emailChangeData struct {
 	Code     string `json:"code"`
 	NewEmail string `json:"new_email"`
 }
 
-// registerGiftPoints is the one-off welcome grant every new account starts
-// with ("鲲给予你的第一份礼物").
 const registerGiftPoints = 7
 
-// AuthService handles authentication logic
 type AuthService struct {
 	userRepo          *repository.UserRepository
 	sessionRepo       *repository.SessionRepository
@@ -42,39 +38,26 @@ type AuthService struct {
 	mailer            *mail.Mailer
 	cache             *cache.RedisCache
 	cfg               *config.Config
-	// moemoepointSvc grants the registration welcome gift. Optional (nil =
-	// no gift) so the lighter NewAuthService constructor / tests stay valid;
-	// wired in via WithMoemoepoint during app startup.
-	moemoepointSvc *MoemoepointService
-	// signer / verifier for access tokens (Phase 1). Both optional: nil signer
-	// falls back to legacy HS256 signing, nil verifier to legacy HS256
-	// verification. Wired via WithTokenSigner / WithTokenVerifier at startup.
-	signer   oidctoken.Signer
-	verifier *oidctoken.Verifier
+	moemoepointSvc    *MoemoepointService
+	signer            oidctoken.Signer
+	verifier          *oidctoken.Verifier
 }
 
-// WithMoemoepoint wires the moemoepoint service used to grant the registration
-// welcome gift. Returns the service for fluent chaining; nil disables the gift.
 func (s *AuthService) WithMoemoepoint(mp *MoemoepointService) *AuthService {
 	s.moemoepointSvc = mp
 	return s
 }
 
-// WithTokenSigner injects the access-token signer (ES256 or HS256). Returns the
-// service for chaining; nil keeps legacy HS256 signing.
 func (s *AuthService) WithTokenSigner(signer oidctoken.Signer) *AuthService {
 	s.signer = signer
 	return s
 }
 
-// WithTokenVerifier injects the accept-both access-token verifier. Returns the
-// service for chaining; nil keeps legacy HS256-only verification.
 func (s *AuthService) WithTokenVerifier(v *oidctoken.Verifier) *AuthService {
 	s.verifier = v
 	return s
 }
 
-// NewAuthService creates a new AuthService
 func NewAuthService(
 	userRepo *repository.UserRepository,
 	sessionRepo *repository.SessionRepository,
@@ -87,7 +70,6 @@ func NewAuthService(
 	}
 }
 
-// NewAuthServiceFull creates a new AuthService with all dependencies
 func NewAuthServiceFull(
 	userRepo *repository.UserRepository,
 	sessionRepo *repository.SessionRepository,
@@ -106,23 +88,6 @@ func NewAuthServiceFull(
 	}
 }
 
-// SendRegisterCode generates a 6-digit verification code, stashes it in
-// Redis under `register_code:{email}`, and emails it to that address. The
-// code is consumed by Register; without it, no account can be created
-// (per the unified-registration design — see
-// docs/integration/oauth/05-registration.md).
-//
-// Pre-flight checks (name + email uniqueness) run BEFORE generating the
-// code, so a user trying to re-register a taken email fails fast without
-// burning an email send. They also defend against the race where two
-// users send a code for the same name/email simultaneously — Register
-// re-checks after consuming the code, but failing here keeps the error
-// path local to the send-code call.
-//
-// Rate limit: a short per-email resend cooldown (resendCodeCooldown), kept in a
-// SEPARATE Redis key from the code — so a user who misses the first email is
-// only blocked for that brief window, NOT the code's full TTL. Returns
-// ErrAuthEmailChangeTooFrequent (reused error code: same semantic).
 const resendCodeCooldown = 60 * time.Second
 
 func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) error {
@@ -130,14 +95,9 @@ func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) 
 		return err
 	}
 	if s.cache == nil {
-		// No Redis = cannot store verification code = cannot guarantee
-		// the user is who they say they are. Fail closed instead of
-		// silently bypassing verification.
 		return fmt.Errorf("cache not configured")
 	}
 
-	// Fail-fast uniqueness checks — avoid burning an email send + a
-	// Redis slot when the name/email is already taken.
 	nameExists, err := s.userRepo.ExistsByName(ctx, name)
 	if err != nil {
 		return err
@@ -153,10 +113,6 @@ func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) 
 		return errors.NewWithCode(errors.ErrAuthEmailExists)
 	}
 
-	// Rate limit: a SHORT resend cooldown in its own key (resendCodeCooldown),
-	// NOT the code key — so missing the first email only blocks resends briefly,
-	// not for the code's full VerificationCodeTTL.
-	// Keyed by email (lower-cased) — no user UUID exists yet at this stage.
 	emailKey := strings.ToLower(strings.TrimSpace(email))
 	redisKey := fmt.Sprintf("register_code:%s", emailKey)
 	cooldownKey := fmt.Sprintf("register_code_cooldown:%s", emailKey)
@@ -169,7 +125,6 @@ func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) 
 		return err
 	}
 
-	// Code valid for the full TTL; resend gated by the short cooldown only.
 	if err := s.cache.Set(redisKey, []byte(code), s.cfg.Auth.VerificationCodeTTL); err != nil {
 		return err
 	}
@@ -187,24 +142,6 @@ func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) 
 	return nil
 }
 
-// Register registers a new user and immediately issues an access/refresh
-// token pair, mirroring Login's signature. Rationale: per the unified
-// registration flow (docs/integration/oauth/05-registration.md), the OAuth
-// web frontend must auto-login the freshly-registered user so it can chain
-// into /oauth/authorize and complete the SSO round-trip back to kungal /
-// moyu / wiki — adding a manual "you registered, now please log in" gate
-// would defeat the whole purpose of the redirect handoff.
-//
-// `req.UserAgent` / `req.IPAddress` are set by the handler (same pattern
-// as Login) so the new Session row records the registration context. A
-// new user has no roles yet — the empty `Roles` slice on the returned user
-// is intentional and the JWT claims reflect that.
-//
-// `req.Code` is consumed against the Redis token planted by
-// SendRegisterCode — proof that the user controls the email address.
-// On success the Redis key is deleted so the same code can't be replayed
-// (the WriteSnapshot reads-and-checks in this same function, not in a
-// separate roundtrip).
 func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*dto.TokenPair, *model.User, error) {
 	if err := checkEmailDomainAllowed(req.Email); err != nil {
 		return nil, nil, err
@@ -213,25 +150,16 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		return nil, nil, fmt.Errorf("cache not configured")
 	}
 
-	// Verify the registration code BEFORE any uniqueness checks. Even if
-	// the email is already taken, we don't want to leak that fact via
-	// a code-failure error — first prove ownership.
 	emailKey := strings.ToLower(strings.TrimSpace(req.Email))
 	redisKey := fmt.Sprintf("register_code:%s", emailKey)
 	storedCode, err := s.cache.Get(redisKey)
 	if err != nil || storedCode == nil {
 		return nil, nil, errors.NewWithCode(errors.ErrAuthCodeExpired)
 	}
-	// Constant-time compare to defend against timing side channels on
-	// guessing 6-digit codes. Length already validated upstream so a
-	// non-equal-length input fails the compare cleanly.
 	if subtle.ConstantTimeCompare(storedCode, []byte(req.Code)) != 1 {
 		return nil, nil, errors.NewWithCode(errors.ErrAuthCodeInvalid)
 	}
 
-	// Check if email exists (defense in depth — SendRegisterCode also
-	// checked, but a race could let two parallel registrations slip past
-	// that gate).
 	exists, err := s.userRepo.ExistsByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, nil, err
@@ -240,7 +168,6 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		return nil, nil, errors.NewWithCode(errors.ErrAuthEmailExists)
 	}
 
-	// Check if name exists
 	exists, err = s.userRepo.ExistsByName(ctx, req.Name)
 	if err != nil {
 		return nil, nil, err
@@ -249,14 +176,11 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		return nil, nil, errors.NewWithCode(errors.ErrAuthNameExists)
 	}
 
-	// Hash password
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Create user. Store the email normalized (the existence check above is
-	// case-insensitive, so this can't collide) — keeps stored data canonical.
 	user := &model.User{
 		Name:     req.Name,
 		Email:    model.NormalizeEmail(req.Email),
@@ -267,10 +191,6 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		return nil, nil, err
 	}
 
-	// Issue tokens + create session — identical to Login's tail. No role
-	// preload needed: a brand-new user has no roles, generateTokens emits
-	// an empty `roles` claim, and the response's `Roles: user.RoleNames()`
-	// resolves to `[]` for free.
 	tokens, err := s.generateTokens(user)
 	if err != nil {
 		return nil, nil, err
@@ -292,19 +212,8 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		return nil, nil, err
 	}
 
-	// Consume the registration code so it can't be replayed (the rate-
-	// limit window would naturally expire it after cfg.Auth.VerificationCodeTTL,
-	// but deleting now also frees the per-email lock immediately — useful
-	// if the user accidentally re-submits and we want a clean error rather
-	// than "too frequent"). Best-effort: deletion failure is non-fatal
-	// since the account already exists at this point.
 	_ = s.cache.Delete(redisKey)
 
-	// Welcome gift: every new account starts with a few moemoepoint
-	// ("鲲给予你的第一份礼物"). Best-effort + idempotent (stable key) — a rare
-	// failure must not fail an otherwise-successful registration, and the
-	// stable key makes a later re-grant a no-op. Reflect the new balance in
-	// the returned user so the response shows it immediately.
 	if s.moemoepointSvc != nil {
 		res, gErr := s.moemoepointSvc.Adjust(ctx, AdjustParams{
 			UserID:         user.ID,
@@ -324,9 +233,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 	return tokens, user, nil
 }
 
-// Login authenticates a user
 func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.TokenPair, *model.User, error) {
-	// Find user by email or username
 	var (
 		user *model.User
 		err  error
@@ -334,13 +241,6 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 	if strings.Contains(req.Account, "@") {
 		user, err = s.userRepo.FindByEmail(ctx, req.Account)
 	} else {
-		// Username login: pre-check format against the same rule as
-		// register / change-name. If the input can't possibly be a valid
-		// registered username, skip the DB lookup and fail with the same
-		// generic error as "user not found" — this avoids leaking "your
-		// name format is invalid" vs "no such user" via timing or
-		// distinct error codes (account-enumeration defense). Legacy
-		// accounts with non-conforming names can still log in via email.
 		if !utils.IsValidName(req.Account) {
 			return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 		}
@@ -350,30 +250,24 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 		return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	// Check if user is banned
 	if user.IsBanned() {
 		return nil, nil, errors.NewWithCode(errors.ErrAuthUnauthorized)
 	}
 
-	// Verify password (new system or legacy migration)
 	if user.IsPasswordSet() {
-		// New system password exists — verify directly
 		ok, err := utils.VerifyPassword(req.Password, *user.Password)
 		if err != nil || !ok {
 			return nil, nil, errors.NewWithCode(errors.ErrAuthInvalidPassword)
 		}
 	} else if user.HasLegacyPassword() {
-		// Try legacy passwords and migrate on success
 		migrated := false
 
-		// Try kungal bcrypt
 		if user.KungalPassword != nil && *user.KungalPassword != "" {
 			if utils.VerifyBcryptPassword(req.Password, *user.KungalPassword) {
 				migrated = true
 			}
 		}
 
-		// Try moyu custom argon2id
 		if !migrated && user.MoyuPassword != nil && *user.MoyuPassword != "" {
 			if utils.VerifyMoyuPassword(req.Password, *user.MoyuPassword) {
 				migrated = true
@@ -384,7 +278,6 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 			return nil, nil, errors.NewWithCode(errors.ErrAuthInvalidPassword)
 		}
 
-		// Legacy password matched — hash with new system and save
 		newHash, err := utils.HashPassword(req.Password)
 		if err != nil {
 			return nil, nil, err
@@ -393,23 +286,19 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 			return nil, nil, err
 		}
 	} else {
-		// No password at all — need to reset
 		return nil, nil, errors.NewWithCode(errors.ErrAuthPasswordRequired)
 	}
 
-	// Load roles for JWT claims and response
 	userWithRoles, err := s.userRepo.FindByIDWithRoles(ctx, user.ID)
 	if err == nil {
 		user.Roles = userWithRoles.Roles
 	}
 
-	// Generate tokens
 	tokens, err := s.generateTokens(user)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Create session
 	authAt := time.Now()
 	session := &model.Session{
 		UserID:       user.ID,
@@ -420,7 +309,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 		BrowserID:    req.BrowserID,
 		AuthTime:     &authAt,
 		LastUsedAt:   &authAt,
-		ExpiresAt:    authAt.Add(7 * 24 * time.Hour), // 7 days
+		ExpiresAt:    authAt.Add(7 * 24 * time.Hour),
 	}
 
 	if err := s.sessionRepo.Create(ctx, session); err != nil {
@@ -430,16 +319,6 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 	return tokens, user, nil
 }
 
-// ListBrowserSessions returns the accounts in this browser's session bag (one
-// entry per account), marking the active one (the account behind
-// activeRefreshToken). Powers the same-site account chooser / GET /auth/sessions;
-// cross-TLD clients use the redirect chooser instead (docs/integration/oauth/09).
-// loadBag fetches this browser's session bag, batch-resolves its member users in
-// one query, and verifies the caller is a member — the shared authorization spine
-// for list/switch/logout. Returns the sessions, a userID→user map, and the active
-// account's userID (the account behind activeRefreshToken; "" to skip). A caller
-// acting on a non-empty bag it does not belong to is rejected (confused-deputy
-// guard); an empty/absent bag is not an error.
 func (s *AuthService) loadBag(ctx context.Context, browserID, callerUUID, activeRefreshToken string) ([]model.Session, map[uint]*model.User, uint, error) {
 	sessions, err := s.sessionRepo.FindByBrowserID(ctx, browserID)
 	if err != nil {
@@ -490,7 +369,7 @@ func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, caller
 	for i := range sessions {
 		sess := sessions[i]
 		if seen[sess.UserID] {
-			continue // one entry per account, not per session
+			continue
 		}
 		seen[sess.UserID] = true
 		u := usersByID[sess.UserID]
@@ -514,13 +393,6 @@ func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, caller
 	return out, nil
 }
 
-// SwitchActiveSession switches the active account to targetSub (a user uuid
-// already in this browser's session bag) WITHOUT re-auth — by reusing the
-// refresh/rotation path for that account's session, which makes its (new)
-// refresh token the active one. Refuses privileged (admin/ren) targets with
-// ErrAuthStepUpRequired so the caller forces a fresh login (decision #3).
-// callerUUID must itself be a member of the bag (enforced by loadBag).
-// See docs/auth/02 + docs/integration/oauth/09.
 func (s *AuthService) SwitchActiveSession(ctx context.Context, browserID, callerUUID, targetSub string) (*dto.TokenPair, *model.User, error) {
 	sessions, usersByID, _, err := s.loadBag(ctx, browserID, callerUUID, "")
 	if err != nil {
@@ -532,32 +404,20 @@ func (s *AuthService) SwitchActiveSession(ctx context.Context, browserID, caller
 		if user == nil || user.UUID != targetSub {
 			continue
 		}
-		// Target account found in the bag. Privileged accounts require step-up
-		// — refuse the silent switch; the caller redirects via prompt=login.
 		names := user.RoleNames()
 		if slices.Contains(names, "admin") || slices.Contains(names, "ren") {
 			return nil, nil, errors.NewWithCode(errors.ErrAuthStepUpRequired)
 		}
-		// Reuse the vetted refresh+rotation path (OP-login sessions have
-		// ClientID="" so this is exactly the /auth/refresh flow).
 		tokens, e := s.RefreshToken(ctx, sess.RefreshToken)
 		if e != nil {
 			return nil, nil, e
 		}
-		// Stamp recency (column-only, so it can't clobber the rotation above)
-		// so the chooser orders by most-recent switch.
 		_ = s.sessionRepo.TouchLastUsed(ctx, sess.ID, time.Now())
 		return tokens, user, nil
 	}
 	return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 }
 
-// LogoutBrowserAccount removes one account (by user uuid) from this browser's
-// session bag. Returns whether anything was removed (so the caller can 404 a
-// no-op instead of reporting a false success) and whether the removed account
-// was the active one (so the caller clears the refresh cookie). callerUUID must
-// be a bag member (enforced by loadBag). Scope = the OP bag entry; downstream app
-// sessions follow the revocation-based propagation (docs/integration/oauth/09 §3.4).
 func (s *AuthService) LogoutBrowserAccount(ctx context.Context, browserID, callerUUID, sub, activeRefreshToken string) (removed, clearedActive bool, err error) {
 	sessions, usersByID, activeUserID, err := s.loadBag(ctx, browserID, callerUUID, activeRefreshToken)
 	if err != nil {
@@ -579,12 +439,10 @@ func (s *AuthService) LogoutBrowserAccount(ctx context.Context, browserID, calle
 	return removed, clearedActive, nil
 }
 
-// LogoutBrowserAll removes every account from this browser's session bag.
 func (s *AuthService) LogoutBrowserAll(ctx context.Context, browserID string) error {
 	return s.sessionRepo.DeleteByBrowserID(ctx, browserID)
 }
 
-// Logout logs out a user
 func (s *AuthService) Logout(ctx context.Context, sessionToken string) error {
 	session, err := s.sessionRepo.FindBySessionToken(ctx, sessionToken)
 	if err != nil {
@@ -593,72 +451,47 @@ func (s *AuthService) Logout(ctx context.Context, sessionToken string) error {
 	return s.sessionRepo.Delete(ctx, session.ID)
 }
 
-// RefreshToken refreshes an access token (the /auth/refresh cookie path
-// used by the OAuth admin UI). Same refresh-token rotation grace-window
-// logic as OAuthService.RefreshWithClient — see model.Session docs.
 func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenPair, error) {
-	// Find session by CURRENT or PREVIOUS refresh token.
 	session, err := s.sessionRepo.FindByRefreshTokenOrPrev(ctx, refreshToken)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
 
-	// /auth/refresh is the FIRST-PARTY (admin-web httpOnly-cookie) refresh path
-	// only. An OAuth-client-flow session (ClientID != "") MUST refresh via the
-	// client-bound /oauth/token refresh grant (RefreshWithClient), which
-	// enforces the client secret and preserves scope + site_id; accepting it
-	// here would re-issue tokens dropping that binding and scope.
 	if session.ClientID != "" {
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
 
-	// Check if session is expired
 	if session.IsExpired() {
 		_ = s.sessionRepo.Delete(ctx, session.ID)
 		return nil, errors.NewWithCode(errors.ErrAuthTokenExpired)
 	}
 
-	// Find user
 	user, err := s.userRepo.FindByID(ctx, session.UserID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	// Defense-in-depth: a user banned via the no-session-revocation path
-	// (AdminService.UpdateUser can set Status=1 without deleting sessions)
-	// keeps a live session row; revoke it here so the refresh cookie can't
-	// keep minting fresh access tokens. Mirrors OAuthService.RefreshWithClient.
 	if user.IsBanned() {
 		_ = s.sessionRepo.Delete(ctx, session.ID)
 		return nil, errors.NewWithCode(errors.ErrAuthUserBanned)
 	}
 
-	// Generate new tokens
 	tokens, err := s.generateTokens(user)
 	if err != nil {
 		return nil, err
 	}
 
 	if refreshToken != session.RefreshToken {
-		// Matched PrevRefreshToken.
 		if session.PrevTokenWithinGrace() {
-			// Case B: concurrent/retry within grace — don't rotate.
-			// Fresh access_token + the CURRENT refresh_token.
 			return &dto.TokenPair{
 				AccessToken:  tokens.AccessToken,
 				RefreshToken: session.RefreshToken,
 			}, nil
 		}
-		// Case C: replay after grace → probable theft → revoke session.
 		_ = s.sessionRepo.Delete(ctx, session.ID)
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
 
-	// Case A: matched current — rotate atomically (compare-and-swap on the
-	// presented token). Two concurrent refreshes that both read this current
-	// token would otherwise each Save a different new token (lost update),
-	// desyncing the cookie vs DB → the next request 401s forever. The CAS lets
-	// exactly one win.
 	now := time.Now()
 	won, err := s.sessionRepo.RotateRefreshToken(
 		ctx, session.ID, refreshToken, tokens.AccessToken, tokens.RefreshToken,
@@ -671,10 +504,6 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		return tokens, nil
 	}
 
-	// Lost the race: a concurrent refresh rotated first. Converge on the
-	// winner's CURRENT refresh token (+ our fresh access token) instead of
-	// returning a token the DB never stored — same outcome as the grace path,
-	// reached via the CAS miss. If the row vanished (logout/revoke), it's gone.
 	fresh, ferr := s.sessionRepo.FindByID(ctx, session.ID)
 	if ferr != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
@@ -685,29 +514,20 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 	}, nil
 }
 
-// GetCurrentUser gets the current user from token
 func (s *AuthService) GetCurrentUser(ctx context.Context, userUUID string) (*model.User, error) {
 	return s.userRepo.FindByUUID(ctx, userUUID)
 }
 
-// GetCurrentUserWithRoles gets the current user with roles preloaded
 func (s *AuthService) GetCurrentUserWithRoles(ctx context.Context, userUUID string) (*model.User, error) {
 	return s.userRepo.FindByUUIDWithRoles(ctx, userUUID)
 }
 
-// ForgotPassword initiates password reset flow
 func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
-	// Find user by email
 	user, err := s.userRepo.FindByEmail(ctx, email)
 	if err != nil {
-		// Don't reveal if email exists for security
 		return nil
 	}
 
-	// Don't issue a reset token / email to a banned or anonymized account:
-	// ResetPassword refuses them at consume time anyway, so the email is dead
-	// weight, and returning silently here makes a banned account behave like an
-	// unknown one (no "this account exists but is banned" oracle).
 	if user.IsBanned() {
 		return nil
 	}
@@ -716,27 +536,23 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 		return fmt.Errorf("password reset not configured")
 	}
 
-	// Delete any existing reset tokens for this user
 	_ = s.passwordResetRepo.DeleteByUserID(ctx, user.ID)
 
-	// Generate reset token
 	token, err := generateSecureToken(32)
 	if err != nil {
 		return err
 	}
 
-	// Create password reset record
 	reset := &model.PasswordReset{
 		UserID:    user.ID,
 		Token:     token,
-		ExpiresAt: time.Now().Add(1 * time.Hour), // 1 hour expiry
+		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
 
 	if err := s.passwordResetRepo.Create(ctx, reset); err != nil {
 		return err
 	}
 
-	// Send reset email (link to frontend)
 	resetLink := fmt.Sprintf("%s/auth/reset-password?token=%s", s.cfg.Server.FrontendURL, token)
 	if err := s.mailer.SendPasswordResetEmail(user.Email, user.Name, resetLink); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
@@ -745,51 +561,38 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 	return nil
 }
 
-// ResetPassword resets password using token
 func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword string) error {
 	if s.passwordResetRepo == nil {
 		return fmt.Errorf("password reset not configured")
 	}
 
-	// Find valid reset token
 	reset, err := s.passwordResetRepo.FindValidByToken(ctx, token)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
 
-	// Hash new password
 	hashedPassword, err := utils.HashPassword(newPassword)
 	if err != nil {
 		return err
 	}
 
-	// Update user password
 	user, err := s.userRepo.FindByID(ctx, reset.UserID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	// Don't reset the password of a banned/anonymized account (terminal state;
-	// consistent with the other auth paths that gate on IsBanned).
 	if user.IsBanned() {
 		return errors.NewWithCode(errors.ErrAuthUserBanned)
 	}
 
-	// Consume the token FIRST (atomic single-use claim). If a later step
-	// fails, the residual state is token-consumed-but-password-unchanged,
-	// which is fail-safe (user just requests a new link) — never the
-	// dangerous password-changed-but-token-still-valid replay window.
 	if err := s.passwordResetRepo.MarkAsUsed(ctx, reset.ID); err != nil {
-		return err // ErrAuthInvalidToken on already-used / raced replay
+		return err
 	}
 
 	if err := s.userRepo.UpdatePassword(ctx, user.UUID, hashedPassword); err != nil {
 		return err
 	}
 
-	// Force re-login everywhere. Log (don't silently drop) a purge failure:
-	// the reset already succeeded so we don't fail the response, but a failed
-	// purge leaving old sessions alive must be visible.
 	if err := s.sessionRepo.DeleteByUserID(ctx, user.ID); err != nil {
 		slog.Warn("reset-password: session purge failed; old sessions may persist",
 			"user_id", user.ID, "err", err)
@@ -798,14 +601,12 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	return nil
 }
 
-// ChangePassword changes a user's password
 func (s *AuthService) ChangePassword(ctx context.Context, userUUID string, oldPassword, newPassword string) error {
 	user, err := s.userRepo.FindByUUID(ctx, userUUID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	// For migration users, old password is not required
 	if user.IsPasswordSet() {
 		ok, err := utils.VerifyPassword(oldPassword, *user.Password)
 		if err != nil || !ok {
@@ -813,7 +614,6 @@ func (s *AuthService) ChangePassword(ctx context.Context, userUUID string, oldPa
 		}
 	}
 
-	// Hash new password
 	hashedPassword, err := utils.HashPassword(newPassword)
 	if err != nil {
 		return err
@@ -822,9 +622,6 @@ func (s *AuthService) ChangePassword(ctx context.Context, userUUID string, oldPa
 	return s.userRepo.UpdatePassword(ctx, userUUID, hashedPassword)
 }
 
-// ValidateAccessToken validates an access token and returns claims. Uses the
-// injected accept-both verifier (ES256/RS256 via JWKS + HS256 fallback) when
-// set; otherwise the legacy HS256-only path.
 func (s *AuthService) ValidateAccessToken(tokenString string) (*utils.TokenClaims, error) {
 	if s.verifier != nil {
 		return s.verifier.Parse(context.Background(), tokenString)
@@ -836,8 +633,6 @@ func (s *AuthService) ValidateAccessToken(tokenString string) (*utils.TokenClaim
 	return claims, nil
 }
 
-// signAccessToken mints an access token via the injected signer, falling back
-// to legacy HS256 when no signer is set.
 func (s *AuthService) signAccessToken(claims utils.TokenClaims, ttl time.Duration) (string, error) {
 	if s.signer != nil {
 		return s.signer.SignAccess(claims, ttl)
@@ -845,9 +640,7 @@ func (s *AuthService) signAccessToken(claims utils.TokenClaims, ttl time.Duratio
 	return utils.GenerateAccessToken(s.cfg.JWT.Secret, claims, ttl)
 }
 
-// generateTokens generates access and refresh tokens
 func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
-	// Load roles if not already preloaded
 	if user.Roles == nil {
 		userWithRoles, err := s.userRepo.FindByIDWithRoles(context.Background(), user.ID)
 		if err == nil {
@@ -855,7 +648,6 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 		}
 	}
 
-	// Access token (15 minutes)
 	accessToken, err := s.signAccessToken(
 		utils.TokenClaims{
 			UserUUID: user.UUID,
@@ -870,8 +662,6 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 		return nil, err
 	}
 
-	// Refresh token — opaque random (matched by DB value; the session row's
-	// expires_at governs lifetime).
 	refreshToken, err := utils.GenerateOpaqueRefreshToken()
 	if err != nil {
 		return nil, err
@@ -883,7 +673,6 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 	}, nil
 }
 
-// SendEmailChangeCode sends a verification code to the user's current email for email change
 func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmail string) error {
 	if err := checkEmailDomainAllowed(newEmail); err != nil {
 		return err
@@ -893,12 +682,10 @@ func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmai
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	// Check if new email is the same as current
 	if strings.EqualFold(user.Email, newEmail) {
 		return errors.NewWithCode(errors.ErrAuthEmailSameAsCurrent)
 	}
 
-	// Check if new email is already taken
 	exists, err := s.userRepo.ExistsByEmailExcluding(ctx, newEmail, userUUID)
 	if err != nil {
 		return err
@@ -907,8 +694,6 @@ func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmai
 		return errors.NewWithCode(errors.ErrAuthEmailExists)
 	}
 
-	// Rate limit: a SHORT resend cooldown in its own key (resendCodeCooldown),
-	// separate from the code's TTL — same fix as SendRegisterCode.
 	redisKey := fmt.Sprintf("email_change:%s", userUUID)
 	cooldownKey := fmt.Sprintf("email_change_cooldown:%s", userUUID)
 	if s.cache != nil {
@@ -917,13 +702,11 @@ func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmai
 		}
 	}
 
-	// Generate 6-digit code
 	code, err := generateNumericCode(6)
 	if err != nil {
 		return err
 	}
 
-	// Store in Redis
 	if s.cache != nil {
 		data, _ := json.Marshal(emailChangeData{Code: code, NewEmail: newEmail})
 		if err := s.cache.Set(redisKey, data, s.cfg.Auth.VerificationCodeTTL); err != nil {
@@ -934,7 +717,6 @@ func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmai
 		}
 	}
 
-	// Send verification code to the OLD email
 	if s.mailer != nil {
 		ttlMinutes := int(s.cfg.Auth.VerificationCodeTTL.Minutes())
 		if err := s.mailer.SendEmailChangeCodeEmail(user.Email, user.Name, code, ttlMinutes); err != nil {
@@ -945,17 +727,6 @@ func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmai
 	return nil
 }
 
-// UpdateProfile applies a partial profile update for the authenticated
-// user (name / avatar / avatar_image_hash / bio). Only non-nil fields in
-// `req` are touched.
-//
-// Returns the updated user with roles preloaded, suitable for projecting
-// directly into UserResponse — saves the caller from doing a separate
-// FindByUUIDWithRoles.
-//
-// If `req.Name` is provided and would collide with another user, returns
-// ErrAuthNameExists. There is no email validation here — emails go
-// through the verified-by-code flow in ChangeEmail.
 func (s *AuthService) UpdateProfile(ctx context.Context, userUUID string, req *dto.UpdateProfileRequest) (*model.User, error) {
 	fields := map[string]any{}
 
@@ -973,10 +744,6 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userUUID string, req *d
 		fields["avatar"] = *req.Avatar
 	}
 	if req.AvatarImageHash != nil {
-		// Pointer-typed column. Empty string here clears it (we want NULL
-		// semantically, but GORM Updates with a string sets the column to
-		// '' which is fine — frontend's resolveAvatarUrl falls back to
-		// Avatar when AvatarImageHash is nil OR empty).
 		fields["avatar_image_hash"] = *req.AvatarImageHash
 	}
 	if req.Bio != nil {
@@ -990,14 +757,12 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userUUID string, req *d
 	return s.userRepo.FindByUUIDWithRoles(ctx, userUUID)
 }
 
-// ChangeEmail verifies the code and updates the user's email
 func (s *AuthService) ChangeEmail(ctx context.Context, userUUID, code, newEmail string) error {
 	if err := checkEmailDomainAllowed(newEmail); err != nil {
 		return err
 	}
 	redisKey := fmt.Sprintf("email_change:%s", userUUID)
 
-	// Read from Redis
 	if s.cache == nil {
 		return fmt.Errorf("cache not configured")
 	}
@@ -1012,14 +777,11 @@ func (s *AuthService) ChangeEmail(ctx context.Context, userUUID, code, newEmail 
 		return errors.NewWithCode(errors.ErrAuthCodeInvalid)
 	}
 
-	// Verify code (constant-time, like the register/email-verify path) and
-	// new-email match.
 	if subtle.ConstantTimeCompare([]byte(data.Code), []byte(code)) != 1 ||
 		!strings.EqualFold(data.NewEmail, newEmail) {
 		return errors.NewWithCode(errors.ErrAuthCodeInvalid)
 	}
 
-	// Re-check email uniqueness (race condition guard)
 	exists, err := s.userRepo.ExistsByEmailExcluding(ctx, newEmail, userUUID)
 	if err != nil {
 		return err
@@ -1028,19 +790,15 @@ func (s *AuthService) ChangeEmail(ctx context.Context, userUUID, code, newEmail 
 		return errors.NewWithCode(errors.ErrAuthEmailExists)
 	}
 
-	// Update email (store normalized — the uniqueness check above is
-	// case-insensitive, so the canonical form can't collide with another user).
 	if err := s.userRepo.UpdateEmail(ctx, userUUID, model.NormalizeEmail(newEmail)); err != nil {
 		return err
 	}
 
-	// Delete Redis key
 	_ = s.cache.Delete(redisKey)
 
 	return nil
 }
 
-// generateNumericCode generates a cryptographically secure N-digit numeric code
 func generateNumericCode(length int) (string, error) {
 	max := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(length)), nil)
 	n, err := rand.Int(rand.Reader, max)
@@ -1050,7 +808,6 @@ func generateNumericCode(length int) (string, error) {
 	return fmt.Sprintf("%0*d", length, n), nil
 }
 
-// generateSecureToken generates a cryptographically secure random token
 func generateSecureToken(length int) (string, error) {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {

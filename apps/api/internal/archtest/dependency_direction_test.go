@@ -1,5 +1,3 @@
-// Package archtest enforces architectural rules that the type system cannot
-// express, as plain go test cases so CI catches violations automatically.
 package archtest
 
 import (
@@ -14,18 +12,8 @@ import (
 	"testing"
 )
 
-// productDomain is the only product-side directory under internal/platform;
-// every other platform subdirectory is a platform domain and must not depend
-// on it.
 const productDomain = "galgame"
 
-// TestPlatformMustNotImportGalgame pins the dependency direction: product
-// code (internal/platform/galgame) may import platform packages, but platform
-// packages and internal/infrastructure must never import galgame. Protected
-// roots are enumerated dynamically, so future platform domains (catalog,
-// community, ...) are covered with zero changes here. Checking direct imports
-// is sufficient: the first hop of any transitive chain is itself a direct
-// violation in some protected package.
 func TestPlatformMustNotImportGalgame(t *testing.T) {
 	root := moduleRoot(t)
 	forbidden := modulePath(t, root) + "/internal/platform/" + productDomain
@@ -64,8 +52,6 @@ func TestPlatformMustNotImportGalgame(t *testing.T) {
 	}
 }
 
-// findForbiddenImports walks dir and returns one "file:line imports pkg" entry
-// per import of forbidden (or any subpackage of it) in any .go file.
 func findForbiddenImports(dir, root, forbidden string) ([]string, error) {
 	fset := token.NewFileSet()
 	var violations []string
@@ -105,8 +91,6 @@ func findForbiddenImports(dir, root, forbidden string) ([]string, error) {
 	return violations, err
 }
 
-// moduleRoot returns the apps/api module root (two levels above this package)
-// and fails fast if the layout assumption breaks.
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -119,7 +103,6 @@ func moduleRoot(t *testing.T) string {
 	return root
 }
 
-// modulePath reads the module directive from go.mod.
 func modulePath(t *testing.T, root string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(root, "go.mod"))

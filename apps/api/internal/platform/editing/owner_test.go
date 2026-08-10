@@ -12,15 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// The owner automerge rule (E1, charter ruling / 02 号裁定 1): a proposal
-// automerges only when the proposal's site equals the entity's owner site
-// as the spec's OwnerSite hook reports it. Four states: owner hit / owner
-// miss / unclaimed (nil owner) / hook error — plus the registration
-// fail-fast when the hook is missing and the entity-aware schema projection.
-
-// ownedSpec reuses the widget table as a second fake family "test.owned":
-// one field with {propose: open, automerge: owner}. ownerOf simulates the
-// family's claim state; ownerErr simulates a hook failure.
 func ownedSpec(ownerOf map[int64]*string, ownerErr error) editing.EntityTypeSpec {
 	return editing.EntityTypeSpec{
 		Family: "test",
@@ -56,8 +47,8 @@ func ownedSpec(ownerOf map[int64]*string, ownerErr error) editing.EntityTypeSpec
 func TestOwnerAutomerge(t *testing.T) {
 	siteA := "site-a"
 	ownerOf := map[int64]*string{
-		1: &siteA, // claimed by site-a
-		2: nil,    // unclaimed
+		1: &siteA,
+		2: nil,
 	}
 
 	newOwnedEngine := func(t *testing.T, ownerErr error) *editing.Engine {
@@ -139,7 +130,6 @@ func TestOwnerAutomerge(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "owner lookup boom") {
 			t.Fatalf("hook error must fail the create, got %v", err)
 		}
-		// Nothing landed: no proposal row, no revision, no apply.
 		var count int64
 		if err := testDB.Table("edit_proposal").Count(&count).Error; err != nil || count != 0 {
 			t.Fatalf("proposal rows after hook error: %d err=%v", count, err)
@@ -157,7 +147,6 @@ func TestOwnerAutomerge(t *testing.T) {
 			t.Fatal("projection missing test.owned.name")
 			return editing.FieldProjection{}
 		}
-		// Owner site + owned entity → would automerge.
 		projs, err := e.SchemaProjection(testCtx, "test.owned", 1, actorOn("site-a"))
 		if err != nil {
 			t.Fatal(err)
@@ -165,7 +154,6 @@ func TestOwnerAutomerge(t *testing.T) {
 		if p := find(projs); !p.CanPropose || !p.WouldAutomerge {
 			t.Errorf("owner on owned entity: %+v", p)
 		}
-		// Another site on the same entity → propose yes, automerge no.
 		projs, err = e.SchemaProjection(testCtx, "test.owned", 1, actorOn("site-b"))
 		if err != nil {
 			t.Fatal(err)
@@ -173,7 +161,6 @@ func TestOwnerAutomerge(t *testing.T) {
 		if p := find(projs); !p.CanPropose || p.WouldAutomerge {
 			t.Errorf("other site on owned entity: %+v", p)
 		}
-		// Unclaimed entity → automerge no.
 		projs, err = e.SchemaProjection(testCtx, "test.owned", 2, actorOn("site-a"))
 		if err != nil {
 			t.Fatal(err)
@@ -181,7 +168,6 @@ func TestOwnerAutomerge(t *testing.T) {
 		if p := find(projs); p.WouldAutomerge {
 			t.Errorf("unclaimed entity: %+v", p)
 		}
-		// Type-level projection (no entity) → owner conservatively false.
 		projs, err = e.SchemaProjection(testCtx, "test.owned", 0, actorOn("site-a"))
 		if err != nil {
 			t.Fatal(err)
@@ -189,7 +175,6 @@ func TestOwnerAutomerge(t *testing.T) {
 		if p := find(projs); p.WouldAutomerge {
 			t.Errorf("type-level projection: %+v", p)
 		}
-		// Hook error propagates out of an entity-aware projection.
 		eErr := newOwnedEngine(t, fmt.Errorf("projection boom"))
 		if _, err := eErr.SchemaProjection(testCtx, "test.owned", 1, actorOn("site-a")); err == nil {
 			t.Error("hook error must fail the entity-aware projection")
@@ -197,8 +182,6 @@ func TestOwnerAutomerge(t *testing.T) {
 	})
 }
 
-// Registering any owner rule (default / field / overlay) without the hook
-// fails fast — a silently never-automerging tenant would be a policy bug.
 func TestOwnerRuleRequiresHook(t *testing.T) {
 	ownerPol := editing.Policy{
 		Propose:   editing.ProposeOpen,
@@ -231,7 +214,6 @@ func TestOwnerRuleRequiresHook(t *testing.T) {
 		}
 	}
 
-	// With the hook present the same specs register fine.
 	withHook := base()
 	withHook.OwnerSite = func(ctx context.Context, id int64) (*string, error) { return nil, nil }
 	withHook.DefaultPolicy = ownerPol

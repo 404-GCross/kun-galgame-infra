@@ -8,13 +8,6 @@ import (
 	"api/internal/platform/editing"
 )
 
-// These tests pin the media-agnostic OnMerge contract (E3b-tail): the hook is
-// the single seam for post-merge side effects. It fires from EVERY merge path
-// (direct edit, reviewer merge, revert), is a no-op when unset, and — because
-// it runs OUTSIDE the merge transaction — a hook error or panic never rolls
-// back the landed merge (a stale index / missed side row is recoverable; a
-// phantom from a rolled-back merge would not be).
-
 type mergeCall struct {
 	entityID   int64
 	actorUID   int64
@@ -42,7 +35,6 @@ func TestOnMergeFiresOnEveryMergePath(t *testing.T) {
 	})
 	createWidget(t, 1)
 
-	// 1) Direct edit (open field automerges) by proposer 10.
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fOpen: "hi"}, Actor: anonActor(10),
@@ -50,7 +42,6 @@ func TestOnMergeFiresOnEveryMergePath(t *testing.T) {
 		t.Fatalf("direct edit: %v", err)
 	}
 
-	// 2) Open proposal by editor 20, amended + merged by reviewer 30.
 	prop, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fName: "X"}, Actor: editorActor(20),
@@ -70,7 +61,6 @@ func TestOnMergeFiresOnEveryMergePath(t *testing.T) {
 		t.Fatalf("merge: %v", err)
 	}
 
-	// 3) Revert to seq 1 by reviewer 30 (restores fName to empty).
 	if _, _, err := e.Revert(testCtx, editing.RevertInput{
 		EntityType: "test.widget", EntityID: 1, ToSeq: 1, Actor: reviewerActor(30),
 	}); err != nil {
@@ -80,22 +70,19 @@ func TestOnMergeFiresOnEveryMergePath(t *testing.T) {
 	if len(calls) != 3 {
 		t.Fatalf("want 3 OnMerge calls (direct, merge, revert), got %d: %+v", len(calls), calls)
 	}
-	// direct: actor 10, no amender.
 	if c := calls[0]; c.entityID != 1 || c.actorUID != 10 || c.amenderUID != nil || c.action != editing.ActionDirect {
 		t.Fatalf("direct call = %+v", c)
 	}
-	// merge: proposer 20 as actor, reviewer 30 as amender (the double signature).
 	if c := calls[1]; c.actorUID != 20 || c.amenderUID == nil || *c.amenderUID != 30 || c.action != editing.ActionMerged {
 		t.Fatalf("merge call = %+v (amender=%v)", c, c.amenderUID)
 	}
-	// revert: actor 30, no amender.
 	if c := calls[2]; c.actorUID != 30 || c.amenderUID != nil || c.action != editing.ActionReverted {
 		t.Fatalf("revert call = %+v", c)
 	}
 }
 
 func TestOnMergeNilIsNoOp(t *testing.T) {
-	e := newEngineOnMerge(t, nil) // explicit nil hook (catalog.work posture)
+	e := newEngineOnMerge(t, nil)
 	createWidget(t, 1)
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
@@ -113,8 +100,6 @@ func TestOnMergeErrorDoesNotRollBack(t *testing.T) {
 		return fmt.Errorf("reindex boom")
 	})
 	createWidget(t, 1)
-	// The hook error is swallowed (warned) — the caller sees success and the
-	// merge is durably committed.
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fOpen: "kept"}, Actor: anonActor(10),

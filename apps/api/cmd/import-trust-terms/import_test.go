@@ -17,12 +17,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration tests against a real Postgres (the trust convention):
-// TEST_DATABASE_DSN or a local default; a missing database skips the whole
-// package. Schema comes from migrate.Run — the exact production migration.
-// The shared trust suite advisory lock serializes this package against the
-// migrate/service/handler packages that also truncate trust_term.
-
 var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
@@ -49,7 +43,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// cleanTerms truncates trust_term so each probe starts fresh.
 func cleanTerms(t *testing.T) {
 	t.Helper()
 	if err := testDB.Exec("TRUNCATE trust_term RESTART IDENTITY CASCADE").Error; err != nil {
@@ -57,8 +50,6 @@ func cleanTerms(t *testing.T) {
 	}
 }
 
-// writeFixture writes content to a temp file and returns its path. Content is a
-// byte slice so fixtures can embed invalid UTF-8.
 func writeFixture(t *testing.T, name string, content []byte) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), name)
@@ -68,7 +59,6 @@ func writeFixture(t *testing.T, name string, content []byte) string {
 	return p
 }
 
-// countActive counts active term rows in a scope (site "" = global/NULL).
 func countActive(t *testing.T, site string) int64 {
 	t.Helper()
 	q := testDB.Model(&model.TrustTerm{}).Where("is_deprecated = false")
@@ -84,33 +74,22 @@ func countActive(t *testing.T, site string) int64 {
 	return n
 }
 
-// Fixture invisible code points (built from rune values so no literal zero-width
-// byte sits in the source).
 var (
-	zwsp = string(rune(0x200B)) // ZERO WIDTH SPACE (Cf, stripped by Normalize)
-	fwd  = "ＢＡＤ"                // fullwidth BAD -> "bad" under NFKC
+	zwsp = string(rune(0x200B))
+	fwd  = "ＢＡＤ"
 )
 
-// --- pure pipeline (no DB) -------------------------------------------------
-
-// TestProcessFileCounters pins the per-line pipeline classification: blank,
-// comment, invalid UTF-8, short-filter, and the full-width / zero-width
-// post-Normalize dedup collapsing to one insert.
 func TestProcessFileCounters(t *testing.T) {
-	// Lines: a real term, a fullwidth variant of it (dup after norm), a
-	// zero-width-obfuscated variant (dup after norm), a blank, a comment, a
-	// short term (2 runes < 3), a whitespace-only line, and an invalid-UTF-8
-	// line — built as bytes so the 0xFF is preserved verbatim.
 	var buf bytes.Buffer
-	buf.WriteString("hello\n")                      // insert -> "hello"
-	buf.WriteString(fwd + "\n")                     // "bad" (novel) -> insert
-	buf.WriteString("bad\n")                        // dup-in-batch of "bad"
-	buf.WriteString("he" + zwsp + "llo\n")          // dup-in-batch of "hello"
-	buf.WriteString("\n")                           // blank
-	buf.WriteString("# a comment\n")                // comment
-	buf.WriteString("ab\n")                         // short (2 runes)
-	buf.WriteString("   \n")                        // whitespace-only -> blank
-	buf.Write([]byte{0x66, 0x6f, 0xff, 0x6f, '\n'}) // "fo\xffo" invalid UTF-8
+	buf.WriteString("hello\n")
+	buf.WriteString(fwd + "\n")
+	buf.WriteString("bad\n")
+	buf.WriteString("he" + zwsp + "llo\n")
+	buf.WriteString("\n")
+	buf.WriteString("# a comment\n")
+	buf.WriteString("ab\n")
+	buf.WriteString("   \n")
+	buf.Write([]byte{0x66, 0x6f, 0xff, 0x6f, '\n'})
 
 	cfg := importConfig{site: nil, kind: model.TermKindSuspect, minRunes: 3}
 	seen := map[string]struct{}{}
@@ -142,7 +121,6 @@ func TestProcessFileCounters(t *testing.T) {
 	if !got["hello"] || !got["bad"] {
 		t.Errorf("inserted norms = %v, want {hello, bad}", got)
 	}
-	// Kind, note, site, deprecation on the built rows.
 	for _, tm := range terms {
 		if tm.Kind != model.TermKindSuspect {
 			t.Errorf("kind = %d, want suspect", tm.Kind)
@@ -159,9 +137,6 @@ func TestProcessFileCounters(t *testing.T) {
 	}
 }
 
-// TestProcessFileDedupAcrossFiles pins that the shared seen set makes a term
-// repeated in a SECOND file an in-batch duplicate (all files share the one
-// -site scope).
 func TestProcessFileDedupAcrossFiles(t *testing.T) {
 	cfg := importConfig{minRunes: 3}
 	seen := map[string]struct{}{}
@@ -172,7 +147,7 @@ func TestProcessFileDedupAcrossFiles(t *testing.T) {
 	if sa.inserted != 2 || len(ta) != 2 {
 		t.Fatalf("file a inserted = %d, want 2", sa.inserted)
 	}
-	b := bytes.NewBufferString("beta\ngamma\n") // beta repeats file a
+	b := bytes.NewBufferString("beta\ngamma\n")
 	sb, tb, _ := processFile("b.txt", b, cfg, seen, existing)
 	if sb.dupInBatch != 1 {
 		t.Errorf("file b dup-in-batch = %d, want 1 (beta)", sb.dupInBatch)
@@ -180,14 +155,11 @@ func TestProcessFileDedupAcrossFiles(t *testing.T) {
 	if sb.inserted != 1 || len(tb) != 1 || tb[0].TermNorm != "gamma" {
 		t.Fatalf("file b inserted = %d (%v), want 1 (gamma)", sb.inserted, tb)
 	}
-	// Each file's note is its own filename.
 	if ta[0].Note == nil || *ta[0].Note != "a.txt" || tb[0].Note == nil || *tb[0].Note != "b.txt" {
 		t.Errorf("per-file notes wrong: a=%v b=%v", ta[0].Note, tb[0].Note)
 	}
 }
 
-// TestProcessFileExistingSkip pins that a term already in the DB set is counted
-// dup-existing and never re-inserted.
 func TestProcessFileExistingSkip(t *testing.T) {
 	cfg := importConfig{minRunes: 3}
 	seen := map[string]struct{}{}
@@ -203,7 +175,6 @@ func TestProcessFileExistingSkip(t *testing.T) {
 	}
 }
 
-// TestProcessFileFixedNote pins that a set -note overrides the per-file default.
 func TestProcessFileFixedNote(t *testing.T) {
 	cfg := importConfig{minRunes: 3, note: "konsheng MIT"}
 	_, terms, _ := processFile("porn.txt", bytes.NewBufferString("word one\n"), cfg, map[string]struct{}{}, map[string]struct{}{})
@@ -212,10 +183,6 @@ func TestProcessFileFixedNote(t *testing.T) {
 	}
 }
 
-// --- DB-backed: dry-run / apply / idempotency ------------------------------
-
-// TestRunDryRunWritesNothing pins that a dry-run reports a would-insert count
-// but writes zero rows.
 func TestRunDryRunWritesNothing(t *testing.T) {
 	cleanTerms(t)
 	fx := writeFixture(t, "terms.txt", []byte("alpha\nbeta\ngamma\n"))
@@ -239,11 +206,8 @@ func TestRunDryRunWritesNothing(t *testing.T) {
 	}
 }
 
-// TestRunApplyWritesCorrectly pins that -apply inserts the rows with the right
-// site (NULL), kind, note (filename default), and is_deprecated=false.
 func TestRunApplyWritesCorrectly(t *testing.T) {
 	cleanTerms(t)
-	// A fullwidth + zero-width variant collapse to one; a short + comment drop.
 	content := []byte("keyword\n" + fwd + "\n" + "he" + zwsp + "llo\n" + "hello\n" + "ab\n" + "# note\n")
 	fx := writeFixture(t, "lexicon.txt", content)
 
@@ -252,7 +216,6 @@ func TestRunApplyWritesCorrectly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run apply: %v", err)
 	}
-	// keyword, bad (fullwidth), hello (fullwidth+zw collapse to 1) = 3 inserts.
 	if res.total.inserted != 3 {
 		t.Fatalf("inserted = %d, want 3", res.total.inserted)
 	}
@@ -289,8 +252,6 @@ func TestRunApplyWritesCorrectly(t *testing.T) {
 	}
 }
 
-// TestRunApplyIdempotent pins the core idempotency contract: a second -apply run
-// of the same files finds every term already active → inserts 0.
 func TestRunApplyIdempotent(t *testing.T) {
 	cleanTerms(t)
 	fx := writeFixture(t, "terms.txt", []byte("alpha\nbeta\ngamma\n"))
@@ -320,12 +281,8 @@ func TestRunApplyIdempotent(t *testing.T) {
 	}
 }
 
-// TestRunSiteScoped pins that -site stores a non-NULL scope and that an
-// existing GLOBAL term with the same norm does NOT shadow the per-site insert
-// (different keyspace).
 func TestRunSiteScoped(t *testing.T) {
 	cleanTerms(t)
-	// Seed a global term "shared".
 	if err := testDB.Create(&model.TrustTerm{TermNorm: "shared", Kind: model.TermKindSuspect}).Error; err != nil {
 		t.Fatalf("seed global: %v", err)
 	}
@@ -336,7 +293,6 @@ func TestRunSiteScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run site: %v", err)
 	}
-	// Global "shared" is a different scope, so the per-site "shared" is fresh.
 	if res.total.inserted != 2 {
 		t.Fatalf("inserted = %d, want 2 (per-site shared + kungalonly)", res.total.inserted)
 	}

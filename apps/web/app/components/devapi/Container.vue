@@ -2,10 +2,6 @@
 import { DEV_TIER_COLORS, devTierLimitHint } from '~/constants/devapi'
 import type { DevApp } from '~~/shared/types/devapi'
 
-// Developer-platform app list. SSR-rendered like the OAuth-clients page. Two
-// sources: the dev_enabled apps (management surface) and the full OAuth-client
-// list (the enable-flow candidate pool — reused from the OAuth-clients data
-// path per 裁定 2).
 const { data: appsData, status, refresh } =
   await useApiFetch<DevApp[]>('/admin/devapi/apps')
 const { data: clientsData, refresh: refreshClients } =
@@ -15,7 +11,6 @@ const apps = computed(() => appsData.value ?? [])
 const clients = computed(() => clientsData.value ?? [])
 const isLoading = computed(() => status.value === 'pending')
 
-// Enable candidates = OAuth clients that are not already dev_enabled.
 const enabledIds = computed(() => new Set(apps.value.map((a) => a.client_id)))
 const candidates = computed(() =>
   clients.value.filter((c) => !enabledIds.value.has(c.id))

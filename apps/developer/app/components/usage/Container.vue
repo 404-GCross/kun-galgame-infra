@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import type { DevLiveKey, DevUsageSummary } from '~~/shared/types/dev'
 
-// Account-level usage: window totals + a daily volume chart + per-app / per-face
-// breakdowns + the per-key real-time remaining, over a selectable window
-// (7 / 14 / 30 days). Reads GET /dev/usage; the URL is reactive so switching the
-// window refetches (SSR-rendered first).
 useSeoMeta({ title: '用量', robots: 'noindex' })
 
 const days = ref(7)
@@ -32,14 +28,11 @@ const labelFace = (face: string) => faceLabel[face] ?? face
 
 const fmt = (n: number) => n.toLocaleString()
 
-// Per-key daily-quota fill ratio (0–100), for the usage bar. An unlimited key
-// (quota_limit 0) shows no bar.
 const usedPct = (k: DevLiveKey) =>
   k.quota_limit > 0
     ? Math.min(100, Math.round((k.quota_used / k.quota_limit) * 100))
     : 0
 
-// The bar tone escalates as a key nears its daily quota. Solid colors only.
 const barTone = (pct: number) =>
   pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-primary'
 
@@ -102,7 +95,6 @@ const toneClass: Record<string, string> = {
       </div>
     </div>
 
-    <!-- Window totals -->
     <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
       <div
         v-for="tile in tiles"
@@ -119,7 +111,6 @@ const toneClass: Record<string, string> = {
       </div>
     </div>
 
-    <!-- Daily volume -->
     <KunCard content-class="justify-start gap-0 items-stretch" class-name="p-6">
       <div class="mb-5 flex items-center justify-between">
         <h2 class="text-base font-semibold text-foreground">每日调用量</h2>
@@ -128,7 +119,6 @@ const toneClass: Record<string, string> = {
       <UsageChart :days="daily" />
     </KunCard>
 
-    <!-- Live per-key remaining (real-time, from the enforcement counters) -->
     <div>
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-lg font-semibold text-foreground">实时配额剩余</h2>
@@ -200,7 +190,6 @@ const toneClass: Record<string, string> = {
       </KunCard>
     </div>
 
-    <!-- Per-app breakdown -->
     <div>
       <h2 class="mb-3 text-lg font-semibold text-foreground">按应用</h2>
       <KunCard
@@ -273,7 +262,6 @@ const toneClass: Record<string, string> = {
       </KunCard>
     </div>
 
-    <!-- Per-face breakdown -->
     <div v-if="byFace.length">
       <h2 class="mb-3 text-lg font-semibold text-foreground">按面</h2>
       <KunCard content-class="p-0" class-name="overflow-hidden">

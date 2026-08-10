@@ -3,8 +3,6 @@ import { cn } from '@kungal/ui-core'
 import { DOCS_METHOD_BADGE } from '~/constants/docs'
 import type { DocsMethod } from '~~/shared/types/docs'
 
-// Compact uppercase HTTP-method pill; color carries the semantic (GET=success,
-// POST=primary …). Two sizes: sm for the sidebar/list rows, md for headers.
 const props = withDefaults(
   defineProps<{ method: DocsMethod; size?: 'sm' | 'md' }>(),
   { size: 'sm' }

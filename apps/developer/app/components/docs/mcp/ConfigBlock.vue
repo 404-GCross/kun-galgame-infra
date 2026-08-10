@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// A labeled, copyable code block for a client config snippet. Mirrors
-// DocsCurlBlock's chrome but is content-agnostic (JSON config, a CLI command),
-// so the AI/MCP guide can show each client's setup with one consistent surface.
 defineProps<{ label: string; code: string; icon?: string }>()
 </script>
 

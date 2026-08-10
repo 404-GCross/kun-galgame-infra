@@ -1,9 +1,3 @@
-// public_label_rollup_test.go — wave 199: the imprint roll-up.
-//
-// What is pinned here is the pair of promises the feature makes, because both
-// are the kind that fail silently: the counts stay DISJOINT (nothing is counted
-// twice, so their sum is the length of the rolled-up list), and every rolled-up
-// row is ATTRIBUTED (a company page never claims an imprint's work as its own).
 package service
 
 import (
@@ -12,10 +6,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// rollupFixture builds one holding company as the data really looks: a parent
-// with one work of its own, an imprint with two, a work BOTH claim, a spin-off
-// whose catalogue is its own, and an r18 work under the imprint for the nsfw
-// axis. Returns the parent, the imprint, the spin-off, and the work ids by role.
 type rollupFixture struct {
 	parent, imprint, spinoff     int64
 	own, viaImprint, shared, r18 int64
@@ -32,8 +22,6 @@ func seedRollup(t *testing.T) rollupFixture {
 		imprint: mkLabel(t, "Key", ""),
 		spinoff: mkLabel(t, "fairys", ""),
 	}
-	// The imprint and the subsidiary are followed; the spin-off is not. Facts
-	// are written mirrored, exactly as the wave-186 importer stores them.
 	relateMirrored(t, f.parent, f.imprint, model.LabelRelationImprint)
 	relateMirrored(t, f.parent, f.spinoff, model.LabelRelationSpawned)
 
@@ -57,10 +45,6 @@ func seedRollup(t *testing.T) rollupFixture {
 	return f
 }
 
-// TestLabelRollupCountsAreDisjoint is the arithmetic the two numbers promise.
-// A work BOTH the company and its imprint attribute must be counted ONCE, on
-// the company — otherwise work_count + imprint_work_count over-reports and the
-// reader is told the rolled-up page holds more rows than it does.
 func TestLabelRollupCountsAreDisjoint(t *testing.T) {
 	f := seedRollup(t)
 	svc := newPublicSvc()
@@ -70,17 +54,13 @@ func TestLabelRollupCountsAreDisjoint(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("label: %v ok=%v", err, ok)
 	}
-	// own + shared, unchanged by the roll-up existing at all.
 	if l.WorkCount != 2 {
 		t.Fatalf("work_count = %d, want 2 (own + shared)", l.WorkCount)
 	}
-	// The imprint holds three works, but `shared` is already on the parent and
-	// the r18 one is invisible to an sfw caller.
 	if l.ImprintWorkCount != 1 {
 		t.Fatalf("imprint_work_count = %d, want 1 (CLANNAD only)", l.ImprintWorkCount)
 	}
 
-	// The nsfw axis moves BOTH numbers the same way it moves work_count today.
 	l, _, err = svc.Label(ctx, f.parent, false, true, 50, 0)
 	if err != nil {
 		t.Fatalf("label nsfw: %v", err)
@@ -89,17 +69,11 @@ func TestLabelRollupCountsAreDisjoint(t *testing.T) {
 		t.Fatalf("nsfw imprint_work_count = %d, want 2", l.ImprintWorkCount)
 	}
 
-	// The spin-off's catalogue is NOT this company's. Rolling it up would put
-	// another company's works on this page under this company's name.
 	if l.WorkCount+l.ImprintWorkCount != 4 {
 		t.Fatalf("rolled-up total = %d, want 4 (the spin-off's work is not ours)", l.WorkCount+l.ImprintWorkCount)
 	}
 }
 
-// TestLabelRollupPageMatchesTheCountsAndIsAttributed is the invariant the whole
-// taxonomy lane rests on — the number beside a chip is the number you get by
-// following it — extended to the second number. And it pins the attribution:
-// the imprint's rows say `via Key`, the company's own rows say nothing.
 func TestLabelRollupPageMatchesTheCountsAndIsAttributed(t *testing.T) {
 	f := seedRollup(t)
 	svc := newPublicSvc()
@@ -107,8 +81,6 @@ func TestLabelRollupPageMatchesTheCountsAndIsAttributed(t *testing.T) {
 
 	base := WorksListFilter{LabelID: f.parent, ClaimStates: []string{model.ClaimStateKeyLive}}
 
-	// Without the flag nothing changes: the frozen contract for every existing
-	// caller of works?label_id=.
 	plain, err := svc.WorksList(ctx, base, "", 50)
 	if err != nil {
 		t.Fatalf("plain list: %v", err)
@@ -128,7 +100,6 @@ func TestLabelRollupPageMatchesTheCountsAndIsAttributed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rolled list: %v", err)
 	}
-	// 2 + 1: exactly work_count + imprint_work_count from the sibling test.
 	if len(page.Items) != 3 {
 		t.Fatalf("rolled page = %d items, want 3", len(page.Items))
 	}
@@ -141,18 +112,11 @@ func TestLabelRollupPageMatchesTheCountsAndIsAttributed(t *testing.T) {
 			via[it.ID] = it.ViaLabel.Name
 		}
 	}
-	// Only CLANNAD came up through the imprint. `shared` is the company's own
-	// work too, so claiming it came `via Key` would be a second lie in the
-	// other direction.
 	if len(via) != 1 || via[f.viaImprint] != "Key" {
 		t.Fatalf("via_label = %v, want only work %d via Key", via, f.viaImprint)
 	}
 }
 
-// TestLabelRollupIgnoresAMergedImprint: a label merged away must stop
-// contributing works under its old identity, on this face as on every other.
-// The redirect makes it unreachable, and a roll-up that still counted it would
-// resurrect a dead page's catalogue inside a live one.
 func TestLabelRollupIgnoresAMergedImprint(t *testing.T) {
 	f := seedRollup(t)
 	svc := newPublicSvc()

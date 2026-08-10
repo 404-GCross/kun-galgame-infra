@@ -19,12 +19,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + registry seeds), the src_bangumi Silver schema, and minimal
-// DLsite / EG fixtures each in a DEDICATED schema
-// (releasemeta_dl / releasemeta_eg) reached via search_path
-// DSNs — the workratings discipline: the shared test DB's public tables belong
-// to other suites and must not be clobbered.
 var (
 	testDB      *gorm.DB
 	testDSN     string
@@ -96,7 +90,6 @@ func mkWork(t *testing.T, medium int16, name string, site *string, productID *in
 	return w.ID
 }
 
-// mkRelease creates one release; y=0 leaves the date trio NULL (empty).
 func mkRelease(t *testing.T, workID int64, y, m, d int16) int64 {
 	t.Helper()
 	rel := model.CatalogRelease{WorkID: workID, Kind: model.ReleaseKindDigital}
@@ -132,8 +125,6 @@ func mkSubject(t *testing.T, id int64, date string, nsfw bool) {
 	}).Error)
 }
 
-// mkDlWork writes one DLsite mirror row; regist "" = NULL regist_date, age ""
-// = NULL age_category.
 func mkDlWork(t *testing.T, workno, regist, age string) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(
@@ -186,11 +177,6 @@ func runOpts(apply bool) Opts {
 func str(s string) *string { return &s }
 func i64(v int64) *int64   { return &v }
 
-// TestBackfillReleaseMeta exercises the whole pipeline through the real Run
-// entry point: per-lane candidate selection, the dlsite>eg>bgm value-level
-// precedence, partial/garbage date parsing, the ①②③ rating priority chain with
-// explicit all-ages suppression, dry-run zero-write, apply value fidelity, and
-// second-pass idempotency (fill-empty leaves nothing to write).
 func TestBackfillReleaseMeta(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -199,7 +185,6 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	require.NoError(t, err)
 	wiki := "galgame_wiki"
 
-	// --- date/dlsite lane fixtures ---
 	wDl := mkWork(t, medium, "dl-date", nil, nil, 0)
 	relDl := mkRelease(t, wDl, 0, 0, 0)
 	mkReleaseAnchor(t, relDl, "RJ000001", reg.dlsiteSource)
@@ -219,13 +204,11 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	mkReleaseAnchor(t, relDlFuture, "RJ000004", reg.dlsiteSource)
 	mkDlWork(t, "RJ000004", "2099-12-31 00:00:00+08", "")
 
-	// Fill-empty: a dated release is never a candidate, whatever the mirror says.
 	wDlNonEmpty := mkWork(t, medium, "dl-non-empty", nil, nil, 0)
 	relDlNonEmpty := mkRelease(t, wDlNonEmpty, 1999, 12, 24)
 	mkReleaseAnchor(t, relDlNonEmpty, "RJ000005", reg.dlsiteSource)
 	mkDlWork(t, "RJ000005", "2020-01-01 00:00:00+08", "")
 
-	// DLsite beats EG when BOTH can fill the same stub release.
 	wBoth := mkWork(t, medium, "dl-beats-eg", nil, nil, 0)
 	relBoth := mkRelease(t, wBoth, 0, 0, 0)
 	mkReleaseAnchor(t, relBoth, "RJ000006", reg.dlsiteSource)
@@ -233,14 +216,11 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	mkWorkAnchor(t, wBoth, "601", reg.egSource, model.LinkKindExact)
 	mkEgGame(t, 601, "2022-01-01")
 
-	// --- date/eg lane fixtures ---
 	wEg := mkWork(t, medium, "eg-date", nil, nil, 0)
 	relEg := mkRelease(t, wEg, 0, 0, 0)
 	mkWorkAnchor(t, wEg, "602", reg.egSource, model.LinkKindExact)
 	mkEgGame(t, 602, "2004-05-28")
 
-	// DLsite anchored but mirror has NO regist_date → EG may fill (value-level
-	// precedence, not anchor-level ownership).
 	wEgDlNull := mkWork(t, medium, "eg-fills-dl-null", nil, nil, 0)
 	relEgDlNull := mkRelease(t, wEgDlNull, 0, 0, 0)
 	mkReleaseAnchor(t, relEgDlNull, "RJ000007", reg.dlsiteSource)
@@ -248,13 +228,13 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	mkWorkAnchor(t, wEgDlNull, "603", reg.egSource, model.LinkKindExact)
 	mkEgGame(t, 603, "2010-10-10")
 
-	wEgTwoRel := mkWork(t, medium, "eg-two-releases", nil, nil, 0) // not 1:1 → excluded
+	wEgTwoRel := mkWork(t, medium, "eg-two-releases", nil, nil, 0)
 	mkRelease(t, wEgTwoRel, 0, 0, 0)
 	mkRelease(t, wEgTwoRel, 0, 0, 0)
 	mkWorkAnchor(t, wEgTwoRel, "604", reg.egSource, model.LinkKindExact)
 	mkEgGame(t, 604, "2003-03-03")
 
-	wEgClaimed := mkWork(t, medium, "eg-claimed", str(wiki), i64(9101), 0) // claimed → excluded from EG lane
+	wEgClaimed := mkWork(t, medium, "eg-claimed", str(wiki), i64(9101), 0)
 	mkRelease(t, wEgClaimed, 0, 0, 0)
 	mkWorkAnchor(t, wEgClaimed, "605", reg.egSource, model.LinkKindExact)
 	mkEgGame(t, 605, "2005-05-05")
@@ -262,7 +242,7 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	wEgBad := mkWork(t, medium, "eg-placeholder", nil, nil, 0)
 	relEgBad := mkRelease(t, wEgBad, 0, 0, 0)
 	mkWorkAnchor(t, wEgBad, "606", reg.egSource, model.LinkKindExact)
-	mkEgGame(t, 606, "2050-01-01") // TBA placeholder → gated
+	mkEgGame(t, 606, "2050-01-01")
 
 	wEgMissing := mkWork(t, medium, "eg-missing", nil, nil, 0)
 	mkRelease(t, wEgMissing, 0, 0, 0)
@@ -270,12 +250,11 @@ func TestBackfillReleaseMeta(t *testing.T) {
 
 	wEgMulti := mkWork(t, medium, "eg-multi-anchor", nil, nil, 0)
 	relEgMulti := mkRelease(t, wEgMulti, 0, 0, 0)
-	mkWorkAnchor(t, wEgMulti, "608", reg.egSource, model.LinkKindExact) // absent from mirror
+	mkWorkAnchor(t, wEgMulti, "608", reg.egSource, model.LinkKindExact)
 	mkWorkAnchor(t, wEgMulti, "609", reg.egSource, model.LinkKindExact)
-	mkEgGame(t, 609, "2015-03-03") // lowest mirror-present id wins
+	mkEgGame(t, 609, "2015-03-03")
 
-	// --- date/bgm lane fixtures ---
-	wBgmClaimed := mkWork(t, medium, "bgm-claimed", str(wiki), i64(9102), 0) // claimed is legal for dates
+	wBgmClaimed := mkWork(t, medium, "bgm-claimed", str(wiki), i64(9102), 0)
 	relBgmClaimed := mkRelease(t, wBgmClaimed, 0, 0, 0)
 	mkWorkAnchor(t, wBgmClaimed, "701", reg.bangumiSource, model.LinkKindExact)
 	mkSubject(t, 701, "2010-04-30", false)
@@ -283,7 +262,7 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	wBgmPartial := mkWork(t, medium, "bgm-partial", nil, nil, 0)
 	relBgmPartial := mkRelease(t, wBgmPartial, 0, 0, 0)
 	mkWorkAnchor(t, wBgmPartial, "702", reg.bangumiSource, model.LinkKindExact)
-	mkSubject(t, 702, "2015", false) // bare year — legal partial
+	mkSubject(t, 702, "2015", false)
 
 	wBgmEmpty := mkWork(t, medium, "bgm-empty-date", nil, nil, 0)
 	mkRelease(t, wBgmEmpty, 0, 0, 0)
@@ -295,7 +274,6 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	mkWorkAnchor(t, wBgmGarbage, "704", reg.bangumiSource, model.LinkKindExact)
 	mkSubject(t, 704, "TBA?", false)
 
-	// EG beats bgm on the same stub release.
 	wBgmCovered := mkWork(t, medium, "eg-beats-bgm", nil, nil, 0)
 	relBgmCovered := mkRelease(t, wBgmCovered, 0, 0, 0)
 	mkWorkAnchor(t, wBgmCovered, "610", reg.egSource, model.LinkKindExact)
@@ -303,12 +281,11 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	mkWorkAnchor(t, wBgmCovered, "705", reg.bangumiSource, model.LinkKindExact)
 	mkSubject(t, 705, "2002-03-04", false)
 
-	wBgmProbable := mkWork(t, medium, "bgm-probable", nil, nil, 0) // probable tier → excluded everywhere
+	wBgmProbable := mkWork(t, medium, "bgm-probable", nil, nil, 0)
 	mkRelease(t, wBgmProbable, 0, 0, 0)
 	mkWorkAnchor(t, wBgmProbable, "706", reg.bangumiSource, model.LinkKindProbable)
 	mkSubject(t, 706, "2011-11-11", true)
 
-	// --- age-rating lane fixtures (releases pre-dated → out of the date lanes) ---
 	rDlAdult := mkWork(t, medium, "rating-dl-adult", nil, nil, 0)
 	relRDlAdult := mkRelease(t, rDlAdult, 2000, 1, 1)
 	mkReleaseAnchor(t, relRDlAdult, "RJ000101", reg.dlsiteSource)
@@ -319,32 +296,25 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	mkReleaseAnchor(t, relRDlR15, "RJ000102", reg.dlsiteSource)
 	mkDlWork(t, "RJ000102", "", "2")
 
-	// An explicit DLsite all-ages verdict keeps the row at 0 and suppresses the
-	// lower lane — ownership, not strictest-across-sources.
 	rDlAll := mkWork(t, medium, "rating-dl-all", str(wiki), i64(9103), 0)
 	relRDlAll := mkRelease(t, rDlAll, 2000, 1, 1)
 	mkReleaseAnchor(t, relRDlAll, "RJ000103", reg.dlsiteSource)
 	mkDlWork(t, "RJ000103", "", "1")
 
-	// The wiki lane (source ②, galgame.age_limit) and its three fixtures went
-	// with the table in wave 149 — see rating.go. Priority is now ① DLsite
-	// then ③ Bangumi.
 
 	rBgm := mkWork(t, medium, "rating-bgm-nsfw", nil, nil, 0)
 	mkWorkAnchor(t, rBgm, "708", reg.bangumiSource, model.LinkKindExact)
 	mkSubject(t, 708, "", true)
 
-	rBgmFalse := mkWork(t, medium, "rating-bgm-sfw", nil, nil, 0) // nsfw=false is NOT a verdict
+	rBgmFalse := mkWork(t, medium, "rating-bgm-sfw", nil, nil, 0)
 	mkWorkAnchor(t, rBgmFalse, "709", reg.bangumiSource, model.LinkKindExact)
 	mkSubject(t, 709, "", false)
 
-	// Fill-empty: an already-rated work is never a candidate.
 	rRated := mkWork(t, medium, "rating-already-rated", nil, nil, model.ContentRatingR18)
 	relRRated := mkRelease(t, rRated, 2000, 1, 1)
 	mkReleaseAnchor(t, relRRated, "RJ000104", reg.dlsiteSource)
 	mkDlWork(t, "RJ000104", "", "2")
 
-	// --- dry run: decides, writes nothing.
 	st, err := Run(ctx, runOpts(false))
 	require.NoError(t, err)
 	assert.Equal(t, 6, st.DlDateCandidates)
@@ -378,7 +348,6 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	assert.Nil(t, y, "dry run writes nothing")
 	assert.Equal(t, int16(0), workRating(t, rDlAdult), "dry run writes nothing")
 
-	// --- apply: fills the decided plan exactly.
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
 	assert.Equal(t, 2, st.DlDateFilled)
@@ -389,14 +358,14 @@ func TestBackfillReleaseMeta(t *testing.T) {
 		st.RatingSkippedNonEmpty+st.Errors)
 
 	assertDate(t, relDl, 2020, 5, 1)
-	assertDate(t, relBoth, 2021, 7, 15) // DLsite value, NOT EG's 2022-01-01
+	assertDate(t, relBoth, 2021, 7, 15)
 	assertDate(t, relEg, 2004, 5, 28)
-	assertDate(t, relEgDlNull, 2010, 10, 10) // EG filled what DLsite could not
+	assertDate(t, relEgDlNull, 2010, 10, 10)
 	assertDate(t, relEgMulti, 2015, 3, 3)
-	assertDate(t, relBgmCovered, 2001, 2, 3) // EG value, NOT bgm's 2002-03-04
+	assertDate(t, relBgmCovered, 2001, 2, 3)
 	assertDate(t, relBgmClaimed, 2010, 4, 30)
-	assertDate(t, relBgmPartial, 2015, 0, 0)   // year-only partial: m/d stay NULL
-	assertDate(t, relDlNonEmpty, 1999, 12, 24) // pre-existing date untouched
+	assertDate(t, relBgmPartial, 2015, 0, 0)
+	assertDate(t, relDlNonEmpty, 1999, 12, 24)
 	yBad, _, _ := relDate(t, relEgBad)
 	assert.Nil(t, yBad, "gated placeholder never lands")
 	yFut, _, _ := relDate(t, relDlFuture)
@@ -409,8 +378,6 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	assert.Equal(t, int16(0), workRating(t, rBgmFalse), "nsfw=false never infers a rating")
 	assert.Equal(t, model.ContentRatingR18, workRating(t, rRated), "non-zero rating untouched")
 
-	// --- second apply: fill-empty idempotency — filled rows left the candidate
-	// sets, the rest still has nothing to write.
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.DlDateCandidates, "only the unfillable three remain")
@@ -424,10 +391,6 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	assert.Equal(t, 1, st.RatingDlAllAges, "all-ages verdicts persist as counted no-ops")
 }
 
-// TestFillEmptyGuardAndDSNRequired covers the writer's last-moment fill-empty
-// guard (candidate queries already exclude non-empty rows, so the guard is
-// only reachable by driving the writer directly) and the refuse-to-guess DSN
-// discipline.
 func TestFillEmptyGuardAndDSNRequired(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -450,7 +413,6 @@ func TestFillEmptyGuardAndDSNRequired(t *testing.T) {
 	assert.Equal(t, 1, w.stats.RatingSkippedNonEmpty, "non-zero rating refused at write time")
 	assert.Equal(t, model.ContentRatingSensitive, workRating(t, wRated))
 
-	// DSN discipline: all three DSNs are required, never guessed.
 	for _, opts := range []Opts{
 		{DlsiteDSN: testDSN, EGDSN: testDSN},
 		{DSN: testDSN, EGDSN: testDSN},

@@ -18,14 +18,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema (migrate.Run
-// + seeds) is the WHOLE fixture surface since wave 149 — all three lanes now
-// read catalog_work_tag, so the galgame tag layer the vndb lane used to join is
-// gone from this file. This exercises Run end-to-end across ALL THREE lanes:
-// extraction, junk prefilter, ≥2-source
-// grouping with the canonical-name pick + meta stamping, dry-run zero-write,
-// apply fidelity, and second-pass idempotence. Run drives the DSN itself, so we
-// capture it to exercise the real entry point.
 var (
 	testDB  *gorm.DB
 	testDSN string
@@ -94,7 +86,6 @@ func mkBodylessWork(t *testing.T, medium int16) int64 {
 	return w.ID
 }
 
-// TestTagcanonRun drives the whole pipeline through the real Run entry point.
 func TestTagcanonRun(t *testing.T) {
 	cleanTagcanon(t)
 	ctx := context.Background()
@@ -102,9 +93,6 @@ func TestTagcanonRun(t *testing.T) {
 	var medium int16
 	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_medium WHERE key='galgame'`).Scan(&medium).Error)
 
-	// vndb vocabulary via catalog_work_tag (wave 149): 奇幻 (usage 3) +
-	// 百合 (usage 1) + 巨乳女主角 (usage 1, single-source → no group). Usage is
-	// distinct works, so each name needs one row per carrying work.
 	wV1, wV2, wV3 := mkBodylessWork(t, medium), mkBodylessWork(t, medium), mkBodylessWork(t, medium)
 	mkWorkTag(t, wV1, "奇幻", 0, vndb)
 	mkWorkTag(t, wV2, "奇幻", 0, vndb)
@@ -112,19 +100,17 @@ func TestTagcanonRun(t *testing.T) {
 	mkWorkTag(t, wV1, "百合", 0, vndb)
 	mkWorkTag(t, wV1, "巨乳女主角", 0, vndb)
 
-	// bangumi + dlsite vocabulary via catalog_work_tag.
 	wB := mkBodylessWork(t, medium)
 	wD := mkBodylessWork(t, medium)
-	mkWorkTag(t, wB, "奇幻", 5, bgm)   // → 3-source group
-	mkWorkTag(t, wB, "百合", 9, bgm)   // → 2-source group (vndb + bangumi)
-	mkWorkTag(t, wB, "像素", 2, bgm)   // meta → 2-source group (bangumi + dlsite)
-	mkWorkTag(t, wB, "2024", 1, bgm) // JUNK (number)
-	mkWorkTag(t, wB, "抖m", 1, bgm)   // bangumi-only → no group
+	mkWorkTag(t, wB, "奇幻", 5, bgm)
+	mkWorkTag(t, wB, "百合", 9, bgm)
+	mkWorkTag(t, wB, "像素", 2, bgm)
+	mkWorkTag(t, wB, "2024", 1, bgm)
+	mkWorkTag(t, wB, "抖m", 1, bgm)
 	mkWorkTag(t, wD, "奇幻", 40, dl)
 	mkWorkTag(t, wD, "像素", 8, dl)
-	mkWorkTag(t, wD, "手交", 3, dl) // dlsite-only → no group
+	mkWorkTag(t, wD, "手交", 3, dl)
 
-	// --- dry run: decides, writes nothing.
 	st, err := Run(ctx, Opts{DSN: testDSN})
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.VndbNames, "奇幻 / 百合 / 巨乳女主角")
@@ -138,7 +124,6 @@ func TestTagcanonRun(t *testing.T) {
 	assert.Zero(t, st.TagsCreated+st.MapsCreated, "dry writes nothing")
 	assert.EqualValues(t, 0, tagRowCount(t))
 
-	// --- apply: writes the decided plan exactly.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.TagsCreated)
@@ -146,7 +131,6 @@ func TestTagcanonRun(t *testing.T) {
 	assert.Zero(t, st.TagsConflict+st.MapsConflict+st.Errors)
 	assert.EqualValues(t, 3, tagRowCount(t))
 
-	// Fidelity: 奇幻 = tier core, kind content, three map rows (vndb/bangumi/dlsite).
 	var qf model.CatalogTag
 	require.NoError(t, testDB.Where("name = ?", "奇幻").First(&qf).Error)
 	assert.EqualValues(t, model.TagTierCore, qf.Tier)
@@ -155,12 +139,10 @@ func TestTagcanonRun(t *testing.T) {
 	require.NoError(t, testDB.Where("tag_id = ?", qf.ID).Order("source_id").Find(&maps).Error)
 	require.Len(t, maps, 3)
 	assert.Equal(t, []int16{vndb, bgm, dl}, []int16{maps[0].SourceID, maps[1].SourceID, maps[2].SourceID})
-	// 像素 stamped meta.
 	var qm model.CatalogTag
 	require.NoError(t, testDB.Where("name = ?", "像素").First(&qm).Error)
 	assert.EqualValues(t, model.TagKindMeta, qm.Kind)
 
-	// --- second apply: idempotent — zero writes, every row conflicts.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.TagsCreated+st.MapsCreated+st.Errors, "second pass writes zero")
@@ -169,7 +151,6 @@ func TestTagcanonRun(t *testing.T) {
 	assert.EqualValues(t, 3, tagRowCount(t), "row count unchanged")
 }
 
-// TestDSNRequired covers the refuse-to-guess DSN discipline.
 func TestDSNRequired(t *testing.T) {
 	_, err := Run(context.Background(), Opts{})
 	require.Error(t, err)

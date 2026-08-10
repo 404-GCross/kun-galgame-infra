@@ -1,23 +1,3 @@
-// Package workplaytime backfills catalog_work_playtime rows — the playtime
-// facet (refs/proj/91, ledger 时长 row) — from the two sources that publish a
-// playtime estimate:
-//
-//   - erogamespace lane: EG EXACT work anchors join the EG mirror's games
-//     (--eg-dsn, a separate database); games whose raw->>'total_play_time_median'
-//     is numeric land as an erogamespace row, HOURS ×60 → minutes.
-//   - vndb lane: vndb EXACT work anchors join src_vndb.vn (a schema INSIDE the
-//     catalog DB — single --dsn); VNs with a non-NULL c_length land as a vndb
-//     row: minutes verbatim, vote_count = c_lengthnum.
-//
-// This facet has NO claimed bridge lane (the wiki galgame family carries no
-// playtime field), so BOTH lanes admit claimed and bodyless works alike — the
-// (facet,source) XOR's degenerate case (step-88 semantics: bridge set empty).
-//
-// Discipline (58a/62 lineage): every DSN explicit; dry-run default; writes are
-// ON CONFLICT DO UPDATE with change detection (refresh-runnable — a mirror or
-// dump refresh + re-run updates in place, an unchanged re-run is a no-op).
-// Values above the sanity cap (1,000 hours — the mirror carries 10,000h-level
-// garbage) are rejected and counted, never written.
 package workplaytime
 
 import (
@@ -34,23 +14,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// capMinutes rejects garbage estimates: 1,000 hours (the EG mirror's
-// total_play_time_median carries values up to 10,000h).
 const capMinutes = 1000 * 60
 
-// Opts configures a run. Source selects the lane: "eg" | "vndb" | "all".
 type Opts struct {
 	Apply  bool
-	DSN    string // catalog DB (hosts src_vndb) — REQUIRED
-	EGDSN  string // EG mirror DB — REQUIRED for the eg/all lanes
+	DSN    string
+	EGDSN  string
 	Source string
 }
 
-// Stats reports a run. Planned counters are identical in dry and apply.
 type Stats struct {
-	EGAnchored  int // works with an EG anchor whose game has a numeric playtime
+	EGAnchored  int
 	EGPlanned   int
-	EGRejected  int // over-cap estimates dropped (counted per planned row)
+	EGRejected  int
 	EGWritten   int
 	EGUnchanged int
 
@@ -62,7 +38,6 @@ type Stats struct {
 	Errors int
 }
 
-// Run executes the backfill.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
@@ -126,11 +101,8 @@ func resolveIDs(ctx context.Context, db *gorm.DB) (registryIDs, error) {
 	return r, nil
 }
 
-// numRe admits the mirror's numeric playtime strings (integers in practice;
-// tolerate a decimal tail defensively).
 var numRe = regexp.MustCompile(`^\d+(\.\d+)?$`)
 
-// runEG: anchors → mirror playtimes (hours) → ×60 → upsert.
 func runEG(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *Stats) error {
 	anchors, err := loadAnchors(ctx, db, ids.galgameMedium, ids.egSource)
 	if err != nil {
@@ -142,16 +114,13 @@ func runEG(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *Sta
 	}
 	defer closeGorm(egDB)
 
-	// Batch-load the mirror playtimes for the anchored game ids (numeric
-	// external ids only — non-numeric are impossible for the EG lane but the
-	// filter keeps the cast safe).
 	gameIDs := make([]int64, 0, len(anchors))
 	for _, a := range anchors {
 		if n, err := strconv.ParseInt(a.ExternalID, 10, 64); err == nil {
 			gameIDs = append(gameIDs, n)
 		}
 	}
-	playtime := map[int64]float64{} // game id → hours
+	playtime := map[int64]float64{}
 	for _, chunk := range chunkInt64(gameIDs, 10000) {
 		var rows []struct {
 			ID int64  `gorm:"column:id"`
@@ -173,9 +142,6 @@ func runEG(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *Sta
 		}
 	}
 
-	// touched collects works whose playtime really moved, so the lane bumps their
-	// catalog_work.updated_at once and the public changes feed sees it. Unchanged
-	// upserts and dry-runs contribute nothing.
 	var touched []int64
 	for _, a := range anchors {
 		n, err := strconv.ParseInt(a.ExternalID, 10, 64)
@@ -206,7 +172,6 @@ func runEG(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *Sta
 	return repository.TouchWorks(ctx, db, touched)
 }
 
-// runVndb: anchors ⋈ src_vndb.vn c_length (already minutes) → upsert.
 func runVndb(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *Stats) error {
 	var rows []struct {
 		WorkID    int64 `gorm:"column:work_id"`
@@ -224,7 +189,7 @@ func runVndb(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *S
 		Scan(&rows).Error; err != nil {
 		return fmt.Errorf("load vndb playtimes: %w", err)
 	}
-	var touched []int64 // works whose playtime really moved (see runEG)
+	var touched []int64
 	for _, r := range rows {
 		if r.Minutes <= 0 {
 			continue
@@ -249,9 +214,6 @@ type anchor struct {
 	ExternalID string `gorm:"column:external_id"`
 }
 
-// loadAnchors resolves EXACT work anchors of a source on galgame works —
-// claimed and bodyless alike (no XOR arm for this facet). DISTINCT ON keeps
-// one anchor per work (lowest external_id, the workratings discipline).
 func loadAnchors(ctx context.Context, db *gorm.DB, medium, source int16) ([]anchor, error) {
 	var out []anchor
 	if err := db.WithContext(ctx).Raw(`
@@ -266,10 +228,6 @@ func loadAnchors(ctx context.Context, db *gorm.DB, medium, source int16) ([]anch
 	return out, nil
 }
 
-// upsert writes one row with change detection: insert, or update only when the
-// stored (minutes, vote_count) differ — the second identical run writes zero.
-// Reports whether the row actually moved, which is what the caller needs to
-// decide whose catalog_work.updated_at to bump.
 func upsert(ctx context.Context, db *gorm.DB, workID int64, sourceID int16, minutes, votes int, written, unchanged, errors *int) bool {
 	res := db.WithContext(ctx).Exec(`
 		INSERT INTO catalog_work_playtime (work_id, source_id, minutes, vote_count)

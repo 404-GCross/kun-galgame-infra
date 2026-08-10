@@ -17,21 +17,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// ModerationWorker consumes image_moderation_queue rows and calls the
-// configured Provider.AsyncCheck for each. Results are written back to
-// images.review_status + images.review_labels. The queue row is deleted
-// on success; on error, `attempts` is incremented and the row stays.
-//
-// Rows with attempts >= MaxAttempts are flagged for human review
-// (ReviewManual).
 type ModerationWorker struct {
 	db      *gorm.DB
 	storage *storage.Client
 	prov    moderation.Provider
 
-	MaxAttempts int           // default 5
-	BatchSize   int           // default 20
-	PollEvery   time.Duration // default 15s
+	MaxAttempts int
+	BatchSize   int
+	PollEvery   time.Duration
 }
 
 func NewModerationWorker(db *gorm.DB, s *storage.Client, p moderation.Provider) *ModerationWorker {
@@ -41,7 +34,6 @@ func NewModerationWorker(db *gorm.DB, s *storage.Client, p moderation.Provider) 
 	}
 }
 
-// Run blocks until ctx is cancelled, polling the queue on PollEvery.
 func (w *ModerationWorker) Run(ctx context.Context) error {
 	slog.Info("moderation worker starting",
 		"provider", w.prov.Name(),
@@ -52,7 +44,6 @@ func (w *ModerationWorker) Run(ctx context.Context) error {
 	t := time.NewTicker(w.PollEvery)
 	defer t.Stop()
 
-	// Run once immediately, then on each tick.
 	w.runOnce(ctx)
 	for {
 		select {
@@ -64,8 +55,6 @@ func (w *ModerationWorker) Run(ctx context.Context) error {
 	}
 }
 
-// runOnce drains up to BatchSize queue entries. Errors are logged, never
-// returned — the worker keeps running on errors.
 func (w *ModerationWorker) runOnce(ctx context.Context) {
 	rows, err := w.claim(ctx)
 	if err != nil {
@@ -83,14 +72,9 @@ func (w *ModerationWorker) runOnce(ctx context.Context) {
 	}
 }
 
-// claim picks up queue rows that haven't been picked up recently, using
-// Postgres SELECT ... FOR UPDATE SKIP LOCKED semantics. Returns claimed
-// rows and marks them with a fresh pickup_at.
 func (w *ModerationWorker) claim(ctx context.Context) ([]model.ModerationQueue, error) {
 	var claimed []model.ModerationQueue
 	err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Rows never picked up, or pickup_at older than 5 minutes ago
-		// (handles worker crash: the row becomes re-claimable).
 		staleBefore := time.Now().Add(-5 * time.Minute)
 
 		rows := []model.ModerationQueue{}
@@ -126,22 +110,17 @@ func (w *ModerationWorker) claim(ctx context.Context) ([]model.ModerationQueue, 
 	return claimed, err
 }
 
-// processOne handles a single queue entry: fetches the image body, calls
-// the provider, writes results, and removes / updates the queue row.
 func (w *ModerationWorker) processOne(ctx context.Context, q model.ModerationQueue) error {
-	// Fetch the image record to know the storage key + mime.
 	var img model.Image
 	if err := w.db.WithContext(ctx).
 		Where("hash = ?", q.Hash).
 		First(&img).Error; err != nil {
-		// If the image is gone (soft-deleted / gc'd), drop the queue row.
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return w.dropQueue(ctx, q.ID)
 		}
 		return w.failAttempt(ctx, q.ID, err)
 	}
 
-	// Pull bytes from S3.
 	rc, err := w.storage.Get(ctx, img.StorageKey)
 	if err != nil {
 		return w.failAttempt(ctx, q.ID, fmt.Errorf("fetch body: %w", err))
@@ -164,7 +143,6 @@ func (w *ModerationWorker) processOne(ctx context.Context, q model.ModerationQue
 	return w.dropQueue(ctx, q.ID)
 }
 
-// applyDecision writes the moderation result to the image row.
 func (w *ModerationWorker) applyDecision(ctx context.Context, img *model.Image, dec *moderation.Decision) error {
 	status := model.ReviewApproved
 	switch dec.Verdict {
@@ -175,7 +153,6 @@ func (w *ModerationWorker) applyDecision(ctx context.Context, img *model.Image, 
 	case moderation.VerdictApprove:
 		status = model.ReviewApproved
 	default:
-		// Undecided → leave pending; will retry next run.
 		status = model.ReviewPending
 	}
 
@@ -196,15 +173,12 @@ func (w *ModerationWorker) applyDecision(ctx context.Context, img *model.Image, 
 		Updates(updates).Error
 }
 
-// dropQueue removes the queue row after successful processing.
 func (w *ModerationWorker) dropQueue(ctx context.Context, id int64) error {
 	return w.db.WithContext(ctx).
 		Where("id = ?", id).
 		Delete(&model.ModerationQueue{}).Error
 }
 
-// failAttempt increments attempts on the queue row. If MaxAttempts is
-// reached, escalate the image to ReviewManual and drop the queue row.
 func (w *ModerationWorker) failAttempt(ctx context.Context, id int64, cause error) error {
 	var q model.ModerationQueue
 	if err := w.db.WithContext(ctx).First(&q, id).Error; err != nil {
@@ -225,8 +199,6 @@ func (w *ModerationWorker) failAttempt(ctx context.Context, id int64, cause erro
 		return w.dropQueue(ctx, id)
 	}
 
-	// Otherwise just bump attempts and clear pickup_at so it can be
-	// retried by another worker on next poll.
 	return w.db.WithContext(ctx).
 		Model(&model.ModerationQueue{}).
 		Where("id = ?", id).

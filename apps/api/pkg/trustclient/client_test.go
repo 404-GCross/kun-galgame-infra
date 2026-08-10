@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// TestScanWire verifies the Scan client posts to /api/v1/trust/scan with the
-// site + author on the wire and decodes the {code,message,data} envelope.
 func TestScanWire(t *testing.T) {
 	var gotPath string
 	var gotBody ScanRequest
@@ -45,8 +43,6 @@ func TestScanWire(t *testing.T) {
 	}
 }
 
-// TestCheckWire verifies the Check client posts to /api/v1/trust/check with the
-// site + author on the wire and decodes {decision, matched} from the envelope.
 func TestCheckWire(t *testing.T) {
 	var gotPath string
 	var gotBody CheckRequest

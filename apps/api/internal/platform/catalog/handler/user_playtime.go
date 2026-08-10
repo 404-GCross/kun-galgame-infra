@@ -1,16 +1,3 @@
-// user_playtime.go — the playtime face's operations: what a Galgame manager
-// calls after its user signs in with a NextMoe account.
-//
-// The face lives at /v1/playtime, beside the rest of the open API rather than
-// with the catalog's internal write planes, because the audience is a
-// third-party app author who found it in the developer portal. Its
-// authorization chain — a user access token, one scope check, no machine key —
-// is in playtime_gate.go, with the reasoning for why a key alongside the token
-// would have been a second registry holding the same word.
-//
-// Every operation here takes both identities it needs from the verified token:
-// `id` is the person whose playtime this is, `client_id` is the application
-// reporting it. There is no field on the wire to lie in.
 package handler
 
 import (
@@ -30,12 +17,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// PlaytimeServer holds the face's single dependency.
 type PlaytimeServer struct{ svc *service.UserPlaytimeService }
 
-// SetupPlaytime builds the playtime Huma API. Auth is installed by the caller
-// as path-scoped Fiber middleware on PlaytimePrefix. Callable with a nil
-// service for spec export.
 func SetupPlaytime(app *fiber.App, svc *service.UserPlaytimeService) huma.API {
 	InstallErrorEnvelope()
 
@@ -50,10 +33,6 @@ func SetupPlaytime(app *fiber.App, svc *service.UserPlaytimeService) huma.API {
 	return api
 }
 
-// RegisterPlaytimeOps registers the playtime operations. SetupPlaytime calls
-// it for the runtime face; cmd/gen-openapi calls it on the exported catalog
-// contract so downstream app authors read this face beside the ones it sits
-// next to.
 func RegisterPlaytimeOps(api huma.API, svc *service.UserPlaytimeService) {
 	s := &PlaytimeServer{svc: svc}
 	tags := []string{"playtime"}
@@ -94,7 +73,6 @@ func RegisterPlaytimeOps(api huma.API, svc *service.UserPlaytimeService) {
 	}, s.getMine)
 }
 
-// playtimeErr maps the service refusals onto the house envelope.
 func playtimeErr(err error) error {
 	switch {
 	case stderrors.Is(err, service.ErrPlaytimeMinutesRange),
@@ -111,8 +89,6 @@ func playtimeErr(err error) error {
 	slog.Error("catalog playtime", "err", err)
 	return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 }
-
-// --- write legs ---
 
 type playtimeReportInput struct {
 	WorkID int64 `path:"workID" minimum:"1" doc:"Catalog work id"`
@@ -164,8 +140,6 @@ func (s *PlaytimeServer) reportByRef(ctx context.Context, in *playtimeByRefInput
 	return &playtimeRecordOutput{Body: okEnvelope(*rec)}, nil
 }
 
-// store is the shared tail of both single-write legs: decode the wire values,
-// hand them to the service, render the stored row.
 func (s *PlaytimeServer) store(ctx context.Context, uid int64, clientID string,
 	workID int64, body dto.PlaytimeReportBody) (*dto.PlaytimeRecordResponse, error) {
 
@@ -184,9 +158,6 @@ func (s *PlaytimeServer) store(ctx context.Context, uid int64, clientID string,
 	return &out, nil
 }
 
-// decodeReportBody turns the wire's status word and timestamp into stored
-// forms. An omitted status is `playing` (see the DTO); an unparseable
-// timestamp is the caller's error, not a silent null.
 func decodeReportBody(body dto.PlaytimeReportBody) (int16, *time.Time, *houseError) {
 	status, ok := dto.PlaytimeStatusFromWord(orDefault(body.Status, dto.PlaytimeStatusWordPlaying))
 	if !ok {
@@ -213,10 +184,6 @@ type playtimeBatchOutput struct {
 	Body Envelope[dto.PlaytimeBatchResponse]
 }
 
-// reportBatch is the first-login library sync. It walks the items in order and
-// records an outcome for each; only an infrastructure failure aborts the whole
-// call. A manager with 300 games where 40 are not in the catalog wants the 260
-// stored and a list of the 40 — not a 404 for the lot.
 func (s *PlaytimeServer) reportBatch(ctx context.Context, in *playtimeBatchInput) (*playtimeBatchOutput, error) {
 	if he := requireScope(ctx, ScopePlaytimeWrite); he != nil {
 		return nil, he
@@ -261,9 +228,6 @@ func (s *PlaytimeServer) reportBatch(ctx context.Context, in *playtimeBatchInput
 	return &playtimeBatchOutput{Body: okEnvelope(out)}, nil
 }
 
-// resolveBatchTarget applies the one-of rule: a work id addresses directly, a
-// source+external_id pair resolves, and neither (or a half-filled pair) is the
-// caller's error.
 func (s *PlaytimeServer) resolveBatchTarget(ctx context.Context, item dto.PlaytimeBatchItem) (int64, error) {
 	if item.WorkID > 0 {
 		return item.WorkID, nil
@@ -274,9 +238,6 @@ func (s *PlaytimeServer) resolveBatchTarget(ctx context.Context, item dto.Playti
 	return s.svc.ResolveRef(ctx, item.Source, item.ExternalID)
 }
 
-// classifyBatchErr sorts a per-item failure into the two words a client acts
-// on differently: not_found means "your library has a game we do not carry"
-// (show it, offer to submit it), rejected means "fix your values".
 func classifyBatchErr(err error) string {
 	if stderrors.Is(err, service.ErrPlaytimeWorkUnavailable) ||
 		stderrors.Is(err, service.ErrPlaytimeRefUnresolved) ||
@@ -285,8 +246,6 @@ func classifyBatchErr(err error) string {
 	}
 	return "rejected"
 }
-
-// --- read legs ---
 
 type playtimeMineInput struct {
 	UpdatedSince string `query:"updated_since" doc:"RFC 3339 timestamp; returns only rows changed AFTER it. Omit for a full first pull"`
@@ -323,9 +282,6 @@ func (s *PlaytimeServer) listMine(ctx context.Context, in *playtimeMineInput) (*
 	for _, r := range rows {
 		out.Items = append(out.Items, renderPlaytimeRecord(r))
 	}
-	// The cursor is the last row's updated_at. An empty page leaves it null,
-	// which tells the client it is caught up rather than to poll a timestamp
-	// that will never advance on its own.
 	if n := len(rows); n > 0 {
 		cursor := rows[n-1].UpdatedAt.UTC().Format(time.RFC3339Nano)
 		out.Cursor = &cursor
@@ -361,8 +317,6 @@ func (s *PlaytimeServer) getMine(ctx context.Context, in *playtimeSelfInput) (*p
 		Clients:      got.Clients,
 	})}, nil
 }
-
-// --- rendering ---
 
 func renderPlaytimeRecord(r service.PlaytimeRecord) dto.PlaytimeRecordResponse {
 	return dto.PlaytimeRecordResponse{

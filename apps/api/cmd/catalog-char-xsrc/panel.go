@@ -13,44 +13,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// The step-177b panel automates the wave-177 review tail. Round one deferred
-// three shapes: merge verdicts below the auto gate, pairs with a variant
-// (instance) side, and groups that would fuse two rows of the same source.
-// The first two are re-judged by a THREE-VOTE panel under a stricter re-check
-// prompt, each vote reading the same evidence through a different lens; the
-// third needs no model at all — the conflict is structural, so edges are
-// applied best-confidence-first under a keep-sources-disjoint guard and only
-// the edges that conflict survive as residual.
 const (
-	catLowConf    = "lowconf"    // round-one merge below the 0.95 auto gate
-	catUnsure     = "unsure"     // round-one unsure
-	catInstance   = "instance"   // a variant side kept the pair out of the auto lane
-	catSameSource = "samesource" // auto-quality pair inside a same-source-deferred group
+	catLowConf    = "lowconf"
+	catUnsure     = "unsure"
+	catInstance   = "instance"
+	catSameSource = "samesource"
 )
 
-// Panel accept thresholds: every vote must say merge, and the weakest vote
-// must clear the category's bar. The vote-lane bar sits at 0.85 because the
-// judge habitually scores correct spelling-variant merges 0.85 (canary
-// measured), and unanimity across three different lenses is the actual
-// precision signal. Instance pairs demand the full auto-gate bar because a
-// wrong merge there fuses a variant with its base.
 const (
 	panelVotes         = 3
 	panelAcceptConf    = 0.85
 	instanceAcceptConf = 0.95
 )
 
-// panelPair is one review-tail pair after round one, with the category that
-// deferred it and the round-one signal the structural lane ranks by.
 type panelPair struct {
 	pairMeta
 	Cat    string  `json:"cat"`
 	R1Conf float64 `json:"r1_conf"`
 }
 
-// classifyReview replays the round-one emit gates over pairs+verdicts and
-// returns exactly the deferred tail: the same logic that wrote review.txt,
-// re-derived from the durable artefacts instead of parsed back out of prose.
 func classifyReview(pairs []pairMeta, verdicts []personadj.Verdict) []panelPair {
 	byKey := make(map[string]personadj.Verdict, len(verdicts))
 	for _, v := range verdicts {
@@ -84,8 +65,6 @@ func classifyReview(pairs []pairMeta, verdicts []personadj.Verdict) []panelPair 
 		}
 	}
 
-	// Rebuild round one's groups to recover the pairs inside same-source
-	// deferred groups: auto-quality edges that never executed.
 	parent := map[int64]int64{}
 	var find func(int64) int64
 	find = func(x int64) int64 {
@@ -139,9 +118,6 @@ func classifyReview(pairs []pairMeta, verdicts []personadj.Verdict) []panelPair 
 	return tail
 }
 
-// panelLenses are the three vote perspectives. Each vote reads the identical
-// evidence; the lens line only steers WHICH failure mode the vote hunts, so
-// disagreement between votes carries signal a re-roll of one prompt would not.
 var panelLenses = [panelVotes]string{
 	"【复核视角:反证】请专门搜寻它们是不同角色的证据(亲属同姓/同门同名/变体与本体/团体与个体/化名属他人);找不到可靠反证且写法或简介支持同一,才判 merge。",
 	"【复核视角:写法】请检查两个名字的差异是否完全可由写法规则解释(空格/中点/全半角/异体字/音译/通称对全名/姓与名/译名对原名);完全可解释支持 merge,需要脑补的差异倾向 distinct 或 unsure。",
@@ -152,11 +128,6 @@ func panelKey(a, b int64, vote int) string {
 	return fmt.Sprintf("xsrcb:%d:%d:%d", a, b, vote)
 }
 
-// runPanelPackets is the database end of the panel: replay the round-one
-// gates, resolve every deferred pair through catalog_redirect (round one has
-// executed, so a side may already be merged away), refresh the evidence from
-// the live rows, and write pairs2 + three lens packets per LLM-lane pair.
-// Same-source pairs get no packets — their lane is structural.
 func runPanelPackets(db *gorm.DB, pairsPath, verdictsPath, pairs2Path, packets2Path string, out io.Writer) error {
 	pairs, err := loadPairs(pairsPath)
 	if err != nil {
@@ -198,7 +169,7 @@ func runPanelPackets(db *gorm.DB, pairsPath, verdictsPath, pairs2Path, packets2P
 	for _, p := range tail {
 		p.A, p.B = resolve(p.A), resolve(p.B)
 		if p.A == p.B {
-			stats["collapsed"]++ // already merged by round one via another edge
+			stats["collapsed"]++
 			continue
 		}
 		if p.A > p.B {
@@ -215,8 +186,6 @@ func runPanelPackets(db *gorm.DB, pairsPath, verdictsPath, pairs2Path, packets2P
 		p.ARich = richness{Img: a.HasImage, NAliases: len(a.Aliases)}
 		p.BRich = richness{Img: b.HasImage, NAliases: len(b.Aliases)}
 		if p.Cat != catSameSource && overlaps(a.Sources, b.Sources) {
-			// A round-one merge on another edge pulled a shared source onto
-			// one side: the source now keeps the two rows apart itself.
 			stats["source_conflict"]++
 			continue
 		}
@@ -270,11 +239,6 @@ func runPanelPackets(db *gorm.DB, pairsPath, verdictsPath, pairs2Path, packets2P
 	return nil
 }
 
-// runPanelEmit folds the panel votes and writes the step-177b worklist. A
-// vote-lane pair merges only unanimously (with the weakest vote above its
-// category bar); two distinct votes close it for good; anything else is
-// residual. All accepted edges — vote-lane and structural alike — then pass a
-// best-first union that refuses any group holding one source twice.
 func runPanelEmit(pairs2Path, verdicts2Path, worklistPath, residualPath string, out io.Writer) error {
 	data, err := os.ReadFile(pairs2Path)
 	if err != nil {
@@ -349,8 +313,6 @@ func runPanelEmit(pairs2Path, verdicts2Path, worklistPath, residualPath string, 
 		case distincts >= 2:
 			stats["closed_distinct"]++
 		case p.Cat == catInstance:
-			// The variant lane defaults to keeping rows apart: anything short
-			// of a unanimous strong merge is a close, not a residual.
 			stats["closed_instance"]++
 		default:
 			stats["residual"]++
@@ -358,8 +320,6 @@ func runPanelEmit(pairs2Path, verdicts2Path, worklistPath, residualPath string, 
 		}
 	}
 
-	// Best-first union under the disjoint-sources guard, shared by every
-	// accepted edge regardless of lane.
 	sort.SliceStable(edges, func(i, j int) bool { return edges[i].conf > edges[j].conf })
 	parent := map[int64]int64{}
 	var find func(int64) int64
@@ -506,8 +466,6 @@ func overlaps(a, b []string) bool {
 	return false
 }
 
-// loadRedirects returns the character redirects for the given old ids.
-// CurrentID is flattened on write (doc 10 §5.2), so one hop resolves fully.
 func loadRedirects(db *gorm.DB, ids map[int64]bool) (map[int64]int64, error) {
 	all := make([]int64, 0, len(ids))
 	for id := range ids {

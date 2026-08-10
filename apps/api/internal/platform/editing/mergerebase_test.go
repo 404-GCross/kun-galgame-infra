@@ -8,9 +8,6 @@ import (
 	"api/internal/platform/editing"
 )
 
-// Amend semantics, per-field rebase/conflict, revert loop, changed_fields
-// precision, and the edge cases (test matrix ruling 8).
-
 func TestAmendStackingAndUnset(t *testing.T) {
 	e := newEngine(t)
 	createWidget(t, 1)
@@ -23,7 +20,6 @@ func TestAmendStackingAndUnset(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	// Amend 1: correct a value. Amend 2: reject a field (unset) + add a field.
 	a1, err := e.AmendProposal(testCtx, prop.ID, editing.AmendInput{
 		Set: map[string]any{fName: "B"}, Note: "typo", Actor: reviewerActor(200),
 	})
@@ -61,7 +57,6 @@ func TestAmendStackingAndUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	// Double signature: actor = proposer, amender = LAST amender.
 	if rev.ActorUID != 100 || rev.AmenderUID == nil || *rev.AmenderUID != 201 {
 		t.Fatalf("double signature: actor=%d amender=%v", rev.ActorUID, rev.AmenderUID)
 	}
@@ -120,7 +115,6 @@ func TestAmendValidation(t *testing.T) {
 	}); !errors.As(err, &valErr) {
 		t.Fatalf("set∩unset: %v", err)
 	}
-	// Amendments emptying the patch → merge refuses (decline instead).
 	if _, err := e.AmendProposal(testCtx, prop.ID, editing.AmendInput{
 		Unset: []string{fName}, Actor: reviewer,
 	}); err != nil {
@@ -136,7 +130,6 @@ func TestRebaseFastForwardAndConflict(t *testing.T) {
 	createWidget(t, 1)
 	reviewer := reviewerActor(200)
 
-	// P1 filed at base 0.
 	p1, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fName: "P1 name"}, Actor: editorActor(100),
@@ -144,19 +137,16 @@ func TestRebaseFastForwardAndConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("p1: %v", err)
 	}
-	// A DISJOINT field lands in between (direct edit → revision 1).
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fOpen: "drift"}, Actor: anonActor(300),
 	}); err != nil {
 		t.Fatalf("drift: %v", err)
 	}
-	// No key intersection → silent fast-forward.
 	if _, err := e.MergeProposal(testCtx, p1.ID, reviewer, ""); err != nil {
 		t.Fatalf("fast-forward merge: %v", err)
 	}
 
-	// P2 targets name at base 2; ANOTHER name change lands (revision 3).
 	p2, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fName: "P2 name"}, Actor: editorActor(101),
@@ -175,7 +165,6 @@ func TestRebaseFastForwardAndConflict(t *testing.T) {
 		t.Fatalf("merge p3: %v", err)
 	}
 
-	// Same-field drift → conflict with the field list.
 	var conflict *editing.ConflictError
 	_, err = e.MergeProposal(testCtx, p2.ID, reviewer, "")
 	if !errors.As(err, &conflict) {
@@ -185,7 +174,6 @@ func TestRebaseFastForwardAndConflict(t *testing.T) {
 		t.Fatalf("conflict keys: %v", conflict.Keys)
 	}
 
-	// A reviewer amendment re-adjudicates the field → merge passes.
 	if _, err := e.AmendProposal(testCtx, p2.ID, editing.AmendInput{
 		Set: map[string]any{fName: "P2 name, rebased"}, Actor: reviewer,
 	}); err != nil {
@@ -232,8 +220,6 @@ func TestRevertLoop(t *testing.T) {
 	if w := loadWidget(t, 1); w.OpenNote != "one" {
 		t.Fatalf("reverted state: %q", w.OpenNote)
 	}
-	// History is append-only: three revisions, and the revert snapshot
-	// equals the target snapshot.
 	revs, err := e.ListRevisions(testCtx, "test.widget", 1, 0)
 	if err != nil || len(revs) != 3 {
 		t.Fatalf("revisions: %d err=%v", len(revs), err)
@@ -251,20 +237,17 @@ func TestRevertLoop(t *testing.T) {
 		}
 	}
 
-	// Reverting to the current state is a no-op → refused.
 	if _, _, err := e.Revert(testCtx, editing.RevertInput{
 		EntityType: "test.widget", EntityID: 1, ToSeq: 3, Actor: reviewer,
 	}); !errors.Is(err, editing.ErrNoEffectiveChanges) {
 		t.Fatalf("revert to current: %v", err)
 	}
-	// Revert needs the review rule.
 	var permErr *editing.PermissionError
 	if _, _, err := e.Revert(testCtx, editing.RevertInput{
 		EntityType: "test.widget", EntityID: 1, ToSeq: 2, Actor: anonActor(300),
 	}); !errors.As(err, &permErr) {
 		t.Fatalf("revert without review: %v", err)
 	}
-	// Unknown target revision.
 	if _, _, err := e.Revert(testCtx, editing.RevertInput{
 		EntityType: "test.widget", EntityID: 1, ToSeq: 99, Actor: reviewer,
 	}); !errors.Is(err, editing.ErrRevisionNotFound) {
@@ -277,14 +260,12 @@ func TestChangedFieldsPrecision(t *testing.T) {
 	createWidget(t, 1)
 	reviewer := reviewerActor(200)
 
-	// Set a starting state.
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fOpen: "same"}, Actor: anonActor(300),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// One no-op field + one real change → changed_fields records ONLY the real one.
 	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fOpen: "same", fName: "changed"}, Actor: editorActor(100),
@@ -304,7 +285,6 @@ func TestChangedFieldsPrecision(t *testing.T) {
 		t.Fatalf("changed_fields: %v", changed)
 	}
 
-	// An all-no-op patch refuses to merge (no empty revisions).
 	prop, _, err = e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fName: "changed"}, Actor: editorActor(100),
@@ -315,7 +295,6 @@ func TestChangedFieldsPrecision(t *testing.T) {
 	if _, err := e.MergeProposal(testCtx, prop.ID, reviewer, ""); !errors.Is(err, editing.ErrNoEffectiveChanges) {
 		t.Fatalf("all-no-op merge: %v", err)
 	}
-	// An all-no-op DIRECT edit rolls the whole sugar back — no proposal row.
 	var before int64
 	testDB.Model(&editing.Proposal{}).Count(&before)
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{

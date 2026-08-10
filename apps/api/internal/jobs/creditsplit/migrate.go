@@ -1,34 +1,5 @@
 package creditsplit
 
-// Migrate mode pays off the debt the split leaves behind (wave 163,
-// refs/proj/163-anchor-debt-and-deferred-trios.md).
-//
-// A split deletes the false source anchor and nothing else. The credit rows
-// that source wrote stay on the original credit_name — and importers resolve a
-// credit name by ANCHOR, never by name string, so the next import of the
-// detached source id mints a FRESH credit_name for it and writes that source's
-// credits a second time. The work page then shows the same staff member twice.
-//
-// Migrate does now, deliberately, what the importer would do later by accident:
-//
-//   - mint the credit_name the importer would mint (the SOURCE-side spelling,
-//     which is not always the merged row's spelling — the import-era merge was
-//     by folded name, so 'U'/'u', 'Q'/'Ｑ', '高濱 亮'/'高濱亮' all landed on one
-//     row) and hang the detached anchor on it;
-//   - re-point that source's credit rows from the old name to the new one;
-//   - leave person_id NULL on the new row — the split's whole finding is that
-//     this source is not that person.
-//
-// The attribution predicate is credit.source_id: every importer writes
-// SourceID = its own source and resolves credit_name through that source's
-// anchor map (importer.go materialize / dlsite.go / eg.go), so
-// (credit_name_id, source_id) identifies exactly the rows one source wrote —
-// PROVIDED the name carries at most one anchor of that source, which is
-// guarded per row below. Evidence: refs/proj/163-artifacts/DESIGN.md.
-//
-// Idempotent: a second --apply finds the anchor already minted and no credit
-// row left to move, and writes nothing at all.
-
 import (
 	"bufio"
 	"context"
@@ -47,29 +18,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// MigrateRow is one line of the migrate worklist: one anchor that wave 156b
-// deleted, plus the name the source itself uses for it.
 type MigrateRow struct {
-	// CreditNameID is the row the anchor was detached FROM.
 	CreditNameID int64  `json:"credit_name_id"`
 	Source       string `json:"source"`
 	ExternalID   string `json:"external_id"`
-	// Name is the SOURCE-side spelling (dlsite product_json creaters.name /
-	// erogamespace creaters.raw->>'name' / the vndb-created row's own name),
-	// not necessarily the spelling of the row it was merged into.
-	Name string `json:"name"`
-	Lang string `json:"lang,omitempty"`
-	// MatchedBy is the importer rule the original anchor carried; the re-minted
-	// anchor keeps it so provenance reads the same as an importer's own row.
-	MatchedBy string `json:"matched_by,omitempty"`
-	Reason    string `json:"reason,omitempty"`
+	Name         string `json:"name"`
+	Lang         string `json:"lang,omitempty"`
+	MatchedBy    string `json:"matched_by,omitempty"`
+	Reason       string `json:"reason,omitempty"`
 }
 
-// MigrateStats reports a migrate run. The decided counters (Would*) are
-// identical in dry and apply.
 type MigrateStats struct {
 	Rows           int
-	Skipped        int // anchor already in place and no credit row left to move
+	Skipped        int
 	Refused        int
 	WouldMint      int
 	WouldMoveCredz int
@@ -81,8 +42,6 @@ type MigrateStats struct {
 	Receipts       []MigrateReceipt
 }
 
-// MigrateReceipt records what one row did (or would do), so the move can be
-// undone by hand from the file alone.
 type MigrateReceipt struct {
 	CreditNameID   int64   `json:"credit_name_id"`
 	Source         string  `json:"source"`
@@ -94,9 +53,6 @@ type MigrateReceipt struct {
 	CreditIDs      []int64 `json:"credit_ids,omitempty"`
 }
 
-// LoadMigrateWorklist reads and validates the migrate worklist. Two rows for
-// one anchor, or two rows minting the same (source, external_id), are refused
-// at load: the second would decide against a state the first already changed.
 func LoadMigrateWorklist(path string) ([]MigrateRow, error) {
 	if path == "" {
 		return nil, fmt.Errorf("--worklist is required")
@@ -152,7 +108,6 @@ func LoadMigrateWorklist(path string) ([]MigrateRow, error) {
 	return out, nil
 }
 
-// WriteMigrateReceipts persists the per-row receipts.
 func WriteMigrateReceipts(path string, receipts []MigrateReceipt) error {
 	if path == "" {
 		return nil
@@ -175,7 +130,6 @@ func WriteMigrateReceipts(path string, receipts []MigrateReceipt) error {
 	return w.Flush()
 }
 
-// RunMigrate executes the migrate worklist against the catalog.
 func RunMigrate(ctx context.Context, opts Opts) (*MigrateStats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess")
@@ -214,7 +168,6 @@ func RunMigrate(ctx context.Context, opts Opts) (*MigrateStats, error) {
 	return st, nil
 }
 
-// creditKey is the uq_catalog_credit key: (work_id, role_id, character_id or 0).
 type creditKey struct {
 	WorkID, RoleID, CharID int64
 }
@@ -252,9 +205,6 @@ func migrateOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r Mi
 		}
 		return err
 	}
-	// The whole predicate rests on this: if the row still carries an anchor of
-	// this source, credit.source_id cannot tell that source's rows apart from
-	// the detached id's rows. Refuse rather than move the wrong credits.
 	var stillAnchored int64
 	if err := db.WithContext(ctx).Model(&model.CatalogExternalRef{}).
 		Where("entity_type = ? AND entity_id = ? AND source_id = ?",
@@ -266,8 +216,6 @@ func migrateOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r Mi
 		return nil
 	}
 
-	// Has an importer (or an earlier pass of this wave) already re-minted the
-	// detached id? Then reuse that row — never mint a competing anchor.
 	var existing model.CatalogExternalRef
 	err := db.WithContext(ctx).Where("entity_type = ? AND source_id = ? AND external_id = ? AND link_kind = ?",
 		model.EntityTypeCreditName, srcID, r.ExternalID, model.LinkKindExact).First(&existing).Error
@@ -288,10 +236,6 @@ func migrateOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r Mi
 		return err
 	}
 	if reuse && len(moving) > 0 {
-		// Moving onto an existing row can collide with uq_catalog_credit. A
-		// collision means the duplicate this wave exists to prevent already
-		// happened; deleting rows is not this tool's mandate, so refuse the row
-		// and let it be adjudicated.
 		var have []creditRow
 		if err := db.WithContext(ctx).Model(&model.CatalogCredit{}).
 			Select("id, work_id, role_id, character_id").
@@ -346,8 +290,6 @@ func migrateOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r Mi
 			minted := model.CatalogCreditName{
 				Name: r.Name, Lang: r.Lang, Kind: model.CreditNameKindMain,
 				LinkVisibility: model.LinkVisibilityPublic,
-				// person_id stays NULL on purpose: the split's finding is that
-				// this source is NOT the person the old row is linked to.
 			}
 			if err := tx.Create(&minted).Error; err != nil {
 				return err
@@ -403,8 +345,6 @@ func migrateOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r Mi
 			}
 			st.CreditsMoved += int(res.RowsAffected)
 
-			// The revision on the ORIGIN carries the pre-move state (the credit
-			// ids and where they went), which is what makes the move reversible.
 			snap, err := json.Marshal(map[string]any{"credit_name": from, "moved_credit_ids": ids})
 			if err != nil {
 				return err

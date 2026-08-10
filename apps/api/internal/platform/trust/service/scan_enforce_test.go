@@ -8,8 +8,6 @@ import (
 	"api/internal/platform/trust/model"
 )
 
-// liveWorker builds a scan worker in live mode over a gateway that convicts with
-// the given score/categories.
 func liveWorker(score float32, categories ...string) *ScanWorker {
 	return NewScanWorker(testDB, &fakeGateway{
 		configured: true,
@@ -32,16 +30,11 @@ func countRows(t *testing.T, dest any, where ...any) int64 {
 	return n
 }
 
-// TestScanShadowModeEnforcesNothing pins the invariant wave 07 must not break:
-// with the default posture a conviction still records a verdict and NOTHING
-// else. This is the regression guard on the whole feature — if live-mode wiring
-// ever leaks into the default path, this fails.
 func TestScanShadowModeEnforcesNothing(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
 	seedPending(t, "shadow-1", "convict me")
 
-	// Same gateway, same conviction — only the mode differs from the live tests.
 	w := NewScanWorker(testDB, &fakeGateway{
 		configured: true,
 		verdict:    GatewayVerdict{Flagged: true, Score: f32(0.9), Channel: "test-channel"},
@@ -62,9 +55,6 @@ func TestScanShadowModeEnforcesNothing(t *testing.T) {
 	}
 }
 
-// TestScanLiveModeOpensItemAndQueuesHide is the P2 happy path: a conviction
-// lands one ai_text item carrying the classifier evidence plus one hide
-// disposition queued for callback delivery.
 func TestScanLiveModeOpensItemAndQueuesHide(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
@@ -82,7 +72,6 @@ func TestScanLiveModeOpensItemAndQueuesHide(t *testing.T) {
 		t.Fatalf("score pending: %v", err)
 	}
 
-	// The scored row records the posture that governed it, not the intake default.
 	var scored model.TrustScanResult
 	if err := testDB.Take(&scored, r.ID).Error; err != nil {
 		t.Fatalf("reload scan: %v", err)
@@ -104,7 +93,6 @@ func TestScanLiveModeOpensItemAndQueuesHide(t *testing.T) {
 	if item.ClassifierScore == nil || *item.ClassifierScore != 0.87 {
 		t.Fatalf("classifier_score = %v, want 0.87", item.ClassifierScore)
 	}
-	// The note must carry enough for a human to judge without opening the product.
 	if item.ContextNote == nil {
 		t.Fatal("context_note is nil; the reviewer has no evidence")
 	}
@@ -124,7 +112,6 @@ func TestScanLiveModeOpensItemAndQueuesHide(t *testing.T) {
 	if disp.ReasonCode != scanReasonCode {
 		t.Fatalf("reason_code = %q, want %q", disp.ReasonCode, scanReasonCode)
 	}
-	// The kind has a callback_url → the delivery worker must pick this up.
 	if disp.CallbackStatus == nil || *disp.CallbackStatus != model.CallbackStatusPending {
 		t.Fatalf("callback_status = %v, want pending", disp.CallbackStatus)
 	}
@@ -133,8 +120,6 @@ func TestScanLiveModeOpensItemAndQueuesHide(t *testing.T) {
 	}
 }
 
-// TestScanLiveModeCleanVerdictDoesNothing: live mode is a posture for
-// convictions only — an acquittal must stay as silent as it is in shadow.
 func TestScanLiveModeCleanVerdictDoesNothing(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
@@ -156,10 +141,6 @@ func TestScanLiveModeCleanVerdictDoesNothing(t *testing.T) {
 	}
 }
 
-// TestScanLiveModeIsIdempotentPerSubject: every edit produces a FRESH scan row
-// for the same subject, so re-conviction is the normal case, not an edge one. It
-// must raise the recorded score on the one open item and must NOT queue a second
-// hide — otherwise an edit war would fan out dispositions.
 func TestScanLiveModeIsIdempotentPerSubject(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
@@ -186,16 +167,11 @@ func TestScanLiveModeIsIdempotentPerSubject(t *testing.T) {
 	if item.ClassifierScore == nil || *item.ClassifierScore != 0.91 {
 		t.Fatalf("classifier_score = %v, want the raised 0.91", item.ClassifierScore)
 	}
-	// The first excerpt is the evidence of record — a later scan must not clobber it.
 	if item.ContextNote == nil || !strings.Contains(*item.ContextNote, "first version") {
 		t.Fatalf("context_note = %v, want the FIRST excerpt preserved", item.ContextNote)
 	}
 }
 
-// TestScanLiveModeAdoptsExistingOpenItem: when a human report already opened an
-// item for the subject, the AI signal merges into it and does NOT auto-enforce.
-// A reporter's item is being worked by a person; auto-hiding behind them would
-// take the decision away mid-review.
 func TestScanLiveModeAdoptsExistingOpenItem(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
@@ -231,11 +207,6 @@ func TestScanLiveModeAdoptsExistingOpenItem(t *testing.T) {
 	}
 }
 
-// TestScanLiveModeWithoutCallbackURLStaysHumanOnly: a kind with no callback
-// endpoint cannot be enforced remotely, so the disposition is recorded with a
-// NULL callback_status and simply waits in the inbox — the same rule Decide
-// follows. A pending status here would make the delivery worker spin on a
-// disposition it can never deliver.
 func TestScanLiveModeWithoutCallbackURLStaysHumanOnly(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, nil, nil)
@@ -257,8 +228,6 @@ func TestScanLiveModeWithoutCallbackURLStaysHumanOnly(t *testing.T) {
 	}
 }
 
-// TestScanModeParsing: an unrecognised KUN_TRUST_SCAN_MODE must degrade to
-// shadow. Enforcement is opt-in, so a typo has to fail toward silence.
 func TestScanModeParsing(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -278,10 +247,6 @@ func TestScanModeParsing(t *testing.T) {
 	}
 }
 
-// TestScanLiveModeCarriesReachIntoPriority: the reach a product reports at scan
-// time must reach the queue's ordering, not just the row. A reach snapshot that
-// is stored but not ranked would look correct in the console and change nothing
-// about which item a reviewer sees first — the entire point of the feature.
 func TestScanLiveModeCarriesReachIntoPriority(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
@@ -315,10 +280,6 @@ func TestScanLiveModeCarriesReachIntoPriority(t *testing.T) {
 	}
 }
 
-// TestScanRescanRepricesOpenItemUpward: the slow-burn case — an item opened
-// while the post was obscure, re-scanned (every edit does) once it has been
-// widely seen. It must climb, because that is precisely the item a reviewer most
-// needs pulled forward, and it must not fork a second item doing so.
 func TestScanRescanRepricesOpenItemUpward(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, tKind, strptr("http://product.invalid/cb"), strptr("s3cr3t"))
@@ -362,7 +323,6 @@ func TestScanRescanRepricesOpenItemUpward(t *testing.T) {
 	if second.Priority <= first.Priority {
 		t.Fatalf("priority did not climb with reach: %.3f → %.3f", first.Priority, second.Priority)
 	}
-	// Still only the one hide from the original conviction.
 	if n := countRows(t, &model.TrustDisposition{}); n != 1 {
 		t.Fatalf("dispositions = %d, want 1", n)
 	}

@@ -6,45 +6,24 @@ import (
 	"sort"
 )
 
-// orgNamePattern is the explicit organization discriminator that
-// catalog_credit_name.kind does not provide (it is uniformly 0 — wave 152
-// §7.5). Every token was pinned by surveying the 15,690 clustered member names
-// against the live snapshot, and every hit was hand-read: all of them are
-// companies, circles, studios or units (ALI PROJECT, Team-OZ, 音楽工房 DOORS,
-// NTTソルマーレ株式会社), none is a person.
-//
-// `studio` is matched as a SUBSTRING on purpose: the survey's hits are
-// AZstudio / studioKPC / xenubinstudios / LuciamArtStudio as often as they are
-// a spaced "Studio Mark", and a word boundary would miss exactly those.
-//
-// A false positive costs a DEFER, never a wrong write — which is the whole
-// reason the guard may be this blunt.
 var orgNamePattern = regexp.MustCompile(`(?i)(株式会社|有限会社|合同会社|合資会社|合名会社|サークル|スタジオ|制作委員会|工房|` +
 	`studio|\binc\.?$|\bltd\.?$|\bllc\b|\bcorp(oration)?\b|co\.,? ?ltd|\bcompany\b|\bproject\b|\bteam\b|\bgroup\b|\bsoftware\b)`)
 
-// mintPlan is one cluster's fully decided write set. It is computed
-// identically in dry and apply mode — the only difference downstream is
-// whether the statements are issued.
 type mintPlan struct {
-	ClusterID string
-	Members   []int64
-	Names     []string
-	// HostID is the existing person to reuse; 0 means "create one".
-	HostID      int64
-	Host        *personState
-	PrimaryID   int64
-	DisplayName string
-	Gender      *int16
-	GenderFrom  string
-	BirthY      *int16
-	BirthM      *int16
-	BirthD      *int16
-	// LinkFill are the members whose person_id is NULL and will be pointed at
-	// the host; LinksAlready counts those already pointing at it.
-	LinkFill     []int64
-	LinksAlready int
-	// AnchorsNew are the et=0 anchors not yet in the database;
-	// AnchorsAlready counts those a previous run already wrote.
+	ClusterID      string
+	Members        []int64
+	Names          []string
+	HostID         int64
+	Host           *personState
+	PrimaryID      int64
+	DisplayName    string
+	Gender         *int16
+	GenderFrom     string
+	BirthY         *int16
+	BirthM         *int16
+	BirthD         *int16
+	LinkFill       []int64
+	LinksAlready   int
 	Anchors        []anchorKey
 	AnchorsNew     []anchorKey
 	AnchorsAlready int
@@ -58,10 +37,6 @@ type decider struct {
 	crossCluster map[int64]int
 }
 
-// decide returns either a plan or the reason the cluster is deferred. The
-// rules are evaluated in the doc-153 order — exclusion list, organization
-// guard, person reuse — and the first hit wins, with the remaining hits
-// recorded as overlap so the accounting can be reconciled either way.
 func (d *decider) decide(c Cluster) (*mintPlan, *Defer) {
 	names := make([]string, 0, len(c.CreditNameIDs))
 	for _, id := range c.CreditNameIDs {
@@ -184,11 +159,6 @@ func (d *decider) anchorSet(c Cluster) []anchorKey {
 	return out
 }
 
-// hostCandidates collects every person this cluster already resolves to: via a
-// member's existing person_id, and via an et=0 anchor a previous run wrote.
-// Two candidates is a merge, which this wave defers; one is the host; none
-// means a fresh person. Including the anchor side is what makes a re-run
-// recognize its own output instead of minting a second person for it.
 func (d *decider) hostCandidates(c Cluster, anchors []anchorKey) []int64 {
 	set := map[int64]bool{}
 	for _, id := range c.CreditNameIDs {
@@ -209,10 +179,6 @@ func (d *decider) hostCandidates(c Cluster, anchors []anchorKey) []int64 {
 	return out
 }
 
-// primaryMember picks the credit name of record. VNDB models pen names
-// explicitly and marks one alias as the staff's MAIN one, so that member wins
-// whenever it exists; otherwise the most-credited member does, with the lowest
-// id breaking every tie so the choice is stable across runs and machines.
 func (d *decider) primaryMember(c Cluster) int64 {
 	var main []int64
 	for _, id := range c.CreditNameIDs {
@@ -242,16 +208,6 @@ func (d *decider) primaryMember(c Cluster) int64 {
 	return best
 }
 
-// survivorship computes the person-level facts the cluster's sources agree on.
-//
-// Gender is asserted by vndb staff.gender and by the bangumi 性别 infobox
-// field; they agree on 99.67% of the testable population (wave 152 §5.2), and
-// the rule for the rest is to write NOTHING and report it — a coin flip on a
-// person's gender is worse than a NULL. Unrecognized values (未知, 非二元性别,
-// prose) are not assertions and cause no conflict.
-//
-// Birth date comes from bangumi only. A cluster that merges several bangumi
-// persons can carry several birthdays; disagreement is again a no-write.
 func (d *decider) survivorship(c Cluster, plan *mintPlan) {
 	genders := map[int16]bool{}
 	var raw []string
@@ -317,7 +273,6 @@ func (d *decider) survivorship(c Cluster, plan *mintPlan) {
 	}
 }
 
-// birthDate is one source's fuzzy birth date — any component may be absent.
 type birthDate struct{ y, m, d *int16 }
 
 func sameDate(a, b birthDate) bool {

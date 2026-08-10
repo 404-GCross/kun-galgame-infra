@@ -1,10 +1,3 @@
-// classify-image-safety scores images with the moderations endpoint. scan and
-// report write to no database; backfill writes only images.review_labels->auto
-// and never touches review_status.
-//
-//	go run ./cmd/classify-image-safety -mode scan --dsn "$IMAGES_DSN" --out scores.jsonl --limit 2000
-//	go run ./cmd/classify-image-safety -mode report --in scores.jsonl
-//	go run ./cmd/classify-image-safety -mode backfill --dsn "$IMAGES_DSN" --limit 0 --apply
 package main
 
 import (

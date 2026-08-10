@@ -10,7 +10,6 @@ const description = ref('')
 const error = ref('')
 const isLoading = ref(false)
 
-// Kept mounted (v-model); (re)load the form from the site each time it opens.
 watch(open, (v) => {
   if (!v || !props.site) return
   name.value = props.site.name

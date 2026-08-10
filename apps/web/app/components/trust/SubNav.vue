@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Shared sub-navigation of the three T&S buckets, with live counts (list
-// endpoints' total with limit=1 — no dedicated count API): pending review
-// items on the queue tab, dead-lettered callbacks on the dead-letters tab.
 import { REVIEW_STATUS, CALLBACK_STATUS } from '~/constants/trust'
 import type {
   TrustReviewItemPage,

@@ -12,42 +12,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// The editing engine on the user-token write plane (waves 177-178).
-//
-// Wave 176 opened this face with the cover ballot — a write whose entire
-// payload is a path. Wave 177 brought the real subject: filing an edit, taking
-// it back, and asking what the caller is allowed to change. Wave 178 completes
-// it with the MODERATION ops — amend / merge / decline / revert — and the
-// proposal detail read, so a first-party product needs no S2S mirror of its own
-// permission gates: the same token that files an edit reviews one. They run the
-// SAME engine, the same registry, the same per-family permission vocabulary and
-// the same site overlays as the S2S ops in edit.go. Nothing about the editing
-// model moves here. What moves is where the actor comes from:
-//
-//	S2S  — the product backend asserted {user_id, roles, trust_tier,
-//	       is_entity_owner} in the body and named the tenant in `site`
-//	       (retired, wave 185).
-//	user — the uid is the token's `id` claim, the roles are the token's
-//	       role union, and the tenant is the token client's catalog_site.
-//	       The request body has no field for any of them.
-//
-// That is why the create body below carries neither `actor` nor `site`: not a
-// trimmed convenience shape, but the removal of every place a caller could name
-// someone else. Wave 185 finished the move — the S2S create / withdraw / schema
-// ops these three replaced are gone, so this is the only editing write plane
-// left (docs/catalog/01 §4.2).
-
-// UserEditServer holds the user plane's editing dependencies. It reuses
-// EditServer wholesale — policyCtx (family-routed perm resolution) and the
-// error mapping are the S2S face's, deliberately, so the two faces cannot drift
-// into two different opinions about what a permission means.
 type UserEditServer struct{ *EditServer }
 
-// RegisterUserEditOps registers the user-plane editing operations. Called both
-// by SetupUser (the runtime face, over its own path-scoped auth chain) and by
-// cmd/gen-openapi on the catalog S2S spec API, so the exported contract
-// document describes both write planes side by side. Safe with a nil engine and
-// nil resolvers: spec export never invokes a handler.
 func RegisterUserEditOps(api huma.API, engine *editing.Engine, perms PermResolvers) {
 	s := &UserEditServer{EditServer: &EditServer{engine: engine, perms: perms}}
 	tags := []string{"catalog-user"}
@@ -71,10 +37,6 @@ func RegisterUserEditOps(api huma.API, engine *editing.Engine, perms PermResolve
 		Tags:    tags,
 	}, s.schema)
 
-	// The moderation ops (wave 178). Same engine calls as their S2S siblings;
-	// the only difference is that the reviewer is the token, and that the
-	// proposal's tenant is fenced against the token client's catalog_site
-	// instead of against the S2S client's binding.
 	huma.Register(api, huma.Operation{
 		OperationID: "getEditProposalUser", Method: http.MethodGet,
 		Path:    UserPrefix + "/edit/proposals/{id}",
@@ -106,8 +68,6 @@ func RegisterUserEditOps(api huma.API, engine *editing.Engine, perms PermResolve
 		Tags:    tags,
 	}, s.revert)
 
-	// The engine's two READS (wave 180), which is what a browser-borne editor
-	// needed the S2S face for after 178. Implemented in user_edit_reads.go.
 	huma.Register(api, huma.Operation{
 		OperationID: "getEditSnapshotUser", Method: http.MethodGet,
 		Path:    UserPrefix + "/edit/snapshot",
@@ -122,44 +82,6 @@ func RegisterUserEditOps(api huma.API, engine *editing.Engine, perms PermResolve
 	}, s.list)
 }
 
-// userEditActor derives the policy actor from the verified token, and is the
-// only way these ops learn who is writing.
-//
-// IsEntityOwner is always false HERE — but ownership is not lost by that. Wave
-// 178 made it a fact the CATALOG holds (catalog_work.owner_user_id, stamped
-// write-once at submission / claim birth) and the engine DERIVES it from the
-// spec's OwnerUserID hook, comparing the stored uid to the policy context's own
-// uid. So the flag this function leaves false is set — by the engine, from data,
-// one layer below any wire — exactly when the caller really is the entry's
-// creator, and kungal's owner-review lane works here without a backend to assert
-// anything. This is the revisit the wave-177 comment asked for.
-//
-// TrustTier is NO LONGER always 0 (wave 183). It now has an infra-side source
-// of its own: the catalog permission vocabulary. A token whose roles carry
-// catalog.edit.trusted — through the code bundles (staff) or, for a product's
-// own roles, through the per-role permission-console overlay that hot-swaps the
-// resolver — writes at editing.TrustedTier, which is the only tier value any
-// engine rule compares against. letmoe's ProposeTrusted lane therefore no longer
-// requires an S2S backend to vouch for its members: it works from a browser
-// token, granted per role, changeable without a deploy.
-//
-// The S2S face keeps its asserted `is_entity_owner` and `trust_tier`: both
-// derivations can only turn a capability ON, never off, so a product backend
-// that knows something the catalog does not (a family registering no hook, a
-// product-side notion of ownership or trust) is still believed.
-//
-// CAPPED FOR THIRD-PARTY CLIENTS (wave 186b). A token issued through a
-// third-party developer application (oauth_clients.owner_user_id non-null)
-// NEVER reaches editing.TrustedTier, even when its roles carry
-// catalog.edit.trusted. Trust is a property of the PAIR (person x first-party
-// client), not of the person alone: a user's roles travel with their token into
-// whatever app they authorize, so without the cap any third-party UI holding a
-// catalog:edit grant could file automerging edits the moment a trusted member
-// signed in with it — and the site whose overlay granted that trust never
-// agreed to be edited from there. The person keeps every standing they have on
-// the product's own surface; what the cap removes is the ability to LEND it to
-// an arbitrary application. Like the derivations above, it can only ever turn a
-// capability off, never on.
 func userEditActor(ctx context.Context) (dto.EditActor, string, *houseError) {
 	uid, site, he := userActor(ctx)
 	if he != nil {
@@ -198,10 +120,6 @@ func (s *UserEditServer) create(ctx context.Context, in *userEditCreateInput) (*
 	return &editCreateOutput{Body: okEnvelope(resp)}, nil
 }
 
-// userEditWithdrawInput carries only the proposal id. The S2S withdraw request
-// is an actor and nothing else, so subtracting the actor leaves no body at all —
-// the honest shape, rather than an invented note field the engine would drop
-// (WithdrawProposal writes no decision note).
 type userEditWithdrawInput struct {
 	ID int64 `path:"id" minimum:"1" doc:"Proposal id (must be one the token's user filed)"`
 }
@@ -217,13 +135,6 @@ func (s *UserEditServer) withdraw(ctx context.Context, in *userEditWithdrawInput
 	return s.closedView(ctx, in.ID)
 }
 
-// proposalForUser is this face's counterpart of EditServer.proposalForWrite: it
-// derives the actor from the token, loads the proposal, and draws the tenancy
-// line the S2S face draws with the S2S client's catalog_site binding using the
-// TOKEN client's instead. A proposal filed on another tenant is not this
-// caller's to read or decide — 403, before any engine rule is consulted, so a
-// cross-tenant caller learns nothing beyond "not yours" (the engine's own checks
-// are about the proposer / the field policies, never about the tenant).
 func (s *UserEditServer) proposalForUser(ctx context.Context, id int64) (dto.EditActor, *editing.Proposal, error) {
 	actor, site, he := userEditActor(ctx)
 	if he != nil {
@@ -240,10 +151,6 @@ func (s *UserEditServer) proposalForUser(ctx context.Context, id int64) (dto.Edi
 	return actor, prop, nil
 }
 
-// userEditSchemaInput is the S2S schema input with every actor-shaped query
-// parameter removed: user_id, roles, trust_tier, is_entity_owner and site are
-// all derived. entity_id stays, because it names the SUBJECT of the projection
-// (an entity-aware overlay evaluates against it), not the caller.
 type userEditSchemaInput struct {
 	EntityType string `path:"entity_type" doc:"Registered entity type, e.g. catalog.work"`
 	EntityID   int64  `query:"entity_id" doc:"Entity-aware projection subject (0 = type-level projection)"`
@@ -273,13 +180,6 @@ func (s *UserEditServer) schema(ctx context.Context, in *userEditSchemaInput) (*
 	return &editSchemaOutput{Body: okEnvelope(resp)}, nil
 }
 
-// ---- the moderation ops (wave 178) -----------------------------------------
-
-// get is the proposal DETAIL read: the same view the S2S op returns (proposal +
-// amendments + effective patch), reusing its mappers verbatim. It is fenced by
-// tenant like every other op here — the withdraw precedent — because a proposal
-// carries its patch, its proposer and its decision note, none of which belong to
-// a neighbouring tenant's caller.
 func (s *UserEditServer) get(ctx context.Context, in *editGetInput) (*editGetOutput, error) {
 	_, site, he := userEditActor(ctx)
 	if he != nil {
@@ -352,12 +252,6 @@ type userEditRevertInput struct {
 	Body dto.UserEditRevertRequest
 }
 
-// revert restores an entity to a historical revision. There is no proposal to
-// fence against, so the tenant is simply the token client's binding — passed as
-// the actor's site, which is both the policy-overlay key and the tenant the
-// produced proposal/revision rows are attributed to. The engine gates it on the
-// review rule per changed field, so the authority is the same one merge needs:
-// the token's roles, or the ownership the engine derives from the catalog.
 func (s *UserEditServer) revert(ctx context.Context, in *userEditRevertInput) (*editRevertOutput, error) {
 	actor, site, he := userEditActor(ctx)
 	if he != nil {

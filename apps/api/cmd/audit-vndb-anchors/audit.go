@@ -12,54 +12,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// sourceKeyVndb is the catalog_source registry key of the VNDB source. The
-// numeric id is looked up, never hard-coded — registry ids are data.
 const sourceKeyVndb = "vndb"
 
-// defaultMinMirrorRows is the MANDATORY mid-reload guardrail.
-//
-// src_vndb is rebuildable staging: cmd/ingest-vndb replaces src_vndb.vn
-// wholesale from the VNDB dump, so between the truncate and the end of the
-// COPY the table legitimately holds anything from zero rows upward. An audit
-// run landing inside that window would see ~64k anchors as "absent upstream"
-// and mark EVERY VNDB anchor dead in one transaction, stripping every VNDB
-// link from the site. That is the failure this number exists to prevent, and
-// it is why the guard is a refusal rather than a warning.
-//
-// The threshold is derived from the real table: src_vndb.vn holds ~65,300 rows
-// (local 2026-08 snapshot), and VNDB's catalogue only grows in the long run —
-// its ~20 deletions a week are far outrun by new entries. 50,000 sits ~23%
-// below today's count: comfortably below any plausible real dump for years,
-// while a partial load is overwhelmingly likely to be caught (a mid-COPY table
-// spends almost all of its life under this line). It is a flag so an operator
-// facing a genuinely smaller future dump can lower it deliberately, on the
-// record, instead of the tool silently doing the wrong thing.
-//
-// DOES THE GUARD ALSO PROTECT THE CLEAR-BACK DIRECTION, e.g. against a mirror
-// that is complete but STALE? Partly, and deliberately so. A row count cannot
-// detect staleness at all — an old full dump passes any count threshold. What
-// saves us is that the two directions have wildly asymmetric blast radii:
-//
-//   - mark-dead against an INCOMPLETE mirror is catastrophic and wholesale
-//     (all ~64k anchors at once), which is what the count threshold catches;
-//   - clear-back against a STALE mirror can at worst resurrect the handful of
-//     anchors deleted upstream since that dump, i.e. it re-exposes a few links
-//     that already 404 today — the pre-audit status quo, no worse — and the
-//     next run on a fresh mirror re-marks them.
-//
-// So one count gate on the whole apply is the right shape: both directions are
-// behind it, staleness is reported (the mirror's ingested_at is printed on
-// every run) rather than guessed at, and the tool never refuses to run for a
-// risk whose worst case is the state it was written to improve.
 const defaultMinMirrorRows int64 = 50_000
 
-// stats is one audit run's outcome.
 type stats struct {
-	Anchors     int64 // work-level exact VNDB anchors examined
-	MirrorRows  int64 // rows in src_vndb.vn
+	Anchors     int64
+	MirrorRows  int64
 	MirrorFresh *time.Time
-	ToMark      int64 // absent upstream, dead_at IS NULL
-	ToClear     int64 // present upstream, dead_at IS NOT NULL
+	ToMark      int64
+	ToClear     int64
 	Marked      int64
 	Cleared     int64
 }
@@ -80,7 +42,6 @@ func run(ctx context.Context, dsn string, apply bool, minMirrorRows int64, w io.
 	return nil
 }
 
-// audit measures both directions and, with apply, writes them.
 func audit(ctx context.Context, db *gorm.DB, apply bool, minMirrorRows int64) (stats, error) {
 	var st stats
 	db = db.WithContext(ctx)
@@ -106,8 +67,6 @@ func audit(ctx context.Context, db *gorm.DB, apply bool, minMirrorRows int64) (s
 		return st, fmt.Errorf("count anchors: %w", err)
 	}
 
-	// external_id and src_vndb.vn.id share the "v"-prefixed spelling verbatim,
-	// so the comparison is a direct equality join with no transform.
 	const markPredicate = `source_id = ? AND entity_type = ? AND link_kind = ? AND dead_at IS NULL
 		AND NOT EXISTS (SELECT 1 FROM src_vndb.vn v WHERE v.id = catalog_external_ref.external_id)`
 	const clearPredicate = `source_id = ? AND entity_type = ? AND link_kind = ? AND dead_at IS NOT NULL
@@ -132,8 +91,6 @@ func audit(ctx context.Context, db *gorm.DB, apply bool, minMirrorRows int64) (s
 			st.MirrorRows, minMirrorRows)
 	}
 
-	// One transaction for both directions: an audit run is a single statement
-	// about the mirror it read, and half of it is not a coherent state.
 	err := db.Transaction(func(tx *gorm.DB) error {
 		res := tx.Exec(`UPDATE catalog_external_ref SET dead_at = now() WHERE `+markPredicate, args...)
 		if res.Error != nil {

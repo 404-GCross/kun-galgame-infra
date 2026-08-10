@@ -1,20 +1,3 @@
-// Command migrate-image-thumbhash backfills the images.thumbhash column for
-// rows uploaded before the column existed.
-//
-// For each image still lacking a thumbhash it fetches the stored main WebP,
-// decodes it, computes the ThumbHash placeholder, and UPDATEs the row. The job
-// is idempotent (it only ever selects rows with an empty thumbhash) and fully
-// re-runnable — safe to stop and resume. It is heavy: one S3 GET + decode per
-// image, so it is bounded by --concurrency and logs progress per page.
-//
-// Runs against the images DB (kun_images) + its S3 bucket. width/height already
-// exist for every row (computed at upload), so the galgame detail/list pages
-// get correct aspect ratios immediately on deploy; this job only lights up the
-// blur-up placeholder as it fills thumbhash.
-//
-//	go run ./cmd/migrate-image-thumbhash                        # dry-run (counts only)
-//	go run ./cmd/migrate-image-thumbhash --apply                # actually write
-//	go run ./cmd/migrate-image-thumbhash --apply --concurrency 16 --limit 5000
 package main
 
 import (
@@ -57,8 +40,6 @@ func main() {
 	defer pdb.Close()
 	db := pdb.DB()
 
-	// Self-sufficient: ensure the column exists so this can run even before the
-	// image service has restarted with the new model (AutoMigrate is additive).
 	if err := db.AutoMigrate(&imgModel.Image{}); err != nil {
 		slog.Error("automigrate", "err", err)
 		os.Exit(1)
@@ -122,7 +103,7 @@ outer:
 					return
 				}
 				if !*apply {
-					updated.Add(1) // would-update count in dry-run
+					updated.Add(1)
 					return
 				}
 				if err := db.WithContext(ctx).
@@ -156,9 +137,6 @@ outer:
 	)
 }
 
-// computeThumbhash fetches a stored image, decodes it, and returns its base64
-// ThumbHash. Uses the same processor path as the upload pipeline so the result
-// is byte-identical to what a fresh upload would have produced.
 func computeThumbhash(ctx context.Context, s3 *storage.Client, key string) (string, error) {
 	rc, err := s3.Get(ctx, key)
 	if err != nil {

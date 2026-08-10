@@ -9,11 +9,6 @@ import (
 	"api/pkg/utils"
 )
 
-// TestSiteRolesClaimBothWireModes proves the site_roles claim carries
-// identically through both token-signing paths — the legacy HS256 (utils) and
-// the oidctoken signer used once asymmetric signing is on. Both serialize the
-// whole TokenClaims struct, so the field is signer-independent; this pins that,
-// plus the omitted-when-empty shape.
 func TestSiteRolesClaimBothWireModes(t *testing.T) {
 	const secret = "test-secret"
 	claims := utils.TokenClaims{
@@ -24,7 +19,6 @@ func TestSiteRolesClaimBothWireModes(t *testing.T) {
 		SiteID:    42,
 	}
 
-	// Legacy HS256 path.
 	legacy, err := utils.GenerateAccessToken(secret, claims, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -37,8 +31,6 @@ func TestSiteRolesClaimBothWireModes(t *testing.T) {
 		t.Errorf("legacy: SiteRoles = %v, want [moderator]", got.SiteRoles)
 	}
 
-	// oidctoken signer path (the asymmetric path uses this same Signer
-	// interface).
 	tok, err := oidctoken.NewHS256Signer(secret, "https://id.example").SignAccess(claims, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +43,6 @@ func TestSiteRolesClaimBothWireModes(t *testing.T) {
 		t.Errorf("signer: SiteRoles = %v, want [moderator]", got2.SiteRoles)
 	}
 
-	// Omitted when empty — a non-site-bound token carries no site_roles.
 	noSite := utils.TokenClaims{UserUUID: "u", ID: 7, Roles: []string{"user"}}
 	nt, err := utils.GenerateAccessToken(secret, noSite, time.Minute)
 	if err != nil {

@@ -1,6 +1,3 @@
-// Package service holds the artifact business logic: presigned two-tier upload
-// (single PUT / multipart), HeadObject size verification on completion, and
-// presigned/Worker download. See docs/artifact/.
 package service
 
 import (
@@ -24,7 +21,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service-level sentinel errors; handlers map these to response codes.
 var (
 	ErrTooBig       = stderrors.New("artifact: file exceeds per-site max size")
 	ErrMIMEDenied   = stderrors.New("artifact: file type not allowed for this site")
@@ -36,10 +32,8 @@ var (
 	ErrNotResumable = stderrors.New("artifact: upload is not resumable (already completed or failed)")
 )
 
-// maxS3Parts is the S3/B2 multipart hard cap.
 const maxS3Parts = 10000
 
-// Options tunes upload/download behaviour (sourced from config).
 type Options struct {
 	MultipartThreshold int64
 	PartSize           int64
@@ -47,7 +41,6 @@ type Options struct {
 	PresignDownloadTTL time.Duration
 }
 
-// Service handles artifact business logic.
 type Service struct {
 	repo  *repository.ArtifactRepository
 	store *storage.Client
@@ -55,7 +48,6 @@ type Service struct {
 	opts  Options
 }
 
-// New creates an artifact Service.
 func New(repo *repository.ArtifactRepository, store *storage.Client, q *quota.Checker, opts Options) *Service {
 	if opts.MultipartThreshold <= 0 {
 		opts.MultipartThreshold = 50 * 1024 * 1024
@@ -67,14 +59,11 @@ func New(repo *repository.ArtifactRepository, store *storage.Client, q *quota.Ch
 		opts.PresignUploadTTL = time.Hour
 	}
 	if opts.PresignDownloadTTL <= 0 {
-		// 24h so an interrupted download can resume via Range against the same
-		// presigned URL long after it started (B2 honors Range on presigned GETs).
 		opts.PresignDownloadTTL = 24 * time.Hour
 	}
 	return &Service{repo: repo, store: store, quota: q, opts: opts}
 }
 
-// InitParams carries the authenticated caller + per-site limits into InitUpload.
 type InitParams struct {
 	Site           string
 	UploaderSub    string
@@ -82,11 +71,9 @@ type InitParams struct {
 	MaxFileSize    int64
 	QuotaCount     int
 	QuotaBytes     int64
-	AllowedMime    []string // MIME types and/or extensions; empty = allow all
+	AllowedMime    []string
 }
 
-// InitUpload validates + reserves quota, creates the row (status=uploading) and
-// returns presigned URL(s) for the client to upload directly to B2.
 func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p InitParams) (*dto.InitUploadResponse, error) {
 	if p.MaxFileSize > 0 && req.FileSize > p.MaxFileSize {
 		return nil, ErrTooBig
@@ -95,7 +82,6 @@ func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p I
 		return nil, ErrMIMEDenied
 	}
 
-	// Reserve quota up front (we never see the bytes; reserve on declared size).
 	if s.quota != nil {
 		if _, qerr := s.quota.Reserve(ctx, p.Site, req.FileSize, p.QuotaCount, p.QuotaBytes); qerr != nil {
 			switch {
@@ -104,7 +90,6 @@ func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p I
 			case stderrors.Is(qerr, quota.ErrBytesExceeded):
 				return nil, ErrQuotaBytes
 			case stderrors.Is(qerr, quota.ErrNotConfigured):
-				// Redis not configured (dev) — skip quota.
 			default:
 				return nil, qerr
 			}
@@ -112,12 +97,6 @@ func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p I
 	}
 
 	id := uuid.NewString()
-	// Opaque key: {site}/{uuid}<ext>. The user's filename is NOT in the key, so
-	// every download URL (presigned or CDN) is free of special characters; the
-	// original name is preserved in artifact.Name and surfaced via
-	// Content-Disposition — baked onto the object at upload start
-	// (CreateMultipartUpload for multipart; at complete for single-PUT) and
-	// additionally overridden per-download on presigned GETs.
 	fileKey := p.Site + "/" + id + extForKey(req.Name)
 
 	a := &model.Artifact{
@@ -134,8 +113,6 @@ func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p I
 		Status:         model.StatusUploading,
 		Public:         req.Public,
 	}
-	// Persist the row BEFORE any B2 multipart so an interrupted init always
-	// leaves a status=0 row the GC job can find and clean.
 	if err := s.repo.Create(ctx, a); err != nil {
 		return nil, err
 	}
@@ -180,17 +157,6 @@ func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p I
 	return resp, nil
 }
 
-// ResumeUpload re-drives an upload that was Init'd but never Completed (e.g. the
-// client paused, lost connection, or its presigned URLs expired). It is the
-// S3-multipart-native equivalent of resumable upload — no separate protocol
-// (tus) needed:
-//   - single-PUT: re-presign the PUT URL (the original almost certainly expired).
-//   - multipart: ask B2 which parts already landed (ListParts) and re-presign
-//     ONLY the missing ones, so the client uploads the remainder and Completes
-//     with the union of already-stored + newly-uploaded ETags.
-//
-// It Touches updated_at so the GC orphan sweep (keyed on updated_at) won't reap
-// an upload that's actively being resumed. Safe to call repeatedly.
 func (s *Service) ResumeUpload(ctx context.Context, uuidStr, site string) (*dto.ResumeUploadResponse, error) {
 	a, err := s.repo.FindByUUID(ctx, uuidStr)
 	if err != nil {
@@ -200,15 +166,12 @@ func (s *Service) ResumeUpload(ctx context.Context, uuidStr, site string) (*dto.
 		return nil, err
 	}
 	if a.SiteKey != site {
-		return nil, ErrNotFound // don't leak cross-site existence
+		return nil, ErrNotFound
 	}
 	if a.Status != model.StatusUploading {
-		return nil, ErrNotResumable // ready or failed → nothing to resume
+		return nil, ErrNotResumable
 	}
 
-	// Keep this upload out of the GC orphan sweep while it's being continued.
-	// Best-effort: a lagging touch only risks an over-TTL idle upload being
-	// reclaimed, never a correctness issue.
 	if err := s.repo.Touch(ctx, a.ID); err != nil {
 		slog.Warn("artifact: touch on resume", "uuid", a.UUID, "err", err)
 	}
@@ -216,7 +179,6 @@ func (s *Service) ResumeUpload(ctx context.Context, uuidStr, site string) (*dto.
 	expiresAt := time.Now().Add(s.opts.PresignUploadTTL).UTC().Format(time.RFC3339)
 	resp := &dto.ResumeUploadResponse{UUID: a.UUID, ExpiresAt: expiresAt}
 
-	// Single-PUT: just hand back a fresh PUT URL.
 	if !a.IsMultipart() {
 		url, err := s.store.PresignPut(ctx, a.FileKey, s.opts.PresignUploadTTL)
 		if err != nil {
@@ -227,7 +189,7 @@ func (s *Service) ResumeUpload(ctx context.Context, uuidStr, site string) (*dto.
 	}
 
 	if a.PartSize <= 0 {
-		return nil, ErrBadRequest // multipart row with no part size — corrupt
+		return nil, ErrBadRequest
 	}
 
 	uploaded, err := s.store.ListParts(ctx, a.FileKey, a.UploadID)
@@ -247,7 +209,7 @@ func (s *Service) ResumeUpload(ctx context.Context, uuidStr, site string) (*dto.
 	resp.PartSize = a.PartSize
 	for n := int32(1); int64(n) <= numParts; n++ {
 		if _, ok := have[n]; ok {
-			continue // already on B2 — skip
+			continue
 		}
 		url, err := s.store.PresignUploadPart(ctx, a.FileKey, a.UploadID, n, s.opts.PresignUploadTTL)
 		if err != nil {
@@ -258,8 +220,6 @@ func (s *Service) ResumeUpload(ctx context.Context, uuidStr, site string) (*dto.
 	return resp, nil
 }
 
-// CompleteUpload finalises an upload: completes multipart, verifies the actual
-// size matches the declared size, persists status=ready and optional manifest.
 func (s *Service) CompleteUpload(ctx context.Context, uuidStr, site string, req dto.CompleteUploadRequest) (*dto.ArtifactResponse, error) {
 	a, err := s.repo.FindByUUID(ctx, uuidStr)
 	if err != nil {
@@ -269,10 +229,10 @@ func (s *Service) CompleteUpload(ctx context.Context, uuidStr, site string, req 
 		return nil, err
 	}
 	if a.SiteKey != site {
-		return nil, ErrNotFound // don't leak cross-site existence
+		return nil, ErrNotFound
 	}
 	if a.IsReady() {
-		return s.persistManifestAndRespond(ctx, a, req.Manifest) // idempotent re-complete
+		return s.persistManifestAndRespond(ctx, a, req.Manifest)
 	}
 
 	if a.IsMultipart() {
@@ -285,10 +245,6 @@ func (s *Service) CompleteUpload(ctx context.Context, uuidStr, site string, req 
 		}
 		sort.Slice(parts, func(i, j int) bool { return parts[i].PartNumber < parts[j].PartNumber })
 		if err := s.store.CompleteMultipart(ctx, a.FileKey, a.UploadID, parts); err != nil {
-			// Abort the dangling multipart upload so its uploaded parts don't
-			// linger in B2 (billed; never reclaimed once the row goes status=2,
-			// as the GC orphan sweep only scans status=uploading rows). Matches
-			// docs/artifact/01-design.md ("multipart 完成失败 → status=2 + Abort").
 			if abErr := s.store.AbortMultipart(ctx, a.FileKey, a.UploadID); abErr != nil {
 				slog.Warn("artifact: abort multipart on complete-failure", "uuid", a.UUID, "err", abErr)
 			}
@@ -303,7 +259,6 @@ func (s *Service) CompleteUpload(ctx context.Context, uuidStr, site string, req 
 		return nil, err
 	}
 	if actual != a.ReportedSize {
-		// Size doesn't match the declaration — delete the object and fail.
 		if delErr := s.store.Delete(ctx, a.FileKey); delErr != nil {
 			slog.Warn("artifact: delete on size mismatch failed", "uuid", a.UUID, "err", delErr)
 		}
@@ -311,15 +266,6 @@ func (s *Service) CompleteUpload(ctx context.Context, uuidStr, site string, req 
 		return nil, ErrSizeMismatch
 	}
 
-	// Single-PUT objects get their attachment Content-Disposition baked here, via
-	// a server-side in-place metadata copy. They are always below the multipart
-	// threshold, so the copy is small and sub-second. Multipart objects are NOT
-	// copied: they already carry the filename + content type set once at
-	// CreateMultipartUpload (InitUpload), so a GB-scale complete never pays the
-	// O(size) server-side copy that used to blow past client timeouts. Either way
-	// the opaque key (uuid<ext>) downloads under a.Name on both the Worker path
-	// (baked disposition) and the presigned path (per-download override).
-	// Best-effort: a failure only degrades the saved filename, never the upload.
 	if !a.IsMultipart() {
 		if err := s.store.SetContentDisposition(ctx, a.FileKey, a.Name, a.MimeType); err != nil {
 			slog.Warn("artifact: bake content-disposition", "uuid", a.UUID, "err", err)
@@ -334,9 +280,6 @@ func (s *Service) CompleteUpload(ctx context.Context, uuidStr, site string, req 
 	return s.persistManifestAndRespond(ctx, a, req.Manifest)
 }
 
-// Download returns a download URL for a ready artifact owned by the site.
-// Public artifacts on a site with a Worker CDN base get the cacheable Worker
-// URL; everything else gets a short-lived presigned GET.
 func (s *Service) Download(ctx context.Context, uuidStr, site, cdnBase string) (*dto.DownloadResponse, error) {
 	a, err := s.repo.FindByUUID(ctx, uuidStr)
 	if err != nil {
@@ -363,12 +306,10 @@ func (s *Service) Download(ctx context.Context, uuidStr, site, cdnBase string) (
 	}, nil
 }
 
-// Delete soft-deletes a site's artifact (GC physically removes after the TTL).
 func (s *Service) Delete(ctx context.Context, uuidStr, site string) (bool, error) {
 	return s.repo.SoftDeleteByUUID(ctx, uuidStr, site)
 }
 
-// Get returns one artifact's metadata, scoped to the caller's site.
 func (s *Service) Get(ctx context.Context, uuidStr, site string) (*dto.ArtifactResponse, error) {
 	a, err := s.repo.FindByUUID(ctx, uuidStr)
 	if err != nil {
@@ -383,7 +324,6 @@ func (s *Service) Get(ctx context.Context, uuidStr, site string) (*dto.ArtifactR
 	return toResponse(a), nil
 }
 
-// List returns a page of the site's artifacts plus the total count.
 func (s *Service) List(ctx context.Context, site string, offset, limit int) ([]dto.ArtifactResponse, int64, error) {
 	items, total, err := s.repo.ListBySite(ctx, site, offset, limit)
 	if err != nil {
@@ -395,8 +335,6 @@ func (s *Service) List(ctx context.Context, site string, offset, limit int) ([]d
 	}
 	return out, total, nil
 }
-
-// ---- helpers ----
 
 func (s *Service) markFailed(ctx context.Context, a *model.Artifact) {
 	a.Status = model.StatusFailed
@@ -441,26 +379,19 @@ func toResponse(a *model.Artifact) *dto.ArtifactResponse {
 	}
 }
 
-// extForKey returns a lowercase, URL-safe extension (e.g. ".zip") for the
-// opaque {site}/{uuid}<ext> object key, or "" when the name has no extension or
-// an unsafe one. The original filename is preserved separately (artifact.Name)
-// and surfaced at download time via Content-Disposition, so the key never needs
-// to carry it — keeping every download URL free of special characters.
 func extForKey(name string) string {
 	ext := strings.ToLower(filepath.Ext(name))
 	if len(ext) < 2 {
-		return "" // no extension, or a bare "."
+		return ""
 	}
 	for _, r := range ext[1:] {
 		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
-			return "" // unusual extension → keep the key fully opaque
+			return ""
 		}
 	}
 	return ext
 }
 
-// mimeAllowed reports whether the declared MIME or the filename extension is in
-// the per-site allowlist. Empty allowlist = allow anything.
 func mimeAllowed(mime, name string, allowed []string) bool {
 	if len(allowed) == 0 {
 		return true

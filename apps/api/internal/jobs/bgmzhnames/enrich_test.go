@@ -20,18 +20,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + registry seeds) and the src_bangumi Silver schema co-located in
-// ONE database, exactly as production lays them out (the single-DSN premise of
-// this job). Run drives the DSN itself, so we capture it (not just the handle)
-// to exercise the real entry point.
 var (
 	testDB  *gorm.DB
 	testDSN string
 )
 
-// backdated is stamped on freshly created works so any TouchWorks bump is
-// unambiguous (GORM writes now() on create).
 var backdated = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func TestMain(m *testing.M) {
@@ -142,10 +135,6 @@ func bangumiSource(t *testing.T) int16 {
 	return id
 }
 
-// TestRun drives the whole wave end to end: the infobox guard, the Chinese
-// sorting, the uq absorption of a name the character already has, the
-// never-steal-an-existing-primary rule, the non-anchored/probable exclusions,
-// the host-work touch, and second-pass idempotency.
 func TestRun(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -169,11 +158,8 @@ func TestRun(t *testing.T) {
 		}
 		mkAnchor(t, ch, src, fmt.Sprintf("%d", bgm), kind)
 	}
-	// chUnanchored deliberately gets no external_ref at all.
 	_ = chUnanchored
 
-	// The real Lelouch infobox: main name + one Chinese-declaring alias item,
-	// surrounded by English/Japanese/untagged siblings that must not be taken.
 	require.NoError(t, testDB.Exec(`UPDATE src_bangumi.character SET infobox_parsed = ?::jsonb WHERE id = 1`,
 		`{"Type":"Crt","Fields":[
 			{"Key":"简体中文名","Value":"鲁路修·兰佩路基","Items":null},
@@ -182,10 +168,8 @@ func TestRun(t *testing.T) {
 				{"Key":"英文名","Value":"Lelouch Lamperouge"},
 				{"Key":"第二中文名","Value":"鲁路修·冯·布里塔尼亚"},
 				{"Key":"日文名","Value":"ルルーシュ・ヴィ・ブリタニア"}]}]}`).Error)
-	// A SCALAR Fields — the dirty value the guard exists for.
 	require.NoError(t, testDB.Exec(`UPDATE src_bangumi.character SET infobox_parsed = ?::jsonb WHERE id = 2`,
 		`{"Fields":"简体中文名"}`).Error)
-	// Japanese-only names: parseable, but nothing this wave may take.
 	require.NoError(t, testDB.Exec(`UPDATE src_bangumi.character SET infobox_parsed = ?::jsonb WHERE id = 3`,
 		`{"Fields":[{"Key":"别名","Value":"","Items":[{"Key":"日文名","Value":"涼宮ハルヒ"}]}]}`).Error)
 	require.NoError(t, testDB.Exec(`UPDATE src_bangumi.character SET infobox_parsed = ?::jsonb WHERE id = 4`,
@@ -194,8 +178,6 @@ func TestRun(t *testing.T) {
 	require.NoError(t, testDB.Exec(`UPDATE src_bangumi.character SET infobox_parsed = ?::jsonb WHERE id = 5`,
 		`{"Fields":[{"Key":"简体中文名","Value":"绫波丽","Items":null}]}`).Error)
 
-	// chDup already carries the main name (uq absorption), chHasPrimary already
-	// has a HUMAN zh-Hans primary under a different name (never stolen).
 	require.NoError(t, testDB.Create(&model.CatalogCharacterAlias{
 		CharacterID: chDup, Name: "零", Lang: LangZhHans, Kind: model.AliasKindTranslation,
 	}).Error)
@@ -203,8 +185,6 @@ func TestRun(t *testing.T) {
 		CharacterID: chHasPrimary, Name: "凌波丽", Lang: LangZhHans,
 		Kind: model.AliasKindTranslation, IsPrimaryForLocale: true,
 	}).Error)
-	// A ja alias with the SAME text the wave will write: different language, so
-	// it must not absorb the zh-Hans row.
 	require.NoError(t, testDB.Create(&model.CatalogCharacterAlias{
 		CharacterID: chLelouch, Name: "鲁路修·兰佩路基", Lang: "ja", Kind: model.AliasKindTranslation,
 	}).Error)
@@ -219,7 +199,6 @@ func TestRun(t *testing.T) {
 	fixtures := aliasCount(t, "")
 	require.EqualValues(t, 3, fixtures)
 
-	// --- dry run: decides, writes nothing, touches nothing.
 	st, err := Run(ctx, Opts{DSN: testDSN})
 	require.NoError(t, err)
 	assert.Equal(t, 5, st.Anchored, "the probable anchor and the unanchored character are out of the universe")
@@ -234,7 +213,6 @@ func TestRun(t *testing.T) {
 	assert.EqualValues(t, fixtures, aliasCount(t, ""), "a dry run writes nothing")
 	assert.Equal(t, backdated.UTC(), workUpdatedAt(t, hostA).UTC(), "a dry run moves no watermark")
 
-	// --- apply.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 4, st.Inserted)
@@ -286,7 +264,6 @@ func TestRun(t *testing.T) {
 	assert.True(t, bumpedB.After(backdated))
 	assert.Equal(t, backdated.UTC(), workUpdatedAt(t, hostSkipped).UTC(), "a character that gained nothing bumps nothing")
 
-	// --- second apply: zero writes, zero touches, watermarks frozen.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.Inserted, "second pass writes zero")
@@ -299,7 +276,6 @@ func TestRun(t *testing.T) {
 	assert.Equal(t, bumpedB.UTC(), workUpdatedAt(t, hostB).UTC())
 }
 
-// TestRunRequiresDSN pins the "never guess a DSN" discipline.
 func TestRunRequiresDSN(t *testing.T) {
 	_, err := Run(context.Background(), Opts{})
 	require.Error(t, err)

@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// F002: client secrets must be stored hashed, and VerifySecret must accept the
-// correct secret while a legacy plaintext row (pre-migration) still verifies.
 func TestOAuthClientVerifySecret(t *testing.T) {
 	const secret = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef0"
 
@@ -27,7 +25,6 @@ func TestOAuthClientVerifySecret(t *testing.T) {
 		t.Fatal("hashed: empty secret accepted")
 	}
 
-	// Legacy plaintext row (not yet migrated) must still verify both ways.
 	legacy := &OAuthClient{Secret: secret}
 	if !legacy.VerifySecret(secret) {
 		t.Fatal("legacy plaintext: correct secret rejected")

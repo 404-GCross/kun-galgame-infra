@@ -1,25 +1,3 @@
-// Package tagcanon builds the DETERMINISTIC slice of the tag canonical layer
-// (refs/proj/74, design refs/proj/70 §7/§8): it extracts the three per-source
-// tag vocabularies (all three = catalog_work_tag grouped by source), mechanically prefilters bangumi junk
-// (date/disc/number regexes + maker/label collisions — junk is reported but
-// never written), folds the survivors on NFKC+casefold+trim, and mints ONE
-// catalog_tag + per-source catalog_tag_source_map rows for every norm spanning
-// ≥2 distinct sources. Cross-source groups are tier=core (user ruling); a
-// hand-pinned meta set is kind=meta, everything else content. Single-source
-// names get NO row this wave (70b's domain).
-//
-// The ORIGINAL layer (catalog_work_tag) is read-only here — not one row is
-// touched. Discipline (55/57/58a/58b lineage):
-//   - The DSN is ALWAYS explicit — a bare run cannot touch a live DB. All three
-//     vocabularies now live in catalog_work_tag, so one catalog database is the
-//     whole input (wave 149: the vndb lane no longer joins the wiki tag layer —
-//     see loadWorkTagVocab).
-//   - Dry-run is the default: the decided plan (vocab sizes, junk digest, group
-//     count, per-source absorption, single-source distribution) is identical in
-//     dry and apply; only Tags/Maps Created/Conflict need --apply.
-//   - Idempotent: ON CONFLICT DO NOTHING on both tables — a second --apply
-//     writes zero, counting the no-ops as conflicts.
-//   - Limit windows the (Norm-sorted) group list for a small-sample apply.
 package tagcanon
 
 import (
@@ -30,20 +8,17 @@ import (
 	"api/internal/infrastructure/database"
 )
 
-// Opts configures a run.
 type Opts struct {
 	Apply bool
 	DSN   string
-	Limit int // 0 = all groups; >0 windows the Norm-sorted group list (small-sample apply)
+	Limit int
 }
 
-// JunkSample is one filtered bangumi junk name for the dry-run digest.
 type JunkSample struct {
 	Name   string
 	Reason string
 }
 
-// GroupSample is one decided cross-source group for the dry-run digest.
 type GroupSample struct {
 	Canonical string
 	Tier      int16
@@ -52,28 +27,24 @@ type GroupSample struct {
 	Members   int
 }
 
-// Absorption is one source's convergence: how many of its non-junk names landed
-// in a kept cross-source group.
 type Absorption struct {
 	SourceID int16
 	Key      string
-	Names    int // distinct non-junk names of the source
-	Absorbed int // of those, in a cross-source group
+	Names    int
+	Absorbed int
 }
 
-// Stats reports a run. The plan counters are identical in dry and apply;
-// Tags/Maps Created/Conflict are apply-only.
 type Stats struct {
 	VndbNames    int
-	BangumiNames int // AFTER junk filter (names entering grouping)
+	BangumiNames int
 	DlsiteNames  int
-	BangumiJunk  int // filtered out
+	BangumiJunk  int
 	JunkByReason map[string]int
 
-	Groups      int // cross-source groups decided (full, before --limit)
+	Groups      int
 	MetaGroups  int
-	TriSource   int // groups spanning all three sources
-	PlannedMaps int // total member map rows across all groups
+	TriSource   int
+	PlannedMaps int
 
 	TagsCreated  int
 	TagsConflict int
@@ -82,14 +53,13 @@ type Stats struct {
 	Errors       int
 
 	Absorptions []Absorption
-	Dist        []SourceDist // single-source usage distribution (统计交付)
+	Dist        []SourceDist
 	JunkSamples []JunkSample
-	GroupTop    []GroupSample // widest groups first (by source count, then members)
+	GroupTop    []GroupSample
 }
 
 const maxJunkSamples = 30
 
-// Run extracts the vocabularies, decides the groups, and (apply) writes them.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess — the rehearsal copy locally, the live catalog only in the acceptance run")
@@ -108,7 +78,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 	srcKeys := map[int16]string{src.vndb: sourceKeyVNDB, src.bangumi: sourceKeyBangumi, src.dlsite: sourceKeyDlsite}
 
-	// ── vocabulary extraction ────────────────────────────────────────────────
 	vndb, err := loadWorkTagVocab(ctx, db, src.vndb)
 	if err != nil {
 		return nil, err
@@ -128,7 +97,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 
 	st := &Stats{JunkByReason: map[string]int{}}
 
-	// ── bangumi junk prefilter (mark, count, sample — write NOTHING) ──────────
 	for i := range bgm {
 		if reason := bgmJunk(bgm[i].Norm, labelNorms); reason != "" {
 			bgm[i].Junk = true
@@ -149,7 +117,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	vocab = append(vocab, bgm...)
 	vocab = append(vocab, dl...)
 
-	// ── grouping + stamping ───────────────────────────────────────────────────
 	groups := buildGroups(vocab)
 	st.Groups = len(groups)
 	for _, g := range groups {
@@ -165,7 +132,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	st.Dist = singleSourceDist(vocab, groups, srcKeys)
 	st.GroupTop = topGroups(groups)
 
-	// ── write (apply) ─────────────────────────────────────────────────────────
 	writeGroups := groups
 	if opts.Limit > 0 && opts.Limit < len(writeGroups) {
 		writeGroups = writeGroups[:opts.Limit]
@@ -182,8 +148,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// absorptions computes per-source convergence: of a source's non-junk names,
-// how many folded into a kept cross-source group.
 func absorptions(vocab []vocabEntry, groups []group, srcKeys map[int16]string) []Absorption {
 	inGroup := map[string]struct{}{}
 	for _, g := range groups {

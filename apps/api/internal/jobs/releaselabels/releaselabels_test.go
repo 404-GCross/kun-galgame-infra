@@ -1,11 +1,3 @@
-// releaselabels_test.go — wave 200: the shelf the edition-level facts go on.
-//
-// The work-level lane exists to say who made a work, and wave 200 narrowed it
-// to mean that. This lane is the other half of the bargain: what the narrowing
-// pushed out must land somewhere, or the fix is just deletion wearing a nicer
-// name. So the test that matters most here is the mirror image of the one next
-// door — the English publisher that must NOT reach the work MUST reach its
-// release.
 package releaselabels
 
 import (
@@ -53,8 +45,6 @@ func TestMain(m *testing.M) {
 
 const vndbSource int16 = 2
 
-// seedEditions builds one work with two editions — the Japanese original and
-// the English localisation — and anchors both to vndb.
 func seedEditions(t *testing.T) (jaRelease, enRelease, maker, localiser int64) {
 	t.Helper()
 	for _, tbl := range []string{
@@ -112,8 +102,6 @@ func kindsOn(t *testing.T, release int64) map[int16]int64 {
 	return out
 }
 
-// TestLocalisationPublisherLandsOnItsOwnRelease is the whole point of the
-// table. No language gate here — the release already says which edition it is.
 func TestLocalisationPublisherLandsOnItsOwnRelease(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -124,8 +112,6 @@ func TestLocalisationPublisherLandsOnItsOwnRelease(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.Written, "dev+pub on the original, pub on the localisation")
 
-	// The maker is both developer and publisher of the Japanese release —
-	// vndb's dual flag, folded into two rows rather than argued over.
 	jaKinds := kindsOn(t, ja)
 	assert.Equal(t, maker, jaKinds[model.WorkLabelKindDeveloper])
 	assert.Equal(t, maker, jaKinds[model.WorkLabelKindPublisher])
@@ -135,15 +121,11 @@ func TestLocalisationPublisherLandsOnItsOwnRelease(t *testing.T) {
 		"the English publisher belongs to the English release")
 	assert.NotContains(t, enKinds, model.WorkLabelKindDeveloper,
 		"publishing an edition is not making it")
-	// And it stays off the Japanese one — the confusion this wave was raised to
-	// end.
 	for _, id := range jaKinds {
 		assert.NotEqual(t, localiser, id, "the localiser never reaches the original")
 	}
 }
 
-// TestRerunWritesNothing: these are static facts, so a second run must be a
-// no-op rather than a churn of identical rows.
 func TestRerunWritesNothing(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -158,8 +140,6 @@ func TestRerunWritesNothing(t *testing.T) {
 	assert.Equal(t, 3, st.SkippedDup, "every planned row was already there")
 }
 
-// TestDryRunWritesNothingButStillPlans: the counters a dry run reports have to
-// be the same ones apply would act on, or the rehearsal is worthless.
 func TestDryRunWritesNothingButStillPlans(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -177,9 +157,6 @@ func TestDryRunWritesNothingButStillPlans(t *testing.T) {
 	assert.Zero(t, n, "a dry run touched the table")
 }
 
-// TestUnanchoredProducerIsCountedNotGuessed: a producer with no exact label
-// anchor is a gap in the identity graph, and the job reports it as a number
-// instead of inventing a label to hang it on.
 func TestUnanchoredProducerIsCountedNotGuessed(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")

@@ -1,7 +1,3 @@
-// public_stats_test.go — wire-level coverage of the slim public counts lane
-// (GET /v1/catalog/stats, 149b): what it counts (LIVE rows only, r18
-// included), what it renders (medium id AND key), and — the point of the whole
-// endpoint — what it must NEVER carry (the internal dashboard's telemetry).
 package handler
 
 import (
@@ -18,9 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// statsApp mounts the counts lane bare (the devapi chain is a separate
-// concern), with a real StatsService — the very service the internal dashboard
-// uses, reached through its public-only method.
 func statsApp(db *gorm.DB) *fiber.App {
 	resolveSvc := service.NewResolveService(repository.NewRedirectRepository(db))
 	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
@@ -30,11 +23,6 @@ func statsApp(db *gorm.DB) *fiber.App {
 	return app
 }
 
-// seedStatsFixture wipes the counted tables and inserts a population whose
-// every exclusion rule is exercised: one live all-ages galgame work, one live
-// r18 galgame work, one live work of another medium, one stub, one merged and
-// one soft-deleted row — plus one live and one soft-deleted label / character /
-// person, and one credit name.
 func seedStatsFixture(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, tbl := range []string{
@@ -54,7 +42,7 @@ func seedStatsFixture(t *testing.T, db *gorm.DB) {
 	for i := range works {
 		require.NoError(t, db.Create(&works[i]).Error)
 	}
-	require.NoError(t, db.Delete(&works[5]).Error) // soft delete
+	require.NoError(t, db.Delete(&works[5]).Error)
 
 	live := model.CatalogLabel{DisplayName: "生きてるブランド", Kind: model.LabelKindGameBrand}
 	gone := model.CatalogLabel{DisplayName: "消えたブランド", Kind: model.LabelKindGameBrand}
@@ -72,8 +60,6 @@ func seedStatsFixture(t *testing.T, db *gorm.DB) {
 	require.NoError(t, db.Create(&model.CatalogPerson{DisplayName: "人物"}).Error)
 }
 
-// TestPublicStatsCountsLiveRowsOnly pins the population: LIVE, non-deleted rows
-// only, r18 included, medium breakdown summing to total.
 func TestPublicStatsCountsLiveRowsOnly(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedStatsFixture(t, db)
@@ -84,8 +70,6 @@ func TestPublicStatsCountsLiveRowsOnly(t *testing.T) {
 	data := body["data"].(map[string]any)
 
 	works := data["works"].(map[string]any)
-	// 2 live galgame (one of them r18 — counted) + 1 live other medium; the
-	// stub, the merged row and the soft-deleted row are all excluded.
 	assert.EqualValues(t, 3, works["total"])
 	byMedium := works["by_medium"].([]any)
 	require.Len(t, byMedium, 2, "one row per medium that has live works")
@@ -95,7 +79,6 @@ func TestPublicStatsCountsLiveRowsOnly(t *testing.T) {
 	assert.EqualValues(t, 2, first["count"], "r18 works are counted — an aggregate exposes no content")
 	assert.EqualValues(t, 1, byMedium[1].(map[string]any)["count"])
 
-	// total is the sum of the breakdown — the two can never disagree.
 	var sum float64
 	for _, row := range byMedium {
 		sum += row.(map[string]any)["count"].(float64)
@@ -109,10 +92,6 @@ func TestPublicStatsCountsLiveRowsOnly(t *testing.T) {
 	assert.EqualValues(t, 1, entities["persons"])
 }
 
-// TestPublicStatsExposesNoInternalTelemetry is the wave's red line: the public
-// payload carries exactly two blocks. A future edit that "reuses" the internal
-// dashboard DTO would leak review queue levels, LLM verdicts, the anchor tier
-// matrix and source freshness onto the frozen contract — this test fails first.
 func TestPublicStatsExposesNoInternalTelemetry(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedStatsFixture(t, db)
@@ -133,14 +112,11 @@ func TestPublicStatsExposesNoInternalTelemetry(t *testing.T) {
 	} {
 		assert.NotContains(t, data, forbidden)
 	}
-	// The entity block is the slim one: no orphan / org curation counters.
 	entities := data["entities"].(map[string]any)
 	assert.NotContains(t, entities, "orphan_credit_names")
 	assert.NotContains(t, entities, "orgs")
 }
 
-// TestPublicStatsCachesLong pins the long public cache window — the payload is
-// parameterless and moves by a handful of rows a day.
 func TestPublicStatsCachesLong(t *testing.T) {
 	db := openCatalogTestDB(t)
 	seedStatsFixture(t, db)

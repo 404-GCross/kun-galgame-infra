@@ -1,11 +1,3 @@
-// public_name_moved_test.go — the merged-id posture of the name and character
-// detail lanes (wave 171's fold made credit-name merges a live event; label
-// got this posture in wave 148, these two lanes had never needed it before).
-//
-// A retired credit name is HARD-deleted (the model has no soft delete by
-// design) and a merged character is soft-deleted; both leave a permanent
-// catalog_redirect, so the miss branch has the same two meanings as a label
-// miss: moved (301 + current_id) or never existed (404).
 package handler
 
 import (
@@ -22,8 +14,6 @@ import (
 
 func TestPublicNameDetailMergedRedirects(t *testing.T) {
 	db := openCatalogTestDB(t)
-	// The live-name lane joins src_bangumi.person for intros; the schema is
-	// absent from a fresh test database until the Silver layer ensures it.
 	require.NoError(t, srcbangumi.EnsureSchema(db))
 	for _, tbl := range []string{"catalog_redirect", "catalog_credit", "catalog_name_alias", "catalog_credit_name"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -35,7 +25,6 @@ func TestPublicNameDetailMergedRedirects(t *testing.T) {
 	}
 	live, gone := mk("種﨑敦美"), mk("種﨑 敦美")
 	require.NoError(t, repository.InsertRedirect(db, model.EntityTypeCreditName, gone, live, nil, "test fold"))
-	// Retirement is a hard DELETE — mirror the merge path, not soft delete.
 	require.NoError(t, db.Exec("DELETE FROM catalog_credit_name WHERE id = ?", gone).Error)
 	app := publicApp(db)
 

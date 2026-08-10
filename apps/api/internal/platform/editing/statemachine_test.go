@@ -7,9 +7,6 @@ import (
 	"api/internal/platform/editing"
 )
 
-// Full state-machine transitions: open → merged | declined | withdrawn, the
-// direct-edit sugar, and every illegal transition (test matrix ruling 8).
-
 func TestProposeThenMerge(t *testing.T) {
 	e := newEngine(t)
 	createWidget(t, 1)
@@ -62,7 +59,6 @@ func TestProposeThenMerge(t *testing.T) {
 		t.Fatalf("effective patch: %v", eff)
 	}
 
-	// Merged is terminal: no second merge, no amend, no decline, no withdraw.
 	if _, err := e.MergeProposal(testCtx, prop.ID, reviewerActor(200), ""); !errors.Is(err, editing.ErrNotOpen) {
 		t.Fatalf("re-merge: %v", err)
 	}
@@ -90,7 +86,6 @@ func TestDecline(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	// Review permission is required to decline.
 	if err := e.DeclineProposal(testCtx, prop.ID, editorActor(100), "self"); err == nil {
 		t.Fatal("decline without review perm must fail")
 	}
@@ -142,7 +137,6 @@ func TestDirectEditSugar(t *testing.T) {
 	e := newEngine(t)
 	createWidget(t, 1)
 
-	// automerge=always: create+merge atomically, single revision, action=direct.
 	prop, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fOpen: "hello"}, Actor: anonActor(300),
@@ -171,7 +165,6 @@ func TestAutomergeTrusted(t *testing.T) {
 	e := newEngine(t)
 	createWidget(t, 1)
 
-	// Trusted proposer on an automerge=trusted field → instant merge.
 	_, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fTrusted: "by trusted"}, Actor: trustedActor(300),
@@ -183,7 +176,6 @@ func TestAutomergeTrusted(t *testing.T) {
 		t.Fatal("trusted proposer must automerge on an automerge=trusted field")
 	}
 
-	// TL0 proposer: may propose (propose=open) but must NOT automerge.
 	prop, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fTrusted: "by anon"}, Actor: anonActor(301),
@@ -198,8 +190,6 @@ func TestAutomergeTrusted(t *testing.T) {
 		t.Fatalf("status=%d, want open", prop.Status)
 	}
 
-	// A mixed patch automerges only when EVERY field's rule passes: open_note
-	// alone would (always), trusted_note at TL0 does not → whole patch waits.
 	prop, rev, err = e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fOpen: "x", fTrusted: "y"}, Actor: anonActor(302),

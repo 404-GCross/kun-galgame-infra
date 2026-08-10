@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// cover is a terse constructor for the table below.
 func cover(id int64, kind string, w, h int) Cover {
 	return Cover{ID: id, WorkID: 1, Hash: "h" + kind, Kind: kind, Width: w, Height: h, DimsKnown: true}
 }
@@ -21,8 +20,6 @@ func TestTierOrder(t *testing.T) {
 	}
 }
 
-// TestSizeNeverBeatsKind is the whole bug, pinned as a test: the old selector
-// sorted on height first, so this 2000px disc face won over the 600px cover.
 func TestSizeNeverBeatsKind(t *testing.T) {
 	best := selectWinner([]Cover{
 		cover(1, "pkgmed", 1900, 2000),
@@ -42,8 +39,6 @@ func TestLargestWinsWithinTier(t *testing.T) {
 	assert.EqualValues(t, 2, best.ID, "same tier - the larger file wins regardless of dig vs main")
 }
 
-// A VNDB dig row is often a landscape download-store banner, so the shape gate
-// runs before the kind ladder ever gets a say.
 func TestLandscapeIsNeverEligible(t *testing.T) {
 	best := selectWinner([]Cover{
 		cover(1, "dig", 1600, 900),
@@ -59,8 +54,6 @@ func TestUnknownDimsAreNeverEligible(t *testing.T) {
 	assert.Nil(t, selectWinner([]Cover{c}))
 }
 
-// A work whose only portrait art is a disc face keeps whatever it has: there is
-// no such thing as a better disc face.
 func TestNoEligibleCoverLeavesTheWorkAlone(t *testing.T) {
 	p := planWork(1, []Cover{cover(1, "pkgmed", 1000, 1400)})
 	assert.Nil(t, p.New)
@@ -96,8 +89,6 @@ func TestPlanActions(t *testing.T) {
 	})
 }
 
-// The product filename is the only thing tying an upscaled file back to its
-// work: the enlargement has a brand-new hash, so losing the pair loses the row.
 func TestProductNameRoundTrip(t *testing.T) {
 	p := Plan{WorkID: 4242, New: &Cover{Hash: "abc123"}}
 	id, hash, ok := parseProductName(productName(p))

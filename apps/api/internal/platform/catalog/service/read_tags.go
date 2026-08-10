@@ -5,76 +5,17 @@ import (
 	"strings"
 )
 
-// Tags read face (step 58b + T2, refs/proj/58 Facet B, refs/proj/70 §3/§8) —
-// the fifth media-aggregation facet. ONE native lane for every work since the
-// W1-pre nativization (refs/proj/140): the wiki tag layer a CLAIMED work used
-// to bridge at read time (galgame_tag_relation ⋈ galgame_tag) was materialized
-// into catalog_work_tag by wikirescue step r — name = the wiki's localized
-// display name verbatim, source_id = the edge's own source (galgame_wiki for a
-// user-curated edge, vndb for a synced one), count = 0 (the wiki layer has no
-// votes — the DTO omits count via omitempty), plus the safety axis — and the
-// bridge was deleted. Rows are per-source attributable exactly as the two-lane
-// union was; the per-work order is (count DESC, name ASC, source_id ASC):
-// voted bgm rows lead, the count-0 rows trail by name, and the source id
-// breaks the (count, name) tie deterministically (the old two-lane merge left
-// that tie to an unstable sort — 4 groups corpus-wide).
-//
-// Safety axis (A2-1e / R8): Spoiler is per-EDGE (0 none, 1 minor, 2 major),
-// Sexual flags the TAG as sexual-category; both live on the row now. The
-// caller supplies a spoiler CEILING, applied in the query: 0 (every face's
-// default) means no spoiler-flagged tag at all, and only an explicit
-// spoilers=1|2 ever sees more.
-//
-// Sexual is the raw row flag OR the CANONICAL tag's flag whenever the tag maps
-// into the cross-source vocabulary (see enrichCanonicalTags). The raw flag
-// alone is not the axis: the concept exists only in the VNDB-derived
-// vocabulary, and Bangumi/DLsite folksonomy rows carry the explicit false their
-// importers write, so a mapped bangumi row used to ship a sexual canonical tag
-// as safe. Spoiler stays per-edge and raw — it has no canonical counterpart.
-// An UNMAPPED row is still axis-absent, which the public DTO documents so a
-// consumer cannot mistake its false for an assertion of safety.
-//
-// Tags are VERBATIM folksonomy (58 拍板): no vocabulary mapping, no
-// normalization — and content tags NEVER touch catalog_label (the attribution
-// vocabulary red line).
-
-// WorkTagRow is one tag on a work's read face, projected from catalog_work_tag.
-// Count is the source's vote count; 0 = the source has no votes (the whole
-// mirrored wiki layer) and the DTO omits it.
-//
-// Canonical layer (step 74, additive): when this tag's (source_id, name) is
-// mapped into the cross-source canonical vocabulary (catalog_tag_source_map),
-// CanonicalID/Tier/Kind carry the canonical row's identity + display tier +
-// content/meta kind; an UNMAPPED tag leaves them nil (fields omitted). The
-// original name/count/source_id are never mutated — the canonical layer is a
-// pure overlay, never a replacement.
 type WorkTagRow struct {
-	Name     string
-	Count    int
-	SourceID int16
-	// Safety axis (A2-1e / R8). Spoiler is the per-EDGE level (0 none, 1 minor,
-	// 2 major), read raw off the row. Sexual flags the TAG as sexual-category:
-	// the raw row flag OR the canonical tag's flag once the canonical overlay is
-	// stamped, so a mapped folksonomy row inherits the vocabulary's answer
-	// instead of its source's missing axis. Unmapped rows keep the raw flag.
-	Spoiler int16
-	Sexual  bool
-	// Canonical overlay — nil when the tag is not (yet) in the canonical
-	// vocabulary. Tier: 0=core 1=longtail 2=hidden; Kind: 0=content 1=meta.
+	Name        string
+	Count       int
+	SourceID    int16
+	Spoiler     int16
+	Sexual      bool
 	CanonicalID *int64
 	Tier        *int16
 	Kind        *int16
 }
 
-// loadWorkTags assembles the tag set for a set of works from catalog_work_tag —
-// one native lane for every work (see the file doc for how the wiki tag layer
-// got here).
-//
-// Batched (§9.1): ONE catalog_work_tag query for the whole set — never
-// per-work. Returns a map keyed by work id; a work with no tag is absent (the
-// caller renders []). spoilerMax is the per-edge spoiler CEILING, applied in
-// the query: rows above it are not loaded, and 0 (every face's default)
-// reproduces the pre-A2-1e behavior exactly.
 func (s *ReadService) loadWorkTags(ctx context.Context, subjects []claimSubject, spoilerMax int16) (map[int64][]WorkTagRow, error) {
 	out := make(map[int64][]WorkTagRow, len(subjects))
 	if len(subjects) > 0 {
@@ -86,24 +27,13 @@ func (s *ReadService) loadWorkTags(ctx context.Context, subjects []claimSubject,
 			return nil, err
 		}
 	}
-	// Canonical overlay (step 74): stamp canonical_id/tier/kind onto every
-	// mapped tag — the map is keyed (source_id, name), which a mirrored claimed
-	// vndb tag (source_id=vndb, name=the wiki display name) hits exactly like a
-	// native bangumi/dlsite tag does. Additive: unmapped tags keep nil overlay
-	// fields.
 	if err := s.enrichCanonicalTags(ctx, out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// enrichCanonicalTags batch-resolves the canonical overlay for every tag in out.
-// It collects the distinct (source_id, name) pairs, looks them up in ONE query
-// against catalog_tag_source_map ⋈ catalog_tag, and stamps CanonicalID/Tier/Kind
-// on the matching rows — plus the canonical sexual flag, OR-ed into the row's
-// own. A tag with no map row is left untouched (nil overlay, raw flag).
 func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]WorkTagRow) error {
-	// Distinct (source_id, name) pairs across all works — the lookup keys.
 	type key struct {
 		src  int16
 		name string
@@ -162,10 +92,6 @@ func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]W
 				rows[i].CanonicalID = &id
 				rows[i].Tier = &tier
 				rows[i].Kind = &kind
-				// The canonical vocabulary owns the sexual axis for a mapped tag:
-				// a bangumi/dlsite row carries false because its source has no
-				// such concept, not because the tag is safe. OR, never replace —
-				// a raw true is an assertion and stays one.
 				rows[i].Sexual = rows[i].Sexual || c.sexual
 			}
 		}

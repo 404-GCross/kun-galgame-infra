@@ -8,18 +8,6 @@ import (
 	"api/internal/platform/permissions"
 )
 
-// A synthetic domain, so the validator's rules are tested against a table this
-// file controls rather than against the live console vocabulary (which would
-// make every future key change break these tests for no reason).
-//
-//	ren   : locked, alpha, beta, delta
-//	admin : alpha, delta
-//	mod   : delta
-//
-// gamma is deliberately in NO bundle: it is the key that proves the admin ⊆ ren
-// half of containment can actually fail. delta is held all the way down the
-// axis, which is what makes it the key the deny rules can be exercised on — a
-// deny needs something to take away.
 const (
 	tAlpha  authz.Permission = "demo.alpha"
 	tBeta   authz.Permission = "demo.beta"
@@ -28,8 +16,6 @@ const (
 	tLocked authz.Permission = "demo.locked"
 )
 
-// testRig is a registry over the synthetic domain plus the live holder it
-// swaps to simulate applied overlay state.
 type testRig struct {
 	reg    *permissions.Registry
 	holder *authz.Holder
@@ -68,13 +54,8 @@ func newRig() *testRig {
 	}
 }
 
-// rows is the shorthand these tests describe an overlay with: role → keys, one
-// map per effect.
 type rows map[string][]authz.Permission
 
-// apply installs an overlay state as if it had been written — merged into the
-// live holder AND handed to the validator — so every rule is exercised against
-// a starting point that is internally consistent.
 func (r *testRig) apply(grants, denies rows) permissions.OverlayState {
 	snap := permissions.NewSnapshot()
 	st := permissions.OverlayState{}
@@ -93,7 +74,6 @@ func (r *testRig) apply(grants, denies rows) permissions.OverlayState {
 	return st
 }
 
-// clean is the common starting point: no overlay rows at all.
 func (r *testRig) clean() permissions.OverlayState { return r.apply(nil, nil) }
 
 func act(op permissions.Op, role string, p authz.Permission) permissions.Action {
@@ -121,8 +101,6 @@ var (
 	adminUser = permissions.Caller{UserID: 2, Roles: []string{"admin"}}
 	modCaller = permissions.Caller{UserID: 3, Roles: []string{"moderator"}}
 )
-
-// --- Rule 1: known key, editable role -------------------------------------
 
 func TestRule1RejectsImmutableAndUnknownRoles(t *testing.T) {
 	rig := newRig()
@@ -152,26 +130,18 @@ func TestRule1RejectsUnknownPermission(t *testing.T) {
 	assertRejected(t, err, "未知权限键")
 }
 
-// --- Rule 3: non-delegable keys -------------------------------------------
-
 func TestRule3NonDelegableIsRefusedEvenForRen(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
-	// ren holds oauth.permissions.manage, so this caller bypasses delegation —
-	// and is still refused.
 	err := rig.val.Validate(renCaller, st, grant("admin", tLocked))
 	assertRejected(t, err, "不可委派")
 }
-
-// --- Rule 2: delegation ----------------------------------------------------
 
 func TestRule2TargetMustBeStrictlyBelowCaller(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
 
-	// admin → admin: same tier, refused.
 	assertRejected(t, rig.val.Validate(adminUser, st, grant("admin", tBeta)), "严格低于")
-	// moderator → moderator: same tier, refused.
 	assertRejected(t, rig.val.Validate(modCaller, st, grant("moderator", tAlpha)), "严格低于")
 }
 
@@ -181,8 +151,6 @@ func TestRule2CreatorRowIsRenOnly(t *testing.T) {
 
 	assertRejected(t, rig.val.Validate(adminUser, st, grant("creator", tAlpha)), "仅 ren 可编辑")
 
-	// ren may edit it — creator is off the management axis, so containment
-	// does not constrain the grant.
 	if err := rig.val.Validate(renCaller, st, grant("creator", tAlpha)); err != nil {
 		t.Errorf("ren must be able to grant on the creator row: %v", err)
 	}
@@ -192,7 +160,6 @@ func TestRule2CallerMustHoldThePermission(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
 
-	// admin holds alpha but not beta.
 	assertRejected(t, rig.val.Validate(adminUser, st, grant("moderator", tBeta)), "自己都不持有")
 
 	if err := rig.val.Validate(adminUser, st, grant("moderator", tAlpha)); err != nil {
@@ -204,15 +171,10 @@ func TestRule2IsLiftedByPermissionsManage(t *testing.T) {
 	rig := newRig()
 	st := rig.apply(rows{"admin": {tBeta}}, nil)
 
-	// ren holds oauth.permissions.manage: it may grant a key to any editable
-	// role without the rank/self-holding checks. (admin already has beta via
-	// the overlay, so containment holds.)
 	if err := rig.val.Validate(renCaller, st, grant("moderator", tBeta)); err != nil {
 		t.Errorf("permissions.manage must lift the delegation rule: %v", err)
 	}
 }
-
-// --- State preconditions ---------------------------------------------------
 
 func TestGrantingAnAlreadyEffectiveKeyIsRefused(t *testing.T) {
 	rig := newRig()
@@ -223,9 +185,6 @@ func TestGrantingAnAlreadyEffectiveKeyIsRefused(t *testing.T) {
 func TestRevokingACodeFloorGrantPointsAtTheDenyOperation(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
-	// admin holds alpha from the CODE bundle, not the overlay: there is no row
-	// to delete. The key IS reachable now — but through the other door, and the
-	// rejection has to say which one.
 	err := rig.val.Validate(renCaller, st, revoke("admin", tAlpha))
 	assertRejected(t, err, "来自代码捆")
 	assertRejected(t, err, "撤销(记 deny)")
@@ -239,12 +198,9 @@ func TestRevokingAnOverlayGrantIsAllowed(t *testing.T) {
 	}
 }
 
-// --- Rule 4: containment ---------------------------------------------------
-
 func TestRule4GrantRejectedWhenAdminLacksTheKey(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
-	// moderator ⊆ admin would break: admin does not hold beta.
 	err := rig.val.Validate(renCaller, st, grant("moderator", tBeta))
 	assertRejected(t, err, "请先把")
 	assertRejected(t, err, "授予 admin")
@@ -253,15 +209,12 @@ func TestRule4GrantRejectedWhenAdminLacksTheKey(t *testing.T) {
 func TestRule4GrantRejectedWhenRenLacksTheKey(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
-	// admin ⊆ ren would break: gamma is in no bundle at all, so ren lacks it
-	// and no overlay row can put it there (ren rows are immutable).
 	assertRejected(t, rig.val.Validate(renCaller, st, grant("admin", tGamma)), "ren 的代码捆不含")
 }
 
 func TestRule4RevokeRejectedWhenModeratorStillHoldsTheKey(t *testing.T) {
 	rig := newRig()
 	st := rig.apply(rows{"admin": {tBeta}, "moderator": {tBeta}}, nil)
-	// Cutting admin while moderator keeps it inverts the axis.
 	err := rig.val.Validate(renCaller, st, revoke("admin", tBeta))
 	assertRejected(t, err, "请先撤销 moderator")
 }
@@ -269,19 +222,16 @@ func TestRule4RevokeRejectedWhenModeratorStillHoldsTheKey(t *testing.T) {
 func TestRule4AllowsTheOrderedSequence(t *testing.T) {
 	rig := newRig()
 
-	// 1. Grant admin first — allowed, ren holds beta.
 	st := rig.clean()
 	if err := rig.val.Validate(renCaller, st, grant("admin", tBeta)); err != nil {
 		t.Fatalf("granting admin first must pass: %v", err)
 	}
 
-	// 2. Then moderator — now allowed.
 	st = rig.apply(rows{"admin": {tBeta}}, nil)
 	if err := rig.val.Validate(renCaller, st, grant("moderator", tBeta)); err != nil {
 		t.Fatalf("granting moderator after admin must pass: %v", err)
 	}
 
-	// 3. Unwinding works in the reverse order: moderator first.
 	st = rig.apply(rows{"admin": {tBeta}, "moderator": {tBeta}}, nil)
 	if err := rig.val.Validate(renCaller, st, revoke("moderator", tBeta)); err != nil {
 		t.Fatalf("revoking moderator first must pass: %v", err)
@@ -292,14 +242,10 @@ func TestRule4AllowsTheOrderedSequence(t *testing.T) {
 	}
 }
 
-// --- Deny: the row must be one a deny can even reach -----------------------
-
 func TestDenyIsRefusedOnTheImmutableRows(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
 
-	// ren is the fuse: no DB state may narrow it, and the validator says so
-	// before Merge ever has to be the one enforcing it.
 	assertRejected(t, rig.val.Validate(renCaller, st, deny("ren", tAlpha)), "ren 行不可编辑")
 	assertRejected(t, rig.val.Validate(renCaller, st, deny("user", tAlpha)), "user 行不可编辑")
 }
@@ -311,15 +257,10 @@ func TestDenyRequiresALiveKey(t *testing.T) {
 	assertRejected(t, err, "未知权限键")
 }
 
-// --- Deny: the rank rule is the grant rank rule ----------------------------
-
 func TestDenyTargetMustBeStrictlyBelowCaller(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
 
-	// An admin cannot deny the admin row — which is the same statement as "no
-	// self-deny", since an admin caller IS the admin row. Only ren, whose
-	// permissions.manage lifts the rule, can reach it.
 	assertRejected(t, rig.val.Validate(adminUser, st, deny("admin", tAlpha)), "严格低于")
 	assertRejected(t, rig.val.Validate(modCaller, st, deny("moderator", tDelta)), "严格低于")
 
@@ -337,25 +278,17 @@ func TestDenyOnTheCreatorRowIsRenOnly(t *testing.T) {
 func TestAdminMayDenyDownward(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
-	// admin holds delta itself and moderator is strictly below it: the ordinary
-	// delegation path, in the reducing direction.
 	if err := rig.val.Validate(adminUser, st, deny("moderator", tDelta)); err != nil {
 		t.Errorf("an admin must be able to deny a key it holds, downward: %v", err)
 	}
 }
 
-// --- Deny: state preconditions ---------------------------------------------
-
 func TestDenyIsRefusedWhenTheKeyIsNotEffective(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
-	// moderator does not hold alpha at all — there is nothing to take away.
 	assertRejected(t, rig.val.Validate(renCaller, st, deny("moderator", tAlpha)), "没有可撤销的权限")
 }
 
-// TestDenyOnANonDelegableKeyIsRefused pins that the non-delegable set needs no
-// deny-specific rule: no editable role holds one of those keys, so the "nothing
-// to take away" precondition is what answers, and it answers correctly.
 func TestDenyOnANonDelegableKeyIsRefused(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
@@ -365,9 +298,6 @@ func TestDenyOnANonDelegableKeyIsRefused(t *testing.T) {
 func TestDenyIsRefusedWhenTheKeyComesFromAGrantRow(t *testing.T) {
 	rig := newRig()
 	st := rig.apply(rows{"moderator": {tAlpha}}, nil)
-	// moderator holds alpha only because someone granted it. Writing a deny on
-	// top would leave two rows describing one cell; deleting the grant is the
-	// operation that means what the operator wants.
 	err := rig.val.Validate(renCaller, st, deny("moderator", tAlpha))
 	assertRejected(t, err, "来自一条叠加授权")
 	assertRejected(t, err, "删除该行")
@@ -382,12 +312,8 @@ func TestDenyingATwiceDeniedCellIsRefused(t *testing.T) {
 func TestGrantingOnTopOfADenyIsRefused(t *testing.T) {
 	rig := newRig()
 	st := rig.apply(nil, rows{"moderator": {tDelta}})
-	// The cell reads "not held", so a grant looks reasonable — but the unique
-	// index makes it impossible and restoring is what the operator means.
 	assertRejected(t, rig.val.Validate(renCaller, st, grant("moderator", tDelta)), "请先恢复")
 }
-
-// --- Restore (恢复) ---------------------------------------------------------
 
 func TestRestoringWithoutADenyRowIsRefused(t *testing.T) {
 	rig := newRig()
@@ -403,13 +329,9 @@ func TestRestoringADeniedCellIsAllowed(t *testing.T) {
 	}
 }
 
-// --- Deny: containment holds in the reducing direction too -----------------
-
 func TestDenyRejectedWhenModeratorWouldOutrankAdmin(t *testing.T) {
 	rig := newRig()
 	st := rig.clean()
-	// Both hold delta from code. Cutting admin alone inverts the axis, and the
-	// message has to name the role that has to give it up first.
 	err := rig.val.Validate(renCaller, st, deny("admin", tDelta))
 	assertRejected(t, err, "moderator ⊆ admin")
 	assertRejected(t, err, "请先撤销 moderator")
@@ -419,20 +341,16 @@ func TestDenyRejectedWhenModeratorWouldOutrankAdmin(t *testing.T) {
 func TestDenyAllowsTheOrderedSequence(t *testing.T) {
 	rig := newRig()
 
-	// 1. moderator first — admin keeps delta, so containment holds.
 	st := rig.clean()
 	if err := rig.val.Validate(renCaller, st, deny("moderator", tDelta)); err != nil {
 		t.Fatalf("denying moderator first must pass: %v", err)
 	}
 
-	// 2. then admin — now nothing below it holds delta.
 	st = rig.apply(nil, rows{"moderator": {tDelta}})
 	if err := rig.val.Validate(renCaller, st, deny("admin", tDelta)); err != nil {
 		t.Fatalf("denying admin after moderator must pass: %v", err)
 	}
 
-	// 3. Unwinding runs the other way round: admin is restored first, exactly
-	//    as granting had to go top-down.
 	st = rig.apply(nil, rows{"moderator": {tDelta}, "admin": {tDelta}})
 	if err := rig.val.Validate(renCaller, st, restore("admin", tDelta)); err != nil {
 		t.Fatalf("restoring admin first must pass: %v", err)
@@ -442,9 +360,6 @@ func TestDenyAllowsTheOrderedSequence(t *testing.T) {
 	assertRejected(t, err, "请先恢复")
 }
 
-// TestRestoringRenIsUnreachableEvenWithARow is the validator half of the fuse:
-// however a ren deny row got into the table, the console cannot be used to act
-// on it, and Merge has already made it inert.
 func TestRestoringRenIsUnreachableEvenWithARow(t *testing.T) {
 	rig := newRig()
 	st := rig.apply(nil, rows{"ren": {tAlpha}})

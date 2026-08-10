@@ -1,8 +1,5 @@
 package srcvndb
 
-// Row decoders for the staff family (staff / staff_alias / vn_staff /
-// vn_seiyuu). See ingest.go for the machinery.
-
 import (
 	"time"
 

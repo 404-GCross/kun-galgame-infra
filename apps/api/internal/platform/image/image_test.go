@@ -1,14 +1,5 @@
 package image_test
 
-// Integration test for the image service V1. Runs end-to-end through:
-// preset.Load → storage.Client (MinIO) → processor → service → repository.
-//
-// Requires MinIO + Postgres running locally. Skips if unreachable:
-//   KUN_IMAGE_TEST_S3_ENDPOINT   (default http://127.0.0.1:9000)
-//   KUN_IMAGE_TEST_S3_ACCESS_KEY (default minioadmin)
-//   KUN_IMAGE_TEST_S3_SECRET_KEY (default minioadmin)
-//   KUN_IMAGE_TEST_S3_BUCKET     (default kun-images-test)
-//   KUN_IMAGE_TEST_PG_DSN        (required if running the DB-backed tests)
 
 import (
 	"bytes"
@@ -47,34 +38,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// Test fixtures populated in TestMain.
 var (
 	testSvc      *service.Service
 	testImgRepo  *repository.ImageRepository
 	testS3Client *storage.Client
 
-	// HTTP-test fixtures
 	testApp        *fiber.App
 	testCfg        *config.Config
 	testDB         *gorm.DB
 	testClientRepo *siteRepo.OAuthClientRepository
 )
 
-// Test OAuth client identifiers (seeded in TestMain).
 const (
 	testClientID         = "test-client"
 	testClientSecret     = "test-secret"
 	testClientSiteKey    = "testsite"
 	testDisabledClientID = "disabled-client"
-	testRestrictedClient = "restricted-client" // only `topic` preset allowed
-	testTinyClient       = "tiny-client"       // image_max_file_size=128 bytes
+	testRestrictedClient = "restricted-client"
+	testTinyClient       = "tiny-client"
 )
 
-// TestMain bootstraps the dependencies and skips all tests if unavailable.
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	// ---- Presets ----
 	presetPath := presetsPath()
 	presets, err := preset.Load(presetPath)
 	if err != nil {
@@ -82,7 +68,6 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
-	// ---- S3 (MinIO) ----
 	s3Cfg := config.S3Config{
 		Endpoint:        envOr("KUN_IMAGE_TEST_S3_ENDPOINT", "http://127.0.0.1:9000"),
 		Region:          envOr("KUN_IMAGE_TEST_S3_REGION", "us-east-1"),
@@ -102,7 +87,6 @@ func TestMain(m *testing.M) {
 	}
 	testS3Client = s3Client
 
-	// ---- Postgres ----
 	dsn := os.Getenv("KUN_IMAGE_TEST_PG_DSN")
 	if dsn == "" {
 		fmt.Fprintf(os.Stderr, "SKIP: KUN_IMAGE_TEST_PG_DSN not set; DB-backed tests require a clean Postgres DB\n")
@@ -113,7 +97,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: postgres unreachable: %v\n", err)
 		os.Exit(0)
 	}
-	// Clean slate each run.
 	_ = gdb.Migrator().DropTable(
 		&model.Image{},
 		&model.ImageSiteUsage{},
@@ -137,9 +120,6 @@ func TestMain(m *testing.M) {
 	testClientRepo = siteRepo.NewOAuthClientRepository(gdb)
 
 	cdnBase := "http://127.0.0.1:9000/" + s3Cfg.Bucket
-	// Pass the DB (mirrors cmd/image) so SoftDelete + the resurrect-on-
-	// re-upload path are exercised; without it SoftDelete returns the
-	// misconfigured-wiring error.
 	testSvc = service.New(presets, s3Client, testImgRepo, usageRepo, cdnBase,
 		service.Options{DB: gdb})
 
@@ -157,8 +137,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// seedHTTPTestClients writes 4 OAuth clients used by the HTTP-level tests.
-// All idempotent (DropTable + AutoMigrate runs immediately before).
 func seedHTTPTestClients(db *gorm.DB) error {
 	emptyJSON := datatypes.JSON(`[]`)
 	allPresets := datatypes.JSON(`["avatar","topic","galgame_banner"]`)
@@ -185,7 +163,7 @@ func seedHTTPTestClients(db *gorm.DB) error {
 			Secret:               "secret",
 			RedirectURIs:         emptyJSON,
 			Grants:               emptyJSON,
-			ImageEnabled:         false, // ← key: image disabled
+			ImageEnabled:         false,
 			ImageSiteKey:         "x",
 			ImageMaxFileSize:     10485760,
 		},
@@ -200,7 +178,7 @@ func seedHTTPTestClients(db *gorm.DB) error {
 			ImageQuotaDaily:      100,
 			ImageQuotaBytesDaily: 1073741824,
 			ImageMaxFileSize:     10485760,
-			ImageAllowedPresets:  onlyTopic, // avatar should be denied
+			ImageAllowedPresets:  onlyTopic,
 		},
 		{
 			ID:                   testTinyClient,
@@ -212,7 +190,7 @@ func seedHTTPTestClients(db *gorm.DB) error {
 			ImageSiteKey:         "tinysite",
 			ImageQuotaDaily:      100,
 			ImageQuotaBytesDaily: 1073741824,
-			ImageMaxFileSize:     128, // ← key: file size limit only 128 bytes
+			ImageMaxFileSize:     128,
 			ImageAllowedPresets:  allowAvatar,
 		},
 	}
@@ -224,10 +202,8 @@ func seedHTTPTestClients(db *gorm.DB) error {
 	return nil
 }
 
-// buildTestApp constructs a Fiber app mirroring cmd/image's route setup so
-// the HTTP tests exercise the same chain (middleware → handler).
 func buildTestApp(svc *service.Service, statsRepo *repository.StatsRepository, clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) *fiber.App {
-	h := imgHandler.New(svc, nil /*quota disabled in tests*/, statsRepo)
+	h := imgHandler.New(svc, nil, statsRepo)
 	app := fiber.New()
 	app.Use(middleware.RequestID())
 
@@ -245,11 +221,8 @@ func buildTestApp(svc *service.Service, statsRepo *repository.StatsRepository, c
 	return app
 }
 
-// presetsPath resolves the presets yaml relative to this test file so the
-// test is runnable from any working dir.
 func presetsPath() string {
 	_, thisFile, _, _ := runtime.Caller(0)
-	// internal/platform/image/image_test.go → apps/api/configs/image_presets.yaml
 	apiDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
 	return filepath.Join(apiDir, "configs", "image_presets.yaml")
 }
@@ -261,7 +234,6 @@ func envOr(key, def string) string {
 	return def
 }
 
-// fixturePNG creates a test PNG image (solid color, given size) in memory.
 func fixturePNG(w, h int, r, g, b uint8) []byte {
 	img := image.NewNRGBA(image.Rect(0, 0, w, h))
 	for y := range h {
@@ -274,7 +246,6 @@ func fixturePNG(w, h int, r, g, b uint8) []byte {
 	return buf.Bytes()
 }
 
-// ---- Test cases ----
 
 func TestUpload_NewAvatar_CreatesMainAndVariants(t *testing.T) {
 	ctx := context.Background()
@@ -292,12 +263,10 @@ func TestUpload_NewAvatar_CreatesMainAndVariants(t *testing.T) {
 	assert.Len(t, result.Hash, 64)
 	assert.NotEmpty(t, result.URL)
 
-	// avatar preset produces 256 and 100 variants
 	require.Len(t, result.VariantURLs, 2)
 	assert.NotEmpty(t, result.VariantURLs["256"])
 	assert.NotEmpty(t, result.VariantURLs["100"])
 
-	// Verify row in DB.
 	img, err := testImgRepo.FindByHash(ctx, result.Hash)
 	require.NoError(t, err)
 	require.NotNil(t, img)
@@ -307,7 +276,6 @@ func TestUpload_NewAvatar_CreatesMainAndVariants(t *testing.T) {
 	variants := img.VariantList()
 	assert.ElementsMatch(t, []string{"256", "100"}, variants)
 
-	// Verify each variant exists in S3.
 	exists, err := testS3Client.Exists(ctx, storageKey(img.Hash, "", "webp"))
 	require.NoError(t, err)
 	assert.True(t, exists, "main image should exist in S3")
@@ -351,8 +319,6 @@ func TestUpload_TopicPreset_NoVariants(t *testing.T) {
 }
 
 func TestUpload_CrossPresetBackfill(t *testing.T) {
-	// Same hash first uploaded with preset=topic (no variants), then with
-	// preset=avatar. Service should generate the two avatar variants.
 	ctx := context.Background()
 	body := fixturePNG(700, 700, 20, 20, 20)
 
@@ -369,7 +335,6 @@ func TestUpload_CrossPresetBackfill(t *testing.T) {
 	assert.True(t, r2.Deduplicated)
 	assert.Len(t, r2.VariantURLs, 2)
 
-	// Verify variants now present in DB.
 	img, err := testImgRepo.FindByHash(ctx, r1.Hash)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"256", "100"}, img.VariantList())
@@ -418,10 +383,6 @@ func TestReferencePing_TouchesLastReferencedAt(t *testing.T) {
 	assert.True(t, after.LastReferencedAt.After(before.LastReferencedAt))
 }
 
-// Under content dedup a hash is shared storage: one site deleting it must
-// detach only that site's usage, and the bytes may only die when the LAST
-// site leaves. The pre-fix behavior (site-checked but WHERE-hash-global
-// deleted_at) let any single site take a shared image away from everyone.
 func TestSoftDelete_SharedHashDetachesPerSite(t *testing.T) {
 	ctx := context.Background()
 	body := fixturePNG(64, 64, 9, 9, 9)
@@ -435,12 +396,10 @@ func TestSoftDelete_SharedHashDetachesPerSite(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// A site that never used the hash cannot retire it, and nothing changes.
 	ok, err := testSvc.SoftDelete(ctx, up.Hash, "stranger")
 	require.NoError(t, err)
 	assert.False(t, ok)
 
-	// First site detaches: its usage row goes, the image stays live for B.
 	ok, err = testSvc.SoftDelete(ctx, up.Hash, "siteDelA")
 	require.NoError(t, err)
 	assert.True(t, ok)
@@ -455,12 +414,10 @@ func TestSoftDelete_SharedHashDetachesPerSite(t *testing.T) {
 	require.Len(t, usages, 1)
 	assert.Equal(t, "siteDelB", usages[0].Site)
 
-	// Repeat delete by the detached site is a no-op not-found.
 	ok, err = testSvc.SoftDelete(ctx, up.Hash, "siteDelA")
 	require.NoError(t, err)
 	assert.False(t, ok)
 
-	// Last site leaves: now the image is soft-deleted.
 	ok, err = testSvc.SoftDelete(ctx, up.Hash, "siteDelB")
 	require.NoError(t, err)
 	assert.True(t, ok)
@@ -474,14 +431,12 @@ func TestSoftDelete_SharedHashDetachesPerSite(t *testing.T) {
 		Where("hash = ?", up.Hash).Count(&remaining).Error)
 	assert.Zero(t, remaining)
 
-	// Unknown hash → not found, no error.
 	ok, err = testSvc.SoftDelete(ctx,
 		"0000000000000000000000000000000000000000000000000000000000000000", "siteDelA")
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
 
-// storageKey replicates the internal service helper for test assertions.
 func storageKey(hash, variant, ext string) string {
 	if variant == "" {
 		return fmt.Sprintf("%s/%s/%s.%s", hash[:2], hash[2:4], hash, ext)
@@ -489,7 +444,6 @@ func storageKey(hash, variant, ext string) string {
 	return fmt.Sprintf("%s/%s/%s_%s.%s", hash[:2], hash[2:4], hash, variant, ext)
 }
 
-// sanityHashCheck proves the test fixture helper generates stable bytes.
 func TestFixturePNGIsStable(t *testing.T) {
 	a := fixturePNG(32, 32, 1, 2, 3)
 	b := fixturePNG(32, 32, 1, 2, 3)

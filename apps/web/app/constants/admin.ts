@@ -1,12 +1,8 @@
-// A sidebar entry is either a leaf (has `to`) or a collapsible group (has
-// `children`). Groups render an expandable header in the expanded sidebar and
-// flatten to their child icons when the sidebar is collapsed.
 export interface SidebarItem {
   icon: string
   label: string
   to?: string
   adminOnly?: boolean
-  // renOnly entries are visible only to the ren(莲) role (stricter than admin).
   renOnly?: boolean
   children?: SidebarItem[]
 }
@@ -41,10 +37,6 @@ export const SIDEBAR_MENU: SidebarItem[] = [
     ],
   },
   { icon: 'lucide:terminal', label: '开发者平台', to: '/devapi', adminOnly: true },
-  // adminOnly, not renOnly: the page gate is oauth.admin_access, and an ordinary
-  // admin has a real use for it — reading the matrix, and delegating downward
-  // the keys they already hold. WHICH cells they may change is decided by the
-  // server per cell, not by hiding the entry.
   { icon: 'lucide:shield-check', label: '权限矩阵', to: '/permission', adminOnly: true },
   { icon: 'lucide:user', label: '个人信息', to: '/profile' },
 ]
@@ -57,10 +49,6 @@ export const IMAGE_REVIEW_STATUS_MAP: Record<string, { label: string; color: 'wa
   unknown: { label: '未知', color: 'default' },
 }
 
-// Mirrors apps/api/configs/image_presets.yaml — kept client-side so the
-// /images admin table can render variant chips with dimension hints
-// without an extra API roundtrip. If a variant is added to the YAML,
-// mirror it here.
 export const IMAGE_VARIANT_DIMENSIONS: Record<string, { w: number; h: number }> = {
   mini: { w: 460, h: 259 },
   '256': { w: 256, h: 256 },

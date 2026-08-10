@@ -1,34 +1,3 @@
-// backfill-release-meta fills two release-metadata scalars in one field PR
-// (refs/proj/66, FILL-EMPTY-ONLY — a non-zero value is never overwritten and
-// the survivorship engine stays unused):
-//
-//   - release dates: empty catalog_release.released_y/m/d from each release's
-//     OWN anchor source — DLsite regist_date (SKU-level, wins over the
-//     work-level sources), then EG sellday for bodyless 1:1 stubs, then the
-//     Bangumi subject date (free text, partial dates legal).
-//   - age rating: catalog_work.content_rating=0 (unrated) by source priority
-//     ① DLsite age_category ('3'→r18 '2'→sensitive '1'→all_ages) ② claimed
-//     wiki age_limit ('r18'→r18 'all'→all_ages) ③ Bangumi nsfw=true→r18.
-//     First verdict wins (ownership, not strictest); an explicit all-ages
-//     verdict keeps the row 0 and suppresses lower sources.
-//
-// Logic lives in internal/jobs/releasemeta. Dry-run is the DEFAULT (repo
-// convention); pass --apply to write. All DSNs are REQUIRED and never
-// defaulted — the rehearsal copy locally (kun_catalog_rehearsal + local
-// dlsite/erogamespace/kun_galgame_wiki), the live catalog only in the
-// acceptance run. Fill-empty is naturally idempotent: a second pass finds
-// nothing left to write. No upsert/refresh loop — dates and ratings are
-// non-volatile (contrast: step-62's change-detected upserts); a mirror
-// refresh just reruns the same top-up.
-//
-//	# dry-run: per-lane counters + samples
-//	go run ./cmd/backfill-release-meta \
-//	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable" \
-//	    --dlsite-dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=dlsite sslmode=disable" \
-//	    --eg-dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=erogamespace sslmode=disable" \
-//
-//	# apply: fill the empty scalars (all lanes)
-//	go run ./cmd/backfill-release-meta --apply --dsn "..." --dlsite-dsn "..." --eg-dsn "..."
 package main
 
 import (
@@ -53,9 +22,8 @@ func main() {
 	offset := flag.Int("offset", 0, "skip this many candidates per lane (for chunking)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
-	// config drives only logging here; the DBs are reached exclusively via flags.
 	if cfg, err := config.Load(); err == nil {
 		logger.Init(cfg.Server.Env)
 	}

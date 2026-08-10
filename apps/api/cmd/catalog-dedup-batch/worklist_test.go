@@ -23,9 +23,6 @@ func writeWorklist(t *testing.T, body string) string {
 	return path
 }
 
-// TestLoadWorklistPartitionGuard is the reason the lane is safe: a worklist that
-// claims an entity twice makes the outcome order-dependent, so it is refused at
-// load time rather than after the 48h cooling window has started.
 func TestLoadWorklistPartitionGuard(t *testing.T) {
 	cases := []struct {
 		name, body, wantErr string
@@ -50,9 +47,6 @@ func TestLoadWorklistPartitionGuard(t *testing.T) {
 	}
 }
 
-// TestLoadWorklistIgnoresEvidenceKeys pins that the worklist file may carry the
-// producing wave's evidence (it doubles as that wave's durable artefact) without
-// this binary caring, and that groups come back in survivor order.
 func TestLoadWorklistIgnoresEvidenceKeys(t *testing.T) {
 	groups, err := loadWorklist(writeWorklist(t,
 		`{"class":"character","survivor":30,"sources":[31],"rule":"E-name","match_keys":["あ"]}
@@ -66,10 +60,6 @@ func TestLoadWorklistIgnoresEvidenceKeys(t *testing.T) {
 	assert.Equal(t, classCharacter, groups[1].class)
 }
 
-// TestWorklistDrivesTheMergeMachinery is the end-to-end contract of the lane:
-// propose from a file opens+approves through MergeService (48h clock intact),
-// and a cooled execute merges exactly the listed pairs under the worklist's own
-// wave tag — leaving a same-shaped proposal from another wave alone.
 func TestWorklistDrivesTheMergeMachinery(t *testing.T) {
 	for _, tbl := range []string{"catalog_merge_proposal", "catalog_redirect", "catalog_work_character", "catalog_character"} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -83,7 +73,6 @@ func TestWorklistDrivesTheMergeMachinery(t *testing.T) {
 	other, otherDup := mkChar(t, "W2 host"), mkChar(t, "W2 dup")
 	path := writeWorklist(t, `{"class":"character","survivor":`+itoa(host)+`,"sources":[`+itoa(dup)+`]}`)
 
-	// A proposal from a different wave must stay untouched by the worklist execute.
 	foreign, err := merge.ProposeMerge(ctx, model.EntityTypeCharacter, otherDup, other, 1, waveTag106)
 	require.NoError(t, err)
 	require.NoError(t, merge.ApproveMerge(ctx, foreign.ID, 1))
@@ -100,7 +89,6 @@ func TestWorklistDrivesTheMergeMachinery(t *testing.T) {
 	assert.True(t, opened[0].ExecuteAfter.Sub(opened[0].ProposedAt) >= 48*time.Hour,
 		"the mandatory 48h cooling window must be intact")
 
-	// Not cooled yet: execute finds nothing.
 	require.NoError(t, runExecute(ctx, testDB, io.Discard, merge, resolve, 1, waveTag154, 0, true))
 	require.NoError(t, testDB.First(&opened[0], opened[0].ID).Error)
 	assert.Equal(t, model.ProposalStatusApproved, opened[0].Status)
@@ -124,7 +112,6 @@ func TestWorklistDrivesTheMergeMachinery(t *testing.T) {
 	assert.Equal(t, model.ProposalStatusApproved, untouched.Status,
 		"another wave's proposal must not be executed by a worklist run")
 
-	// Second pass over the same worklist is a zero-write no-op.
 	require.NoError(t, runPropose(ctx, testDB, io.Discard, merge, 1, "", path, "", 0, true))
 	var total int64
 	require.NoError(t, testDB.Model(&model.CatalogMergeProposal{}).

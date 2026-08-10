@@ -18,12 +18,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// The bangumi-Items extraction SQL is validated by the real-data dry run in the
-// step report (the schema is provisioned empty here, so nothing joins). Here the
-// Go logic and the catalog-only paths (EG name-paren hints + leg B candidate
-// generation) get real-DB integration tests; the fold is unit-tested for
-// parity with step 24.
-
 var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
@@ -44,9 +38,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: catalog seeding failed: %v\n", err)
 		os.Exit(0)
 	}
-	// The leg-A hint queries and the leg-B candidate query both JOIN
-	// src_bangumi tables. Provision the Silver layer here rather than relying
-	// on another package having created it earlier in the shared-DB run.
 	if err := srcb.EnsureSchema(db); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: src_bangumi schema failed: %v\n", err)
 		os.Exit(0)
@@ -54,8 +45,6 @@ func TestMain(m *testing.M) {
 	testDB = db
 	os.Exit(m.Run())
 }
-
-// --- fold (parity with step 24) --------------------------------------------
 
 func TestFold(t *testing.T) {
 	assert.Equal(t, "test", foldName(" Te st (歌手) "))
@@ -68,8 +57,6 @@ func TestFold(t *testing.T) {
 	assert.False(t, isRoleTag("ささきむつみ"))
 }
 
-// --- integration helpers ---------------------------------------------------
-
 func cleanCatalog(t *testing.T) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`TRUNCATE catalog_name_alias, catalog_match_candidate,
@@ -78,8 +65,6 @@ func cleanCatalog(t *testing.T) {
 
 var extSeq int64
 
-// seedCN creates a credit_name with its origin self-anchor (source → *-import
-// rule), returning the credit_name id.
 func seedCN(t *testing.T, name string, source int16, personID *int64) int64 {
 	t.Helper()
 	cn := &model.CatalogCreditName{Name: name, Kind: model.CreditNameKindMain, LinkVisibility: model.LinkVisibilityPublic, PersonID: personID}
@@ -103,19 +88,16 @@ func hintNames(t *testing.T, owner int64) []string {
 	return names
 }
 
-// --- leg A (EG name-paren hints) -------------------------------------------
-
 func TestLegAEGHints(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no catalog test DB")
 	}
 	cleanCatalog(t)
 
-	x := seedCN(t, "藤宮博也(ささきむつみ)", sourceEG, nil) // paren alias
-	seedCN(t, "七瀬(声優)", sourceEG, nil)            // role tag → skipped
-	seedCN(t, "緒方剛志(緒方剛志)", sourceEG, nil)        // alias == base fold → skipped
+	x := seedCN(t, "藤宮博也(ささきむつみ)", sourceEG, nil)
+	seedCN(t, "七瀬(声優)", sourceEG, nil)
+	seedCN(t, "緒方剛志(緒方剛志)", sourceEG, nil)
 
-	// Dry writes nothing.
 	_, err := runHints(testDB, io.Discard, false)
 	require.NoError(t, err)
 	assert.Empty(t, hintNames(t, x), "dry writes nothing")
@@ -126,14 +108,11 @@ func TestLegAEGHints(t *testing.T) {
 	assert.GreaterOrEqual(t, st.SkippedRole, 1, "role tag skipped")
 	assert.GreaterOrEqual(t, st.SkippedSame, 1, "alias equal to main name skipped")
 
-	// Idempotent: a second --run writes nothing new.
 	st2, err := runHints(testDB, io.Discard, true)
 	require.NoError(t, err)
 	assert.Zero(t, st2.EGNames, "re-run writes no new hints")
 	assert.Equal(t, []string{"ささきむつみ"}, hintNames(t, x))
 }
-
-// --- leg B (alias_declared candidates) -------------------------------------
 
 func candidateReason(t *testing.T, a, b int64) (int16, bool) {
 	t.Helper()
@@ -152,11 +131,9 @@ func TestLegBAliasDeclared(t *testing.T) {
 	}
 	cleanCatalog(t)
 
-	// X (EG) self-declares "ささきむつみ"; Y (bangumi) is literally that name.
 	x := seedCN(t, "藤宮博也(ささきむつみ)", sourceEG, nil)
 	y := seedCN(t, "ささきむつみ", sourceBangumi, nil)
 
-	// Dry writes nothing.
 	_, err := runCandidates(testDB, io.Discard, false)
 	require.NoError(t, err)
 	_, ok := candidateReason(t, min(x, y), max(x, y))
@@ -169,7 +146,6 @@ func TestLegBAliasDeclared(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, model.CandidateReasonAliasDeclared, reason)
 
-	// Re-run: the pair already exists → not re-proposed.
 	st2, err := runCandidates(testDB, io.Discard, true)
 	require.NoError(t, err)
 	assert.Zero(t, st2.Generated)
@@ -181,7 +157,6 @@ func TestLegBGuards(t *testing.T) {
 		t.Skip("no catalog test DB")
 	}
 
-	// Ambiguous: the alias resolves to TWO cross-source names → skipped.
 	t.Run("ambiguous", func(t *testing.T) {
 		cleanCatalog(t)
 		seedCN(t, "本名A(共通名)", sourceEG, nil)
@@ -193,7 +168,6 @@ func TestLegBGuards(t *testing.T) {
 		assert.Equal(t, 1, st.Ambiguous)
 	})
 
-	// Same source: an alias matching a same-source name is not cross-source.
 	t.Run("same source not matched", func(t *testing.T) {
 		cleanCatalog(t)
 		seedCN(t, "本名B(同源名)", sourceEG, nil)
@@ -204,7 +178,6 @@ func TestLegBGuards(t *testing.T) {
 		assert.Zero(t, st.Ambiguous)
 	})
 
-	// Already on the same person → skipped.
 	t.Run("same person skipped", func(t *testing.T) {
 		cleanCatalog(t)
 		p := &model.CatalogPerson{DisplayName: "P", FieldProvenance: []byte(`{}`)}

@@ -2,10 +2,6 @@
 import { DEV_MINTABLE_SCOPES } from '~/constants/dev'
 import type { DevKeyMinted } from '~~/shared/types/dev'
 
-// Mint a new API key for an app. Phase 1 offers only the two public-read scopes
-// (default all selected); galgame:nsfw is never surfaced. The minted plaintext
-// is handed straight to the parent (which reveals it once and clears it) — this
-// modal never persists it.
 const props = defineProps<{ clientId: string }>()
 const emit = defineEmits<{ close: []; minted: [DevKeyMinted] }>()
 
@@ -40,7 +36,6 @@ const handleSubmit = async () => {
   }
   isLoading.value = true
   try {
-    // Wire body mirrors the 06a POST /dev/apps/:client_id/keys contract.
     const body: Record<string, unknown> = {
       name: name.value.trim(),
       test: test.value,

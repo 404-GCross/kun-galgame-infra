@@ -1,11 +1,3 @@
-// public_work_counts_test.go — A2-R1 区 B: work_count on the work-record chips
-// (labels[] / tags[] / engines[]) and on the list's include=labels block.
-// Integration against kun_catalog_test (service_test.go TestMain).
-//
-// The property under test is not "a number appears" but the invariant
-// public_taxonomy.go exists to hold: the number beside a chip equals the total
-// the SAME caller gets by following that chip — under both nsfw settings, and
-// identically on the detail record and the list row.
 package service
 
 import (
@@ -14,7 +6,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// TestWorkChipCountsMatchTheirLandingPages is the wave's core case for 区 B.
 func TestWorkChipCountsMatchTheirLandingPages(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -22,9 +13,6 @@ func TestWorkChipCountsMatchTheirLandingPages(t *testing.T) {
 	svc := newPublicSvc()
 	ctx := t.Context()
 
-	// One all-ages work (the record under test) and one r18 work sharing every
-	// chip, so each count moves with the nsfw switch. A stub work carries the
-	// same chips and must never be counted.
 	safe := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "ChipSafe")
 	r18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "ChipR18")
 	stub := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusStub, "ChipStub")
@@ -46,7 +34,6 @@ func TestWorkChipCountsMatchTheirLandingPages(t *testing.T) {
 		attachEngine(t, w, engineID)
 	}
 
-	// A MAPPED source tag (canonical landing page) and an UNMAPPED one (none).
 	const srcBangumi int16 = 3
 	tagID := createCanonicalTag(t, "fantasy", model.TagTierCore, model.TagKindContent)
 	if err := testDB.Create(&model.CatalogTagSourceMap{
@@ -85,7 +72,6 @@ func TestWorkChipCountsMatchTheirLandingPages(t *testing.T) {
 		assertCountMatchesWorksList(t, svc,
 			WorksListFilter{Sort: "id", EngineID: engineID, NSFW: tc.nsfw}, rec.Engines[0].WorkCount)
 
-		// tags: the mapped row carries the count, the unmapped row has NO key.
 		var mapped, unmapped int
 		for _, tag := range rec.Tags {
 			if tag.CanonicalID == 0 {
@@ -107,7 +93,6 @@ func TestWorkChipCountsMatchTheirLandingPages(t *testing.T) {
 			t.Fatalf("nsfw=%v: tags[] = %+v, want one mapped + one unmapped", tc.nsfw, rec.Tags)
 		}
 
-		// The taxonomy DETAIL faces must report the very same numbers.
 		tagRec, ok, err := svc.TagDetail(ctx, tagID, false, tc.nsfw, 20, 0)
 		if err != nil || !ok {
 			t.Fatalf("nsfw=%v: TagDetail = %v, %v", tc.nsfw, ok, err)
@@ -124,9 +109,6 @@ func TestWorkChipCountsMatchTheirLandingPages(t *testing.T) {
 			t.Fatalf("nsfw=%v: engines/{id}.work_count = %d, want %d", tc.nsfw, engRec.WorkCount, tc.want)
 		}
 
-		// And the LIST's include=labels block must agree with the detail record —
-		// a chip that says a different number depending on which face rendered it
-		// is exactly the failure this shared aggregate exists to prevent.
 		page, err := svc.WorksList(ctx, WorksListFilter{
 			Sort: "id", NSFW: tc.nsfw, Include: ParseWorksListInclude("labels"),
 		}, "", 100)
@@ -150,17 +132,6 @@ func TestWorkChipCountsMatchTheirLandingPages(t *testing.T) {
 	}
 }
 
-// TestWorkCountCountsOnlyLiveClaims is wave 146's core case: the number beside a
-// chip counts a work only when that work's claim is LIVE. A draft (submitted,
-// not published), a hidden (banned / declined) and an unclaimed registry row
-// each carry the identical taxonomy edges here and must each be absent from the
-// number — because they are absent from the member list an entity page renders
-// (works?<filter>=&claim_state=live). Before this, a tag page promised several
-// times the works a reader could actually reach.
-//
-// All three families are exercised on BOTH the taxonomy lane and the chip,
-// because they share one aggregate: a regression in it would be a regression in
-// all six faces at once.
 func TestWorkCountCountsOnlyLiveClaims(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -168,8 +139,6 @@ func TestWorkCountCountsOnlyLiveClaims(t *testing.T) {
 	svc := newPublicSvc()
 	ctx := t.Context()
 
-	// Four all-ages LIVE galgame works, identical in every respect except the
-	// claim axis — so the count can only be moved by that axis.
 	live := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "StateLive")
 	draft := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "StateDraft")
 	hidden := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "StateHidden")
@@ -179,7 +148,6 @@ func TestWorkCountCountsOnlyLiveClaims(t *testing.T) {
 	setClaimState(t, draft.ID, i16(model.ClaimStateDraft))
 	claimWork(t, hidden.ID, "galgame_wiki", 9403)
 	setClaimState(t, hidden.ID, i16(model.ClaimStateHidden))
-	// `none` stays unclaimed: no site, no product_work_id.
 
 	all := []int64{live.ID, draft.ID, hidden.ID, none.ID}
 
@@ -212,7 +180,6 @@ func TestWorkCountCountsOnlyLiveClaims(t *testing.T) {
 		}
 	}
 
-	// ── the three browse lanes ───────────────────────────────────────────────
 	labels, err := svc.LabelsList(ctx, LabelsListFilter{}, "", 50)
 	if err != nil {
 		t.Fatalf("LabelsList: %v", err)
@@ -240,7 +207,6 @@ func TestWorkCountCountsOnlyLiveClaims(t *testing.T) {
 	}
 	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", EngineID: engineID}, 1)
 
-	// ── the three detail records ─────────────────────────────────────────────
 	labelRec, ok, err := svc.Label(ctx, labelID, false, false, 20, 0)
 	if err != nil || !ok {
 		t.Fatalf("Label = %v, %v", ok, err)
@@ -263,9 +229,6 @@ func TestWorkCountCountsOnlyLiveClaims(t *testing.T) {
 		t.Fatalf("engines/{id}.work_count = %d, want 1", engRec.WorkCount)
 	}
 
-	// ── the chips on a work record, and the list's include=labels block ──────
-	// Read them off the DRAFT work on purpose: a row hidden from every count
-	// still renders its own chips, and those chips must report the live number.
 	rec, found, err := svc.WorkDetail(ctx, draft.ID, PublicInclude{}, false, 0)
 	if err != nil || !found {
 		t.Fatalf("WorkDetail = %v, %v", found, err)
@@ -295,8 +258,6 @@ func TestWorkCountCountsOnlyLiveClaims(t *testing.T) {
 		}
 	}
 
-	// Publishing the draft moves the number: the count follows the claim state,
-	// it is not frozen at claim time.
 	setClaimState(t, draft.ID, i16(model.ClaimStateLive))
 	tags, err = svc.TagsList(ctx, TagsListFilter{}, "", 50)
 	if err != nil {

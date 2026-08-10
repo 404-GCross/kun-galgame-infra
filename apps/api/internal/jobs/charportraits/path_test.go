@@ -8,14 +8,12 @@ func TestChRelPath(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		// Bucket = id mod 100, zero-padded to 2 digits (must match the ops
-		// rsync --files-from formula byte-for-byte).
 		{"ch175652", "ch/52/175652.jpg", false},
 		{"ch76359", "ch/59/76359.jpg", false},
-		{"ch5", "ch/05/5.jpg", false},     // single digit → 05
-		{"ch100", "ch/00/100.jpg", false}, // multiple of 100 → 00
+		{"ch5", "ch/05/5.jpg", false},
+		{"ch100", "ch/00/100.jpg", false},
 		{"ch12", "ch/12/12.jpg", false},
-		{"chXYZ", "", true}, // non-numeric → error
+		{"chXYZ", "", true},
 		{"", "", true},
 	}
 	for _, c := range cases {

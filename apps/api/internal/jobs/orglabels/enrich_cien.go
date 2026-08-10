@@ -14,54 +14,32 @@ import (
 	"gorm.io/gorm"
 )
 
-// Ci-en creator-profile projection (refs/proj/86): cien_profiles (crawled by
-// kun-dlsite-api, doc 85) → the labels anchored to dlsite maker ids. Pure
-// STRUCTURAL mapping — unnest(dlsite_maker_ids) ∩ catalog_external_ref
-// (entity_type=3, source=dlsite, exact|probable) — zero name matching.
-//
-//   - intro: description → catalog_label_intro, source_id=cien(14),
-//     fill-missing on (label, lang, source=14) so a cien row COEXISTS with a
-//     vndb/bgm row of the same language (doc 86 裁定1; read-face survivorship
-//     orders them). Verbatim except CRLF→LF; blank/short (<10 runes) counted,
-//     never written.
-//   - twitter_url → external_ref related, source=twitter(10), normalized
-//     handle (E2 normalizer verbatim).
-//   - cien self-link → external_ref related, source=cien(14),
-//     external_id=creator_id — the exact shape E2 wrote from EG raw, so ON
-//     CONFLICT dedups the overlap naturally.
-//
-// One creator, many makers → EVERY anchored label gets the projection. One
-// maker claimed by MANY creators → first creator (creator_id ASC) wins, later
-// claims counted as conflicts (doc 86: 疑似合作社/占坑).
 const (
 	ruleCienIntroTwitter = "rule:cien-twitter"
 	ruleCienSelf         = "rule:cien-self"
 	ruleCienExtLink      = "rule:cien-ext-link"
 )
 
-// CienStats reports one projection run (doc 86 task item 2 counter set).
 type CienStats struct {
-	Creators200      int // cien_profiles rows with http_status=200
-	CreatorsWithDesc int // …of those, trimmed description >= 10 runes
-	MakerConflicts   int // extra claims on an already-claimed maker (first-seen wins)
-	NoLabelMatch     int // creators whose makers hit no dlsite label anchor
-	MappedCreators   int // creators with >= 1 anchored label
-	MappedLabels     int // distinct labels hit
-	ShortSkipped     int // mapped creators whose desc is blank/short — no intro row
+	Creators200      int
+	CreatorsWithDesc int
+	MakerConflicts   int
+	NoLabelMatch     int
+	MappedCreators   int
+	MappedLabels     int
+	ShortSkipped     int
 	IntroPlanned     int
 	IntroWritten     int
-	IntroSkipDup     int // (label, lang, source=cien) already present — fill-missing
+	IntroSkipDup     int
 	TwitterPlanned   int
 	TwitterWritten   int
 	CienLinkPlanned  int
 	CienLinkWritten  int
-	ExtLinkPlanned   int // whitelisted external_links (pixiv/dmm/steam) planned
+	ExtLinkPlanned   int
 	ExtLinkWritten   int
 	Errors           int
 }
 
-// cienProfile is one crawled creator row (makers pre-joined to CSV — keeps the
-// scan pgx-simple; splitMakersCSV undoes it).
 type cienProfile struct {
 	CreatorID    int64  `gorm:"column:creator_id"`
 	Desc         string `gorm:"column:descr"`
@@ -70,8 +48,6 @@ type cienProfile struct {
 	ExtLinksJSON string `gorm:"column:ext_links_json"`
 }
 
-// RunEnrichCien opens the catalog + dlsite pools and runs the projection.
-// The dlsite pool (--dlsite-dsn) hosts cien_profiles; it is only ever read.
 func RunEnrichCien(ctx context.Context, opts Opts) (CienStats, error) {
 	if opts.DSN == "" {
 		return CienStats{}, fmt.Errorf("catalog DSN is required (--dsn); refusing to guess the target database")
@@ -90,17 +66,13 @@ func RunEnrichCien(ctx context.Context, opts Opts) (CienStats, error) {
 	return enrichCien(ctx, catalog, dlsite, opts.Apply)
 }
 
-// enrichCien is the pool-agnostic core (tests inject one handle for both).
 func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (CienStats, error) {
 	var st CienStats
 
-	// maker external_id → []label_id (one RG id may anchor several labels).
 	makerLabels, err := loadDlsiteLabelMultimap(catalog)
 	if err != nil {
 		return st, fmt.Errorf("load dlsite label anchors: %w", err)
 	}
-	// (label_id, lang) pairs already carrying a cien intro — the fill-missing
-	// key is (label, lang, SOURCE), so only source=cien rows skip (doc 86 裁定1).
 	haveCien, err := preloadCienIntroKeys(catalog)
 	if err != nil {
 		return st, fmt.Errorf("preload cien intros: %w", err)
@@ -119,7 +91,7 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 	}
 	st.Creators200 = len(profiles)
 
-	claimedBy := map[string]int64{} // maker → winning creator (first-seen)
+	claimedBy := map[string]int64{}
 	labelSet := map[int64]bool{}
 	var intros []model.CatalogLabelIntro
 	var refs []model.CatalogExternalRef
@@ -136,7 +108,6 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 		if len(makers) == 0 {
 			continue
 		}
-		// Resolve this creator's labels, first-seen-wins per maker.
 		labels := map[int64]bool{}
 		hadMakers := false
 		for _, m := range makers {
@@ -166,7 +137,6 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 			labelSet[lab] = true
 		}
 
-		// Intro (fill-missing per (label, lang, source=cien)).
 		if len([]rune(desc)) < 10 {
 			st.ShortSkipped++
 		} else {
@@ -177,7 +147,7 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 					st.IntroSkipDup++
 					continue
 				}
-				haveCien[key] = true // same-run dedup (two creators → one label)
+				haveCien[key] = true
 				st.IntroPlanned++
 				intros = append(intros, model.CatalogLabelIntro{
 					LabelID: lab, Lang: lang, Intro: desc, SourceID: sourceCien,
@@ -185,7 +155,6 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 			}
 		}
 
-		// Links (independent of the intro decision).
 		if h, ok := normalizeTwitter(p.TwitterURL); ok {
 			for _, lab := range labelIDs {
 				lp := linkPlan{lab, sourceTwitter, h, ruleCienIntroTwitter}
@@ -214,12 +183,6 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 			}
 		}
 
-		// External-links whitelist (full-open item 3): project only links whose
-		// target is an already-SEEDED catalog_source (pixiv/dmm/steam). The
-		// crawler pre-typed twitter/cien (handled above) and dlsite (the maker
-		// anchor itself); youtube/skeb/fantia/… have no catalog_source yet — a
-		// source-registry decision, deliberately NOT projected here (no invented
-		// sources). link_kind=related — a related presence, never an identity anchor.
 		for _, el := range parseCienExtLinks(p.ExtLinksJSON) {
 			src, ext, ok := cienExtLinkSource(el.URL)
 			if !ok {
@@ -280,9 +243,6 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 	return st, nil
 }
 
-// loadDlsiteLabelMultimap returns external_id → all label_ids anchored to it
-// (entity_type=3, source=dlsite, exact+probable). Unlike anchoredLabels this
-// keeps EVERY label — a maker id may legitimately anchor more than one label.
 func loadDlsiteLabelMultimap(db *gorm.DB) (map[string][]int64, error) {
 	var rows []struct {
 		ExternalID string `gorm:"column:external_id"`
@@ -301,10 +261,6 @@ func loadDlsiteLabelMultimap(db *gorm.DB) (map[string][]int64, error) {
 	return m, nil
 }
 
-// preloadCienIntroKeys returns the "labelID|lang" set already carrying a
-// source=cien intro row (the doc-86 fill-missing key). SOURCE rows only
-// (provenance=0): a machine translation carries its source row's source_id,
-// and mistaking one for a cien upstream row would block the genuine text.
 func preloadCienIntroKeys(db *gorm.DB) (map[string]bool, error) {
 	var rows []struct {
 		LabelID int64  `gorm:"column:label_id"`
@@ -321,8 +277,6 @@ func preloadCienIntroKeys(db *gorm.DB) (map[string]bool, error) {
 	return m, nil
 }
 
-// splitMakersCSV undoes the array_to_string join: trims, drops blanks, dedups
-// preserving order.
 func splitMakersCSV(s string) []string {
 	if strings.TrimSpace(s) == "" {
 		return nil
@@ -341,15 +295,11 @@ func splitMakersCSV(s string) []string {
 	return out
 }
 
-// cienExtLinkRow is one entry in cien_profiles.external_links (the crawler
-// pre-types each link).
 type cienExtLinkRow struct {
 	URL  string `json:"url"`
 	Type string `json:"type"`
 }
 
-// parseCienExtLinks unmarshals the external_links jsonb array text; a null / [] /
-// malformed value yields nil (never an error — the projection just skips it).
 func parseCienExtLinks(raw string) []cienExtLinkRow {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "null" || raw == "[]" {
@@ -362,11 +312,6 @@ func parseCienExtLinks(raw string) []cienExtLinkRow {
 	return rows
 }
 
-// cienExtLinkSource maps a crawled URL to an already-SEEDED catalog_source, or
-// ok=false when the host is outside the whitelist. external_id is the trimmed
-// URL (a related presence, not an identity key). Matching is dot-bounded so
-// subdomains (www.pixiv.net, al.dmm.co.jp) fold onto the same source but
-// look-alike hosts (evilpixiv.net) do not.
 func cienExtLinkSource(url string) (int16, string, bool) {
 	host := extHost(url)
 	switch {
@@ -380,15 +325,10 @@ func cienExtLinkSource(url string) (int16, string, bool) {
 	return 0, "", false
 }
 
-// hostUnder reports whether host is domain itself or a subdomain of it — a
-// dot-bounded suffix match, so "evilpixiv.net" never passes for "pixiv.net".
 func hostUnder(host, domain string) bool {
 	return host == domain || strings.HasSuffix(host, "."+domain)
 }
 
-// extHost extracts the lowercased host of a URL without net/url (defensive
-// against the malformed URLs a crawl accumulates): strip scheme, cut at the
-// first /:? boundary.
 func extHost(url string) string {
 	s := strings.TrimSpace(url)
 	s = strings.TrimPrefix(s, "https://")

@@ -16,34 +16,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// The two mechanical rules that make a shared-handle credit_name candidate
-// auto-linkable (zero LLM). Both operate on the NFKC-normalized name (fetched
-// via SQL, so fullwidth parens/comma are already ASCII — the same normalize()
-// the Silver layer uses, no Go NFKC dependency):
-//
-//   - A1: the two names are literally identical after dropping any (...) segment
-//     and collapsing whitespace/case — 緒方剛志 ↔ 緒方剛志(ぼうのうと).
-//   - A2: one side's parenthetical alias list contains the other side's whole
-//     folded name — ささきむつみ ↔ 藤宮博也(ささきむつみ). Whole-name, never a
-//     substring, so 有限会社FAVORITE does NOT match FAVORITE (left for a human).
 const (
 	ruleA1 = "A1"
 	ruleA2 = "A2"
-	// A3/A4 clear the alias_declared candidates (step 25) under a second,
-	// independent line of evidence beyond the alias declaration itself:
-	//   - A3: the two names are co-credited on the SAME work (they collaborated).
-	//   - A4: the declaration is bidirectional — each side's ingested aliases
-	//     (catalog_name_alias, step 25) name the other whole.
 	ruleA3 = "A3"
 	ruleA4 = "A4"
 
-	ruleSetShared = "shared" // A1/A2 over shared-handle candidates (default)
-	ruleSetAlias  = "alias"  // A3/A4 over alias_declared candidates
+	ruleSetShared = "shared"
+	ruleSetAlias  = "alias"
 )
 
-// candidateRow is one pending shared-handle credit_name candidate with both
-// names NFKC-normalized and their current person attachment (for the dry
-// preview).
 type candidateRow struct {
 	AID     int64  `gorm:"column:a_id"`
 	BID     int64  `gorm:"column:b_id"`
@@ -53,9 +35,6 @@ type candidateRow struct {
 	BPerson *int64 `gorm:"column:bp"`
 }
 
-// loadCandidates reads the pending credit_name candidates of one reason in a
-// deterministic order, with each name normalized by the exact Silver
-// expression.
 func loadCandidates(db *gorm.DB, reason int16) ([]candidateRow, error) {
 	var rows []candidateRow
 	err := db.Raw(`
@@ -72,7 +51,6 @@ func loadCandidates(db *gorm.DB, reason int16) ([]candidateRow, error) {
 	return rows, err
 }
 
-// reasonForRuleSet maps a rule set to the candidate reason it clears.
 func reasonForRuleSet(rs string) int16 {
 	if rs == ruleSetAlias {
 		return model.CandidateReasonAliasDeclared
@@ -80,7 +58,6 @@ func reasonForRuleSet(rs string) int16 {
 	return model.CandidateReasonSharedExternalID
 }
 
-// classify returns the rule that makes the pair auto-linkable ("" = neither).
 func classify(anfkc, bnfkc string) string {
 	af, bf := foldName(anfkc), foldName(bnfkc)
 	if af != "" && af == bf {
@@ -92,20 +69,14 @@ func classify(anfkc, bnfkc string) string {
 	return ""
 }
 
-// a2Match reports whether target (an already-folded base name) equals one of
-// the folded alias items inside owner's parentheses.
 func a2Match(target, ownerNFKC string) bool {
 	return target != "" && slices.Contains(parenAliases(ownerNFKC), target)
 }
 
-// foldName is the comparison key: drop every (...) segment, remove whitespace,
-// lowercase.
 func foldName(nfkc string) string {
 	return strings.ToLower(removeSpaces(stripParens(nfkc)))
 }
 
-// stripParens removes ASCII parenthetical segments (NFKC already folded
-// fullwidth（）to ASCII). Unbalanced parens degrade gracefully.
 func stripParens(s string) string {
 	var b strings.Builder
 	depth := 0
@@ -135,9 +106,6 @@ func removeSpaces(s string) string {
 	}, s)
 }
 
-// parenAliases returns the folded alias items inside every top-level (...)
-// segment, split on the ideographic comma 、 (the only in-paren separator in
-// the data; ASCII , is also honored defensively).
 func parenAliases(nfkc string) []string {
 	var items []string
 	depth := 0
@@ -173,7 +141,6 @@ func parenAliases(nfkc string) []string {
 	return items
 }
 
-// batchStats is the four-way outcome tally (plus the rule split and misses).
 type batchStats struct {
 	A1Hits, A2Hits, A3Hits, A4Hits int
 	LinkedCreated                  int
@@ -197,12 +164,6 @@ func (st *batchStats) hit(rule string) {
 	}
 }
 
-// run classifies every pending candidate of the rule set's reason and, for the
-// mechanically-decidable hits, links it through the SAME path the admin bucket
-// uses (DecideCandidate accept → step-22 three-state person link + candidate
-// flip, one transaction). Unmatched candidates are left untouched — they are
-// the human-review backlog (--export drafts a worklist for them). Dry-run
-// predicts the outcome without writing.
 func run(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, apply bool, ruleSet string) (batchStats, error) {
 	rows, err := loadCandidates(db, reasonForRuleSet(ruleSet))
 	if err != nil {
@@ -242,7 +203,7 @@ func run(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, apply bool,
 		case err == nil && outcome.Link != nil:
 			st.LinkedAttached++
 		case stderrors.Is(err, service.ErrProposalState):
-			st.Already++ // already decided (idempotent re-run / raced)
+			st.Already++
 		default:
 			st.Errors++
 			fmt.Fprintf(w, "  ! candidate (%d,%d): %v\n", r.AID, r.BID, err)
@@ -259,9 +220,6 @@ func run(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, apply bool,
 	return st, nil
 }
 
-// buildClassifier returns the rule classifier for the rule set. The shared set
-// judges the two names purely (A1/A2); the alias set consults the DB for a
-// second line of evidence (A3 co-credit, A4 bidirectional declaration).
 func buildClassifier(db *gorm.DB, ruleSet string, rows []candidateRow) (func(candidateRow) string, error) {
 	if ruleSet != ruleSetAlias {
 		return func(r candidateRow) string { return classify(r.AName, r.BName) }, nil
@@ -269,8 +227,6 @@ func buildClassifier(db *gorm.DB, ruleSet string, rows []candidateRow) (func(can
 	return aliasClassifier(db, rows)
 }
 
-// predictOutcome mirrors the three-state rule for the dry preview, from the
-// two names' current person attachment.
 func predictOutcome(a, b *int64) string {
 	switch {
 	case a != nil && b != nil:
@@ -298,8 +254,6 @@ func tallyPredicted(st *batchStats, action string) {
 	}
 }
 
-// adminQueue builds the review-queue service exactly as cmd/catalog does, so
-// the batch link is byte-identical to an admin "confirm same person" click.
 func adminQueue(db *gorm.DB) *service.AdminQueueService {
 	resolve := service.NewResolveService(repository.NewRedirectRepository(db))
 	merge := service.NewMergeService(db, resolve,

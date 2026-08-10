@@ -9,17 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSelectTodoResumeSkip is the resume contract: names already present in the
-// output JSONL are skipped (never re-billed to the gateway), the rest keep pool
-// order, and --limit takes a deterministic PREFIX of what remains so successive
-// limited runs walk the vocabulary instead of re-judging its head.
 func TestSelectTodoResumeSkip(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "verdicts.jsonl")
 	require.NoError(t, writeVerdicts(out, []Verdict{
 		{Source: "bangumi", Name: "拔作", Class: "sexual", Confidence: 0.97},
 		{Source: "bangumi", Name: "PC", Class: "junk", Confidence: 0.99},
-		// same NAME on a different source is a different record — must NOT skip.
 		{Source: "dlsite", Name: "調教", Class: "sexual", Confidence: 0.95},
 	}))
 
@@ -44,7 +39,6 @@ func TestSelectTodoResumeSkip(t *testing.T) {
 	assert.Equal(t, "青梅竹马", todo[1].Name)
 	assert.Equal(t, "ファンタジー", todo[2].Name)
 
-	// --limit caps the NEW names only.
 	st2 := &ClassifyStats{ClassCounts: map[Class]int{}}
 	limited := selectTodo(pool, done, 2, st2)
 	require.Len(t, limited, 2)
@@ -52,9 +46,6 @@ func TestSelectTodoResumeSkip(t *testing.T) {
 	assert.Equal(t, "青梅竹马", limited[1].Name)
 }
 
-// TestLoadDoneMissingFile: a fresh run (no output file yet) is the empty set,
-// not an error — but a corrupt file IS an error, because silently restarting
-// from zero would double-bill the gateway and duplicate every line.
 func TestLoadDoneMissingFile(t *testing.T) {
 	done, err := loadDone(filepath.Join(t.TempDir(), "nope.jsonl"))
 	require.NoError(t, err)
@@ -66,9 +57,6 @@ func TestLoadDoneMissingFile(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestAppenderResumesAcrossRuns: appending (never rewriting) is what makes an
-// interrupted run resumable — the second run's lines land after the first's and
-// the whole file still parses.
 func TestAppenderResumesAcrossRuns(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "verdicts.jsonl")
 
@@ -89,8 +77,6 @@ func TestAppenderResumesAcrossRuns(t *testing.T) {
 	assert.Equal(t, "校园", recs[1].Name)
 }
 
-// TestBatchesNeverMixSources: the prompt states which source it is judging, so a
-// batch must not straddle two of them; batches are otherwise exactly BatchSize.
 func TestBatchesNeverMixSources(t *testing.T) {
 	todo := []NameInput{
 		{Source: "bangumi", Name: "a"}, {Source: "bangumi", Name: "b"}, {Source: "bangumi", Name: "c"},
@@ -118,8 +104,6 @@ func names(in []NameInput) []string {
 	return out
 }
 
-// TestClassifyRequiresSeamAndPaths: the guardrails fire before any DB handle is
-// opened, so a mis-typed invocation cannot reach a live database.
 func TestClassifyRequiresSeamAndPaths(t *testing.T) {
 	_, err := Classify(t.Context(), MockClassifier{}, ClassifyOpts{Out: "x.jsonl"})
 	require.ErrorContains(t, err, "DSN is required")

@@ -1,13 +1,3 @@
-// public_supply_test.go — A2-1e, the supply-completion wave (refs/proj/135):
-// claim visibility state, the engine / label / taxonomy field completions,
-// include=refs, the work-detail engines + links blocks, taxonomy totals and
-// per-detail work_count, the conjunctive tag_id filter, `created`, and the
-// calendar navigation bounds. Integration against kun_catalog_test
-// (service_test.go TestMain).
-//
-// The tag safety axis (R8) is exercised in the handler package instead — it
-// needs the wiki-side galgame_tag / galgame_tag_relation stubs, which live
-// there.
 package service
 
 import (
@@ -18,8 +8,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// The seeded catalog_source ids this suite writes links and tags with (the
-// registry seed is authoritative; these mirror it).
 const (
 	srcBangumiSupply int16 = 3
 	srcWeb           int16 = 16
@@ -30,8 +18,6 @@ const (
 	srcDMM           int16 = 15
 )
 
-// setClaimState stamps catalog_work.claim_state directly — standing in for the
-// reconciler, whose own projection is covered in the catalogsync package.
 func setClaimState(t *testing.T, workID int64, state *int16) {
 	t.Helper()
 	if err := testDB.Exec(`UPDATE catalog_work SET claim_state = ? WHERE id = ?`, state, workID).Error; err != nil {
@@ -41,10 +27,6 @@ func setClaimState(t *testing.T, workID int64, state *int16) {
 
 func i16(v int16) *int16 { return &v }
 
-// TestClaimStateProjectedEverywhere is R7's core case: the three states reach
-// EVERY face that emits claimed_by, an unstamped claimed row reads `live` (the
-// pre-wave behavior), and an unclaimed row still emits null rather than a
-// stateful object.
 func TestClaimStateProjectedEverywhere(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -61,13 +43,11 @@ func TestClaimStateProjectedEverywhere(t *testing.T) {
 	setClaimState(t, live.ID, i16(model.ClaimStateLive))
 	setClaimState(t, draft.ID, i16(model.ClaimStateDraft))
 	setClaimState(t, hidden.ID, i16(model.ClaimStateHidden))
-	// unstamped keeps claim_state NULL on purpose.
 
 	want := map[int64]string{
 		live.ID: "live", draft.ID: "draft", hidden.ID: "hidden", unstamped.ID: "live",
 	}
 
-	// (1) works LIST.
 	page, err := svc.WorksList(ctx, WorksListFilter{Sort: "id"}, "", 50)
 	if err != nil {
 		t.Fatalf("WorksList: %v", err)
@@ -92,7 +72,6 @@ func TestClaimStateProjectedEverywhere(t *testing.T) {
 		t.Fatalf("list covered %d claimed works, want %d", seen, len(want))
 	}
 
-	// (2) work DETAIL.
 	for id, state := range want {
 		rec, found, err := svc.WorkDetail(ctx, id, PublicInclude{}, false, 0)
 		if err != nil || !found {
@@ -103,7 +82,6 @@ func TestClaimStateProjectedEverywhere(t *testing.T) {
 		}
 	}
 
-	// (3) lookup — single and batch, both through the anchor registry.
 	addExternalRef(t, model.EntityTypeWork, hidden.ID, srcVNDB, "v70001", model.LinkKindExact)
 	single, found, err := svc.Lookup(ctx, "vndb", "v70001", false)
 	if err != nil || !found {
@@ -124,8 +102,6 @@ func TestClaimStateProjectedEverywhere(t *testing.T) {
 	}
 }
 
-// TestClaimStateUnknownValueIsHidden pins the conservative fallback: a state
-// integer outside the vocabulary must never be published as visible.
 func TestClaimStateUnknownValueIsHidden(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -143,9 +119,6 @@ func TestClaimStateUnknownValueIsHidden(t *testing.T) {
 	}
 }
 
-// TestClaimStateDefaultsLiveForNonWikiClaimer: a claimer with no draft/hidden
-// lifecycle (letmoe et al.) never stamps the column, and its claims must read
-// live rather than degrade to hidden.
 func TestClaimStateDefaultsLiveForNonWikiClaimer(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -162,8 +135,6 @@ func TestClaimStateDefaultsLiveForNonWikiClaimer(t *testing.T) {
 	}
 }
 
-// TestWorksListIncludeRefs: the refs block is opt-in, mirrors the detail face
-// (work-level ∪ release-level, exact only) and never leaks probable/related.
 func TestWorksListIncludeRefs(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
@@ -172,7 +143,6 @@ func TestWorksListIncludeRefs(t *testing.T) {
 	rel := createRelease(t, w.ID, 2021, 6, 4)
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcVNDB, "v555", model.LinkKindExact)
 	addExternalRef(t, model.EntityTypeRelease, rel.ID, srcDlsite, "RJ123456", model.LinkKindExact)
-	// Neither of these may ever cross the public face.
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcBangumiSupply, "9999", model.LinkKindProbable)
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcVNDB, "https://example.test/x", model.LinkKindRelated)
 
@@ -193,17 +163,12 @@ func TestWorksListIncludeRefs(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("refs = %+v, want exactly the two EXACT anchors", got)
 	}
-	// Ordered (source, external_id): dlsite before vndb.
 	if got[0].Source != "dlsite" || got[0].ExternalID != "RJ123456" ||
 		got[1].Source != "vndb" || got[1].ExternalID != "v555" {
 		t.Fatalf("refs = %+v, want [{dlsite RJ123456} {vndb v555}]", got)
 	}
 }
 
-// TestWorkDetailEnginesAndLinksAndCreated covers the three detail-record
-// additions at once: the engines block, the links block (including the URL
-// templates and the deliberate skip of the template-less sources), and
-// `created`.
 func TestWorkDetailEnginesAndLinksAndCreated(t *testing.T) {
 	cleanTables(t)
 	cleanTaxonomyTables(t)
@@ -215,8 +180,6 @@ func TestWorkDetailEnginesAndLinksAndCreated(t *testing.T) {
 	attachEngine(t, w.ID, renpy)
 	attachEngine(t, w.ID, kiri)
 
-	// One link per URL-template source, plus two the face must SKIP rather
-	// than guess an address for.
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcWeb, "https://mill-soft.jp", model.LinkKindRelated)
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcTwitter, "appetite_game", model.LinkKindRelated)
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcCien, "15636", model.LinkKindRelated)
@@ -224,7 +187,6 @@ func TestWorkDetailEnginesAndLinksAndCreated(t *testing.T) {
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcPixiv, "1338845", model.LinkKindRelated)
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcDlsite, "RJ01088277", model.LinkKindRelated)
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcDMM, "d_774266", model.LinkKindRelated)
-	// An EXACT anchor is identity, not a link — it must not appear in links[].
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcVNDB, "v999", model.LinkKindExact)
 
 	rec, found, err := svc.WorkDetail(t.Context(), w.ID, PublicInclude{}, false, 0)
@@ -265,7 +227,6 @@ func TestWorkDetailEnginesAndLinksAndCreated(t *testing.T) {
 		t.Fatalf("created=%q updated=%q — created must be present and not after updated", rec.Created, rec.Updated)
 	}
 
-	// A work with neither must serialize [] rather than null.
 	empty := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "EmptyBlocks")
 	rec2, _, err := svc.WorkDetail(t.Context(), empty.ID, PublicInclude{}, false, 0)
 	if err != nil {
@@ -283,9 +244,6 @@ func TestWorkDetailEnginesAndLinksAndCreated(t *testing.T) {
 	}
 }
 
-// TestEngineDescriptionAndAliases: both the list row and the record carry the
-// blurb + alternate spellings, and a malformed/absent aliases jsonb degrades to
-// [] instead of failing the page.
 func TestEngineDescriptionAndAliases(t *testing.T) {
 	cleanTables(t)
 	cleanTaxonomyTables(t)
@@ -330,19 +288,14 @@ func TestEngineDescriptionAndAliases(t *testing.T) {
 	}
 }
 
-// supplyLogoHash is the fixture label's brand logo (wave 170) — an image-service
-// content hash, the same currency as a work cover's image_hash.
 const supplyLogoHash = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
 
-// TestLabelAliasesLangAndWorkCount covers the label-record completions plus the
-// labels[] lang on both the detail face and the list include= block.
 func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
 
 	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "LabelledWork")
 	r18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "LabelledR18")
-	// work_count counts LIVE claims only (146), so the fixture has to be one.
 	for i, id := range []int64{w.ID, r18.ID} {
 		claimLive(t, id, int64(9330+i))
 	}
@@ -361,7 +314,6 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 		kind       int16
 	}{
 		{"Milk Soft", "en", 0}, {"みるくそふと", "ja", 0}, {"Milk Soft", "ja", 0},
-		// A search hint is findability-only by its kind's contract — never displayed.
 		{"milksoft-hint", "", model.AliasKindSearchHint},
 	} {
 		if err := testDB.Create(&model.CatalogLabelAlias{
@@ -378,11 +330,9 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 	if rec.Lang != "ja" {
 		t.Fatalf("label lang = %q, want ja", rec.Lang)
 	}
-	// wave 170: the brand logo hash rides the same record.
 	if rec.LogoHash != supplyLogoHash {
 		t.Fatalf("label logo_hash = %q, want %q", rec.LogoHash, supplyLogoHash)
 	}
-	// The display name is excluded and the duplicate spelling collapses.
 	if len(rec.Aliases) != 1 || rec.Aliases[0] != "Milk Soft" {
 		t.Fatalf("label aliases = %+v, want [Milk Soft]", rec.Aliases)
 	}
@@ -397,7 +347,6 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 		t.Fatalf("nsfw label work_count = %d, want 2", recNSFW.WorkCount)
 	}
 
-	// labels[] lang on the detail face and on the list include= block.
 	detail, _, err := svc.WorkDetail(t.Context(), w.ID, PublicInclude{}, false, 0)
 	if err != nil {
 		t.Fatalf("WorkDetail: %v", err)
@@ -426,9 +375,6 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 	}
 }
 
-// TestTaxonomyTotalsAndTagDetailWorkCount: every lane's total is the whole
-// FILTERED set (not the page, not the tail after the cursor), and a tag's
-// detail work_count is the same nsfw-aware number its list row carries.
 func TestTaxonomyTotalsAndTagDetailWorkCount(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -442,7 +388,6 @@ func TestTaxonomyTotalsAndTagDetailWorkCount(t *testing.T) {
 
 	wSafe := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "TagSafe")
 	wR18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "TagR18")
-	// work_count counts LIVE claims only (146), so the fixture has to be one.
 	for i, id := range []int64{wSafe.ID, wR18.ID} {
 		claimLive(t, id, int64(9340+i))
 	}
@@ -459,7 +404,6 @@ func TestTaxonomyTotalsAndTagDetailWorkCount(t *testing.T) {
 		}
 	}
 
-	// A one-row page must still report the full total.
 	first, err := svc.TagsList(ctx, TagsListFilter{}, "", 1)
 	if err != nil {
 		t.Fatalf("TagsList: %v", err)
@@ -467,7 +411,6 @@ func TestTaxonomyTotalsAndTagDetailWorkCount(t *testing.T) {
 	if first.Total != 3 {
 		t.Fatalf("tags total = %d, want 3", first.Total)
 	}
-	// The cursor page reports the SAME total, not the remaining count.
 	second, err := svc.TagsList(ctx, TagsListFilter{}, *first.NextCursor, 1)
 	if err != nil {
 		t.Fatalf("TagsList page 2: %v", err)
@@ -475,7 +418,6 @@ func TestTaxonomyTotalsAndTagDetailWorkCount(t *testing.T) {
 	if second.Total != 3 {
 		t.Fatalf("page-2 tags total = %d, want 3 (the whole set, not the tail)", second.Total)
 	}
-	// A filter narrows the total with the page.
 	filtered, err := svc.TagsList(ctx, TagsListFilter{Kind: i16(model.TagKindMeta)}, "", 50)
 	if err != nil {
 		t.Fatalf("TagsList kind=meta: %v", err)
@@ -484,7 +426,6 @@ func TestTaxonomyTotalsAndTagDetailWorkCount(t *testing.T) {
 		t.Fatalf("kind=meta total=%d items=%d, want 1/1", filtered.Total, len(filtered.Items))
 	}
 
-	// Detail work_count == list work_count, per nsfw setting.
 	for _, tc := range []struct {
 		nsfw bool
 		want int
@@ -508,7 +449,6 @@ func TestTaxonomyTotalsAndTagDetailWorkCount(t *testing.T) {
 		}
 	}
 
-	// Labels lane total (a merged-away label leaves both the page and the total).
 	l1 := addWorkLabel(t, wSafe.ID, "BrandA", model.LabelKindGameBrand, model.WorkLabelKindBrand)
 	addWorkLabel(t, wSafe.ID, "BrandB", model.LabelKindPublisher, model.WorkLabelKindPublisher)
 	labels, err := svc.LabelsList(ctx, LabelsListFilter{}, "", 50)
@@ -530,8 +470,6 @@ func TestTaxonomyTotalsAndTagDetailWorkCount(t *testing.T) {
 	}
 }
 
-// TestWorksListTagIDConjunction: several tag ids narrow (AND), one id behaves
-// exactly as the pre-wave scalar did, and an id the work lacks empties the set.
 func TestWorksListTagIDConjunction(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
@@ -588,22 +526,16 @@ func TestWorksListTagIDConjunction(t *testing.T) {
 	if got := ids(WorksListFilter{Sort: "id", TagIDs: []int64{tagA, tagC}}); len(got) != 0 {
 		t.Fatalf("disjoint tags = %v, want empty", got)
 	}
-	// Repeating an id is the same query as asking once (the handler dedups, and
-	// the service is idempotent under repetition either way).
 	if got := ids(WorksListFilter{Sort: "id", TagIDs: []int64{tagA, tagA}}); len(got) != 2 {
 		t.Fatalf("repeated tag = %v, want both works", got)
 	}
 }
 
-// TestCalendarBoundsFollowThePopulationGates is R10's load-bearing property:
-// min/max month are computed under the CALLER'S gates, so changing nsfw or
-// olang moves the bounds.
 func TestCalendarBoundsFollowThePopulationGates(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
 	ctx := t.Context()
 
-	// ja all-ages in 2020-03; ja r18 in 2024-08; en all-ages in 2026-01.
 	mk := func(name, olang string, rating int16, y, m, d int16) {
 		t.Helper()
 		w := createWorkX(t, galgameMediumID, rating, model.WorkStatusLive, name)
@@ -635,7 +567,6 @@ func TestCalendarBoundsFollowThePopulationGates(t *testing.T) {
 		}
 	}
 
-	// An impossible olang yields no bounds at all (and no invented month).
 	if _, _, found, err := svc.CalendarBounds(ctx, CalendarFilter{
 		OLang: PublicOLang{Values: []string{"xx-nonexistent"}},
 	}); err != nil || found {

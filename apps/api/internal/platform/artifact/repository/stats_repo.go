@@ -8,8 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// StatsRepository runs aggregation queries over the artifacts table for the
-// admin /stats endpoint.
 type StatsRepository struct {
 	db *gorm.DB
 }
@@ -18,25 +16,20 @@ func NewStatsRepository(db *gorm.DB) *StatsRepository {
 	return &StatsRepository{db: db}
 }
 
-// ArtifactStatsResult is the aggregate shape served by GET /admin/artifact/stats.
 type ArtifactStatsResult struct {
-	TotalCount  int64                        `json:"total_count"`  // ready artifacts (not soft-deleted)
-	TotalBytes  int64                        `json:"total_bytes"`  // sum file_size of ready
-	Uploading   int64                        `json:"uploading"`    // status=uploading (orphan candidates)
-	Failed      int64                        `json:"failed"`       // status=failed
-	SoftDeleted int64                        `json:"soft_deleted"` // deleted_at set, pending GC
+	TotalCount  int64                        `json:"total_count"`
+	TotalBytes  int64                        `json:"total_bytes"`
+	Uploading   int64                        `json:"uploading"`
+	Failed      int64                        `json:"failed"`
+	SoftDeleted int64                        `json:"soft_deleted"`
 	BySite      map[string]ArtifactSiteStats `json:"by_site,omitempty"`
 }
 
-// ArtifactSiteStats is the per-site breakdown of ready artifacts.
 type ArtifactSiteStats struct {
 	Count int64 `json:"count"`
 	Bytes int64 `json:"bytes"`
 }
 
-// Stats aggregates the artifacts table across all sites (admin mode). The
-// default GORM scope excludes soft-deleted rows, so ready/uploading/failed
-// counts ignore them; SoftDeleted is counted Unscoped.
 func (r *StatsRepository) Stats(ctx context.Context) (*ArtifactStatsResult, error) {
 	out := &ArtifactStatsResult{BySite: map[string]ArtifactSiteStats{}}
 

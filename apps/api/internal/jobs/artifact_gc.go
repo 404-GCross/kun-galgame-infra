@@ -13,15 +13,13 @@ import (
 	"api/pkg/config"
 )
 
-// ArtifactGCOpts tunes the artifact lifecycle sweep.
 type ArtifactGCOpts struct {
-	OrphanTTL     time.Duration // status=uploading older than this → abort+delete
-	SoftDeleteTTL time.Duration // deleted_at older than this → physical delete
-	MaxPerRun     int           // max rows per phase per run
+	OrphanTTL     time.Duration
+	SoftDeleteTTL time.Duration
+	MaxPerRun     int
 	DryRun        bool
 }
 
-// DefaultArtifactGCOpts derives defaults from config (with hard fallbacks).
 func DefaultArtifactGCOpts(cfg *config.Config) ArtifactGCOpts {
 	o := ArtifactGCOpts{
 		OrphanTTL:     cfg.ArtifactService.OrphanTTL,
@@ -37,17 +35,7 @@ func DefaultArtifactGCOpts(cfg *config.Config) ArtifactGCOpts {
 	return o
 }
 
-// RunArtifactGC reclaims storage in two phases, using the least-privilege
-// cleanup key (DeleteObject only):
-//   - orphans: status=uploading rows past OrphanTTL (Init'd, never Completed) →
-//     abort any multipart upload + delete object + drop the row
-//   - expired soft-deletes: deleted_at past SoftDeleteTTL → delete object + drop row
 func RunArtifactGC(ctx context.Context, cfg *config.Config, opts ArtifactGCOpts) (Summary, error) {
-	// No-op when the artifact service isn't configured yet (e.g. prod oauth
-	// before B2 credentials are set). This job is registered in the oauth
-	// process; without this guard it would error daily trying to reach an
-	// absent kun_artifacts DB / unconfigured S3. Storage creds are the signal
-	// that artifact is live.
 	if cfg.ArtifactS3.AccessKeyID == "" {
 		return Summary{"skipped": "artifact storage not configured"}, nil
 	}
@@ -68,7 +56,6 @@ func RunArtifactGC(ctx context.Context, cfg *config.Config, opts ArtifactGCOpts)
 	}
 	defer db.Close()
 
-	// Cleanup-scoped S3 client (DeleteObject only).
 	store, err := storage.NewClient(cfg.ArtifactCleanupS3())
 	if err != nil {
 		return nil, fmt.Errorf("s3 init: %w", err)
@@ -79,7 +66,6 @@ func RunArtifactGC(ctx context.Context, cfg *config.Config, opts ArtifactGCOpts)
 
 	var orphans, softDeleted, errCount int
 
-	// Phase 1: orphaned uploads.
 	orphanRows, err := repo.FindOrphans(ctx, now.Add(-opts.OrphanTTL), opts.MaxPerRun)
 	if err != nil {
 		return nil, fmt.Errorf("find orphans: %w", err)
@@ -109,7 +95,6 @@ func RunArtifactGC(ctx context.Context, cfg *config.Config, opts ArtifactGCOpts)
 		orphans++
 	}
 
-	// Phase 2: expired soft-deletes.
 	delRows, err := repo.FindExpiredSoftDeleted(ctx, now.Add(-opts.SoftDeleteTTL), opts.MaxPerRun)
 	if err != nil {
 		return nil, fmt.Errorf("find soft-deleted: %w", err)
@@ -123,11 +108,6 @@ func RunArtifactGC(ctx context.Context, cfg *config.Config, opts ArtifactGCOpts)
 			softDeleted++
 			continue
 		}
-		// A soft-deleted row still in `uploading` (e.g. a downstream aborted an
-		// upload mid-flight — letmoe's Abort soft-deletes the artifact) still owns
-		// an open B2 multipart upload whose already-stored parts keep accruing
-		// storage cost. Abort it before dropping the object, mirroring phase 1's
-		// orphan handling. warn-only: the object delete + row drop proceed anyway.
 		if a.UploadID != "" && a.Status == model.StatusUploading {
 			if err := store.AbortMultipart(ctx, a.FileKey, a.UploadID); err != nil {
 				slog.Warn("artifact-gc: abort multipart (soft-deleted)", "uuid", a.UUID, "err", err)

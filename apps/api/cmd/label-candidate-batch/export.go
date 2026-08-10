@@ -10,9 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// dossier is one judgment-lane pair with everything an adjudicator needs.
-// source_id/target_id carry the fixed merge direction (import → existing) so
-// receipts echo them back without re-deriving policy.
 type dossier struct {
 	AID      int64     `json:"a_id"`
 	BID      int64     `json:"b_id"`
@@ -39,8 +36,6 @@ type workBrief struct {
 	Src   string `json:"src,omitempty"`
 }
 
-// runExport writes the judgment-lane dossiers (pending pairs with ZERO shared
-// works, plus any pair without a single import side) as JSONL.
 func runExport(db *gorm.DB, out string) error {
 	rows, err := loadPending(db)
 	if err != nil {
@@ -59,11 +54,9 @@ func runExport(db *gorm.DB, out string) error {
 	for _, r := range rows {
 		source, target, ok := direction(r)
 		if r.SharedWorks > 0 && ok {
-			continue // mechanical lane
+			continue
 		}
 		if !ok {
-			// No single import side — judgment lane with a neutral default
-			// direction (newer id absorbed into older).
 			source, target = r.BID, r.AID
 		}
 		a, err := loadSide(db, r.AID)

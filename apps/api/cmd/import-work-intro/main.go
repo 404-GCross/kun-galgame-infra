@@ -1,17 +1,3 @@
-// Command import-work-intro backfills catalog_work_intro rows for BODYLESS
-// works from an upstream description source (step 52 media-aggregation pilot).
-// This wave's only source is VNDB vn.description (staged by cmd/ingest-vndb):
-// a bodyless galgame work holding an EXACT VNDB work anchor gets its English
-// blurb copied into a native intro row attributed to the vndb source. CLAIMED
-// works are never touched — their intro is bridged at read time (bridge-not-
-// copy). Logic + discipline live in internal/platform/catalog/introimport.
-//
-// Dry-run is the DEFAULT (repo convention for backfills); pass --apply to write.
-// Idempotent: a second applied run inserts nothing (ON CONFLICT DO NOTHING).
-//
-//	go run ./cmd/import-work-intro                 # dry run, full statistics
-//	go run ./cmd/import-work-intro --apply         # write missing intros
-//	go run ./cmd/import-work-intro --limit 100 --apply
 package main
 
 import (
@@ -33,7 +19,7 @@ func main() {
 	limit := flag.Int("limit", 0, "max candidate works to consider (0 = all)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
 	cfg, err := config.Load()
 	if err != nil {

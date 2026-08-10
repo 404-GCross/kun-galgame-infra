@@ -10,10 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// AdminQueueService backs the human-review queue API (doc 17 §5): the
-// candidate (ambiguity) bucket, the merge-proposal bucket and the probable-ref
-// confirmation bucket. The auto-exact sampling and import-conflict buckets
-// arrive with the ingestion steps.
 type AdminQueueService struct {
 	db    *gorm.DB
 	merge *MergeService
@@ -24,32 +20,19 @@ func NewAdminQueueService(db *gorm.DB, merge *MergeService) *AdminQueueService {
 	return &AdminQueueService{db: db, merge: merge, link: NewLinkService(db)}
 }
 
-// DetachName reverses one credit_name→person link (step 22 reversibility); it
-// delegates to the link service. Exposed here so the admin handler reaches it
-// through the queue service without changing the composition root's wiring.
 func (s *AdminQueueService) DetachName(ctx context.Context, creditNameID int64, actorID *int64) error {
 	return s.link.DetachName(ctx, creditNameID, actorID)
 }
 
-// ErrExactTaken reports a probable→exact promotion losing to the
-// anti-squatting line: another entity already holds the exact assertion.
 var ErrExactTaken = fmt.Errorf("catalog: external identity is exact-linked to another entity")
 
-// EntitySummary is the display brief attached to queue rows so a reviewer
-// sees names, not bare ids. Soft-deleted entities still resolve (admin
-// surfaces see below the veil).
 type EntitySummary struct {
 	ID          int64  `json:"id"`
 	DisplayName string `json:"display_name"`
-	// CreditCount and SourceID give a person-link reviewer the context to
-	// judge "same person?" (step 22): how established the name is and which
-	// source it came from. Populated only for credit_name candidate sides;
-	// nil everywhere else.
 	CreditCount *int64 `json:"credit_count,omitempty"`
 	SourceID    *int16 `json:"source_id,omitempty"`
 }
 
-// entitySummary looks up an entity's display name (credit_name uses name).
 func entitySummary(db *gorm.DB, entityType int16, id int64) EntitySummary {
 	table, ok := entityTableName(entityType)
 	if !ok {
@@ -60,14 +43,10 @@ func entitySummary(db *gorm.DB, entityType int16, id int64) EntitySummary {
 		column = "name"
 	}
 	var name string
-	// Best-effort: a missing row just leaves the name empty.
 	_ = db.Raw(`SELECT `+column+` FROM `+table+` WHERE id = ?`, id).Scan(&name).Error
 	return EntitySummary{ID: id, DisplayName: name}
 }
 
-// --- candidate bucket ---
-
-// CandidateFilters narrows the candidate queue listing.
 type CandidateFilters struct {
 	Status     *int16
 	EntityType *int16
@@ -76,7 +55,6 @@ type CandidateFilters struct {
 	Limit      int
 }
 
-// CandidateItem is one queue row plus both entities' briefs.
 type CandidateItem struct {
 	model.CatalogMatchCandidate
 	A EntitySummary `json:"a"`
@@ -116,9 +94,6 @@ func (s *AdminQueueService) ListCandidates(ctx context.Context, f CandidateFilte
 	return items, total, nil
 }
 
-// enrichCreditNameContext fills the credit-count and source of every
-// credit_name candidate side in one pair of batched queries (step 22 review
-// context). Other entity types are left untouched.
 func (s *AdminQueueService) enrichCreditNameContext(ctx context.Context, items []CandidateItem) {
 	var ids []int64
 	for _, it := range items {
@@ -148,7 +123,6 @@ func (s *AdminQueueService) enrichCreditNameContext(ctx context.Context, items [
 		ID     int64 `gorm:"column:entity_id"`
 		Source int16 `gorm:"column:source_id"`
 	}
-	// The self-identity exact ref (one per imported name) carries its source.
 	if err := db.Raw(`SELECT entity_id, min(source_id) AS source_id FROM catalog_external_ref
 		WHERE entity_type = ? AND link_kind = ? AND entity_id IN ? GROUP BY entity_id`,
 		model.EntityTypeCreditName, model.LinkKindExact, ids).Scan(&sourceRows).Error; err == nil {
@@ -172,38 +146,20 @@ func (s *AdminQueueService) enrichCreditNameContext(ctx context.Context, items [
 	}
 }
 
-// CandidateDecision is one reviewer verdict on a candidate pair.
 type CandidateDecision struct {
-	EntityType int16
-	AID, BID   int64
-	// Action: "accept" | "reject" | "defer".
-	Action string
-	// Accept only: which side is absorbed into which (the candidate pair is
-	// unordered; the merge direction is the reviewer's call).
+	EntityType         int16
+	AID, BID           int64
+	Action             string
 	SourceID, TargetID int64
 	Note               string
 	DecidedBy          int64
 }
 
-// CandidateOutcome carries whichever side effect an accept produced: a merge
-// proposal (generic same-entity candidates) or a person link (credit_name
-// shared-handle candidates — step 22). Both are nil for reject/defer.
 type CandidateOutcome struct {
 	Proposal *model.CatalogMergeProposal
 	Link     *PersonLinkResult
 }
 
-// DecideCandidate applies a reviewer verdict. accept's side effect depends on
-// the candidate's entity type:
-//   - credit_name → establishes the "same person" fact (create/attach a person,
-//     step 22): the two names are grouped, never merged, so both survive.
-//   - anything else → opens a merge proposal (the candidate graduates into the
-//     proposal bucket).
-//
-// Rejected candidates keep their row forever — that permanence is what stops
-// the same pair from resurfacing on every import; it is deliberately NOT a
-// catalog_match_rejection row (that table is negative knowledge about
-// external-ref assertions only — the two must never mix).
 func (s *AdminQueueService) DecideCandidate(ctx context.Context, d CandidateDecision) (*CandidateOutcome, error) {
 	switch d.Action {
 	case "accept", "reject", "defer":
@@ -211,7 +167,6 @@ func (s *AdminQueueService) DecideCandidate(ctx context.Context, d CandidateDeci
 		return nil, fmt.Errorf("%w: unknown action %q", ErrProposalState, d.Action)
 	}
 
-	// Validate the candidate first (found + still undecided).
 	var cand model.CatalogMatchCandidate
 	err := s.db.WithContext(ctx).Raw(`SELECT * FROM catalog_match_candidate
 	                WHERE entity_type = ? AND a_id = ? AND b_id = ?`,
@@ -219,7 +174,7 @@ func (s *AdminQueueService) DecideCandidate(ctx context.Context, d CandidateDeci
 	if err != nil {
 		return nil, err
 	}
-	if cand.AID == 0 { // ids start at 1: a zero AID means no row was scanned
+	if cand.AID == 0 {
 		return nil, fmt.Errorf("%w: candidate (%d, %d, %d)", ErrNotFound, d.EntityType, d.AID, d.BID)
 	}
 	if cand.Status != model.CandidateStatusPending && cand.Status != model.CandidateStatusDeferred {
@@ -230,16 +185,11 @@ func (s *AdminQueueService) DecideCandidate(ctx context.Context, d CandidateDeci
 		return s.acceptAsPersonLink(ctx, d)
 	}
 
-	// Accept opens the proposal BEFORE the status flips: a propose failure
-	// (duplicate open proposal, dead endpoint, ...) must leave the candidate
-	// still pending, never "accepted with no proposal".
 	status := model.CandidateStatusRejected
 	var proposal *model.CatalogMergeProposal
 	switch d.Action {
 	case "accept":
 		status = model.CandidateStatusAccepted
-		// The merge direction comes from the reviewer; both ids must belong
-		// to the pair.
 		if !(d.SourceID == d.AID && d.TargetID == d.BID) && !(d.SourceID == d.BID && d.TargetID == d.AID) {
 			return nil, fmt.Errorf("%w: source/target must be the candidate pair", ErrProposalState)
 		}
@@ -256,17 +206,11 @@ func (s *AdminQueueService) DecideCandidate(ctx context.Context, d CandidateDeci
 		return nil, err
 	}
 	if rows == 0 {
-		// Raced with another reviewer after the proposal was opened — the
-		// proposal stays (withdrawable), the other verdict wins the row.
 		return &CandidateOutcome{Proposal: proposal}, fmt.Errorf("%w: candidate decided concurrently", ErrProposalState)
 	}
 	return &CandidateOutcome{Proposal: proposal}, nil
 }
 
-// acceptAsPersonLink runs the three-state person-linking rule and flips the
-// candidate atomically: linking and the status change either both land or
-// neither does. A pair whose names already belong to different persons is
-// flagged needs_manual instead of accepted (person merge is future work).
 func (s *AdminQueueService) acceptAsPersonLink(ctx context.Context, d CandidateDecision) (*CandidateOutcome, error) {
 	var link PersonLinkResult
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -294,9 +238,6 @@ func (s *AdminQueueService) acceptAsPersonLink(ctx context.Context, d CandidateD
 	return &CandidateOutcome{Link: &link}, nil
 }
 
-// flipCandidate transitions a still-open candidate to status, recording the
-// decider. Returns the affected row count so callers can detect a concurrent
-// verdict (0 rows).
 func (s *AdminQueueService) flipCandidate(db *gorm.DB, d CandidateDecision, status int16) (int64, error) {
 	res := db.Model(&model.CatalogMatchCandidate{}).
 		Where("entity_type = ? AND a_id = ? AND b_id = ? AND status IN ?",
@@ -306,9 +247,6 @@ func (s *AdminQueueService) flipCandidate(db *gorm.DB, d CandidateDecision, stat
 	return res.RowsAffected, res.Error
 }
 
-// --- proposal bucket ---
-
-// ProposalFilters narrows the proposal queue listing.
 type ProposalFilters struct {
 	Status     *int16
 	EntityType *int16
@@ -316,7 +254,6 @@ type ProposalFilters struct {
 	Limit      int
 }
 
-// GetProposal returns one proposal by id (nil when missing).
 func (s *AdminQueueService) GetProposal(ctx context.Context, id int64) (*model.CatalogMergeProposal, error) {
 	var row model.CatalogMergeProposal
 	err := s.db.WithContext(ctx).First(&row, id).Error
@@ -329,7 +266,6 @@ func (s *AdminQueueService) GetProposal(ctx context.Context, id int64) (*model.C
 	return &row, nil
 }
 
-// ProposalItem is one proposal plus both entities' briefs.
 type ProposalItem struct {
 	model.CatalogMergeProposal
 	Source EntitySummary `json:"source"`
@@ -365,9 +301,6 @@ func (s *AdminQueueService) ListProposals(ctx context.Context, f ProposalFilters
 	return items, total, nil
 }
 
-// --- probable-ref confirmation bucket ---
-
-// RefFilters narrows the probable-ref listing.
 type RefFilters struct {
 	SourceID   *int16
 	EntityType *int16
@@ -375,16 +308,11 @@ type RefFilters struct {
 	Limit      int
 }
 
-// ProbableRefItem is one unconfirmed probable assertion plus its entity brief.
 type ProbableRefItem struct {
 	model.CatalogExternalRef
 	Entity EntitySummary `json:"entity"`
 }
 
-// ListProbableRefs returns the confirmation bucket: link_kind=probable AND
-// not yet verified. That predicate NATURALLY includes the rows a merge
-// demoted from exact (they keep their original matched_by and have no
-// verified_at) — no special-casing needed (step-05 carry-over ②).
 func (s *AdminQueueService) ListProbableRefs(ctx context.Context, f RefFilters) ([]ProbableRefItem, int64, error) {
 	page, limit := normalizePage(f.Page, f.Limit)
 	q := s.db.WithContext(ctx).Model(&model.CatalogExternalRef{}).
@@ -414,7 +342,6 @@ func (s *AdminQueueService) ListProbableRefs(ctx context.Context, f RefFilters) 
 	return items, total, nil
 }
 
-// RefKey addresses one external-ref assertion.
 type RefKey struct {
 	EntityType int16
 	EntityID   int64
@@ -422,9 +349,6 @@ type RefKey struct {
 	ExternalID string
 }
 
-// ConfirmRef promotes a probable assertion to exact (human confirmation, the
-// only path up — doc 17 R8). Losing to the exact partial unique returns
-// ErrExactTaken with the current holder attached.
 func (s *AdminQueueService) ConfirmRef(ctx context.Context, key RefKey, verifiedBy int64) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var ref model.CatalogExternalRef
@@ -447,9 +371,6 @@ func (s *AdminQueueService) ConfirmRef(ctx context.Context, key RefKey, verified
 			Updates(map[string]any{"link_kind": model.LinkKindExact, "verified_by": verifiedBy, "verified_at": now}).Error
 	})
 	if isUniqueViolation(err, "uq_catalog_external_ref_exact") {
-		// The holder lookup must run OUTSIDE the failed transaction — after
-		// a unique violation Postgres aborts the tx and ignores every
-		// further command in it (caught live: the holder read back as 0).
 		var holder int64
 		_ = s.db.WithContext(ctx).Raw(`SELECT entity_id FROM catalog_external_ref
 		     WHERE source_id = ? AND external_id = ? AND entity_type = ? AND link_kind = ?`,
@@ -459,10 +380,6 @@ func (s *AdminQueueService) ConfirmRef(ctx context.Context, key RefKey, verified
 	return err
 }
 
-// RejectRef removes a wrong assertion and records it as first-class negative
-// knowledge: the (entity, source, external_id) pairing lands in
-// catalog_match_rejection with a mandatory reason, so no future import
-// re-adds it.
 func (s *AdminQueueService) RejectRef(ctx context.Context, key RefKey, reason string, rejectedBy int64) error {
 	if reason == "" {
 		return fmt.Errorf("%w: rejection reason is required", ErrProposalState)

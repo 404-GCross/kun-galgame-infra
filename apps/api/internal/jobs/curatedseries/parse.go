@@ -9,30 +9,17 @@ import (
 	"strings"
 )
 
-// The two frozen artifacts of wave 180 (refs/proj/180-artifacts). They are the
-// ONLY surviving copy of the wiki's series mapping: the galgame table family
-// was dropped in wave 161, so nothing can regenerate them.
 const (
 	seriesFile  = "wiki-series.tsv"
 	membersFile = "wiki-series-members.tsv"
 )
 
-// seriesRow is one wiki series: id, name, description.
-//
-// Descriptions are hand-written user prose and DO carry embedded newlines, so
-// the file is record-oriented rather than line-oriented: a record begins at a
-// line whose first tab-separated field is a bare integer and which carries the
-// full three fields; every other line continues the description above it. No
-// continuation line contains a tab, which is what makes the rule unambiguous.
 type seriesRow struct {
 	ID          int64
 	Name        string
 	Description string
 }
 
-// memberRow is one work's membership: series_id, galgame_id, catalog_work_id.
-// The wiki status and the series name repeated on every row are context for a
-// human reading the artifact; the seeder reads neither.
 type memberRow struct {
 	SeriesID int64
 	WorkID   int64
@@ -75,7 +62,6 @@ func parseSeries(dir string) ([]seriesRow, error) {
 	return out, nil
 }
 
-// recordStart reports whether these fields open a new series record.
 func recordStart(fields []string) (int64, bool) {
 	if len(fields) < 3 {
 		return 0, false

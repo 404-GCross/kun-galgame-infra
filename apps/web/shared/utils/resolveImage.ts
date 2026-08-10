@@ -1,17 +1,3 @@
-// Image URL resolver helpers.
-//
-// Background: see docs/image_service/04-migration-plan.md.
-//
-// Some image fields are migrated to image_service (hash-addressed), some
-// stay on legacy buckets (kungal/moyu old WebP). The resolve helpers
-// implement a uniform fallback chain:
-//
-//    image_hash → image_service URL
-//    legacy URL → use as-is
-//    neither    → caller-provided placeholder
-//
-// They depend on a CDN base URL (image_service public CDN). Read it from
-// runtime config rather than hardcoding.
 
 interface ImageURLOptions {
   /** image_service CDN base, e.g. https://image.kungal.iloveren.link */
@@ -56,12 +42,6 @@ export const resolveAvatarUrl = (
   return placeholder
 }
 
-// Legacy avatars (no image_service hash). The kungal legacy CDN stores a fixed
-// square thumbnail next to the original (`.../avatar.webp` →
-// `.../avatar-100.webp`); when a small variant is requested we prefer it, since
-// KunAvatar ≥0.3.4 no longer derives thumbnails itself. moyu legacy URLs are
-// already a `-mini` variant, and any other shape is rendered as-is. With no
-// variant (e.g. profile) the original is returned untouched.
 const legacyAvatarVariant = (url: string, variant?: string): string => {
   if (variant && /\/avatar\.webp$/.test(url)) {
     return url.replace(/\/avatar\.webp$/, '/avatar-100.webp')

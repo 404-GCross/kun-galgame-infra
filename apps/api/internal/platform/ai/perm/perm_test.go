@@ -7,10 +7,6 @@ import (
 	"api/internal/platform/authz"
 )
 
-// goldenGrants is the authoritative role-set for every AI permission. usage_view
-// is an OPS capability: admin and ren reach the usage dashboard, moderator does
-// NOT (usage cost is management, not content moderation). Any drift between the
-// bundles and this table fails the build.
 var goldenGrants = map[authz.Permission][]string{
 	perm.UsageView: {"admin", "ren"},
 }
@@ -32,8 +28,6 @@ func TestGoldenBundles(t *testing.T) {
 	}
 }
 
-// TestModeratorGrantsNothing pins the deliberate exclusion: a content moderator
-// has no authority on the usage/cost surface (章程 步骤 02 §A).
 func TestModeratorGrantsNothing(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"moderator"}, p) {
@@ -42,8 +36,6 @@ func TestModeratorGrantsNothing(t *testing.T) {
 	}
 }
 
-// TestNonBundleRolesGrantNothing pins the fail-closed default: any role outside
-// the bundles grants nothing.
 func TestNonBundleRolesGrantNothing(t *testing.T) {
 	for _, role := range []string{"user", "creator", "", "legacy_top_tier_alias"} {
 		for p := range goldenGrants {
@@ -54,7 +46,6 @@ func TestNonBundleRolesGrantNothing(t *testing.T) {
 	}
 }
 
-// TestManagementAxisContainment pins admin ⊆ ren.
 func TestManagementAxisContainment(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"admin"}, p) && !perm.Resolver.Can([]string{"ren"}, p) {

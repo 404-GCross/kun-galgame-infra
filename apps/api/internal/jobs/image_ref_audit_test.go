@@ -19,19 +19,14 @@ func TestNewlyBrokenOnlyReportsUnseenHashes(t *testing.T) {
 	if got := newlyBroken([]string{"aaa", "ccc"}, previous); !reflect.DeepEqual(got, []string{"ccc"}) {
 		t.Fatalf("want [ccc], got %v", got)
 	}
-	// A repaired hash disappearing from the set is not an event either.
 	if got := newlyBroken([]string{"aaa"}, previous); len(got) != 0 {
 		t.Fatalf("shrinking set must not alert, got %v", got)
 	}
-	// No baseline at all (empty map) reports everything — Run guards this
-	// case separately via hasBaseline so the first deploy doesn't page.
 	if got := newlyBroken([]string{"aaa"}, map[string]struct{}{}); !reflect.DeepEqual(got, []string{"aaa"}) {
 		t.Fatalf("want [aaa], got %v", got)
 	}
 }
 
-// The persisted list is what the next run diffs against, so its order must not
-// depend on map iteration or every run would look like churn.
 func TestDistinctHashesIsSortedAndDeduped(t *testing.T) {
 	refs := []imagerefs.Ref{
 		{Hash: "ccc", Kind: imagerefs.KindWorkCover, EntityID: 1},
@@ -47,8 +42,6 @@ func TestDistinctHashesIsSortedAndDeduped(t *testing.T) {
 	}
 }
 
-// A summary that says "8 hashes" is not actionable; "3 works" is what a human
-// goes and looks at. One work with several dead covers must count once.
 func TestAffectedEntitiesCountsDistinctEntitiesPerKind(t *testing.T) {
 	refs := []imagerefs.Ref{
 		{Hash: "a", Kind: imagerefs.KindWorkCover, EntityID: 10},
@@ -63,9 +56,6 @@ func TestAffectedEntitiesCountsDistinctEntitiesPerKind(t *testing.T) {
 	}
 }
 
-// The audit only means anything if it runs after the sweeps that mutate the
-// state it reads: image-gc hard-deletes, and the refpings are what keep a
-// hash alive in the first place.
 func TestImageRefAuditRunsAfterGCAndRefpings(t *testing.T) {
 	r := NewRegistry()
 	RegisterAll(r)

@@ -7,9 +7,6 @@ import (
 	"api/internal/platform/editing"
 )
 
-// Policy evaluation matrix (pure — no DB), registry validation, site
-// overlays, schema projection, and the revision list/diff read surface.
-
 func TestPolicyEvaluationMatrix(t *testing.T) {
 	anon := anonActor(1)
 	trusted := trustedActor(2)
@@ -54,10 +51,6 @@ func TestPolicyEvaluationMatrix(t *testing.T) {
 		}
 	}
 
-	// AutomergeReview delegates to the review rule: whoever COULD review the
-	// field direct-edits it. A review-perm holder and an OwnerReview owner
-	// automerge; a plain user (even trusted) and a bare owner without
-	// OwnerReview do not.
 	reviewMerge := editing.Policy{Propose: editing.ProposeOpen, Review: editing.ReviewPerm(permReview), Automerge: editing.AutomergeReview}
 	if reviewMerge.AllowsAutomerge(anon) || reviewMerge.AllowsAutomerge(trusted) {
 		t.Error("automerge=review must reject a non-reviewer")
@@ -82,7 +75,6 @@ func TestPolicyEvaluationMatrix(t *testing.T) {
 	if !rp.AllowsReview(reviewer) {
 		t.Error("reviewer must pass the review rule")
 	}
-	// nil HasPerm fails closed.
 	if rp.AllowsReview(editing.PolicyContext{UserID: 9}) {
 		t.Error("nil HasPerm must grant nothing")
 	}
@@ -118,7 +110,6 @@ func TestRegistryValidation(t *testing.T) {
 		}
 	}
 
-	// Valid spec registers once; a duplicate type is rejected.
 	reg := editing.NewRegistry()
 	if err := reg.Register(base()); err != nil {
 		t.Fatalf("valid spec: %v", err)
@@ -137,7 +128,6 @@ func TestSiteOverlay(t *testing.T) {
 		return pc
 	}
 
-	// Overlay locks open_note on overlay-site (default site: propose=open).
 	var lockedErr *editing.LockedFieldError
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
@@ -146,7 +136,6 @@ func TestSiteOverlay(t *testing.T) {
 		t.Fatalf("overlay-locked field: %v", err)
 	}
 
-	// Overlay opens name (perm-gated by default) with automerge=always.
 	_, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
 		Patch: map[string]any{fName: "overlay direct"}, Actor: onOverlaySite(anonActor(300)),
@@ -161,7 +150,6 @@ func TestSiteOverlay(t *testing.T) {
 		t.Fatalf("apply: %+v", w)
 	}
 
-	// The default site is untouched by the overlay.
 	var permErr *editing.PermissionError
 	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: "test.widget", EntityID: 1,
@@ -221,7 +209,6 @@ func TestSchemaProjection(t *testing.T) {
 		t.Errorf("trusted on trusted_note: %+v", p)
 	}
 
-	// Site overlay flows through the projection.
 	overlayActor := anonActor(4)
 	overlayActor.Site = overlaySite
 	overlayProj, err := e.SchemaProjection(testCtx, "test.widget", 0, overlayActor)
@@ -273,7 +260,6 @@ func TestListAndDiff(t *testing.T) {
 		t.Fatalf("diff: %+v", d)
 	}
 
-	// Same revision on both sides → no differences.
 	diffs, err = e.Diff(testCtx, "test.widget", 1, 2, 2)
 	if err != nil || len(diffs) != 0 {
 		t.Fatalf("self diff: %v %v", diffs, err)
@@ -282,7 +268,6 @@ func TestListAndDiff(t *testing.T) {
 		t.Fatalf("missing revision: %v", err)
 	}
 
-	// Proposal listing filters.
 	props, err := e.ListProposals(testCtx, editing.ProposalFilter{
 		EntityType: "test.widget", EntityID: 1, Status: editing.StatusMerged,
 	})

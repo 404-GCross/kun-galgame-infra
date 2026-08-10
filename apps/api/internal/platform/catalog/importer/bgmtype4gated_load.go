@@ -1,9 +1,5 @@
 package importer
 
-// Loaders for the Bangumi type-4 gated expansion (refs/proj/78): the pool query
-// with the grounded meta_tags gate predicates, the existing-work-title collision
-// index, and the unified cross-source (eg / dlsite-game / VNDB-ja) title corpus.
-
 import (
 	"fmt"
 
@@ -12,10 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// buildBgmGatedPoolQuery builds the pool query with the grounded meta_tags gate
-// predicates inlined as jsonb_exists / jsonb_exists_any (operator-free — GORM
-// treats the jsonb `?` operator as a bind placeholder). Returns every unanchored
-// type-4 subject with its SQL-decided sig_p / sig_t / console-mobile-excluded.
 func buildBgmGatedPoolQuery() string {
 	metaArr := `jsonb_typeof(s.meta_tags)='array'`
 	exAny := func(arr string) string { return `jsonb_exists_any(s.meta_tags, ` + arr + `)` }
@@ -36,15 +28,12 @@ func buildBgmGatedPoolQuery() string {
 		ORDER BY s.id`
 }
 
-// loadGatedPool returns every unanchored type-4 subject with its SQL flags.
 func (im *Importer) loadGatedPool() ([]poolRow, error) {
 	var rows []poolRow
 	err := im.catalog.Raw(buildBgmGatedPoolQuery(), bangumiSource, model.EntityTypeWork).Scan(&rows).Error
 	return rows, err
 }
 
-// loadExistingWorkTitleNorms indexes EVERY existing work title (norm ≥4) →
-// (work id, title) for the collision safety rope.
 func (im *Importer) loadExistingWorkTitleNorms() (map[string]wtNorm, error) {
 	var rows []struct {
 		Norm   string `gorm:"column:title_norm"`
@@ -59,21 +48,13 @@ func (im *Importer) loadExistingWorkTitleNorms() (map[string]wtNorm, error) {
 	}
 	out := make(map[string]wtNorm, len(rows))
 	for _, r := range rows {
-		if _, ok := out[r.Norm]; !ok { // first work wins — the sample only needs one target
+		if _, ok := out[r.Norm]; !ok {
 			out[r.Norm] = wtNorm{workID: r.WorkID, title: r.Title}
 		}
 	}
 	return out, nil
 }
 
-// loadCrossSourceNorms builds the unified NFKC-lower cross-source title set from
-// the three Japanese galgame/VN corpora: erogamespace game names, DLsite GAME
-// titles, and VNDB Japanese release titles (+ their romaji). All norms are
-// computed IN-SQL with the identical lower(normalize(col,NFKC)) fold, so equality
-// with the Bangumi name_norm generated column is byte-isomorphic.
-// The returned map keys each norm to the OR of the corpus bits (corpus*) that
-// contain it — so the X-only pure-ASCII tightening (RunBgmType4Gated) can count
-// how many DISTINCT corpora a norm hits.
 func (im *Importer) loadCrossSourceNorms(dlsiteDB *gorm.DB) (map[string]uint8, error) {
 	set := make(map[string]uint8, 300000)
 	collect := func(bit uint8, db *gorm.DB, query string, args ...any) error {
@@ -88,21 +69,17 @@ func (im *Importer) loadCrossSourceNorms(dlsiteDB *gorm.DB) (map[string]uint8, e
 		}
 		return nil
 	}
-	// erogamespace: pure Japanese PC eroge corpus.
 	if err := collect(corpusEG, im.eg,
 		`SELECT DISTINCT lower(normalize(gamename, NFKC)) FROM games WHERE gamename IS NOT NULL AND gamename <> ''`,
 	); err != nil {
 		return nil, fmt.Errorf("eg corpus: %w", err)
 	}
-	// DLsite: GAME work types only (excludes manga/CG/voice/etc).
 	if err := collect(corpusDLsite, dlsiteDB,
 		`SELECT DISTINCT lower(normalize(work_name, NFKC)) FROM works
 			WHERE status = 'fetched' AND work_name IS NOT NULL AND work_type_string = ANY(`+sqlDLsiteGameTypes()+`)`,
 	); err != nil {
 		return nil, fmt.Errorf("dlsite corpus: %w", err)
 	}
-	// VNDB: Japanese-original release titles + their romaji (drops en/ru/etc,
-	// whose generic titles collide with non-galgame subjects).
 	if err := collect(corpusVNDB, im.catalog,
 		`SELECT DISTINCT lower(normalize(title, NFKC)) FROM src_vndb.releases_titles WHERE lang = 'ja' AND title IS NOT NULL
 			UNION SELECT DISTINCT lower(normalize(latin, NFKC)) FROM src_vndb.releases_titles WHERE lang = 'ja' AND latin IS NOT NULL AND latin <> ''`,
@@ -112,8 +89,6 @@ func (im *Importer) loadCrossSourceNorms(dlsiteDB *gorm.DB) (map[string]uint8, e
 	return set, nil
 }
 
-// sqlDLsiteGameTypes renders the DLsite game-type allowlist as a SQL text[]
-// literal (a fixed, injection-free vocabulary).
 func sqlDLsiteGameTypes() string {
 	out := "array["
 	for i, t := range dlsiteGameTypes {

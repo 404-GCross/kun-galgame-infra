@@ -1,25 +1,3 @@
-// cmd/adopt-forum-resources backfills every legacy kungal (forum) toolset file
-// from the old `kun-forum` B2 bucket into the artifact service
-// (`kungal-artifact-v1`) under the unified opaque-key + Content-Disposition
-// scheme, then links the galgame_toolset_resource row to its new artifact_uuid.
-//
-// It is the forum twin of cmd/adopt-moyu-resources. Both buckets live in ONE B2
-// account, so this is a server-side CopyObject with MetadataDirective=REPLACE
-// (which bakes the original filename as an attachment Content-Disposition) — no
-// file bytes transit this process, no egress.
-//
-// Idempotent + resumable: the artifact UUID is derived deterministically from the
-// resource id (uuidv5), the artifact row is inserted ON CONFLICT DO NOTHING, and
-// already-linked resources are filtered out by the query. Dry-run by default.
-//
-//	go run ./cmd/adopt-forum-resources --apply
-//	docker run --rm --env-file <env> ghcr.io/kunmoe/infra-tools \
-//	  adopt-forum-resources --apply --concurrency=12
-//
-// Requires KUN_ARTIFACT_S3_ACCESS_KEY/SECRET_KEY to be an ACCOUNT-WIDE B2 key
-// (read on --src-bucket + write on the artifact bucket); the per-bucket service
-// key cannot read the source. Run AFTER migration 036 (the artifact_uuid column
-// must exist on galgame_toolset_resource).
 package main
 
 import (
@@ -50,17 +28,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// maxSingleCopyBytes is the S3/B2 single CopyObject ceiling; larger objects need
-// a multipart copy, which this one-off intentionally skips + logs. kungal's
-// artifact_max_file_size is 2 GB, well under it.
 const maxSingleCopyBytes = 5 * 1024 * 1024 * 1024
 
-// forumKeyRe recovers the original filename stem from a legacy toolset key. The
-// forum built keys as `toolset/{toolsetID}/{userID}_{base}_{salt}{ext}`, where
-// salt is exactly 7 alphanumeric chars — lowercase hex for current uploads, but
-// mixed-case base62 for older ones (a pre-refactor generator), so match
-// [0-9A-Za-z]. This strips the leading numeric userID_ and the trailing _{salt},
-// leaving {base}; the greedy (.+) anchors on the LAST _{7-alnum} = the real salt.
 var forumKeyRe = regexp.MustCompile(`^\d+_(.+)_[0-9A-Za-z]{7}$`)
 
 func main() {
@@ -93,8 +62,6 @@ func main() {
 		fatal("s3 client", err)
 	}
 
-	// Two databases on the same PG server: kun_artifacts (artifact rows) and the
-	// forum schema (galgame_toolset_resource link).
 	artDB, err := database.NewPostgresDB(cfg.ArtifactsDatabase)
 	if err != nil {
 		fatal("open artifacts db", err)
@@ -115,8 +82,6 @@ func main() {
 		Content string
 	}
 	var rows []row
-	// Legacy s3 toolset rows store the raw object key in `content`; new rows
-	// store artifact_uuid + empty content, so both filters exclude them.
 	q := toolsetDB.DB().WithContext(ctx).
 		Table("galgame_toolset_resource").
 		Select("id", "content").
@@ -140,7 +105,7 @@ func main() {
 			defer func() { <-sem }()
 
 			srcKey := r.Content
-			name := originalFilename(srcKey) // the real (CJK-preserving) filename
+			name := originalFilename(srcKey)
 			id := deterministicUUID(r.ID)
 			dstKey := *site + "/" + id + extForKey(name)
 
@@ -231,15 +196,10 @@ func main() {
 	}
 }
 
-// deterministicUUID derives a stable artifact UUID from a resource id so reruns
-// produce the same key/row (idempotent CopyObject + ON CONFLICT DO NOTHING).
 func deterministicUUID(resourceID int64) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "kungal-artifact:kungal:galgame_toolset_resource:%d", resourceID)).String()
 }
 
-// originalFilename recovers the user's original filename from a legacy toolset
-// object key (`toolset/{tid}/{uid}_{base}_{salt}{ext}`), falling back to the raw
-// basename if the key doesn't match that shape (e.g. hand-crafted keys).
 func originalFilename(key string) string {
 	base := path.Base(key)
 	ext := path.Ext(base)
@@ -250,7 +210,6 @@ func originalFilename(key string) string {
 	return base
 }
 
-// extForKey mirrors the artifact service: a lowercase, URL-safe extension or "".
 func extForKey(name string) string {
 	ext := strings.ToLower(path.Ext(name))
 	if len(ext) < 2 {

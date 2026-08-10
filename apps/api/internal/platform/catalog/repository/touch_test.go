@@ -18,8 +18,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres — TouchWorks is one raw UPDATE, so
-// there is nothing meaningful to assert without a live catalog_work table.
 var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
@@ -44,8 +42,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// mkWork inserts a live work and backdates its updated_at so any bump is
-// unambiguous (GORM stamps now() on create).
 func mkWork(t *testing.T, name string) int64 {
 	t.Helper()
 	w := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: name}
@@ -72,29 +68,21 @@ func TestTouchWorks(t *testing.T) {
 	b := mkWork(t, "touch-b")
 	c := mkWork(t, "touch-c")
 
-	// Empty and nil sets are a no-op that never reaches the database.
 	require.NoError(t, TouchWorks(ctx, testDB, nil))
 	require.NoError(t, TouchWorks(ctx, testDB, []int64{}))
 	assert.True(t, updatedAt(t, a).Equal(backdated), "empty set must not touch anything")
 
-	// Duplicates collapse; the untouched work stays put.
 	require.NoError(t, TouchWorks(ctx, testDB, []int64{a, b, a, b, a}))
 	assert.True(t, updatedAt(t, a).After(backdated), "a bumped")
 	assert.True(t, updatedAt(t, b).After(backdated), "b bumped")
 	assert.True(t, updatedAt(t, c).Equal(backdated), "c untouched")
 
-	// Ids that do not exist are harmless (a merged-away work can still sit in a
-	// caller's collected set).
 	require.NoError(t, TouchWorks(ctx, testDB, []int64{c, 9_000_001}))
 	assert.True(t, updatedAt(t, c).After(backdated), "c bumped")
 
-	// Zero ids are dropped rather than sent as a bogus predicate.
 	require.NoError(t, TouchWorks(ctx, testDB, []int64{0}))
 }
 
-// TestTouchWorksChunking drives more ids than one statement carries, so the
-// chunk loop is exercised end to end (bind parameters are the real limit the
-// chunking exists for).
 func TestTouchWorksChunking(t *testing.T) {
 	require.NoError(t, testDB.Exec(`TRUNCATE catalog_work RESTART IDENTITY CASCADE`).Error)
 	ctx := context.Background()

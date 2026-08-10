@@ -1,10 +1,3 @@
-// works_intros_test.go — the reindexer's Catalog-native synopsis loader.
-//
-// The service suite proves the SEARCH face gates intro matching correctly; this
-// proves the reindexer feeds it the right text in the first place. The property
-// that matters is that claimed and bodyless works both read
-// catalog_work_intro, a machine translation loses to a source row, and nothing
-// outside the index population contributes at all.
 package main
 
 import (
@@ -13,7 +6,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// introsOf flattens the loader's result for one work into lang → text.
 func introsOf(t *testing.T, workID int64) map[string]string {
 	t.Helper()
 	all, err := loadWorkIntros(facetTestDB)
@@ -27,12 +19,9 @@ func introsOf(t *testing.T, workID int64) map[string]string {
 	return out
 }
 
-// TestLoadWorkIntrosUsesCatalogRowsForEveryWork covers the native-only rule in
-// one corpus.
 func TestLoadWorkIntrosUsesCatalogRowsForEveryWork(t *testing.T) {
 	truncateFacetTables(t)
 
-	// Claimed works consume their already-materialized Catalog intro rows.
 	claimed := mkWork(t, "claimed-intro", model.WorkStatusLive, galgameMedium)
 	if err := facetTestDB.Exec(
 		`UPDATE catalog_work SET site = 'kungal', product_work_id = 96001 WHERE id = ?`,
@@ -55,15 +44,12 @@ func TestLoadWorkIntrosUsesCatalogRowsForEveryWork(t *testing.T) {
 		}
 	}
 
-	// ── bodyless: reads the native table, one row per language ──
 	bodyless := mkWork(t, "bodyless-intro", model.WorkStatusLive, galgameMedium)
 	for _, r := range []struct {
 		lang, intro string
 		source      int16
 		provenance  int16
 	}{
-		// Same language, two rows: the MACHINE one (provenance 1) must lose to
-		// the source row no matter its source id (step 75).
 		{"zh-Hans", "机翻译文", 2, 1},
 		{"zh-Hans", "源文", 3, 0},
 		{"ja", "native ja", 2, 0},
@@ -74,7 +60,6 @@ func TestLoadWorkIntrosUsesCatalogRowsForEveryWork(t *testing.T) {
 		}
 	}
 
-	// ── outside the population: a stub work contributes nothing ──
 	stub := mkWork(t, "stub-intro", model.WorkStatusStub, galgameMedium)
 	if err := facetTestDB.Create(&model.CatalogWorkIntro{
 		WorkID: stub, Lang: "ja", Intro: "スタブ", SourceID: 2,

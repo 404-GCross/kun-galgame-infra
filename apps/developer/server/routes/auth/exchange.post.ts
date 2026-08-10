@@ -1,13 +1,3 @@
-// Server-side OAuth Authorization-Code exchange for the developer-portal SSO
-// login. The /auth/callback page posts { code, code_verifier }; we swap it for
-// tokens at the IdP token endpoint with the confidential client_secret (SERVER
-// ONLY), then land the session cookies (see server/utils/oauth-session). The
-// access_token is returned in the body so the client can also seed its cookie
-// ref immediately; the refresh_token stays httpOnly and never reaches the JS.
-// Contract: docs/integration/oauth/01-oauth-endpoints.md §POST /oauth/token.
-// The response is read via the tokenWire helpers (server/utils/oauth-session),
-// which judge success by the presence of access_token in the bare RFC 6749
-// shape.
 import {
   tokenWireError,
   tokenWirePayload,
@@ -43,8 +33,6 @@ export default defineEventHandler(async (event) => {
   const tokens = tokenWirePayload(res)
   if (!tokens) {
     setResponseStatus(event, 400)
-    // The portal answers its OWN browser client in the house envelope; the
-    // upstream's RFC error string only supplies the message.
     return { code: -1, message: tokenWireError(res) || '登录失败' }
   }
 

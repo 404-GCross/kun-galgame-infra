@@ -6,9 +6,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// The tenant gate on the S2S work search (wave 162, 161 §6.P3-verdict STOP-5).
-// Before it, a multi-tenant registry could only be filtered client-side, which
-// makes a paged list return short pages and any count it derives wrong.
 func TestSearchWorksSiteFilter(t *testing.T) {
 	cleanTables(t)
 	ctx := t.Context()
@@ -48,7 +45,6 @@ func TestSearchWorksSiteFilter(t *testing.T) {
 		t.Fatalf("site gate: %+v", ours)
 	}
 
-	// The two gates AND together — the shape a tenant's review queue asks for.
 	queue, err := read.SearchWorks(ctx, "租户テスト", -1, 50,
 		[]string{model.ClaimStateKeyPending}, "kungal")
 	if err != nil {
@@ -66,8 +62,6 @@ func TestSearchWorksSiteFilter(t *testing.T) {
 		t.Fatalf("the gates must AND, not OR: %+v", empty)
 	}
 
-	// The gate is a predicate INSIDE the limited query, not a post-filter: a
-	// page of one over a two-tenant population still returns a row.
 	page, err := read.SearchWorks(ctx, "租户テスト", -1, 1, nil, "moyu")
 	if err != nil {
 		t.Fatal(err)

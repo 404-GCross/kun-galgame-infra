@@ -9,20 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestScreenshotsComeBackInPerSourceBlocks pins the wave-188 read-face ordering.
-//
-// sort_order is only meaningful WITHIN a source — every backfill numbers its own
-// gallery from 0 — so once a work carries rows from several sources, ordering by
-// sort_order first would interleave two unrelated sequences and fabricate an
-// order nobody authored. source_id leads the key instead, which yields the
-// per-source contiguous blocks the gallery UI groups on.
 func TestScreenshotsComeBackInPerSourceBlocks(t *testing.T) {
 	cleanTables(t)
 	w := createWork(t, "multi-source gallery")
 
-	// Two lanes with FULLY OVERLAPPING sort_orders — the case a sort_order-first
-	// key would shuffle. Inserted interleaved and out of order so neither
-	// insertion order nor the primary key can be what the assertion observes.
 	const (
 		srcVNDB   = int16(2)
 		srcDLsite = int16(4)

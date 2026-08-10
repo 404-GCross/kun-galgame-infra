@@ -15,7 +15,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Server holds the S2S intake-face dependencies.
 type Server struct {
 	reports  *service.ReportService
 	registry *service.RegistryService
@@ -24,9 +23,6 @@ type Server struct {
 	terms    *service.TermService
 }
 
-// Setup builds the trust S2S Huma API over the Fiber app. S2SAuth is applied by
-// the caller as path-scoped Fiber middleware BEFORE this. Callable with nil
-// services for spec export (handlers are never invoked then).
 func Setup(app *fiber.App, reports *service.ReportService, registry *service.RegistryService, forward *service.ForwardService, scan *service.ScanService, terms *service.TermService) huma.API {
 	InstallErrorEnvelope()
 
@@ -56,17 +52,10 @@ func (s *Server) register(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "submitScan", Method: http.MethodPost, Path: "/api/v1/trust/scan",
 		Summary: "Submit a content-scan event for async AI shadow-scoring (accept-type; site derived from the client binding)", Tags: intake}, s.submitScan)
 
-	// Tier0 sync word-list check (step 05). Stateless, deterministic, channel-
-	// independent (no AI gateway): the caller asks whether text trips the word
-	// list and gets allow/deny/hold back. Site three-state mirrors scan/forward.
 	check := []string{"trust-check"}
 	huma.Register(api, huma.Operation{OperationID: "checkText", Method: http.MethodPost, Path: "/api/v1/trust/check",
 		Summary: "Synchronous Tier0 word-list check (deterministic; allow/deny/hold; no state written)", Tags: check}, s.checkText)
 
-	// community→trust convergence (step 03). These carry `site` in the body
-	// (unlike /reports, which derives it from the client binding) because a
-	// forwarder relays for many community-backed sites through one S2S identity;
-	// the KUN_TRUST_FORWARDER_CLIENT_IDS allowlist is the counterweight.
 	fwd := []string{"trust-forward"}
 	huma.Register(api, huma.Operation{OperationID: "forwardReviewItem", Method: http.MethodPost, Path: "/api/v1/trust/forward",
 		Summary: "Forward a product's local review signal into the unified inbox (allowlist-gated)", Tags: fwd}, s.forwardReviewItem)
@@ -110,7 +99,6 @@ func (s *Server) resolveForwardedItem(ctx context.Context, in *resolveInput) (*r
 	return &resolveOutput{Body: okEnvelope(dto.ForwardResolveResponse{Closed: res.Closed})}, nil
 }
 
-// callerClientID returns the authenticated S2S client id (empty when unbound).
 func callerClientID(ctx context.Context) string {
 	if c := clientFromCtx(ctx); c != nil {
 		return c.ID
@@ -118,7 +106,6 @@ func callerClientID(ctx context.Context) string {
 	return ""
 }
 
-// mapForwardErr translates a forward/resolve service error into the house envelope.
 func mapForwardErr(op string, err error) *houseError {
 	switch {
 	case stderrors.Is(err, service.ErrForwarderNotAllowed):
@@ -167,10 +154,6 @@ type submitScanOutput struct {
 }
 
 func (s *Server) submitScan(ctx context.Context, in *submitScanInput) (*submitScanOutput, error) {
-	// Site three-state (step 04): an empty wire `site` derives from the client
-	// binding (the accept-type default); a non-empty wire `site` is the forwarder
-	// relay path, allowlist-gated in the service (mirrors the forward face). Only
-	// the default path needs a bound site, so siteBinding is consulted only then.
 	boundSite := ""
 	if in.Body.Site == "" {
 		site, he := siteBinding(ctx)
@@ -187,8 +170,6 @@ func (s *Server) submitScan(ctx context.Context, in *submitScanInput) (*submitSc
 		SubjectReach: in.Body.SubjectReach,
 	})
 	if err != nil {
-		// mapForwardErr covers both the allowlist 403 and the registry 422 the scan
-		// face now shares with the forward face.
 		return nil, mapForwardErr("submit scan", err)
 	}
 	return &submitScanOutput{Body: okEnvelope(dto.ScanResponse{
@@ -202,9 +183,6 @@ type checkOutput struct {
 }
 
 func (s *Server) checkText(ctx context.Context, in *checkInput) (*checkOutput, error) {
-	// Site three-state (mirrors submitScan): an empty wire `site` derives from the
-	// client binding; a non-empty wire `site` is the allowlist-gated relay path
-	// (checked in the service). Only the default path needs a bound site.
 	boundSite := ""
 	if in.Body.Site == "" {
 		site, he := siteBinding(ctx)
@@ -219,7 +197,6 @@ func (s *Server) checkText(ctx context.Context, in *checkInput) (*checkOutput, e
 		Text: in.Body.Text, AuthorID: in.Body.AuthorID,
 	})
 	if err != nil {
-		// mapForwardErr covers the allowlist 403; a snapshot DB error is a 500.
 		return nil, mapForwardErr("check", err)
 	}
 	return &checkOutput{Body: okEnvelope(dto.CheckResponse{
@@ -250,11 +227,6 @@ type ensureSubjectKindsOutput struct {
 	Body Envelope[dto.EnsureSubjectKindsResponse]
 }
 
-// ensureSubjectKinds converges the calling site's subject-kind registry to the
-// declared list. The tenant `site` is STRICTLY the client binding (self-site
-// only — a relay-tenant ensure is a triggered follow-up, not v1). Empty list →
-// empty result; over the 50-kind cap → 422. Deprecated kinds are never revived
-// (that is an admin decision).
 func (s *Server) ensureSubjectKinds(ctx context.Context, in *ensureSubjectKindsInput) (*ensureSubjectKindsOutput, error) {
 	site, he := siteBinding(ctx)
 	if he != nil {
@@ -291,7 +263,6 @@ func (s *Server) listReportReasons(ctx context.Context, _ *struct{}) (*listRepor
 	})}, nil
 }
 
-// mapIntakeErr translates an intake service error into the house envelope.
 func mapIntakeErr(op string, err error) *houseError {
 	switch {
 	case stderrors.Is(err, service.ErrSubjectKindNotRegistered):

@@ -12,9 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// registry holds the catalog registry ids this backfill needs, resolved by key
-// (never hardcoded) so a rehearsal / prod DB with different auto-increment
-// seeds still works — the bgmsummaries / workratings discipline.
 type registry struct {
 	galgameMedium int16
 	bangumiSource int16
@@ -35,25 +32,12 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one galgame work (claimed OR bodyless — T2 admits both) joined
-// to its EXACT Bangumi anchor's subject tags blob.
 type candidate struct {
 	WorkID    int64  `gorm:"column:work_id"`
 	SubjectID int64  `gorm:"column:subject_id"`
 	Tags      []byte `gorm:"column:tags"`
 }
 
-// loadCandidates resolves galgame works carrying an EXACT Bangumi work anchor —
-// matched_by UNRESTRICTED (every exact tier asserts identity, the 66/69/71
-// ruling; the bgmworkmeta precedent) — joined to the anchored subject's tags
-// jsonb, the same workratings bgm-lane join shape (src_bangumi is a schema
-// inside the catalog DB, single DSN). T2 (refs/proj/70 §3/§8, 88): NO claim
-// filter — the bgm folksonomy is a catalog-native SOURCE lane that materializes
-// for claimed and bodyless works alike (the read face merges it with the wiki
-// bridge). DISTINCT ON keeps ONE anchor per work (the lowest external_id); the
-// external_id→bigint cast is safe (surveyed: zero non-numeric exact bgm work
-// anchors — the 69 verification). Limit/Offset window the distinct-work list in
-// Go (the dlsitemedia chunking discipline).
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]candidate, error) {
 	var out []candidate
 	if err := db.WithContext(ctx).
@@ -72,27 +56,18 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offse
 	return window(out, limit, offset), nil
 }
 
-// subjectTag is one decided tag of a subject after defensive parsing: trimmed
-// name, highest count when the subject repeated the name.
 type subjectTag struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
 }
 
-// parseSubjectTags defensively decodes a subject's tags jsonb into the decided
-// tag list, bumping the stats counters (see the package doc for the branch
-// taxonomy). Returns nil when there is nothing to write (NULL/empty/malformed
-// — the caller just moves on). The decided list is ordered (count DESC, name)
-// for deterministic writes and samples.
 func parseSubjectTags(raw []byte, st *Stats) []subjectTag {
-	if len(raw) == 0 || string(raw) == "null" { // column NULL → no folksonomy
+	if len(raw) == 0 || string(raw) == "null" {
 		st.NoTags++
 		return nil
 	}
 	var els []subjectTag
 	if err := json.Unmarshal(raw, &els); err != nil {
-		// Not an array of {name,count} objects — a malformed dump row. Counted,
-		// never fatal.
 		st.NotArray++
 		return nil
 	}
@@ -100,11 +75,10 @@ func parseSubjectTags(raw []byte, st *Stats) []subjectTag {
 		st.NoTags++
 		return nil
 	}
-	// Trim + de-duplicate within the subject, keeping the highest count.
 	best := map[string]int{}
 	for _, el := range els {
 		name := strings.TrimSpace(el.Name)
-		if name == "" { // missing name key or whitespace-only name
+		if name == "" {
 			st.NameBlank++
 			continue
 		}
@@ -118,7 +92,7 @@ func parseSubjectTags(raw []byte, st *Stats) []subjectTag {
 		best[name] = el.Count
 	}
 	if len(best) == 0 {
-		return nil // every element was blank — already counted per element
+		return nil
 	}
 	out := make([]subjectTag, 0, len(best))
 	for name, count := range best {
@@ -133,8 +107,6 @@ func parseSubjectTags(raw []byte, st *Stats) []subjectTag {
 	return out
 }
 
-// window applies the offset/limit chunking to an already-distinct candidate
-// list (slicing keeps it obviously correct — the bgmsummaries discipline).
 func window[T any](in []T, limit, offset int) []T {
 	if offset > 0 {
 		if offset >= len(in) {

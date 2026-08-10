@@ -23,11 +23,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + registry seeds) plus the src_vndb / src_bangumi Silver
-// schemas co-located in ONE database, exactly as production lays them out (the
-// single-DSN premise of this job). Run drives the DSN itself, so the DSN — not
-// just the handle — is what the test hands it.
 var (
 	testDB  *gorm.DB
 	testDSN string
@@ -65,8 +60,6 @@ func TestMain(m *testing.M) {
 
 func clean(t *testing.T) {
 	t.Helper()
-	// One statement: catalog_person and catalog_credit_name reference each
-	// other, so they cannot be truncated apart.
 	require.NoError(t, testDB.Exec(`TRUNCATE catalog_external_ref, catalog_credit_name, catalog_person,
 		catalog_label_alias, catalog_label, src_vndb.staff_alias, src_vndb.staff, src_bangumi.person
 		RESTART IDENTITY CASCADE`).Error)
@@ -160,7 +153,6 @@ func countRows(t *testing.T, table, where string, args ...any) int64 {
 	return n
 }
 
-// clusterFile writes a clusters.jsonl the way wave 152 produced it.
 func clusterFile(t *testing.T, lines ...string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "clusters.jsonl")
@@ -173,20 +165,12 @@ func clusterLine(id, tier string, members ...int64) string {
 	return string(b)
 }
 
-// TestRun drives the whole wave end to end on a purpose-built fixture: the
-// mint of a fresh person with vndb/bangumi/dlsite anchors, the reuse of a
-// genesis person (with its existing gender left alone and its empty birth
-// columns filled), all five defer rules, the gender conflict that writes
-// nothing, the dry run's zero footprint, and second-pass idempotency.
 func TestRun(t *testing.T) {
 	clean(t)
 	ctx := t.Context()
 	vndb, bgm := sourceID(t, "vndb"), sourceID(t, "bangumi")
 	dlsite, eg := sourceID(t, "dlsite"), sourceID(t, "erogamespace")
 
-	// --- CA: a fresh person. vndb models the two pen names under ONE staff id
-	// (s1), whose MAIN alias is aid 101 — the second member — so the primary is
-	// decided by vndb, not by member order.
 	caPen := mkCreditName(t, "ひと美", nil)
 	caMain := mkCreditName(t, "北都南", nil)
 	mkStaff(t, "s1", 101, "f", map[int]string{100: "ひと美", 101: "北都南"})
@@ -196,7 +180,6 @@ func TestRun(t *testing.T) {
 	mkAnchor(t, caPen, dlsite, "900")
 	mkBGMPerson(t, 500, "北都南", `{"Fields":[{"Key":"性别","Value":"女"},{"Key":"生日","Value":"1978年3月4日"}]}`)
 
-	// --- CB: reuse of a genesis person that already declares a gender.
 	female := model.GenderFemale
 	hostB := mkPerson(t, "既存人物", &female)
 	cbLinked := mkCreditName(t, "既存名義", &hostB)
@@ -205,35 +188,29 @@ func TestRun(t *testing.T) {
 	mkAnchor(t, cbOrphan, eg, "700")
 	mkBGMPerson(t, 501, "既存人物", `{"Fields":[{"Key":"性别","Value":"男"},{"Key":"生日","Value":"12月25日"}]}`)
 
-	// --- CC: on the E4 split worklist.
 	ccA := mkCreditName(t, "井上", nil)
 	ccB := mkCreditName(t, "井上", nil)
 	mkAnchor(t, ccA, vndb, "110")
 	mkStaff(t, "s2", 110, "m", map[int]string{110: "井上"})
 
-	// --- CD: a member's name is also a label name.
 	mkLabel(t, "少女病")
 	cdA := mkCreditName(t, "少女病", nil)
 	cdB := mkCreditName(t, "Shoujobyou", nil)
 
-	// --- CE: an explicit organization marker.
 	ceA := mkCreditName(t, "Studio e.go!", nil)
 	ceB := mkCreditName(t, "studio ego", nil)
 
-	// --- CF: two existing persons — a MERGE, deferred to P2b.
 	p1 := mkPerson(t, "person-1", nil)
 	p2 := mkPerson(t, "person-2", nil)
 	cfA := mkCreditName(t, "cf-a", &p1)
 	cfB := mkCreditName(t, "cf-b", &p2)
 
-	// --- CG / CH: one existing person spread over two clusters.
 	p3 := mkPerson(t, "person-3", nil)
 	cgA := mkCreditName(t, "cg-a", &p3)
 	cgB := mkCreditName(t, "cg-b", nil)
 	chA := mkCreditName(t, "ch-a", &p3)
 	chB := mkCreditName(t, "ch-b", nil)
 
-	// --- CI: the sources disagree on gender — nothing is written for it.
 	ciA := mkCreditName(t, "ci-a", nil)
 	ciB := mkCreditName(t, "ci-b", nil)
 	mkStaff(t, "s3", 120, "m", map[int]string{120: "ci-a"})
@@ -241,7 +218,6 @@ func TestRun(t *testing.T) {
 	mkAnchor(t, ciB, bgm, "502")
 	mkBGMPerson(t, 502, "ci-b", `{"Fields":[{"Key":"性别","Value":"女"},{"Key":"生日","Value":"未知"}]}`)
 
-	// --- CR: tier=review, never consumed.
 	crA := mkCreditName(t, "cr-a", nil)
 	crB := mkCreditName(t, "cr-b", nil)
 
@@ -263,7 +239,6 @@ func TestRun(t *testing.T) {
 	personsBefore := countRows(t, "catalog_person", "")
 	linksBefore := countRows(t, "catalog_credit_name", "person_id IS NOT NULL")
 
-	// --- dry run: decides everything, writes nothing.
 	st, err := Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 10, st.ClustersTotal)
@@ -280,8 +255,6 @@ func TestRun(t *testing.T) {
 	assert.Equal(t, 2, st.WouldCreatePerson)
 	assert.Equal(t, 5, st.WouldLink, "CA 2 + CB 1 + CI 2")
 	assert.Equal(t, 1, st.LinksAlready, "CB's already-linked member")
-	// Anchors are structural, so a cluster whose gender the sources dispute
-	// still contributes both of its source ids.
 	assert.Equal(t, 7, st.WouldAnchor, "CA: s1+bgm500+dlsite900 · CB: bgm501+eg700 · CI: s3+bgm502")
 	assert.Equal(t, 1, st.WouldSetGender, "CA only: CB's host already has one, CI conflicts")
 	assert.Equal(t, 1, st.GenderKept)
@@ -292,7 +265,6 @@ func TestRun(t *testing.T) {
 	assert.Equal(t, linksBefore, countRows(t, "catalog_credit_name", "person_id IS NOT NULL"))
 	assert.Zero(t, countRows(t, "catalog_external_ref", "entity_type = ?", model.EntityTypePerson))
 
-	// --- apply.
 	st, err = Run(ctx, Opts{DSN: testDSN, ClustersPath: clusters, SplitWorklistPath: worklist, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 2, st.PersonsCreated)
@@ -301,8 +273,6 @@ func TestRun(t *testing.T) {
 	assert.Equal(t, 1, st.PersonsUpdated, "the reused host gains only its empty birth columns")
 	assert.Zero(t, st.Errors)
 
-	// CA: the vndb MAIN alias is the display name, and the person anchor is the
-	// STAFF id — never the alias aid that anchors the credit name.
 	caHost := personIDOf(t, caMain)
 	require.NotNil(t, caHost)
 	assert.Equal(t, caHost, personIDOf(t, caPen), "both pen names point at one person")
@@ -326,8 +296,6 @@ func TestRun(t *testing.T) {
 	assert.Equal(t, sourceVNDB, prov["gender"][0].Source, "vndb outranks bangumi as the writer of record")
 	assert.Equal(t, sourceBangumi, prov["birth_y"][0].Source)
 
-	// CB: the genesis person is the host — never a second row — its declared
-	// gender survives, and only the empty birth columns are filled.
 	assert.Equal(t, &hostB, personIDOf(t, cbOrphan))
 	cb := person(t, hostB)
 	assert.Equal(t, "既存人物", cb.DisplayName, "an existing display name is never re-elected")
@@ -337,12 +305,10 @@ func TestRun(t *testing.T) {
 	assert.EqualValues(t, 12, *cb.BirthM)
 	assert.EqualValues(t, 25, *cb.BirthD)
 
-	// CI: a gender disagreement writes NULL, and the cluster is still minted.
 	ciHost := personIDOf(t, ciA)
 	require.NotNil(t, ciHost)
 	assert.Nil(t, person(t, *ciHost).Gender, "disagreeing sources leave the column NULL")
 
-	// Deferred clusters are untouched, on every axis.
 	for _, id := range []int64{ccA, ccB, cdA, cdB, ceA, ceB, cgB, chB, crA, crB} {
 		assert.Nil(t, personIDOf(t, id), "deferred/unconsumed member %d must keep its NULL link", id)
 	}
@@ -354,8 +320,6 @@ func TestRun(t *testing.T) {
 	}
 	assert.Equal(t, personsBefore+2, countRows(t, "catalog_person", ""))
 
-	// --- second apply: zero writes, and zero DECISIONS to write, so the
-	// idempotency comes from the plan and not from a conflict backstop.
 	st, err = Run(ctx, Opts{DSN: testDSN, ClustersPath: clusters, SplitWorklistPath: worklist, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.WouldCreatePerson)
@@ -371,9 +335,6 @@ func TestRun(t *testing.T) {
 	assert.Equal(t, personsBefore+2, countRows(t, "catalog_person", ""))
 }
 
-// TestAnchorContradictionAborts pins the E1a tripwire: one source identity may
-// belong to exactly one person, so a cluster file that hands the same vndb
-// staff id to two clusters must stop the run instead of forking the identity.
 func TestAnchorContradictionAborts(t *testing.T) {
 	clean(t)
 	vndb := sourceID(t, "vndb")
@@ -390,7 +351,5 @@ func TestAnchorContradictionAborts(t *testing.T) {
 	_, err := Run(t.Context(), Opts{DSN: testDSN, ClustersPath: clusters, SplitWorklistPath: worklist, Apply: true})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "contradicts itself")
-	// The first cluster's own write stands (one transaction per cluster); what
-	// the tripwire prevents is the SECOND claim on the same source identity.
 	assert.EqualValues(t, 1, countRows(t, "catalog_external_ref", "entity_type = ?", model.EntityTypePerson))
 }

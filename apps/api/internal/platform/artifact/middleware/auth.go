@@ -1,5 +1,3 @@
-// Package middleware holds Fiber v3 middleware for the artifact service:
-// client authentication mirroring the image service (Basic S2S + Bearer JWT).
 package middleware
 
 import (
@@ -19,31 +17,18 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Locals keys written by ClientAuth into fiber.Ctx.
 const (
 	LocalOAuthClient = "artifact:oauth_client"
 	LocalSiteKey     = "artifact:site_key"
-	LocalUserSub     = "artifact:user_sub"    // uploader user uuid (JWT path only)
-	LocalAuthMethod  = "artifact:auth_method" // "basic" or "jwt"
+	LocalUserSub     = "artifact:user_sub"
+	LocalAuthMethod  = "artifact:auth_method"
 )
 
-// ClientHeaderID is the header the frontend includes to name the target OAuth
-// client (JWT path only; Basic embeds the client_id in the auth header).
 const ClientHeaderID = "X-Kun-Artifact-Client-Id"
 
-// uploadScope is the OAuth scope a user JWT must carry to upload.
 const uploadScope = "artifact:upload"
 
-// ClientAuth authenticates the caller via either path:
-//
-//  1. "Basic <b64(client_id:secret)>" — backend S2S (OAuth Client Credentials
-//     without issuing a token).
-//  2. "Bearer <user_jwt>" + "X-Kun-Artifact-Client-Id: <client_id>" — frontend
-//     direct upload. The JWT must carry the `artifact:upload` scope and the
-//     named client must belong to the same SiteID as the JWT (fail-closed).
 func ClientAuth(clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) fiber.Handler {
-	// Accept-both verifier (ES256/RS256 via the OP's JWKS + legacy HS256).
-	// HS256-only when KUN_OIDC_JWKS_URL is unset. Built once at startup.
 	verifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -67,8 +52,6 @@ func ClientAuth(clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) 
 		}
 
 		if err != nil {
-			// A key-store outage (JWKS unreachable) is a 503, not a 401 — the
-			// token may be perfectly valid.
 			if stderrors.Is(err, oidctoken.ErrKeyUnavailable) {
 				return response.Error(c, fiber.StatusServiceUnavailable, errors.ErrArtifactUnauthorized, "token verification temporarily unavailable")
 			}
@@ -98,8 +81,6 @@ func ClientAuth(clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) 
 		return c.Next()
 	}
 }
-
-// ---- auth path implementations ----
 
 var (
 	errBadClient        = stderrors.New("bad client")
@@ -135,8 +116,6 @@ func authenticateJWT(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHead
 	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 	claims, err := verifier.Parse(c.Context(), tokenStr)
 	if err != nil {
-		// Wrap rather than replace: errBadClient keeps the wire code, while a
-		// wrapped oidctoken.ErrKeyUnavailable lets the caller return 503.
 		return nil, "", fmt.Errorf("%w: %w", errBadClient, err)
 	}
 
@@ -160,8 +139,6 @@ func authenticateJWT(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHead
 		return nil, "", errSiteUnconfigured
 	}
 
-	// Fail-closed: the user's JWT must match the client's site. Any missing
-	// piece is a rejection, never a bypass (mirrors the image service).
 	if client.SiteID == nil || claims.SiteID == 0 || *client.SiteID != claims.SiteID {
 		return nil, "", errSiteMismatch
 	}
@@ -184,19 +161,16 @@ func parseBasicAuth(header string) (user, pass string, err error) {
 	return u, p, nil
 }
 
-// ClientFromCtx returns the authenticated OAuth client.
 func ClientFromCtx(c fiber.Ctx) *siteModel.OAuthClient {
 	v, _ := c.Locals(LocalOAuthClient).(*siteModel.OAuthClient)
 	return v
 }
 
-// SiteKeyFromCtx returns the authenticated site key.
 func SiteKeyFromCtx(c fiber.Ctx) string {
 	v, _ := c.Locals(LocalSiteKey).(string)
 	return v
 }
 
-// UserSubFromCtx returns the uploader user uuid when auth was via JWT; "" else.
 func UserSubFromCtx(c fiber.Ctx) string {
 	v, _ := c.Locals(LocalUserSub).(string)
 	return v

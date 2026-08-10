@@ -10,7 +10,6 @@ import (
 	"api/internal/platform/trust/model"
 )
 
-// mkOpenItem inserts a fresh pending review item and returns its id.
 func mkOpenItem(t *testing.T, subject string) int64 {
 	t.Helper()
 	it := model.TrustReviewItem{
@@ -23,7 +22,6 @@ func mkOpenItem(t *testing.T, subject string) int64 {
 	return it.ID
 }
 
-// mkOpenItemInSite inserts a fresh pending item for an arbitrary site.
 func mkOpenItemInSite(t *testing.T, site, subject string) int64 {
 	t.Helper()
 	it := model.TrustReviewItem{
@@ -36,17 +34,12 @@ func mkOpenItemInSite(t *testing.T, site, subject string) int64 {
 	return it.ID
 }
 
-// Step 04: the site-scope primitive on Get/Claim/Decide/List. A non-empty
-// siteScope confines the op to that site; a foreign-site item reads as
-// ErrReviewItemNotFound (never AlreadyClaimed), so existence never leaks. An
-// empty scope (platform staff) is unrestricted.
 func TestReviewSiteScopeEnforcement(t *testing.T) {
 	cleanTables(t)
 	svc := NewReviewService(testDB)
 	ownID := mkOpenItemInSite(t, "kungal", "own1")
 	foreignID := mkOpenItemInSite(t, "otokun", "for1")
 
-	// Get: own-site scope and unrestricted both see the item; foreign scope 404.
 	if _, _, err := svc.Get(context.Background(), ownID, "kungal"); err != nil {
 		t.Fatalf("get own-site scoped: %v", err)
 	}
@@ -57,7 +50,6 @@ func TestReviewSiteScopeEnforcement(t *testing.T) {
 		t.Fatalf("get foreign-site scoped: want ErrReviewItemNotFound, got %v", err)
 	}
 
-	// Claim: a foreign-site item is NotFound (404), not AlreadyClaimed (409).
 	if err := svc.Claim(context.Background(), foreignID, 1, "kungal"); !errors.Is(err, ErrReviewItemNotFound) {
 		t.Fatalf("claim foreign-site scoped: want ErrReviewItemNotFound, got %v", err)
 	}
@@ -65,7 +57,6 @@ func TestReviewSiteScopeEnforcement(t *testing.T) {
 		t.Fatalf("claim own-site scoped: %v", err)
 	}
 
-	// Decide: foreign-site item is NotFound; own-site (now claimed) decides fine.
 	if _, err := svc.Decide(context.Background(), DecideParams{
 		ID: foreignID, DecidedBy: 1, Decision: "dismissed", SiteScope: "kungal",
 	}); !errors.Is(err, ErrReviewItemNotFound) {
@@ -77,7 +68,6 @@ func TestReviewSiteScopeEnforcement(t *testing.T) {
 		t.Fatalf("decide own-site scoped: %v", err)
 	}
 
-	// List with a site filter returns only that site's items.
 	items, _, err := svc.List(context.Background(), ReviewFilters{Site: "otokun"})
 	if err != nil {
 		t.Fatalf("list otokun: %v", err)
@@ -92,7 +82,6 @@ func TestReviewSiteScopeEnforcement(t *testing.T) {
 	}
 }
 
-// E6: two claimers race one pending item → exactly one wins (SKIP LOCKED).
 func TestClaimConcurrency(t *testing.T) {
 	cleanTables(t)
 	id := mkOpenItem(t, "claimrace")
@@ -135,12 +124,10 @@ func TestClaimNotFound(t *testing.T) {
 	}
 }
 
-// E7: the decide state machine + disposition + audit-chain continuity.
 func TestDecideStateMachineAndAudit(t *testing.T) {
 	cleanTables(t)
 	svc := NewReviewService(testDB)
 
-	// actioned on a kind WITHOUT a callback → disposition.callback_status NULL.
 	registerKind(t, tSite, tKind, nil, nil)
 	id1 := mkOpenItem(t, "d1")
 	action := model.ActionRemove
@@ -164,14 +151,12 @@ func TestDecideStateMachineAndAudit(t *testing.T) {
 		t.Fatalf("no callback_url → callback_status must be NULL, got %v", *disp.CallbackStatus)
 	}
 
-	// Re-deciding a terminal item is an illegal transition.
 	if _, err := svc.Decide(context.Background(), DecideParams{
 		ID: id1, DecidedBy: 5, Decision: "dismissed",
 	}); !errors.Is(err, ErrIllegalTransition) {
 		t.Fatalf("re-decide: want ErrIllegalTransition, got %v", err)
 	}
 
-	// A second decision (dismiss) on a fresh item extends the audit chain.
 	id2 := mkOpenItem(t, "d2")
 	if _, err := svc.Decide(context.Background(), DecideParams{
 		ID: id2, DecidedBy: 6, Decision: "dismissed",
@@ -179,8 +164,6 @@ func TestDecideStateMachineAndAudit(t *testing.T) {
 		t.Fatalf("dismiss decide: %v", err)
 	}
 
-	// Audit chain: row1.prev = 32 zero bytes; each row's prev == the previous
-	// row's hash (章程 ruling 10).
 	var rows []model.TrustAuditLog
 	if err := testDB.Order("id ASC").Find(&rows).Error; err != nil {
 		t.Fatalf("load audit rows: %v", err)
@@ -198,16 +181,13 @@ func TestDecideStateMachineAndAudit(t *testing.T) {
 	}
 }
 
-// TestDecideInvalid pins the malformed-actioned guard.
 func TestDecideInvalid(t *testing.T) {
 	cleanTables(t)
 	id := mkOpenItem(t, "inv")
 	svc := NewReviewService(testDB)
-	// actioned without action/reason_code.
 	if _, err := svc.Decide(context.Background(), DecideParams{ID: id, DecidedBy: 1, Decision: "actioned"}); !errors.Is(err, ErrInvalidDecision) {
 		t.Fatalf("actioned without action: want ErrInvalidDecision, got %v", err)
 	}
-	// unknown decision.
 	if _, err := svc.Decide(context.Background(), DecideParams{ID: id, DecidedBy: 1, Decision: "maybe"}); !errors.Is(err, ErrInvalidDecision) {
 		t.Fatalf("unknown decision: want ErrInvalidDecision, got %v", err)
 	}

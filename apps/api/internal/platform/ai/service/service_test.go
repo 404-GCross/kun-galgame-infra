@@ -16,10 +16,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration tests against a real Postgres (the trust/community convention):
-// TEST_DATABASE_DSN or a local default; a missing database skips the whole
-// package. Schema comes from migrate.Run — the exact production migration.
-
 var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
@@ -46,8 +42,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// cleanTables truncates the mutable tables so ordering-independent probes start
-// fresh.
 func cleanTables(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{"ai_usage", "ai_route_budget"} {
@@ -57,8 +51,6 @@ func cleanTables(t *testing.T) {
 	}
 }
 
-// fakeUpstream is a deterministic upstreamClient: it records whether it was
-// dialled (calls) so the degraded / over-budget paths can assert "no call".
 type fakeUpstream struct {
 	configured bool
 	model      string
@@ -77,9 +69,6 @@ func (f *fakeUpstream) ChatJSON(_ context.Context, _, _ string, _ int) (upstream
 	return f.result, nil
 }
 
-// fakeOmni is a deterministic omniClient (Tier1): it records dial count so the
-// "omni off" / "LLM final" / conviction paths can assert whether the coarse pass
-// ran. An unconfigured fakeOmni ({}) drives the today's-behavior LLM-only path.
 type fakeOmni struct {
 	configured bool
 	model      string
@@ -98,14 +87,10 @@ func (f *fakeOmni) Moderate(_ context.Context, _ string) (upstream.OmniResult, e
 	return f.result, nil
 }
 
-// newLLMOnly builds a service with Tier1 (omni) OFF — the today's-behavior path
-// the six-state regression exercises. The cascade knobs are irrelevant when omni
-// is off (they are never reached).
 func newLLMOnly(llm upstreamClient) *ModerationService {
 	return NewModerationService(testDB, &fakeOmni{}, llm, ModerationOptions{})
 }
 
-// insertBudget writes a budget row (cap nil = an explicit no-cap override row).
 func insertBudget(t *testing.T, route, site string, cap *int64) {
 	t.Helper()
 	if err := testDB.Create(&model.AIRouteBudget{Route: route, Site: site, DailyCostCapMicro: cap}).Error; err != nil {
@@ -113,8 +98,6 @@ func insertBudget(t *testing.T, route, site string, cap *int64) {
 	}
 }
 
-// insertUsageCost writes a usage row with an explicit cost_micro dated now, to
-// simulate accumulated daily spend for the budget fuse.
 func insertUsageCost(t *testing.T, site, route string, cost int64) {
 	t.Helper()
 	if err := testDB.Create(&model.AIUsage{
@@ -124,7 +107,6 @@ func insertUsageCost(t *testing.T, site, route string, cost int64) {
 	}
 }
 
-// usageRows returns the metered rows for a site+route ordered by id.
 func usageRows(t *testing.T, site, route string) []model.AIUsage {
 	t.Helper()
 	var rows []model.AIUsage

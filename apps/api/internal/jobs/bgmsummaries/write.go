@@ -12,30 +12,20 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// previewRunes is how many runes of a summary a Sample carries.
 const previewRunes = 40
 
-// runner carries per-run dependencies + stats (serial, plain ints).
 type runner struct {
 	db       *gorm.DB
 	sourceID int16
-	exist    map[int64]map[string]bool // work_id → intro langs already present (any source)
+	exist    map[int64]map[string]bool
 	stats    *Stats
-	// touched collects works that actually gained an intro row, so the run bumps
-	// their catalog_work.updated_at once at the end and the public changes feed
-	// learns the work is worth re-pulling. Skips, conflicts and dry-runs
-	// contribute nothing, so a second --apply moves no watermark.
-	touched []int64
+	touched  []int64
 }
 
-// touch bumps updated_at on every work this run wrote an intro for.
 func (r *runner) touch(ctx context.Context) error {
 	return repository.TouchWorks(ctx, r.db, r.touched)
 }
 
-// process walks the candidates and applies the fill-missing-language rule:
-// one summary → one row in its detected language, written ONLY when the work
-// has no intro row in that language yet.
 func (r *runner) process(ctx context.Context, cands []candidate, apply bool) {
 	for _, c := range cands {
 		if ctx.Err() != nil {
@@ -45,7 +35,6 @@ func (r *runner) process(ctx context.Context, cands []candidate, apply bool) {
 	}
 }
 
-// enrich decides and (in apply mode) writes one candidate's intro row.
 func (r *runner) enrich(ctx context.Context, c candidate, apply bool) {
 	text := normalizeSummary(c.Summary)
 	if strings.TrimSpace(text) == "" {
@@ -53,7 +42,7 @@ func (r *runner) enrich(ctx context.Context, c candidate, apply bool) {
 		return
 	}
 	lang, ok := detectLang(text)
-	if !ok { // no CJK evidence — never guess a language tag (the 164 defect)
+	if !ok {
 		r.stats.NoLang++
 		r.collect(&r.stats.NoLangSamples, c, "", text)
 		return
@@ -64,7 +53,6 @@ func (r *runner) enrich(ctx context.Context, c candidate, apply bool) {
 		return
 	}
 
-	// Decided plan — identical in dry and apply.
 	if lang == langJa {
 		r.stats.JaFill++
 		r.collect(&r.stats.JaSamples, c, lang, text)
@@ -87,12 +75,10 @@ func (r *runner) enrich(ctx context.Context, c candidate, apply bool) {
 		slog.Warn("write intro", "work", c.WorkID, "subject", c.SubjectID, "lang", lang, "err", res.Error)
 		return
 	}
-	if res.RowsAffected == 0 { // concurrent writer / backstop — row already there
+	if res.RowsAffected == 0 {
 		r.stats.Conflict++
 		return
 	}
-	// Mark the lang present so a later same-run duplicate (can't happen under
-	// DISTINCT ON, but stays honest) skips via the primary rule.
 	set := r.exist[c.WorkID]
 	if set == nil {
 		set = map[string]bool{}
@@ -110,7 +96,6 @@ func (r *runner) enrich(ctx context.Context, c candidate, apply bool) {
 	}
 }
 
-// collect appends a capped Sample for logging / test assertions.
 func (r *runner) collect(dst *[]Sample, c candidate, lang, text string) {
 	if len(*dst) >= maxSamples {
 		return
@@ -118,7 +103,6 @@ func (r *runner) collect(dst *[]Sample, c candidate, lang, text string) {
 	*dst = append(*dst, Sample{WorkID: c.WorkID, SubjectID: c.SubjectID, Lang: lang, Preview: preview(text)})
 }
 
-// preview flattens newlines and truncates to previewRunes for log lines.
 func preview(s string) string {
 	s = strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
 	runes := []rune(s)

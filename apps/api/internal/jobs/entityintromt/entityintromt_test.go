@@ -19,19 +19,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + seeds), exactly as production lays it out. Run drives the DSN
-// itself, so we capture it (not just the handle) to exercise the real entry
-// point.
 var (
 	testDB  *gorm.DB
 	testDSN string
 )
 
-// TestMain gates the DB-backed tests PER TEST (dbtest.Skip) rather than exiting
-// the whole package (dbtest.SkipMain). The package also holds pure functions —
-// the decision table, the lane vocabulary — and a package-level exit would
-// report them as `ok` while running none of them.
 func TestMain(m *testing.M) {
 	var ok bool
 	testDSN, ok = dbtest.DSN()
@@ -56,17 +48,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// --- fixtures -------------------------------------------------------------
-
 func clean(t *testing.T) {
 	t.Helper()
 	if testDB == nil {
 		dbtest.Skip(t)
 	}
-	// Children first: the intro tables FK their entity, so truncating them up
-	// front keeps the entity truncate from depending on the CASCADE order. No
-	// RESTART IDENTITY — the sequences are shared with every other package
-	// running against this database and rewinding them cross-pollinates ids.
 	for _, table := range []string{
 		"catalog_character_intro", "catalog_person_intro", "catalog_label_intro",
 		"catalog_character", "catalog_person", "catalog_label",
@@ -105,7 +91,6 @@ func mkLabel(t *testing.T, name string) int64 {
 	return l.ID
 }
 
-// mkCharIntro inserts a SOURCE intro row (provenance 0) for a character.
 func mkCharIntro(t *testing.T, charID int64, lang, intro string, source int16) {
 	t.Helper()
 	require.NoError(t, testDB.Create(&model.CatalogCharacterIntro{
@@ -134,7 +119,6 @@ func charLane(t *testing.T) laneDef {
 	return l[0]
 }
 
-// machineRow reads back the machine zh-Hans row for a character, if any.
 type machineRow struct {
 	Intro     string
 	SourceID  int16
@@ -155,8 +139,6 @@ func readMachine(t *testing.T, charID int64) (machineRow, bool) {
 	}
 	return rows[0], true
 }
-
-// --- pure tests -----------------------------------------------------------
 
 func TestDecide(t *testing.T) {
 	const text = "テスト用の紹介文"
@@ -192,15 +174,12 @@ func TestSelectLanes(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// --- DB-backed tests ------------------------------------------------------
-
 func TestLoadCandidates_SourcePreference(t *testing.T) {
 	clean(t)
 	vndb, bangumi := srcIDs(t)
 	ctx := context.Background()
 	lane := charLane(t)
 
-	// Both languages present: ja wins, and among ja rows the lowest source_id.
 	both := mkCharacter(t, "both")
 	lo, hi := min(vndb, bangumi), max(vndb, bangumi)
 	mkCharIntro(t, both, "en", "english text", lo)
@@ -210,12 +189,10 @@ func TestLoadCandidates_SourcePreference(t *testing.T) {
 	enOnly := mkCharacter(t, "en only")
 	mkCharIntro(t, enOnly, "en", "only english", lo)
 
-	// A zh SOURCE row means the language is not missing — excluded.
 	hasZh := mkCharacter(t, "has zh")
 	mkCharIntro(t, hasZh, "ja", "日本語", lo)
 	mkCharIntro(t, hasZh, "zh-Hans", "中文", hi)
 
-	// Soft-deleted entities are gone from the read face, so they are not work.
 	deleted := mkCharacter(t, "deleted")
 	mkCharIntro(t, deleted, "ja", "日本語", lo)
 	require.NoError(t, testDB.Delete(&model.CatalogCharacter{}, deleted).Error)
@@ -270,7 +247,6 @@ func TestApply_MockWritePath(t *testing.T) {
 	assert.Contains(t, row.Intro, "rehearsal mock")
 	firstWrite := row.UpdatedAt
 
-	// Second run: the source is unchanged, so nothing is translated or written.
 	st, err = Run(ctx, MockTranslator{}, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st[0].SkipUnchanged)
@@ -281,7 +257,6 @@ func TestApply_MockWritePath(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, again.UpdatedAt.Equal(firstWrite), "idempotent skip must not rewrite the row")
 
-	// Changing the source flips the hash and re-translates in place.
 	const newText = "ヒロインの一人。実は生徒会長でもある。"
 	require.NoError(t, testDB.Exec(
 		`UPDATE catalog_character_intro SET intro = ? WHERE character_id = ? AND lang = 'ja' AND provenance = 0`,
@@ -303,10 +278,6 @@ func TestApply_NeverOverwritesSourceRow(t *testing.T) {
 	vndb, _ := srcIDs(t)
 	ctx := context.Background()
 
-	// The candidate query already excludes an entity holding a zh source row,
-	// so the never-overwrite guard is unreachable from Run. Exercise the upsert
-	// directly — that is the layer that has to hold if a source row lands
-	// mid-run, between the candidate read and the write.
 	id := mkCharacter(t, "guarded")
 	mkCharIntro(t, id, "ja", "日本語の紹介", vndb)
 	mkCharIntro(t, id, "zh-Hans", "人工翻译的中文简介", vndb)
@@ -352,7 +323,6 @@ func TestApply_AllLanes(t *testing.T) {
 	}
 	assert.Equal(t, 1, st[1].FromEn, "the person lane's only source is English")
 
-	// Every lane's entity is touched, so downstream consumers see the change.
 	for _, tbl := range []struct {
 		table string
 		id    int64

@@ -1,10 +1,3 @@
-// Package oidckeys provides the low-level cryptography for the OIDC OP's
-// signing keys: keypair generation (ES256 / RS256), JWK (RFC 7517) public
-// encoding with RFC 7638 thumbprint key ids, and AES-256-GCM encryption of
-// private keys at rest. It holds NO database or config coupling — the
-// signing-key service (internal/platform/auth) owns lifecycle + storage.
-//
-// Design: docs/auth/03-oidc-standardization-design.md §4.
 package oidckeys
 
 import (
@@ -30,9 +23,6 @@ const (
 	rsaBits  = 2048
 )
 
-// KeyMaterial is a freshly generated signing key: its public JWK (ready to
-// publish in a JWK Set), the PKCS#8-DER private key (to be encrypted at rest),
-// and the RFC 7638 thumbprint used as the `kid`.
 type KeyMaterial struct {
 	Kid        string
 	Alg        string
@@ -40,9 +30,6 @@ type KeyMaterial struct {
 	PrivateDER []byte
 }
 
-// Generate creates a new signing keypair for the given alg (ES256 or RS256).
-// The returned PublicJWK already carries use/alg/kid and is safe to serve in a
-// JWK Set; PrivateDER is raw PKCS#8 and MUST be encrypted before storage.
 func Generate(alg string) (*KeyMaterial, error) {
 	switch alg {
 	case AlgES256:
@@ -88,14 +75,12 @@ func finalize(alg string, jwk map[string]string, der []byte) (*KeyMaterial, erro
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
 func ecPublicJWK(pub *ecdsa.PublicKey) (map[string]string, error) {
-	// Use the ecdh view to read the raw point (0x04 || X || Y, uncompressed)
-	// instead of the deprecated pub.X / pub.Y big.Int coordinates.
 	ep, err := pub.ECDH()
 	if err != nil {
 		return nil, err
 	}
 	raw := ep.Bytes()
-	byteLen := (len(raw) - 1) / 2 // 32 for P-256
+	byteLen := (len(raw) - 1) / 2
 	x := raw[1 : 1+byteLen]
 	y := raw[1+byteLen:]
 	return map[string]string{"kty": "EC", "crv": "P-256", "x": b64(x), "y": b64(y)}, nil
@@ -109,9 +94,6 @@ func rsaPublicJWK(pub *rsa.PublicKey) map[string]string {
 	}
 }
 
-// thumbprint computes the RFC 7638 JWK thumbprint (SHA-256, base64url) over the
-// required members only. Go's json.Marshal emits map keys in lexicographic
-// order, which is exactly RFC 7638's required member ordering.
 func thumbprint(jwk map[string]string) (string, error) {
 	var req map[string]string
 	switch jwk["kty"] {
@@ -130,18 +112,10 @@ func thumbprint(jwk map[string]string) (string, error) {
 	return b64(sum[:]), nil
 }
 
-// ParsePrivate parses a PKCS#8-DER private key into the concrete key type that
-// golang-jwt's ES256/RS256 signing methods expect (*ecdsa.PrivateKey /
-// *rsa.PrivateKey).
 func ParsePrivate(der []byte) (any, error) {
 	return x509.ParsePKCS8PrivateKey(der)
 }
 
-// PublicKeyFromJWK reconstructs a crypto.PublicKey from a public JWK (the
-// inverse of the JWK encoding in Generate). EC keys go via crypto/ecdh + a PKIX
-// round-trip to a *ecdsa.PublicKey (avoids the deprecated ecdsa.X/Y fields);
-// RSA keys are built directly. Used by verifiers (golang-jwt ES256/RS256 accept
-// *ecdsa.PublicKey / *rsa.PublicKey).
 func PublicKeyFromJWK(jwk map[string]any) (crypto.PublicKey, error) {
 	kty, _ := jwk["kty"].(string)
 	switch kty {
@@ -160,10 +134,10 @@ func PublicKeyFromJWK(jwk map[string]any) (crypto.PublicKey, error) {
 			return nil, fmt.Errorf("oidckeys: bad EC y: %w", err)
 		}
 		point := make([]byte, 0, 1+len(x)+len(y))
-		point = append(point, 0x04) // uncompressed
+		point = append(point, 0x04)
 		point = append(point, x...)
 		point = append(point, y...)
-		ecdhPub, err := ecdh.P256().NewPublicKey(point) // validates on-curve
+		ecdhPub, err := ecdh.P256().NewPublicKey(point)
 		if err != nil {
 			return nil, fmt.Errorf("oidckeys: bad EC point: %w", err)
 		}
@@ -171,7 +145,7 @@ func PublicKeyFromJWK(jwk map[string]any) (crypto.PublicKey, error) {
 		if err != nil {
 			return nil, err
 		}
-		return x509.ParsePKIXPublicKey(der) // -> *ecdsa.PublicKey
+		return x509.ParsePKIXPublicKey(der)
 	case "RSA":
 		ns, _ := jwk["n"].(string)
 		es, _ := jwk["e"].(string)
@@ -192,9 +166,6 @@ func PublicKeyFromJWK(jwk map[string]any) (crypto.PublicKey, error) {
 	}
 }
 
-// ParseJWKSet parses a JWK Set ({"keys":[...]}) into a kid -> public key map.
-// Unsupported / malformed entries are skipped (best-effort) rather than
-// failing the whole set.
 func ParseJWKSet(raw []byte) (map[string]crypto.PublicKey, error) {
 	var set struct {
 		Keys []map[string]any `json:"keys"`
@@ -217,18 +188,11 @@ func ParseJWKSet(raw []byte) (map[string]crypto.PublicKey, error) {
 	return out, nil
 }
 
-// --- AES-256-GCM at-rest encryption for private keys (KEK from config) ---
-
-// DeriveKEK turns an arbitrary-length secret string into a fixed 32-byte
-// AES-256 key via SHA-256, so the operator can supply any high-entropy
-// passphrase for KUN_OIDC_KEY_ENC_KEY.
 func DeriveKEK(secret string) []byte {
 	sum := sha256.Sum256([]byte(secret))
 	return sum[:]
 }
 
-// Encrypt seals plaintext with AES-256-GCM; the random nonce is prepended to
-// the ciphertext (nonce || ciphertext).
 func Encrypt(kek, plaintext []byte) ([]byte, error) {
 	gcm, err := newGCM(kek)
 	if err != nil {
@@ -241,7 +205,6 @@ func Encrypt(kek, plaintext []byte) ([]byte, error) {
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }
 
-// Decrypt reverses Encrypt. Fails (non-nil error) on a wrong KEK or tampering.
 func Decrypt(kek, data []byte) ([]byte, error) {
 	gcm, err := newGCM(kek)
 	if err != nil {

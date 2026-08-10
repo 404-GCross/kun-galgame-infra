@@ -19,14 +19,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + registry seeds), the src_bangumi Silver schema, and minimal
-// EG + DLsite mirror fixtures ALL co-located in ONE database. Each mirror
-// fixture lives in its OWN schema (workratings_eg / workratings_dl) reached
-// via a search_path DSN — the shared test DB's public.games belongs to
-// importer_test.go (a different shape) and must not be clobbered. Run drives
-// the DSNs itself, so we capture them (not just the handle) to exercise the
-// real entry point.
 var (
 	testDB    *gorm.DB
 	testDSN   string
@@ -56,10 +48,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: src_bangumi schema failed: %v\n", err)
 		os.Exit(0)
 	}
-	// Minimal mirror shapes (only the columns the loaders touch), each in a
-	// DEDICATED schema so the shared test DB's public.games (importer_test.go's
-	// fixture, a different shape) is never clobbered. The search_path DSNs
-	// resolve the unqualified table names there.
 	for _, ddl := range []string{
 		`CREATE SCHEMA IF NOT EXISTS workratings_eg`,
 		`CREATE TABLE IF NOT EXISTS workratings_eg.games (id int PRIMARY KEY, median int, count2 int)`,
@@ -102,8 +90,6 @@ func mkAnchor(t *testing.T, workID int64, externalID string, source, kind int16,
 	}).Error)
 }
 
-// mkReleaseAnchor attaches a RELEASE-level external ref (the DLsite anchor
-// shape — worknos are SKU-natured and hang off catalog_release).
 func mkReleaseAnchor(t *testing.T, workID int64, externalID string, source, kind int16) {
 	t.Helper()
 	rel := model.CatalogRelease{WorkID: workID, Kind: model.ReleaseKindDigital}
@@ -133,8 +119,6 @@ func mkEGGame(t *testing.T, id int, median *int, count2 int) {
 	require.NoError(t, testDB.Exec(`INSERT INTO workratings_eg.games (id, median, count2) VALUES (?, ?, ?)`, id, median, count2).Error)
 }
 
-// mkDlsiteWork writes one DLsite mirror row; nil pointers leave the key out of
-// info_json entirely (the real mirror's "not published" shape).
 func mkDlsiteWork(t *testing.T, workno string, star *float64, rc *int, dl, wl *int64, rv *int) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`INSERT INTO workratings_dl.works (workno, info_json)
@@ -162,18 +146,10 @@ func p(v int) *int          { return &v }
 func pf(v float64) *float64 { return &v }
 func pl(v int64) *int64     { return &v }
 
-// runOpts returns the three-DSN Opts for a test run.
 func runOpts(apply bool) Opts {
 	return Opts{DSN: testDSN, EGDSN: egTestDSN, DlsiteDSN: dlTestDSN, Apply: apply}
 }
 
-// TestBackfillWorkRatings exercises the whole pipeline through the real Run
-// entry point: per-lane candidate selection (exact anchors only, bodyless
-// only, dlsite release-level + galgame-medium only), the score>0 / NULL-median
-// / no-rating filters, vote_count derivation from score_details, rank NULL
-// semantics, EG multi-anchor collapse, popularity row planning, dry-run
-// zero-write, apply value fidelity, second-pass change-detected no-op, and the
-// refresh loop (mutate a mirror value → re-run → row updated).
 func TestBackfillWorkRatings(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -182,36 +158,32 @@ func TestBackfillWorkRatings(t *testing.T) {
 
 	claimed := "galgame_wiki"
 
-	// --- bangumi lane fixtures ---
-	wBgm := mkWork(t, reg.galgameMedium, "bgm-scored", nil)      // scored subject → planned (rank 321)
-	wBgmZero := mkWork(t, reg.galgameMedium, "bgm-unrated", nil) // score 0 → bgm_no_score
+	wBgm := mkWork(t, reg.galgameMedium, "bgm-scored", nil)
+	wBgmZero := mkWork(t, reg.galgameMedium, "bgm-unrated", nil)
 	wBgmNoRank := mkWork(t, reg.galgameMedium, "bgm-norank", nil)
-	// CLAIMED works are peers of bodyless ones since the W1-pre nativization
-	// (refs/proj/140 §2.6): this importer owns their bgm/eg/dlsite rows too.
 	wBgmClaimed := mkWork(t, reg.galgameMedium, "bgm-claimed", &claimed)
-	wBgmProbable := mkWork(t, reg.galgameMedium, "bgm-probable", nil) // probable tier → excluded by SQL
-	mkSubject(t, 101, 7.4, 321, `{"1":0,"5":10,"7":20,"10":12}`)      // votes = 42
-	mkSubject(t, 102, 0, 0, `{"1":0}`)                                // unrated
-	mkSubject(t, 103, 5.5, 0, `{"5":3}`)                              // rank 0 → NULL rank, votes 3
-	mkSubject(t, 104, 8.0, 1, `{"10":5}`)                             // behind a claimed work
-	mkSubject(t, 105, 8.0, 1, `{"10":5}`)                             // behind a probable anchor
+	wBgmProbable := mkWork(t, reg.galgameMedium, "bgm-probable", nil)
+	mkSubject(t, 101, 7.4, 321, `{"1":0,"5":10,"7":20,"10":12}`)
+	mkSubject(t, 102, 0, 0, `{"1":0}`)
+	mkSubject(t, 103, 5.5, 0, `{"5":3}`)
+	mkSubject(t, 104, 8.0, 1, `{"10":5}`)
+	mkSubject(t, 105, 8.0, 1, `{"10":5}`)
 	mkAnchor(t, wBgm, "101", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
 	mkAnchor(t, wBgmZero, "102", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
 	mkAnchor(t, wBgmNoRank, "103", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
 	mkAnchor(t, wBgmClaimed, "104", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
 	mkAnchor(t, wBgmProbable, "105", reg.bangumiSource, model.LinkKindProbable, "rule:bgm-title-only")
 
-	// --- erogamespace lane fixtures ---
-	wEg := mkWork(t, reg.galgameMedium, "eg-scored", nil)              // median 78 → planned
-	wEgNoMedian := mkWork(t, reg.galgameMedium, "eg-nomedian", nil)    // NULL median → eg_no_median
-	wEgMissing := mkWork(t, reg.galgameMedium, "eg-missing", nil)      // absent from mirror
-	wEgMulti := mkWork(t, reg.galgameMedium, "eg-multianchor", nil)    // two anchors → most-voted wins
-	wEgClaimed := mkWork(t, reg.galgameMedium, "eg-claimed", &claimed) // a peer now
+	wEg := mkWork(t, reg.galgameMedium, "eg-scored", nil)
+	wEgNoMedian := mkWork(t, reg.galgameMedium, "eg-nomedian", nil)
+	wEgMissing := mkWork(t, reg.galgameMedium, "eg-missing", nil)
+	wEgMulti := mkWork(t, reg.galgameMedium, "eg-multianchor", nil)
+	wEgClaimed := mkWork(t, reg.galgameMedium, "eg-claimed", &claimed)
 	mkEGGame(t, 1001, p(78), 40)
 	mkEGGame(t, 1002, nil, 5)
-	mkEGGame(t, 1004, p(50), 10) // fewer votes
-	mkEGGame(t, 1014, p(90), 99) // most-voted → chosen
-	mkEGGame(t, 1005, p(60), 20) // behind a claimed work
+	mkEGGame(t, 1004, p(50), 10)
+	mkEGGame(t, 1014, p(90), 99)
+	mkEGGame(t, 1005, p(60), 20)
 	mkAnchor(t, wEg, "1001", reg.egSource, model.LinkKindExact, "rule:test")
 	mkAnchor(t, wEgNoMedian, "1002", reg.egSource, model.LinkKindExact, "rule:test")
 	mkAnchor(t, wEgMissing, "1003", reg.egSource, model.LinkKindExact, "rule:test")
@@ -219,31 +191,27 @@ func TestBackfillWorkRatings(t *testing.T) {
 	mkAnchor(t, wEgMulti, "1014", reg.egSource, model.LinkKindExact, "rule:test")
 	mkAnchor(t, wEgClaimed, "1005", reg.egSource, model.LinkKindExact, "rule:test")
 
-	// wBgm ALSO carries an EG anchor: both lanes hit one work → two rows, one
-	// per source (the UNIQUE (work_id, source_id) lets sources coexist).
 	mkEGGame(t, 1006, p(70), 7)
 	mkAnchor(t, wBgm, "1006", reg.egSource, model.LinkKindExact, "rule:test")
 
-	// --- dlsite lane fixtures (release-level anchors) ---
-	wDl := mkWork(t, reg.galgameMedium, "dl-full", nil) // rated + all counters → rating + 3 pop rows
+	wDl := mkWork(t, reg.galgameMedium, "dl-full", nil)
 	mkReleaseAnchor(t, wDl, "RJ100001", reg.dlsiteSource, model.LinkKindExact)
 	mkDlsiteWork(t, "RJ100001", pf(4.36), p(120), pl(2000), pl(300), p(12))
-	wDlNoRating := mkWork(t, reg.galgameMedium, "dl-norating", nil) // no rating, partial counters → 2 pop rows only
+	wDlNoRating := mkWork(t, reg.galgameMedium, "dl-norating", nil)
 	mkReleaseAnchor(t, wDlNoRating, "RJ100002", reg.dlsiteSource, model.LinkKindExact)
 	mkDlsiteWork(t, "RJ100002", nil, nil, nil, pl(7), p(0))
-	wDlMissing := mkWork(t, reg.galgameMedium, "dl-missing", nil) // absent from mirror
+	wDlMissing := mkWork(t, reg.galgameMedium, "dl-missing", nil)
 	mkReleaseAnchor(t, wDlMissing, "RJ100003", reg.dlsiteSource, model.LinkKindExact)
-	wDlClaimed := mkWork(t, reg.galgameMedium, "dl-claimed", &claimed) // a peer now
+	wDlClaimed := mkWork(t, reg.galgameMedium, "dl-claimed", &claimed)
 	mkReleaseAnchor(t, wDlClaimed, "RJ100004", reg.dlsiteSource, model.LinkKindExact)
 	mkDlsiteWork(t, "RJ100004", pf(4.9), p(999), pl(1), pl(1), p(1))
-	wDlAsmr := mkWork(t, 5 /* asmr medium */, "dl-asmr", nil) // wrong medium → excluded (game-domain ruling)
+	wDlAsmr := mkWork(t, 5, "dl-asmr", nil)
 	mkReleaseAnchor(t, wDlAsmr, "RJ100005", reg.dlsiteSource, model.LinkKindExact)
 	mkDlsiteWork(t, "RJ100005", pf(4.9), p(999), pl(1), pl(1), p(1))
-	wDlProbable := mkWork(t, reg.galgameMedium, "dl-probable", nil) // probable tier → excluded
+	wDlProbable := mkWork(t, reg.galgameMedium, "dl-probable", nil)
 	mkReleaseAnchor(t, wDlProbable, "RJ100006", reg.dlsiteSource, model.LinkKindProbable)
 	mkDlsiteWork(t, "RJ100006", pf(4.0), p(10), pl(1), pl(1), p(1))
 
-	// --- dry run: decides, writes nothing.
 	st, err := Run(ctx, runOpts(false))
 	require.NoError(t, err)
 	assert.Equal(t, 4, st.BgmCandidates, "claimed included now; probable still excluded in SQL")
@@ -269,7 +237,6 @@ func TestBackfillWorkRatings(t *testing.T) {
 	require.NotEmpty(t, st.DlSamples)
 	assert.Equal(t, "RJ100001", st.DlSamples[0].Workno)
 
-	// --- apply: writes the decided plan exactly.
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.BgmWritten)
@@ -280,7 +247,6 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.EqualValues(t, 9, ratingCount(t, ""))
 	assert.EqualValues(t, 8, popCount(t, ""))
 
-	// Value fidelity: the bangumi row (native 0-10, rank, derived votes).
 	var rBgm model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wBgm, reg.bangumiSource).First(&rBgm).Error)
 	assert.InDelta(t, 7.4, rBgm.Score, 1e-9)
@@ -288,32 +254,27 @@ func TestBackfillWorkRatings(t *testing.T) {
 	require.NotNil(t, rBgm.Rank)
 	assert.Equal(t, 321, *rBgm.Rank)
 
-	// Bangumi rank 0 → NULL rank.
 	var rNoRank model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ?", wBgmNoRank).First(&rNoRank).Error)
 	assert.Nil(t, rNoRank.Rank, "unranked subject stores NULL, never a fake 0")
 
-	// The erogamespace row (native 0-100 median, rank always NULL).
 	var rEg model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wEg, reg.egSource).First(&rEg).Error)
 	assert.InDelta(t, 78, rEg.Score, 1e-9)
 	assert.Equal(t, 40, rEg.VoteCount)
 	assert.Nil(t, rEg.Rank)
 
-	// Multi-anchor picked the most-voted EG game (1014).
 	var rMulti model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ?", wEgMulti).First(&rMulti).Error)
 	assert.InDelta(t, 90, rMulti.Score, 1e-9)
 	assert.Equal(t, 99, rMulti.VoteCount)
 
-	// The dlsite rating row (native 0-5 star average, rank always NULL).
 	var rDl model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wDl, reg.dlsiteSource).First(&rDl).Error)
 	assert.InDelta(t, 4.36, rDl.Score, 1e-9)
 	assert.Equal(t, 120, rDl.VoteCount)
 	assert.Nil(t, rDl.Rank)
 
-	// The popularity rows: full trio on wDl…
 	var pops []model.CatalogWorkPopularity
 	require.NoError(t, testDB.Where("work_id = ?", wDl).Order("metric").Find(&pops).Error)
 	require.Len(t, pops, 3)
@@ -324,8 +285,6 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.Equal(t, model.PopularityMetricReviews, pops[2].Metric)
 	assert.EqualValues(t, 12, pops[2].Value)
 	assert.Equal(t, reg.dlsiteSource, pops[0].SourceID)
-	// …and only the PUBLISHED counters on wDlNoRating (absent dl_count → no
-	// row; published review_count 0 → a real 0-valued row).
 	require.NoError(t, testDB.Where("work_id = ?", wDlNoRating).Order("metric").Find(&pops).Error)
 	require.Len(t, pops, 2)
 	assert.Equal(t, model.PopularityMetricWishlist, pops[0].Metric)
@@ -333,7 +292,6 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.Equal(t, model.PopularityMetricReviews, pops[1].Metric)
 	assert.EqualValues(t, 0, pops[1].Value)
 
-	// Both lanes on one work → two rows, one per source.
 	assert.EqualValues(t, 2, ratingCount(t, "WHERE work_id = ?", wBgm))
 	assert.EqualValues(t, 3, ratingCount(t, "WHERE work_id IN (?, ?, ?)", wBgmClaimed, wEgClaimed, wDlClaimed),
 		"CLAIMED works materialise now — the claim guard is gone")
@@ -341,8 +299,6 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.EqualValues(t, 0, popCount(t, "WHERE work_id = ?", wDlAsmr),
 		"off-domain works never materialise")
 
-	// --- second apply: change-detected no-op — zero effective writes, every
-	// planned row unchanged, no row growth.
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
 	assert.Zero(t, st.BgmWritten+st.EgWritten+st.DlRatingWritten+st.PopWritten+st.Errors, "second pass writes zero")
@@ -353,8 +309,6 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.EqualValues(t, 9, ratingCount(t, ""), "row count unchanged")
 	assert.EqualValues(t, 8, popCount(t, ""), "row count unchanged")
 
-	// --- refresh loop (step 62 ⑤): mutate mirror values → third apply updates
-	// exactly those rows in place.
 	require.NoError(t, testDB.Exec(
 		`UPDATE workratings_dl.works SET info_json = info_json || '{"wishlist_count": 301, "rate_count": 121}' WHERE workno = 'RJ100001'`).Error)
 	st, err = Run(ctx, runOpts(true))
@@ -372,9 +326,6 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.EqualValues(t, 301, wl.Value, "refreshed wishlist lands")
 }
 
-// TestClaimPeerWritesAndDSNRequired covers the writer after the W1-pre claim-guard
-// removal (a CLAIMED work writes exactly like a bodyless one, both facets) and the
-// refuse-to-guess DSN discipline.
 func TestClaimPeerWritesAndDSNRequired(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -385,8 +336,6 @@ func TestClaimPeerWritesAndDSNRequired(t *testing.T) {
 	wClaimed := mkWork(t, reg.galgameMedium, "claimed-direct", &claimed)
 	wBody := mkWork(t, reg.galgameMedium, "bodyless-direct", nil)
 
-	// A claimed row writes, both facets: the step-88 XOR guard retired with the
-	// read-time bridge it protected (refs/proj/140 §2.6).
 	w := &writer{db: testDB, stats: &Stats{}}
 	var written, unchanged int
 	w.write(ctx, plannedRow{WorkID: wClaimed, SourceID: reg.bangumiSource, Score: 7.0}, true, &written, &unchanged)
@@ -397,8 +346,6 @@ func TestClaimPeerWritesAndDSNRequired(t *testing.T) {
 	assert.EqualValues(t, 1, ratingCount(t, ""))
 	assert.EqualValues(t, 1, popCount(t, ""))
 
-	// A bodyless row writes; a same-value retry is a change-detected no-op; a
-	// changed-value retry UPDATEs in place (the step-62 upsert unification).
 	w.write(ctx, plannedRow{WorkID: wBody, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &unchanged)
 	assert.Equal(t, 2, written)
 	w.write(ctx, plannedRow{WorkID: wBody, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &unchanged)
@@ -410,7 +357,6 @@ func TestClaimPeerWritesAndDSNRequired(t *testing.T) {
 	require.NoError(t, testDB.Where("work_id = ?", wBody).First(&r).Error)
 	assert.InDelta(t, 7.2, r.Score, 1e-9)
 
-	// Same trio for popularity.
 	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, SourceID: reg.dlsiteSource,
 		Metric: model.PopularityMetricWishlist, Value: 10}, true)
 	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, SourceID: reg.dlsiteSource,
@@ -424,7 +370,6 @@ func TestClaimPeerWritesAndDSNRequired(t *testing.T) {
 	require.NoError(t, testDB.Where("work_id = ?", wBody).First(&pop).Error)
 	assert.EqualValues(t, 11, pop.Value)
 
-	// DSN discipline: all three DSNs are required, never guessed.
 	_, err = Run(ctx, Opts{EGDSN: testDSN, DlsiteDSN: testDSN})
 	require.Error(t, err)
 	_, err = Run(ctx, Opts{DSN: testDSN, DlsiteDSN: testDSN})
@@ -433,11 +378,6 @@ func TestClaimPeerWritesAndDSNRequired(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestNonTitleYearExactAnchorEntersBgmCandidates pins the step-79 fix: an EXACT
-// Bangumi work anchor whose matched_by is NOT rule:bgm-title-year (here the
-// wave-78 rule:bgm-type4-gated tier) now enters the bangumi-lane candidate set.
-// Before the fix the hard-coded matched_by filter left the 11,465 new anchors
-// invisible. The exact gate is unchanged: a probable anchor still stays out.
 func TestNonTitleYearExactAnchorEntersBgmCandidates(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -445,7 +385,7 @@ func TestNonTitleYearExactAnchorEntersBgmCandidates(t *testing.T) {
 	require.NoError(t, err)
 
 	wGated := mkWork(t, reg.galgameMedium, "bgm-gated", nil)
-	mkSubject(t, 601, 7.4, 321, `{"7":20,"10":12}`) // votes 32, score>0 → a rating row
+	mkSubject(t, 601, 7.4, 321, `{"7":20,"10":12}`)
 	mkAnchor(t, wGated, "601", reg.bangumiSource, model.LinkKindExact, "rule:bgm-type4-gated")
 
 	wProbable := mkWork(t, reg.galgameMedium, "bgm-probable", nil)
@@ -466,12 +406,6 @@ func workUpdatedAt(t *testing.T, id int64) time.Time {
 	return ts
 }
 
-// TestRatingWriteTouchesHostWork pins the wave-117 discipline for the
-// change-detected lane: an effective rating/popularity write bumps the host
-// work's updated_at so the public /v1/catalog/changes feed can see it, while a
-// dry run and a refresh no-op leave the watermark exactly where it was. The
-// no-op half is the load-bearing one here — this job re-reads the whole mirror
-// on every pass, so a naive touch would republish every rated work nightly.
 func TestRatingWriteTouchesHostWork(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -482,11 +416,10 @@ func TestRatingWriteTouchesHostWork(t *testing.T) {
 	mkAnchor(t, wRated, "801", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
 	mkSubject(t, 801, 7.5, 120, `{"1":1,"8":9}`)
 
-	wBystander := mkWork(t, reg.galgameMedium, "touch-bystander", nil) // no anchor
+	wBystander := mkWork(t, reg.galgameMedium, "touch-bystander", nil)
 	stamp := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, testDB.Exec(`UPDATE catalog_work SET updated_at = ?`, stamp).Error)
 
-	// Dry run decides but writes nothing.
 	_, err = Run(ctx, runOpts(false))
 	require.NoError(t, err)
 	assert.True(t, workUpdatedAt(t, wRated).Equal(stamp), "dry run must not touch")
@@ -498,15 +431,12 @@ func TestRatingWriteTouchesHostWork(t *testing.T) {
 	assert.True(t, touched.After(stamp), "the rating write bumped its host work")
 	assert.True(t, workUpdatedAt(t, wBystander).Equal(stamp), "an unrated work stays put")
 
-	// Second apply with identical staging: the change-detected upsert writes
-	// nothing, so the watermark must not drift.
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
 	require.Zero(t, st.BgmWritten)
 	require.Equal(t, 1, st.BgmUnchanged)
 	assert.True(t, workUpdatedAt(t, wRated).Equal(touched), "a refresh no-op must not drift the watermark")
 
-	// A real value change writes again — and touches again.
 	require.NoError(t, testDB.Exec(`UPDATE src_bangumi.subject SET score = 8.5 WHERE id = 801`).Error)
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)

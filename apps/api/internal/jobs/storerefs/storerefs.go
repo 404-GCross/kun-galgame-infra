@@ -1,14 +1,3 @@
-// Package storerefs imports store-page work refs from the EG mirror's typed
-// cross-reference columns (refs/proj/91 ruling 4): games.steam (numeric Steam
-// appid) → source steam, games.dmm (DMM cid string) → source dmm. Each lands
-// as a WORK-level PROBABLE external_ref (link_kind=1) — EG's columns are
-// community-maintained cross-references, the R8 middle tier (the same grade as
-// EG's vndb column, step 28 lineage) — matched_by rule:eg-steam / rule:eg-dmm.
-//
-// Discipline: InsertRefIfAbsent (never re-grade an existing assertion, doc 17
-// R8 / step 11 T0.5); the negative-knowledge set (catalog_match_rejection,
-// step 21) is preloaded and blocks re-assertion; every DSN explicit; dry-run
-// default.
 package storerefs
 
 import (
@@ -24,27 +13,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// Opts configures a run.
 type Opts struct {
 	Apply bool
-	DSN   string // catalog DB — REQUIRED
-	EGDSN string // EG mirror DB — REQUIRED
+	DSN   string
+	EGDSN string
 }
 
-// Stats reports a run. Planned counters are identical in dry and apply.
 type Stats struct {
-	Anchored     int // galgame works carrying an EG exact anchor
+	Anchored     int
 	SteamPlanned int
 	SteamWritten int
 	SteamExists  int
 	DmmPlanned   int
 	DmmWritten   int
 	DmmExists    int
-	Rejected     int // blocked by negative knowledge (both lanes)
+	Rejected     int
 	Errors       int
 }
 
-// Run executes the import.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" || opts.EGDSN == "" {
 		return nil, fmt.Errorf("both --dsn and --eg-dsn are required")
@@ -71,7 +57,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 	st := &Stats{Anchored: len(anchors)}
 
-	// Batch-load the mirror's typed cross-reference columns.
 	gameIDs := make([]int64, 0, len(anchors))
 	for _, a := range anchors {
 		if n, err := strconv.ParseInt(a.ExternalID, 10, 64); err == nil {
@@ -105,9 +90,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		return nil, err
 	}
 
-	// touched collects works that really gained a store ref, so the run bumps
-	// their catalog_work.updated_at once and the public changes feed sees the new
-	// store link. Existing refs, rejections and dry-runs contribute nothing.
 	var touched []int64
 	for _, a := range anchors {
 		n, err := strconv.ParseInt(a.ExternalID, 10, 64)
@@ -143,8 +125,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// writeRef inserts one store ref if absent, reporting whether a row was really
-// written (which is what decides whether the host work needs a touch).
 func writeRef(ctx context.Context, db *gorm.DB, apply bool, workID int64, sourceID int16,
 	externalID, rule string, rejected map[string]struct{},
 	planned, written, exists, rejectedN, errors *int) bool {
@@ -219,9 +199,6 @@ func loadAnchors(ctx context.Context, db *gorm.DB, medium, source int16) ([]anch
 	return out, nil
 }
 
-// loadRejections preloads the negative-knowledge set for the target sources
-// (step-21 discipline: reconcilers must consume match_rejection, not only
-// write it).
 func loadRejections(ctx context.Context, db *gorm.DB, sources []int16) (map[string]struct{}, error) {
 	var rows []struct {
 		EntityID   int64  `gorm:"column:entity_id"`

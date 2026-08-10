@@ -1,12 +1,3 @@
-// import-dlsite-works registers the DLsite voice/ASMR catalogue into catalog as
-// UNCLAIMED works (R2, site=NULL — asmr has no product yet) + 1:1 releases
-// carrying the workno SKU anchor (R3/R5), circle labels, and tier-0 orphan
-// creator credits. Voice/ASMR only; zero claiming, zero cross-source matching,
-// zero galgame-graph interaction.
-//
-//	go run ./cmd/migrate-catalog                        # land the DLsite role map
-//	go run ./cmd/import-dlsite-works                    # dry-run
-//	go run ./cmd/import-dlsite-works --apply            # write (×2 = idempotent)
 package main
 
 import (

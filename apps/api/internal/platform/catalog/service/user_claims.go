@@ -1,22 +1,3 @@
-// user_claims.go — "the claims this user has worked on", the per-user read
-// face the registry was missing (wave 157 P3, doc 156 §3.1 categories ① and ⑤).
-//
-// Why it is an AGGREGATE over catalog_claim_event rather than a column filter:
-// "my submissions" is asked as "the works whose lifecycle I moved" — every
-// transition I caused, including the ones on works somebody else created — and
-// the event log is the only place that question has an answer. That is a
-// different question from "who created this entry", which wave 178 DID make a
-// column (catalog_work.owner_user_id, write-once at mint/claim-birth): the
-// column answers ownership for ONE work, this aggregate answers activity across
-// many, and neither can be derived from the other. The 03 定案 §9-3 reading that
-// the registry must hold nothing about people at all is superseded: ownership is
-// a catalog-held fact now, because the user-token face has no backend to assert
-// it (see handler/user_edit.go).
-//
-// The shape follows the wiki ListMine it replaces (identity + current state +
-// the latest event's summary, most recent activity first), because that is
-// what its consumers render: a card per submission, a state chip, and the
-// decline reason inline so a rejected submitter needs no second call.
 package service
 
 import (
@@ -26,57 +7,30 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// UserClaimItem is one work the user has acted on.
 type UserClaimItem struct {
-	WorkID        int64  `json:"work_id"`
-	DisplayName   string `json:"display_name"`
-	Site          string `json:"site"`
-	ProductWorkID *int64 `json:"product_work_id"`
-	// ClaimState is the work's CURRENT state on the public claim vocabulary —
-	// the same projection every other face renders, so a consumer branches on
-	// one word list everywhere.
-	ClaimState string `json:"claim_state"`
-	// The work's LATEST transition — by anyone, not just this user. That is
-	// deliberate and it is the whole reason the summary is here: what a
-	// submitter needs to see on their own submission is the moderator's verdict
-	// and note, which is an event they did not cause. LastReason is where a
-	// decline note surfaces, the one enrichment the wiki list it replaces had to
-	// make a second query for.
+	WorkID        int64     `json:"work_id"`
+	DisplayName   string    `json:"display_name"`
+	Site          string    `json:"site"`
+	ProductWorkID *int64    `json:"product_work_id"`
+	ClaimState    string    `json:"claim_state"`
 	LastEventID   int64     `json:"last_event_id"`
 	LastFromState *string   `json:"last_from_state"`
 	LastToState   string    `json:"last_to_state"`
 	LastReason    *string   `json:"last_reason"`
 	LastActorUID  int64     `json:"last_actor_uid"`
 	LastEventAt   time.Time `json:"last_event_at"`
-	// FirstActedAt is when this user first touched the claim — "submitted on"
-	// for the common case, and enough for a consumer to count today's
-	// submissions off the first page without a dedicated stats endpoint.
-	FirstActedAt time.Time `json:"first_acted_at"`
-	// ActedCount is how many transitions this user caused on this work.
-	ActedCount int `json:"acted_count"`
+	FirstActedAt  time.Time `json:"first_acted_at"`
+	ActedCount    int       `json:"acted_count"`
 }
 
-// UserClaimQuery is one page request.
 type UserClaimQuery struct {
-	ActorUID int64
-	// Site restricts to one tenant's claims (empty = every site the user acted
-	// on). ClaimStates is the public vocabulary filter — `pending,declined` is
-	// the wiki "my submissions" default, `live` is "published by me".
+	ActorUID    int64
 	Site        string
 	ClaimStates []string
-	// Before is the exclusive cursor: return works whose latest event id is
-	// smaller. 0 = the first page. It cursors on that id rather than on a
-	// timestamp or an offset because it is unique per work (a work's latest
-	// event belongs to that work alone), so paging can neither skip nor
-	// duplicate a row while the list is being written to.
-	Before int64
-	Limit  int
+	Before      int64
+	Limit       int
 }
 
-// ClaimsByActor returns one page plus the total number of matching works. The
-// total is deliberately part of this face: it is what makes a dedicated
-// per-user stats endpoint unnecessary — "how many works has this user
-// published" is this call with claim_states=[live] and limit=1.
 func (s *ClaimLifecycleService) ClaimsByActor(ctx context.Context, q UserClaimQuery) ([]UserClaimItem, int64, error) {
 	limit := q.Limit
 	if limit <= 0 || limit > 100 {
@@ -87,10 +41,6 @@ func (s *ClaimLifecycleService) ClaimsByActor(ctx context.Context, q UserClaimQu
 		stateGate = " AND " + stateGate
 	}
 
-	// The work is joined (not left-joined) and soft-deleted rows drop out: this
-	// is a product's list of its own submissions, and a work that no longer
-	// exists is not one. The event log keeping its history is a separate
-	// promise, served by the feed.
 	const from = `
 		FROM (
 		    SELECT e.work_id,
@@ -117,11 +67,6 @@ func (s *ClaimLifecycleService) ClaimsByActor(ctx context.Context, q UserClaimQu
 		return nil, 0, nil
 	}
 
-	// The summary row comes from a LATERAL "newest event of this work" rather
-	// than from the aggregate: an aggregate can produce max(id) but not the
-	// from/to/reason that belong to that one row, and picking them with separate
-	// aggregates is how a summary ends up describing an event that never
-	// happened.
 	var rows []struct {
 		WorkID        int64
 		DisplayName   string

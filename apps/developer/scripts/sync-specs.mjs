@@ -24,9 +24,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(__dirname, '..', '..', '..')
 const OUTPUT = join(__dirname, '..', 'app/generated/docs-model.ts')
 
-// The live open-API host (docs/developer-platform/01-design §2). The public
-// specs are server-agnostic; every URL we render (base URL, curl) is this host
-// + the spec path (which already carries the /v1 prefix).
 const API_HOST = 'https://api.nextmoe.dev'
 
 const FACES = [
@@ -38,22 +35,10 @@ const FACES = [
   }
 ]
 
-// Total operations across the frozen specs — a coverage guard so a spec edit
-// that adds/drops an endpoint without a model rebuild fails loudly.
-// catalog 25 (prior 12 + A2-1b taxonomy lists 4 + A2-1c calendar buckets 3 +
-// A2-1d works/search 1 + wave-149b stats 1 + wave-149c series detail 1 +
-// the series browse lane 1 + wave-174 the release-grain timeline 1 +
-// wave-188 the label relation graph 1). The galgame face's 26 ops left the
-// count at wave 146 when that face was delisted (46 → 20).
-// + playtime 5 (report / report-by-ref / batch / mine / one-work): the first
-// open-API face that authenticates with a USER access token rather than an API
-// key, so the portal's own docs now describe two credential shapes.
 const EXPECTED_OPERATION_COUNT = 30
 
 const refName = (ref) => ref.split('/').pop()
 
-// OpenAPI 3.1 encodes nullability as `type: [x, "null"]`. Split a raw type into
-// its primary keyword + a nullable flag.
 const splitType = (rawType) => {
   const types = Array.isArray(rawType) ? rawType : rawType ? [rawType] : []
   return {
@@ -62,9 +47,6 @@ const splitType = (rawType) => {
   }
 }
 
-// Build a render-friendly schema tree, dereferencing $ref inline. `seen` tracks
-// the ref chain on the current path so a cycle degrades to a named leaf instead
-// of recursing forever (both specs are acyclic; this is just a guard).
 const buildNode = (schema, { name, required, schemas, seen }) => {
   if (schema.$ref) {
     const rn = refName(schema.$ref)
@@ -90,7 +72,6 @@ const buildNode = (schema, { name, required, schemas, seen }) => {
   if (primary === 'object' && schema.properties) {
     node.type = 'object'
     const req = new Set(schema.required || [])
-    // Drop the JSON-schema self-link ($schema, readOnly) — pure noise in docs.
     node.children = Object.keys(schema.properties)
       .filter((k) => k !== '$schema')
       .map((k) =>
@@ -119,7 +100,6 @@ const buildNode = (schema, { name, required, schemas, seen }) => {
   return node
 }
 
-// A representative JSON value for a request-body example (required fields only).
 const sampleValue = (schema, { schemas, seen }) => {
   if (schema.$ref) {
     const rn = refName(schema.$ref)
@@ -158,7 +138,6 @@ const sampleValue = (schema, { schemas, seen }) => {
   }
 }
 
-// A sample value to substitute into a path segment ({id} → 1).
 const samplePathValue = (param) => {
   if (param.enum?.length) return String(param.enum[0])
   return param.type === 'integer' || param.type === 'number' ? '1' : 'value'
@@ -194,7 +173,6 @@ const buildParams = (rawParams = []) => {
     if (s.enum) param.enum = s.enum
     return param
   })
-  // Path parameters first (fundamental + always required), then query.
   return mapped.sort((a, b) => {
     if (a.in === b.in) return 0
     return a.in === 'path' ? -1 : 1
@@ -244,8 +222,6 @@ const buildFace = (faceDef) => {
   const spec = parseYaml(readFileSync(faceDef.file, 'utf8'))
   const schemas = spec.components?.schemas || {}
 
-  // Group operations by their OpenAPI tag (both faces carry a single tag today,
-  // so each face has one group — the model keeps the layer for future tags).
   const groups = new Map()
   for (const [path, item] of Object.entries(spec.paths || {})) {
     for (const method of METHODS) {
@@ -266,8 +242,6 @@ const buildFace = (faceDef) => {
     baseUrl: API_HOST,
     groups: [...groups.entries()].map(([tag, operations]) => ({
       tag,
-      // e.g. "catalog-public" → "Catalog" (the -public suffix is redundant with
-      // the face key; the sidebar collapses a lone group into the face).
       title: tag
         .replace(/-public$/, '')
         .split(/[-_]/)

@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Show-once plaintext reveal (安全关键). The plaintext lives ONLY in the
-// `minted` prop held by the parent's component-local ref; it is never written
-// to store/localStorage/URL/logs. Closing the modal clears the parent state.
 defineProps<{ minted: DevKeyMinted | null; rotated?: boolean }>()
 
 const open = defineModel<boolean>('open', { required: true })

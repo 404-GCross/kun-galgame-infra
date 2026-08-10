@@ -11,29 +11,15 @@ import (
 	"api/pkg/config"
 )
 
-// PruneDeveloperUsageOpts configures the developer-usage retention prune.
 type PruneDeveloperUsageOpts struct {
-	// RetentionDays overrides the default retention window (0 = use the pinned
-	// devapi.DeveloperUsageRetentionDays).
 	RetentionDays int
-	// DryRun counts what would be deleted without deleting.
-	DryRun bool
+	DryRun        bool
 }
 
-// DefaultPruneDeveloperUsageOpts is what the scheduler uses.
 func DefaultPruneDeveloperUsageOpts() PruneDeveloperUsageOpts {
 	return PruneDeveloperUsageOpts{RetentionDays: devapi.DeveloperUsageRetentionDays}
 }
 
-// RunPruneDeveloperUsage deletes developer_api_usage rollup rows older than the
-// retention window (day < today − RetentionDays, UTC). developer_api_usage is an
-// append-accumulate table that otherwise grows without bound; a daily prune caps
-// it at a fixed history.
-//
-// The table lives in the OAuth core DB (cfg.Database), the same handle the
-// developer-platform repository uses. Cross-instance single-flight is provided
-// by the runner's per-job-name advisory lock (no manual lock key — same as every
-// other job).
 func RunPruneDeveloperUsage(ctx context.Context, cfg *config.Config, opts PruneDeveloperUsageOpts) (Summary, error) {
 	retentionDays := opts.RetentionDays
 	if retentionDays <= 0 {

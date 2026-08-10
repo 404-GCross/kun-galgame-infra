@@ -10,10 +10,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// TestOpenAPIGeneration proves Setup wires the Huma API and emits an OpenAPI 3.1
-// spec covering all six artifact operations. The service is constructed with nil
-// deps — Setup only registers operations (handlers are never invoked here), so no
-// DB/S3/Redis is needed to generate the spec.
 func TestOpenAPIGeneration(t *testing.T) {
 	app := fiber.New()
 	svc := service.New(nil, nil, nil, service.Options{})
@@ -49,7 +45,6 @@ func TestOpenAPIGeneration(t *testing.T) {
 		}
 	}
 
-	// The house envelope must appear in the success response schemas.
 	if !strings.Contains(s, `"code"`) || !strings.Contains(s, `"message"`) {
 		t.Errorf("spec does not reference the house envelope {code,message}")
 	}

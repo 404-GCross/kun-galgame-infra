@@ -11,9 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// registry holds the catalog registry ids this backfill needs, resolved by key
-// (never hardcoded) so a rehearsal / prod DB with different auto-increment
-// seeds still works — the worktags / workratings discipline.
 type registry struct {
 	galgameMedium int16
 	dlsiteSource  int16
@@ -34,20 +31,11 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one galgame work with its representative DLsite workno. DISTINCT
-// ON keeps ONE anchor per work (the lexicographically lowest workno — the
-// workratings dlsite-lane precedent; surveyed there: zero galgame-medium works
-// carry more than one distinct workno).
 type candidate struct {
 	WorkID int64  `gorm:"column:work_id"`
 	Workno string `gorm:"column:workno"`
 }
 
-// loadCandidates resolves GALGAME-medium works carrying a DLsite EXACT release
-// anchor — the workratings dlsite-lane candidate query verbatim (worknos anchor at
-// RELEASE level, SKU-natured; medium pinned to galgame by the game-domain ruling).
-// Limit/Offset window the distinct-work list in Go (the dlsitemedia chunking
-// discipline).
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]candidate, error) {
 	var out []candidate
 	if err := db.WithContext(ctx).
@@ -65,10 +53,6 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offse
 	return window(out, limit, offset), nil
 }
 
-// loadTaxonomy loads the FULL zh_CN vocabulary (wave 67's genre_taxonomy in
-// the same dlsite mirror DB — 407 rows live, trivially memory-resident) as
-// genre_id → current official zh name. The taxonomy holds the CURRENT name per
-// id, so resolving by id auto-corrects works embedding a since-renamed genre.
 func loadTaxonomy(ctx context.Context, dlsiteDB *gorm.DB) (map[int]string, error) {
 	var rows []struct {
 		GenreID int    `gorm:"column:genre_id"`
@@ -88,11 +72,6 @@ func loadTaxonomy(ctx context.Context, dlsiteDB *gorm.DB) (map[int]string, error
 	return out, nil
 }
 
-// loadMirrorGenres batch-loads the referenced mirror rows' raw genres jsonb
-// (product_json.genres — surveyed: an array of {id number, name string} on
-// 805k mirror rows, NULL on the rest). A workno absent from the map means the
-// mirror has no row at all (missing_mirror); a present-but-empty raw value is
-// the caller's NoGenres branch.
 func loadMirrorGenres(ctx context.Context, dlsiteDB *gorm.DB, worknos []string) (map[string][]byte, error) {
 	out := make(map[string][]byte, len(worknos))
 	type row struct {
@@ -114,36 +93,24 @@ func loadMirrorGenres(ctx context.Context, dlsiteDB *gorm.DB, worknos []string) 
 	return out, nil
 }
 
-// genreEl is one raw product_json.genres element (only the keys this backfill
-// reads; name_base / search_val ignored).
 type genreEl struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 }
 
-// resolvedGenre is one decided tag of a work after name resolution and
-// in-work dedupe.
 type resolvedGenre struct {
 	ID           int
 	Name         string
 	FromTaxonomy bool
 }
 
-// resolveGenres defensively decodes a work's raw genres jsonb and resolves
-// each element's display name (taxonomy zh_CN by id → embedded ja fallback for
-// retired ids), bumping the stats counters (see the package doc for the branch
-// taxonomy). Returns nil when there is nothing to write. The decided list
-// keeps the mirror's element order (DLsite's own official ordering) minus
-// collapsed duplicates — deterministic for writes and samples.
 func resolveGenres(raw []byte, taxonomy map[int]string, st *Stats) []resolvedGenre {
-	if len(raw) == 0 || string(raw) == "null" { // key absent or JSON null
+	if len(raw) == 0 || string(raw) == "null" {
 		st.NoGenres++
 		return nil
 	}
 	var els []genreEl
 	if err := json.Unmarshal(raw, &els); err != nil {
-		// Not an array of {id,name} objects — a malformed mirror row. Counted,
-		// never fatal.
 		st.NotArray++
 		return nil
 	}
@@ -155,7 +122,7 @@ func resolveGenres(raw []byte, taxonomy map[int]string, st *Stats) []resolvedGen
 	seen := map[string]bool{}
 	for _, el := range els {
 		name, fromTaxonomy := taxonomy[el.ID]
-		if !fromTaxonomy { // retired id (no current vocabulary row) → embedded ja
+		if !fromTaxonomy {
 			name = strings.TrimSpace(el.Name)
 			if name == "" {
 				st.NameBlank++
@@ -167,7 +134,7 @@ func resolveGenres(raw []byte, taxonomy map[int]string, st *Stats) []resolvedGen
 		} else {
 			st.JaFallback++
 		}
-		if seen[name] { // two ids resolving to one name within the work
+		if seen[name] {
 			st.DupCollapsed++
 			continue
 		}
@@ -175,13 +142,11 @@ func resolveGenres(raw []byte, taxonomy map[int]string, st *Stats) []resolvedGen
 		out = append(out, resolvedGenre{ID: el.ID, Name: name, FromTaxonomy: fromTaxonomy})
 	}
 	if len(out) == 0 {
-		return nil // every element was blank — already counted per element
+		return nil
 	}
 	return out
 }
 
-// window applies the offset/limit chunking to an already-distinct candidate
-// list (slicing keeps it obviously correct — the bgmsummaries discipline).
 func window[T any](in []T, limit, offset int) []T {
 	if offset > 0 {
 		if offset >= len(in) {

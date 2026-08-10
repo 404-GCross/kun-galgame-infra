@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Recursive JSON tree for the /explore data browser. Objects/arrays render as
-// collapsible nodes (open by default down to depth 2); primitives render as
-// typed leaves — string/number/boolean/null each in a palette color. Pure
-// display: the data is whatever the API returned, never reshaped.
 const props = withDefaults(
   defineProps<{ data: unknown; name?: string; depth?: number }>(),
   { name: '', depth: 0 }
@@ -25,8 +21,6 @@ const entries = computed<(readonly [string, unknown])[]>(() => {
   return []
 })
 
-// Interpolated in the template as a computed: a `{${…}}` template literal
-// inline in {{ }} would collide with the mustache terminator.
 const sizeBadge = computed(() =>
   isArr.value ? `[${entries.value.length}]` : `{${entries.value.length}}`
 )

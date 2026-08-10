@@ -10,19 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// auditPair is one label carrying an identity-grade anchor to BOTH sources
-// (each side by its own lane's predicate — see collectAudit).
-//
-// These are the ONLY labels where the bangumi > cien ruling is a real choice.
-// Everywhere else exactly one source has a picture, so "bangumi first" decides
-// nothing and cannot be wrong. Here two candidate images exist and the run
-// order silently discards one of them — so this is the set a human reviews
-// (charter §纪律: 抽 30 人审优先序) to confirm that a curated brand logo really
-// does beat a creator's self-chosen avatar. Producing it costs one query and
-// makes the ruling falsifiable instead of merely stated.
-//
-// LogoHash is carried so a review after the bangumi pass can see which labels
-// already took the bangumi image, and Source names which lane wrote it.
 type auditPair struct {
 	LabelID     int64
 	DisplayName string
@@ -31,15 +18,6 @@ type auditPair struct {
 	LogoHash    string
 }
 
-// collectAudit finds every live label anchored to both sources. Each side uses
-// ITS OWN lane's anchor predicate, via the same builder loadCandidates uses:
-// exact for bangumi, related + the two pinned rules for cien (see the Source
-// vars). Using one predicate for both sides would be the bug that matters here
-// — an exact-only cien side reports an empty falsification set, which reads as
-// "nothing to review" when it actually means "the query is wrong".
-//
-// Run independently of --source and before any write, so the falsification set
-// never depends on the pass being audited.
 func collectAudit(ctx context.Context, db *gorm.DB, reg registry) ([]auditPair, error) {
 	var rows []struct {
 		LabelID     int64  `gorm:"column:label_id"`
@@ -74,7 +52,6 @@ func collectAudit(ctx context.Context, db *gorm.DB, reg registry) ([]auditPair, 
 	return out, nil
 }
 
-// writeAudit dumps the falsification set as CSV for an offline image compare.
 func writeAudit(path string, pairs []auditPair) error {
 	f, err := os.Create(path)
 	if err != nil {

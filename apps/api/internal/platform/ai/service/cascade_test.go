@@ -8,15 +8,8 @@ import (
 	"api/internal/platform/ai/upstream"
 )
 
-// The Tier1→Tier2 cascade matrix (spec 09). A configured fakeOmni + fakeUpstream
-// drive every branch without a live endpoint; the six-state regression lives in
-// moderation_test.go (case 1: omni OFF → today's behavior).
-
 const omniModel = "omni-moderation-latest"
 
-// TestCascadeOmniCleanBelowThreshold (case 2) — a low-score coarse pass returns a
-// clean verdict from omni alone: the LLM is NEVER dialled and exactly one
-// (omni) usage row is metered.
 func TestCascadeOmniCleanBelowThreshold(t *testing.T) {
 	cleanTables(t)
 	omni := &fakeOmni{configured: true, model: omniModel, result: upstream.OmniResult{
@@ -57,9 +50,6 @@ func TestCascadeOmniCleanBelowThreshold(t *testing.T) {
 	}
 }
 
-// TestCascadeEscalatesToLLM (case 3) — a high coarse score with a configured LLM
-// escalates: the LLM is dialled once and its verdict is FINAL. Two usage rows,
-// channels distinct (omni then LLM).
 func TestCascadeEscalatesToLLM(t *testing.T) {
 	cleanTables(t)
 	omni := &fakeOmni{configured: true, model: omniModel, result: upstream.OmniResult{
@@ -81,7 +71,6 @@ func TestCascadeEscalatesToLLM(t *testing.T) {
 	if !res.Flagged || res.Degraded {
 		t.Fatalf("want flagged not-degraded, got flagged=%v degraded=%v", res.Flagged, res.Degraded)
 	}
-	// The LLM adjudicates as final: its channel + categories win, not omni's.
 	if res.Channel != "deepseek-chat" {
 		t.Fatalf("final channel = %q, want deepseek-chat (LLM is final)", res.Channel)
 	}
@@ -103,14 +92,11 @@ func TestCascadeEscalatesToLLM(t *testing.T) {
 	}
 }
 
-// TestCascadeOmniConvictsAloneWhenNoLLM (case 4) — a high coarse score with the
-// LLM UNCONFIGURED: omni convicts alone (a real verdict, NOT degraded); the
-// reported categories are the ADOPTED true ones only (bare `sexual` excluded).
 func TestCascadeOmniConvictsAloneWhenNoLLM(t *testing.T) {
 	cleanTables(t)
 	omni := &fakeOmni{configured: true, model: omniModel, result: upstream.OmniResult{
 		Flagged:        true,
-		Categories:     map[string]bool{"violence": true, "sexual": true}, // sexual is ignored policy
+		Categories:     map[string]bool{"violence": true, "sexual": true},
 		CategoryScores: map[string]float64{"violence": 0.77, "sexual": 0.99},
 		Channel:        omniModel,
 	}}
@@ -133,7 +119,6 @@ func TestCascadeOmniConvictsAloneWhenNoLLM(t *testing.T) {
 	if len(res.Categories) != 1 || res.Categories[0] != "violence" {
 		t.Fatalf("categories = %v, want [violence] (sexual ignored)", res.Categories)
 	}
-	// relevantScore excludes the ignored `sexual` (0.99) → violence 0.77.
 	if res.Score == nil || *res.Score < 0.76 || *res.Score > 0.78 {
 		t.Fatalf("relevantScore should be 0.77 (violence), got %v", res.Score)
 	}
@@ -146,9 +131,6 @@ func TestCascadeOmniConvictsAloneWhenNoLLM(t *testing.T) {
 	}
 }
 
-// TestCascadeOmniErrorFallsThroughToLLM (case 5) — a coarse-pass dial error is
-// metered status=upstream_error, then the cascade falls through to the LLM path
-// which produces the verdict. Two rows: omni(status 1) then LLM(status 0).
 func TestCascadeOmniErrorFallsThroughToLLM(t *testing.T) {
 	cleanTables(t)
 	omni := &fakeOmni{configured: true, model: omniModel, err: context.DeadlineExceeded}
@@ -182,13 +164,10 @@ func TestCascadeOmniErrorFallsThroughToLLM(t *testing.T) {
 	}
 }
 
-// TestCascadeIgnoresSexualCategory (case 6a) — bare `sexual`, however high, is
-// the ignored rating-system category: it never lifts relevantScore, so no
-// escalation and no conviction (clean verdict from omni alone).
 func TestCascadeIgnoresSexualCategory(t *testing.T) {
 	cleanTables(t)
 	omni := &fakeOmni{configured: true, model: omniModel, result: upstream.OmniResult{
-		Flagged:        true, // omni itself flags, but OUR policy ignores bare `sexual`
+		Flagged:        true,
 		Categories:     map[string]bool{"sexual": true},
 		CategoryScores: map[string]float64{"sexual": 0.98, "violence": 0.01},
 		Channel:        omniModel,
@@ -218,9 +197,6 @@ func TestCascadeIgnoresSexualCategory(t *testing.T) {
 	}
 }
 
-// TestCascadeAdoptsSexualMinors (case 6b) — `sexual/minors` is the legal line,
-// always adopted: a high score escalates/convicts. With the LLM unconfigured it
-// convicts alone and reports sexual/minors (never bare `sexual`).
 func TestCascadeAdoptsSexualMinors(t *testing.T) {
 	cleanTables(t)
 	omni := &fakeOmni{configured: true, model: omniModel, result: upstream.OmniResult{
@@ -250,9 +226,6 @@ func TestCascadeAdoptsSexualMinors(t *testing.T) {
 	}
 }
 
-// TestCascadeNegativeSamplingSeam (case 7) — the injectable random seam makes
-// sampling deterministic: rand < rate HITS (escalate to LLM, LLM is final, two
-// rows); rand ≥ rate MISSES (clean omni verdict, zero LLM dial, one row).
 func TestCascadeNegativeSamplingSeam(t *testing.T) {
 	build := func(randVal float64) (*fakeOmni, *fakeUpstream, *ModerationService) {
 		omni := &fakeOmni{configured: true, model: omniModel, result: upstream.OmniResult{
@@ -270,7 +243,6 @@ func TestCascadeNegativeSamplingSeam(t *testing.T) {
 		return omni, llm, s
 	}
 
-	// HIT: rand 0.01 < 0.05 → escalate, LLM final.
 	cleanTables(t)
 	_, llmHit, sHit := build(0.01)
 	resHit, err := sHit.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "x"})
@@ -287,7 +259,6 @@ func TestCascadeNegativeSamplingSeam(t *testing.T) {
 		t.Fatalf("HIT want 2 rows (omni + LLM), got %d", len(rows))
 	}
 
-	// MISS: rand 0.9 ≥ 0.05 → clean omni verdict, no LLM dial.
 	cleanTables(t)
 	_, llmMiss, sMiss := build(0.9)
 	resMiss, err := sMiss.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "x"})
@@ -305,9 +276,6 @@ func TestCascadeNegativeSamplingSeam(t *testing.T) {
 	}
 }
 
-// TestCascadeBothTiersUnconfiguredDegraded (case 8) — neither tier wired: the
-// cascade degrades (fail-open, flagged:false, empty channel) WITHOUT dialing
-// either upstream, metering one status=degraded row.
 func TestCascadeBothTiersUnconfiguredDegraded(t *testing.T) {
 	cleanTables(t)
 	omni := &fakeOmni{configured: false}

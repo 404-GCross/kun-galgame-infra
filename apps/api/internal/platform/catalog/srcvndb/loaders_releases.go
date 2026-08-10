@@ -1,9 +1,5 @@
 package srcvndb
 
-// Row decoders for the releases family (releases / releases_vn /
-// releases_producers / releases_platforms / releases_titles) and producers.
-// See ingest.go for the machinery.
-
 import (
 	"time"
 

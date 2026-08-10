@@ -17,8 +17,6 @@ func demoOwn() map[authz.Permission]bool {
 	return map[authz.Permission]bool{demoAlpha: true, demoBeta: true}
 }
 
-// grantsOf / deniesOf build a Snapshot from the shorthand these tests read best
-// in: role → keys.
 func grantsOf(m map[string][]authz.Permission) permissions.Snapshot {
 	snap := permissions.NewSnapshot()
 	for role, perms := range m {
@@ -39,10 +37,6 @@ func deniesOf(m map[string][]authz.Permission) permissions.Snapshot {
 	return snap
 }
 
-// TestMergeWidensWithoutMutatingBase pins the additive contract: the overlay
-// adds grants, and the base table it was built from is untouched (the base is
-// a package-level var in every perm package — mutating it would corrupt the
-// code floor for the rest of the process).
 func TestMergeWidensWithoutMutatingBase(t *testing.T) {
 	base := authz.Bundles{
 		"moderator": {},
@@ -64,9 +58,6 @@ func TestMergeWidensWithoutMutatingBase(t *testing.T) {
 	}
 }
 
-// TestMergeWithNoRowsIsTheCodeFloor pins that the code bundles are what runs
-// when the table says nothing — including the case that matters most, a process
-// that could not read the table at all.
 func TestMergeWithNoRowsIsTheCodeFloor(t *testing.T) {
 	base := authz.Bundles{"admin": {demoAlpha, demoBeta}}
 	merged := permissions.Merge(base, permissions.NewSnapshot(), demoOwn())
@@ -76,9 +67,6 @@ func TestMergeWithNoRowsIsTheCodeFloor(t *testing.T) {
 	}
 }
 
-// TestMergeDeniesRemoveACodeFloorGrant pins the 2026-08-04 half of the model:
-// an editable role can be narrowed below its bundle, and only for the key the
-// row names.
 func TestMergeDeniesRemoveACodeFloorGrant(t *testing.T) {
 	base := authz.Bundles{"admin": {demoAlpha, demoBeta}, "moderator": {demoAlpha}}
 	snap := deniesOf(map[string][]authz.Permission{"admin": {demoAlpha}})
@@ -99,10 +87,6 @@ func TestMergeDeniesRemoveACodeFloorGrant(t *testing.T) {
 	}
 }
 
-// TestMergeNeverDeniesRen is the fuse. ren is how an operator who has locked
-// everyone else out gets back in, so a deny row naming it — however it got
-// there, including a hand-written INSERT that never passed the validator — must
-// be inert at the one place the table becomes enforcement.
 func TestMergeNeverDeniesRen(t *testing.T) {
 	base := authz.Bundles{"ren": {demoAlpha, demoBeta}, "admin": {demoAlpha}}
 	snap := deniesOf(map[string][]authz.Permission{
@@ -120,14 +104,8 @@ func TestMergeNeverDeniesRen(t *testing.T) {
 	}
 }
 
-// TestMergeIgnoresForeignDenies pins that the own-vocabulary restriction cuts
-// both ways: a domain must not lose a key because another domain's vocabulary
-// happens to spell one the same way.
 func TestMergeIgnoresForeignDenies(t *testing.T) {
 	base := authz.Bundles{"admin": {demoAlpha}}
-	// foreignKey is not in demoOwn(), and neither is it in this bundle — the
-	// case that would bite is a deny arriving for a key this domain DOES grant
-	// but does not own, so assert on the one it does own staying put.
 	snap := deniesOf(map[string][]authz.Permission{"admin": {foreignKey}})
 
 	r := authz.NewResolver(permissions.Merge(base, snap, demoOwn()))
@@ -137,9 +115,6 @@ func TestMergeIgnoresForeignDenies(t *testing.T) {
 	}
 }
 
-// TestMergeDenyBeatsAGrantForTheSamePair pins the resolution order for a state
-// the unique index makes unreachable through the API but a dump restore could
-// still produce: the narrower answer wins.
 func TestMergeDenyBeatsAGrantForTheSamePair(t *testing.T) {
 	base := authz.Bundles{"admin": {}}
 	snap := permissions.NewSnapshot()
@@ -151,8 +126,6 @@ func TestMergeDenyBeatsAGrantForTheSamePair(t *testing.T) {
 	}
 }
 
-// TestMergeIgnoresAnUnknownEffect pins that a row whose effect is neither grant
-// nor deny changes nothing in EITHER direction.
 func TestMergeIgnoresAnUnknownEffect(t *testing.T) {
 	base := authz.Bundles{"admin": {demoAlpha}}
 	snap := permissions.NewSnapshot()
@@ -169,8 +142,6 @@ func TestMergeIgnoresAnUnknownEffect(t *testing.T) {
 	}
 }
 
-// TestMergeIgnoresForeignVocabulary pins that a domain's resolver never learns
-// a key from a vocabulary it does not enforce.
 func TestMergeIgnoresForeignVocabulary(t *testing.T) {
 	base := authz.Bundles{"admin": {demoAlpha}}
 	snap := grantsOf(map[string][]authz.Permission{"admin": {foreignKey}})
@@ -182,9 +153,6 @@ func TestMergeIgnoresForeignVocabulary(t *testing.T) {
 	}
 }
 
-// TestMergeIsIdempotent pins that re-applying a grant the code already makes
-// does not duplicate it (a duplicate is harmless to Can but would grow the
-// bundle on every refresh).
 func TestMergeIsIdempotent(t *testing.T) {
 	base := authz.Bundles{"admin": {demoAlpha}}
 	snap := grantsOf(map[string][]authz.Permission{"admin": {demoAlpha}})
@@ -196,15 +164,10 @@ func TestMergeIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestHolderSwapTakesEffectThroughASharedReference pins the plumbing the whole
-// invalidation design rests on: a gate that captured the Holder ONCE at startup
-// must see a later swap. If enforcement points held the *Resolver instead, this
-// test would fail and every refresh would be a no-op until restart.
 func TestHolderSwapTakesEffectThroughASharedReference(t *testing.T) {
 	base := authz.Bundles{"moderator": {}, "admin": {demoAlpha}}
 	holder := authz.NewHolder(base)
 
-	// What a route gate captures at registration time.
 	var gate authz.Checker = holder
 
 	if gate.Can([]string{"moderator"}, demoAlpha) {
@@ -219,7 +182,6 @@ func TestHolderSwapTakesEffectThroughASharedReference(t *testing.T) {
 		t.Error("the swap did not reach a gate holding the Holder")
 	}
 
-	// And a revoke (empty overlay) takes the role back to the code floor.
 	holder.Swap(authz.NewResolver(permissions.Merge(base, permissions.NewSnapshot(), demoOwn())))
 	if gate.Can([]string{"moderator"}, demoAlpha) {
 		t.Error("revoking did not return moderator to the code floor")

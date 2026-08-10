@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { REN_ONLY_SCOPES } from '~~/shared/types/oauth-client'
 
-// One OAuth client as a list row. The uploaded client logo is the row's
-// leading mark (same image the consent page and the app-directory strip show),
-// falling back to the key icon when the client has none.
 const props = defineProps<{
   client: OAuthClient
   sites: Site[]
@@ -16,8 +13,6 @@ const siteName = computed(() => {
   return site?.name ?? '未知站点'
 })
 
-// Only the ren-gated scopes are worth a chip here — the ordinary OIDC ones
-// (openid/profile/email) are on every client and would just add noise.
 const sensitiveScopes = computed(() =>
   (props.client.allowed_scopes ?? []).filter((s) => REN_ONLY_SCOPES.includes(s))
 )
@@ -52,9 +47,6 @@ const sensitiveScopes = computed(() =>
           >
             {{ client.is_public ? '公共' : '机密' }}
           </KunChip>
-          <!-- auto_consent flag: warning color because skipping the consent
-               screen is security-sensitive. Make it visually obvious which
-               clients have this elevated trust. -->
           <KunChip v-if="client.auto_consent" color="warning" variant="flat" size="sm">
             自动同意
           </KunChip>

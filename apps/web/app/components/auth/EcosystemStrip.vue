@@ -1,25 +1,14 @@
 <script setup lang="ts">
-// Register-page ecosystem strip — "拥有鲲 Galgame 账号，一键登录以下网站".
-// Collapsed: one tight row of small circular site icons + an expand toggle.
-// Expanded: a list (icon + name) below, capped at 100px with native scroll
-// (CSS grid 0fr→1fr accordion, no JS height measuring). Pure presentation,
-// off the auth path — renders nothing when the list is empty.
-// Contract: docs/integration/oauth/10-app-directory.md.
 import { cn } from '@kungal/ui-core'
 import type { EcosystemApp } from '~~/shared/types/oauth-client'
 
-// SSR-friendly read; the endpoint is public. useApiFetch's transform unwraps
-// the envelope to `{ apps }` (null on a non-zero code), so coalesce to [].
 const { data } = await useApiFetch<{ apps: EcosystemApp[] }>('/oauth/ecosystem')
 const apps = computed(() => data.value?.apps ?? [])
 
 const expanded = ref(false)
 
-// Initial-letter fallback when an app has no logo_url.
 const initialOf = (name: string) => (name.trim()[0] ?? '?').toUpperCase()
 
-// Tag each outbound link with utm_source = the current site's domain so the
-// destination can attribute the referral. useRequestURL() works SSR + client.
 const utmSource = useRequestURL().hostname
 const linkFor = (app: EcosystemApp) => {
   if (!app.site_domain) return '#'
@@ -35,7 +24,6 @@ const linkFor = (app: EcosystemApp) => {
       拥有鲲 Galgame 账号，一键登录以下全部ACG网站
     </p>
 
-    <!-- collapsed: one tight row of small circular icons + the expand toggle -->
     <div class="flex items-center justify-center gap-1">
       <a
         v-for="app in apps"
@@ -79,7 +67,6 @@ const linkFor = (app: EcosystemApp) => {
       </button>
     </div>
 
-    <!-- expanded: list of icon + name, capped at 100px (native scroll) -->
     <div
       class="grid w-full transition-all duration-300 ease-out"
       :class="

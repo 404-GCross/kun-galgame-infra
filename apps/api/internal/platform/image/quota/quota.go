@@ -1,15 +1,3 @@
-// Package quota enforces per-site daily upload quotas via Redis counters.
-//
-// Two dimensions are tracked per site:
-//   - Count: number of uploads in the current UTC day
-//   - Bytes: total uploaded byte count in the current UTC day
-//
-// Keys:
-//   image:quota:count:<site>:<YYYYMMDD>
-//   image:quota:bytes:<site>:<YYYYMMDD>
-//
-// Both keys are set to expire in 26 hours so they self-clean across day
-// rollover and we never leak counters.
 package quota
 
 import (
@@ -24,24 +12,20 @@ import (
 
 const keyTTL = 26 * time.Hour
 
-// Errors.
 var (
 	ErrCountExceeded = errors.New("quota: daily upload count exceeded")
 	ErrBytesExceeded = errors.New("quota: daily upload bytes exceeded")
 	ErrNotConfigured = errors.New("quota: redis cache not configured")
 )
 
-// Checker guards uploads with per-site daily quotas.
 type Checker struct {
 	cache *cache.RedisCache
 }
 
-// New creates a quota checker backed by the given Redis cache.
 func New(c *cache.RedisCache) *Checker {
 	return &Checker{cache: c}
 }
 
-// DailyUsage is the current-day usage for a site.
 type DailyUsage struct {
 	Count       int64
 	Bytes       int64
@@ -62,7 +46,6 @@ func nextDay(now time.Time) time.Time {
 func countKey(site, day string) string { return fmt.Sprintf("image:quota:count:%s:%s", site, day) }
 func bytesKey(site, day string) string { return fmt.Sprintf("image:quota:bytes:%s:%s", site, day) }
 
-// Current returns the current-day usage without incrementing.
 func (c *Checker) Current(site string, limitCount int, limitBytes int64) (*DailyUsage, error) {
 	if c == nil || c.cache == nil {
 		return nil, ErrNotConfigured
@@ -90,15 +73,6 @@ func (c *Checker) Current(site string, limitCount int, limitBytes int64) (*Daily
 	}, nil
 }
 
-// Reserve checks quota and increments both counters atomically enough for
-// practical use. If either dimension would be exceeded, it returns the
-// specific error without consuming any quota.
-//
-// Note: this uses GET-then-SET rather than INCRBY because our cache.RedisCache
-// only exposes Set/Get. In the very-high-concurrency case this can allow
-// ~N concurrent requests each to pass the check and collectively go a bit
-// over. Acceptable for V1; if we ever hit that scale we'll switch to a
-// proper Lua script or pipelined INCRBY.
 func (c *Checker) Reserve(ctx context.Context, site string, bytesToAdd int64, limitCount int, limitBytes int64) (*DailyUsage, error) {
 	if c == nil || c.cache == nil {
 		return nil, ErrNotConfigured

@@ -10,11 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Golden replay: 269 cases deterministically sampled from the 2026-06-30
-// Bangumi Archive dump (rule: every id%5000==0 row + the first 15 error rows,
-// 10 [k|v]-item rows and 5 empty-array rows per file), each carrying the
-// REFERENCE parser's output captured at zero-divergence time. This is the
-// permanent behavior anchor now that the reference dependency is gone.
 type goldenRow struct {
 	File   string   `json:"file"`
 	ID     int64    `json:"id"`

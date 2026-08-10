@@ -8,9 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// runDlsiteDateLane fills empty release dates from the release's OWN DLsite
-// anchor (SKU-level — the highest-precision source, hence first: every release
-// it plans is marked in `planned` and never touched by the eg/bgm lanes).
 func runDlsiteDateLane(ctx context.Context, db, dlDB *gorm.DB, w *writer, reg registry, opts Opts, maxYear int, planned map[int64]bool) error {
 	cands, err := loadDlDateCandidates(ctx, db, reg, opts.Limit, opts.Offset)
 	if err != nil {
@@ -37,16 +34,16 @@ func runDlsiteDateLane(ctx context.Context, db, dlDB *gorm.DB, w *writer, reg re
 			st.DlDateMissingMirror++
 			continue
 		}
-		if dt.y == nil { // regist_date IS NULL — DLsite never published a date
+		if dt.y == nil {
 			st.DlDateNoRegist++
 			continue
 		}
-		if *dt.y < minYear || *dt.y > maxYear { // 2099-style placeholder
+		if *dt.y < minYear || *dt.y > maxYear {
 			st.DlDateOutOfRange++
 			continue
 		}
 		y := int16(*dt.y)
-		m, d := int16(*dt.m), int16(*dt.d) // always present when y is (real timestamp)
+		m, d := int16(*dt.m), int16(*dt.d)
 		st.DlDatePlanned++
 		planned[c.ReleaseID] = true
 		collectDate(&st.DlDateSamples, DateSample{WorkID: c.WorkID, ReleaseID: c.ReleaseID, Ext: c.Workno, Y: y, M: &m, D: &d})
@@ -55,9 +52,6 @@ func runDlsiteDateLane(ctx context.Context, db, dlDB *gorm.DB, w *writer, reg re
 	return nil
 }
 
-// runEgDateLane fills the remaining empty stub-release dates from EG
-// work-level sellday. A release the dlsite lane already planned is counted
-// covered — the value-level dlsite > eg precedence.
 func runEgDateLane(ctx context.Context, db, egDB *gorm.DB, w *writer, reg registry, opts Opts, maxYear int, planned map[int64]bool) error {
 	cands, err := loadEgDateCandidates(ctx, db, reg, opts.Limit, opts.Offset)
 	if err != nil {
@@ -94,8 +88,6 @@ func runEgDateLane(ctx context.Context, db, egDB *gorm.DB, w *writer, reg regist
 		if len(c.EgIDs) > 1 {
 			st.EgDateMultiAnchor += len(c.EgIDs) - 1
 		}
-		// The representative anchor: the lowest EG id present in the mirror
-		// (ids are pre-sorted; dates need no vote-weighting — deterministic).
 		sellday, chosen, found := "", int64(-1), false
 		for _, id := range c.EgIDs {
 			if s, ok := mirror[id]; ok {
@@ -120,8 +112,6 @@ func runEgDateLane(ctx context.Context, db, egDB *gorm.DB, w *writer, reg regist
 	return nil
 }
 
-// runBgmDateLane fills the still-empty stub-release dates from the Bangumi
-// subject's free-text date (partial dates legal — the trio is nullable).
 func runBgmDateLane(ctx context.Context, db *gorm.DB, w *writer, reg registry, opts Opts, maxYear int, planned map[int64]bool) error {
 	cands, err := loadBgmDateCandidates(ctx, db, reg, opts.Limit, opts.Offset)
 	if err != nil {

@@ -11,22 +11,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ReportService owns the S2S report intake: tenant assertion, rate limiting,
-// dedup, negative-knowledge folding, reputation weighting, and threshold
-// aggregation into the review inbox.
 type ReportService struct {
 	db      *gorm.DB
 	weigher Weigher
-	// policy supplies the per-site aggregate threshold; nil = the platform
-	// constant governs every site (step 07 M0).
-	policy *PolicyService
+	policy  *PolicyService
 }
 
-// NewReportService builds the intake service over the trust DB + a reporter
-// weigher (main-DB backed in production, faked in tests). The optional policy
-// resolver makes the aggregate threshold per-site: how many complaints mean
-// something is a property of a community's size and temperament, and a small
-// site and a large forum do not agree on it.
 func NewReportService(db *gorm.DB, weigher Weigher, opts ...ReportServiceOption) *ReportService {
 	s := &ReportService{db: db, weigher: weigher}
 	for _, o := range opts {
@@ -35,15 +25,12 @@ func NewReportService(db *gorm.DB, weigher Weigher, opts ...ReportServiceOption)
 	return s
 }
 
-// ReportServiceOption configures an optional intake behaviour.
 type ReportServiceOption func(*ReportService)
 
-// WithReportPolicy attaches the per-site policy resolver.
 func WithReportPolicy(p *PolicyService) ReportServiceOption {
 	return func(s *ReportService) { s.policy = p }
 }
 
-// aggregateThresholdFor is the report weight that opens an item for one site.
 func (s *ReportService) aggregateThresholdFor(site string) float32 {
 	if s.policy == nil {
 		return aggregateThreshold
@@ -51,8 +38,6 @@ func (s *ReportService) aggregateThresholdFor(site string) float32 {
 	return s.policy.Resolve(site).AggregateThreshold
 }
 
-// ReportParams is a normalized intake request. Site is derived from the
-// authenticated client's binding (never the wire body).
 type ReportParams struct {
 	Site        string
 	SubjectKind string
@@ -64,23 +49,16 @@ type ReportParams struct {
 	ReporterID  int64
 }
 
-// ReportResult is the intake outcome: the report row and, when one exists, the
-// review item it aggregated/folded into.
 type ReportResult struct {
 	ReportID     int64
 	ReviewItemID *int64
 }
 
-// Submit runs the full intake flow (doc 18 §5.1). Errors map to structured HTTP
-// codes at the handler; the happy path returns the report id and any linked
-// review item.
 func (s *ReportService) Submit(ctx context.Context, p ReportParams) (ReportResult, error) {
 	if err := validateSubjectURL(p.SubjectURL); err != nil {
 		return ReportResult{}, err
 	}
 
-	// Tenant fail-loud: the subject_kind must be registered (non-deprecated)
-	// for the caller's site (invariant 11).
 	var kindCount int64
 	if err := s.db.WithContext(ctx).Model(&model.TrustSubjectKind{}).
 		Where("site = ? AND key = ? AND is_deprecated = false", p.Site, p.SubjectKind).
@@ -91,7 +69,6 @@ func (s *ReportService) Submit(ctx context.Context, p ReportParams) (ReportResul
 		return ReportResult{}, ErrSubjectKindNotRegistered
 	}
 
-	// Resolve the reason (a per-site extension overrides the global base).
 	var reason struct {
 		ID       int64
 		Severity int16
@@ -106,7 +83,6 @@ func (s *ReportService) Submit(ctx context.Context, p ReportParams) (ReportResul
 		return ReportResult{}, ErrReasonUnknown
 	}
 
-	// Rate limit: SQL window count over (reporter_id, created_at) — 章程 ruling 6.
 	var recent int64
 	if err := s.db.WithContext(ctx).Model(&model.TrustReport{}).
 		Where("reporter_id = ? AND created_at > ?", p.ReporterID, time.Now().Add(-rateLimitWindow)).
@@ -135,7 +111,6 @@ func (s *ReportService) Submit(ctx context.Context, p ReportParams) (ReportResul
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
-			// Dedup (invariant 5): idempotent — return the existing report.
 			var existing model.TrustReport
 			if err := tx.Where(
 				"site = ? AND subject_kind = ? AND subject_id = ? AND reporter_id = ?",
@@ -161,13 +136,7 @@ func (s *ReportService) Submit(ctx context.Context, p ReportParams) (ReportResul
 	return result, nil
 }
 
-// aggregate decides the freshly-inserted report's linkage and returns the review
-// item it landed on (nil when it stays unlinked below threshold): link to an
-// open item, fold onto a recently-dismissed one (invariant 10), or open a new
-// item when the accumulated weight crosses the threshold or the reporter is
-// staff (章程 ruling 7).
 func (s *ReportService) aggregate(tx *gorm.DB, p ReportParams, reportID int64, weight ReporterWeight, severity int16) (*int64, error) {
-	// 1. An open item already exists → link + accumulate weight (invariant 4).
 	var open model.TrustReviewItem
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("site = ? AND subject_kind = ? AND subject_id = ? AND status IN ?",
@@ -186,7 +155,6 @@ func (s *ReportService) aggregate(tx *gorm.DB, p ReportParams, reportID int64, w
 		return nil, err
 	}
 
-	// 2. A recently-dismissed item within the fold window → fold (invariant 10).
 	var dismissed model.TrustReviewItem
 	err = tx.Where("site = ? AND subject_kind = ? AND subject_id = ? AND status = ? AND decided_at > ?",
 		p.Site, p.SubjectKind, p.SubjectID, model.ReviewStatusDismissed, time.Now().Add(-foldWindow)).
@@ -201,7 +169,6 @@ func (s *ReportService) aggregate(tx *gorm.DB, p ReportParams, reportID int64, w
 		return nil, err
 	}
 
-	// 3. No open/dismissed item → aggregate the un-linked, non-folded reports.
 	var sum float32
 	if err := tx.Model(&model.TrustReport{}).
 		Where("site = ? AND subject_kind = ? AND subject_id = ? AND status <> ? AND review_item_id IS NULL",
@@ -210,35 +177,27 @@ func (s *ReportService) aggregate(tx *gorm.DB, p ReportParams, reportID int64, w
 		return nil, err
 	}
 	if !weight.Staff && sum < s.aggregateThresholdFor(p.Site) {
-		return nil, nil // below threshold → the report stays received, unlinked
+		return nil, nil
 	}
 
 	item := model.TrustReviewItem{
 		Site: p.Site, SubjectKind: p.SubjectKind, SubjectID: p.SubjectID,
 		Source: model.ReviewSourceReports, Severity: &severity,
 		ReportWeightSum: &sum,
-		// Reach is nil on this path by construction: a report comes from an end
-		// user, who has no idea how many people saw the thing. It is not lost —
-		// a later scan or forward on the same subject fills it and re-ranks the
-		// open item. Routed through rankPriority anyway so there is exactly one
-		// ordering model, not one that skips a source.
-		Priority: rankPriority(float32(severity), nil),
-		Status:   model.ReviewStatusPending,
+		Priority:        rankPriority(float32(severity), nil),
+		Status:          model.ReviewStatusPending,
 	}
 	res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item)
 	if res.Error != nil {
 		return nil, res.Error
 	}
 	if res.RowsAffected == 0 {
-		// A concurrent report opened the item first (invariant 4 backstop) →
-		// adopt it instead of forking a second.
 		if err := tx.Where("site = ? AND subject_kind = ? AND subject_id = ? AND status IN ?",
 			p.Site, p.SubjectKind, p.SubjectID, []int16{model.ReviewStatusPending, model.ReviewStatusClaimed}).
 			Limit(1).Take(&item).Error; err != nil {
 			return nil, err
 		}
 	}
-	// Backfill-link every un-linked, non-folded report for this subject.
 	if err := tx.Model(&model.TrustReport{}).
 		Where("site = ? AND subject_kind = ? AND subject_id = ? AND status <> ? AND review_item_id IS NULL",
 			p.Site, p.SubjectKind, p.SubjectID, model.ReportStatusFolded).
@@ -248,9 +207,6 @@ func (s *ReportService) aggregate(tx *gorm.DB, p ReportParams, reportID int64, w
 	return &item.ID, nil
 }
 
-// validateSubjectURL accepts an absent link, and otherwise requires a plausible
-// absolute http(s) URL of bounded length. BFFs construct the link (it is not
-// raw user input), so a violation is a programming error → fail-loud (422).
 func validateSubjectURL(raw *string) error {
 	if raw == nil || *raw == "" {
 		return nil
@@ -265,7 +221,6 @@ func validateSubjectURL(raw *string) error {
 	return nil
 }
 
-// linkReport attaches a single report to a review item (status → linked).
 func (s *ReportService) linkReport(tx *gorm.DB, reportID, itemID int64) error {
 	return tx.Model(&model.TrustReport{}).Where("id = ?", reportID).
 		Updates(map[string]any{"review_item_id": itemID, "status": model.ReportStatusLinked}).Error

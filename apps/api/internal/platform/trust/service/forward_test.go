@@ -21,31 +21,26 @@ func fwdParams(subject string) ForwardParams {
 	}
 }
 
-// D①: allowlist fail-closed — unconfigured / not-listed → 403; listed → through.
 func TestForwardAllowlist(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, "community_post", nil, nil)
 
-	// Empty allowlist → every client rejected.
 	closed := NewForwardService(testDB, nil)
 	if _, err := closed.Forward(context.Background(), fwdParams("a1")); !errors.Is(err, ErrForwarderNotAllowed) {
 		t.Fatalf("empty allowlist: want ErrForwarderNotAllowed, got %v", err)
 	}
 
 	svc := NewForwardService(testDB, allowFwd())
-	// A client not on the list → rejected.
 	p := fwdParams("a2")
 	p.CallerClientID = "stranger"
 	if _, err := svc.Forward(context.Background(), p); !errors.Is(err, ErrForwarderNotAllowed) {
 		t.Fatalf("stranger: want ErrForwarderNotAllowed, got %v", err)
 	}
-	// The listed client → allowed.
 	if _, err := svc.Forward(context.Background(), fwdParams("a3")); err != nil {
 		t.Fatalf("listed client forward: %v", err)
 	}
 }
 
-// D②: an unregistered (site, kind) → 422.
 func TestForwardUnregisteredKind(t *testing.T) {
 	cleanTables(t)
 	svc := NewForwardService(testDB, allowFwd())
@@ -54,9 +49,6 @@ func TestForwardUnregisteredKind(t *testing.T) {
 	}
 }
 
-// D③: forward creates an item, and a second forward for the same subject updates
-// the open item idempotently — weight_sum takes the max, context_note fills only
-// when empty (the first excerpt is preserved).
 func TestForwardCreateAndIdempotent(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, "community_post", nil, nil)
@@ -81,7 +73,6 @@ func TestForwardCreateAndIdempotent(t *testing.T) {
 	}
 	firstNote := *it.ContextNote
 
-	// Second forward: higher weight, different note → same item, max weight, note kept.
 	p := fwdParams("s1")
 	w := float32(5.0)
 	p.WeightSum = &w
@@ -103,14 +94,11 @@ func TestForwardCreateAndIdempotent(t *testing.T) {
 	}
 }
 
-// D④: resolve closes an open item both ways, writes NO disposition, appends one
-// review_resolved_by_site audit row, and is a no-op on a terminal item.
 func TestForwardResolve(t *testing.T) {
 	cleanTables(t)
 	registerKind(t, tSite, "community_post", nil, nil)
 	svc := NewForwardService(testDB, allowFwd())
 
-	// approved → dismissed.
 	r1, _ := svc.Forward(context.Background(), fwdParams("r1"))
 	actor := "moderator-9"
 	res, err := svc.Resolve(context.Background(), ResolveParams{
@@ -123,7 +111,6 @@ func TestForwardResolve(t *testing.T) {
 		t.Fatalf("approved → status %d, want dismissed", getItem(t, r1.ReviewItemID).Status)
 	}
 
-	// rejected → actioned.
 	r2, _ := svc.Forward(context.Background(), fwdParams("r2"))
 	if res, err := svc.Resolve(context.Background(), ResolveParams{
 		CallerClientID: fwdClient, ReviewItemID: r2.ReviewItemID, Outcome: "rejected",
@@ -134,13 +121,11 @@ func TestForwardResolve(t *testing.T) {
 		t.Fatalf("rejected → status %d, want actioned", getItem(t, r2.ReviewItemID).Status)
 	}
 
-	// No dispositions from either resolve.
 	var disp int64
 	testDB.Model(&model.TrustDisposition{}).Count(&disp)
 	if disp != 0 {
 		t.Fatalf("resolve must not create dispositions, found %d", disp)
 	}
-	// The audit rows are review_resolved_by_site (policy_ref carries the actor).
 	var audits []model.TrustAuditLog
 	testDB.Where("action = ?", "review_resolved_by_site").Order("id ASC").Find(&audits)
 	if len(audits) != 2 {
@@ -150,7 +135,6 @@ func TestForwardResolve(t *testing.T) {
 		t.Fatalf("actor_ref not recorded in policy_ref: %v", audits[0].PolicyRef)
 	}
 
-	// Resolving an already-terminal item → closed:false (tolerated race).
 	res, err = svc.Resolve(context.Background(), ResolveParams{
 		CallerClientID: fwdClient, ReviewItemID: r1.ReviewItemID, Outcome: "rejected",
 	})
@@ -162,7 +146,6 @@ func TestForwardResolve(t *testing.T) {
 	}
 }
 
-// TestForwardResolveGuards pins the allowlist + invalid-outcome + not-found guards.
 func TestForwardResolveGuards(t *testing.T) {
 	cleanTables(t)
 	svc := NewForwardService(testDB, allowFwd())
@@ -177,15 +160,11 @@ func TestForwardResolveGuards(t *testing.T) {
 	}
 }
 
-// D⑤: notify_on_dismiss — a dismissed decision on a kind that opts in AND has a
-// callback_url produces an action:0 disposition + pending callback; a kind that
-// does not opt in produces none.
 func TestDecideDismissNotify(t *testing.T) {
 	cleanTables(t)
 	url := "http://community:9282/trust/callback"
 	sec := "secret"
 
-	// notify_on_dismiss = true → dismissed creates an action:0 pending disposition.
 	kindOn := model.TrustSubjectKind{Site: tSite, Key: "community_post", CallbackURL: &url, CallbackSecret: &sec, NotifyOnDismiss: true}
 	if err := testDB.Create(&kindOn).Error; err != nil {
 		t.Fatalf("create kind: %v", err)
@@ -212,7 +191,6 @@ func TestDecideDismissNotify(t *testing.T) {
 		t.Fatalf("dismiss disposition callback not pending: %v", disp.CallbackStatus)
 	}
 
-	// A kind WITHOUT notify_on_dismiss → dismissed creates no disposition.
 	cleanTables(t)
 	kindOff := model.TrustSubjectKind{Site: tSite, Key: "community_post", CallbackURL: &url, CallbackSecret: &sec, NotifyOnDismiss: false}
 	testDB.Create(&kindOff)

@@ -13,9 +13,6 @@ import (
 	"gorm.io/datatypes"
 )
 
-// CreatorApplicationHandler serves the creator-role application + review API.
-// User endpoints file/read their own application; admin endpoints review.
-// Eligibility is enforced downstream (forum/moyu) before they call Apply.
 type CreatorApplicationHandler struct {
 	svc *service.CreatorApplicationService
 }
@@ -30,7 +27,6 @@ type applyCreatorRequest struct {
 	Evidence datatypes.JSON `json:"evidence"`
 }
 
-// Apply files a pending creator application for the authenticated user.
 func (h *CreatorApplicationHandler) Apply(c fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(uint)
 	if userID == 0 {
@@ -53,7 +49,6 @@ func (h *CreatorApplicationHandler) Apply(c fiber.Ctx) error {
 	return response.Success(c, app)
 }
 
-// MyApplication returns the authenticated user's latest application (null if none).
 func (h *CreatorApplicationHandler) MyApplication(c fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(uint)
 	if userID == 0 {
@@ -66,7 +61,6 @@ func (h *CreatorApplicationHandler) MyApplication(c fiber.Ctx) error {
 	return response.Success(c, app)
 }
 
-// AdminList returns the review queue (default: pending).
 func (h *CreatorApplicationHandler) AdminList(c fiber.Ctx) error {
 	status := c.Query("status", model.CreatorAppPending)
 	page, _ := strconv.Atoi(c.Query("page", "1"))
@@ -78,7 +72,6 @@ func (h *CreatorApplicationHandler) AdminList(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"items": items, "total": total})
 }
 
-// AdminApprove grants the creator role and marks the application approved.
 func (h *CreatorApplicationHandler) AdminApprove(c fiber.Ctx) error {
 	reviewerID, _ := c.Locals("user_id").(uint)
 	id, err := strconv.Atoi(c.Params("id"))
@@ -98,8 +91,6 @@ type declineCreatorRequest struct {
 	Reason string `json:"reason" validate:"omitempty,max=500"`
 }
 
-// AdminDecline marks the application declined with a reason; the user may
-// re-apply after the cooldown.
 func (h *CreatorApplicationHandler) AdminDecline(c fiber.Ctx) error {
 	reviewerID, _ := c.Locals("user_id").(uint)
 	id, err := strconv.Atoi(c.Params("id"))

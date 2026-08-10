@@ -19,10 +19,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: catalog Gold schema + src_vndb
-// Silver schema + a minimal EG mirror fixture in its OWN schema
-// (workplaytime_eg) reached via a search_path DSN (the workratings pattern —
-// the shared test DB's public.games belongs to importer_test.go).
 var (
 	testDB    *gorm.DB
 	testDSN   string
@@ -127,19 +123,16 @@ func mkVN(t *testing.T, id string, cLength *int, cLengthnum int) {
 func intPtr(n int) *int       { return &n }
 func strPtr(s string) *string { return &s }
 
-// TestBackfillWorkPlaytime pins the whole facet: both lanes, the hour→minute
-// conversion, the sanity cap, the NO-XOR rule (claimed works admitted), the
-// change-detected upsert (second apply zero, refresh updates in place).
 func TestBackfillWorkPlaytime(t *testing.T) {
 	clean(t)
 	medium := mediumID(t)
 	egSrc := sourceID(t, "erogamespace")
 	vndbSrc := sourceID(t, "vndb")
 
-	wA := mkWork(t, medium, "eg-bodyless", nil)                   // EG 5h → 300min
-	wB := mkWork(t, medium, "eg-overcap", nil)                    // EG 2000h → rejected
-	wC := mkWork(t, medium, "vndb-lane", nil)                     // vndb c_length 1234
-	wD := mkWork(t, medium, "eg-claimed", strPtr("galgame_wiki")) // claimed: STILL admitted (no XOR)
+	wA := mkWork(t, medium, "eg-bodyless", nil)
+	wB := mkWork(t, medium, "eg-overcap", nil)
+	wC := mkWork(t, medium, "vndb-lane", nil)
+	wD := mkWork(t, medium, "eg-claimed", strPtr("galgame_wiki"))
 	mkAnchor(t, wA, "101", egSrc)
 	mkAnchor(t, wB, "102", egSrc)
 	mkAnchor(t, wC, "v11", vndbSrc)
@@ -152,7 +145,6 @@ func TestBackfillWorkPlaytime(t *testing.T) {
 	ctx := context.Background()
 	opts := Opts{DSN: testDSN, EGDSN: egTestDSN, Source: "all"}
 
-	// Dry: plan only, zero rows.
 	st, err := Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 2, st.EGPlanned, "A + claimed D")
@@ -163,7 +155,6 @@ func TestBackfillWorkPlaytime(t *testing.T) {
 	require.NoError(t, testDB.Table("catalog_work_playtime").Count(&n).Error)
 	assert.Zero(t, n, "dry run must not write")
 
-	// Apply.
 	opts.Apply = true
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
@@ -175,7 +166,7 @@ func TestBackfillWorkPlaytime(t *testing.T) {
 	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wA, egSrc).First(&row).Error)
 	assert.Equal(t, 300, row.Minutes, "5h ×60")
 	assert.Equal(t, 0, row.VoteCount, "EG publishes no per-work count")
-	row = model.CatalogWorkPlaytime{} // fresh struct per First — GORM reuses populated PKs as conditions
+	row = model.CatalogWorkPlaytime{}
 	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wC, vndbSrc).First(&row).Error)
 	assert.Equal(t, 1234, row.Minutes)
 	assert.Equal(t, 7, row.VoteCount)
@@ -185,13 +176,11 @@ func TestBackfillWorkPlaytime(t *testing.T) {
 	err = testDB.Where("work_id = ?", wB).First(&model.CatalogWorkPlaytime{}).Error
 	assert.Error(t, err, "over-cap estimate never lands")
 
-	// Second apply: zero writes.
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Zero(t, st.EGWritten+st.VndbWritten, "idempotent re-run")
 	assert.Equal(t, 3, st.EGUnchanged+st.VndbUnchanged)
 
-	// Refresh: mirror value moves → exactly that row updates in place.
 	require.NoError(t, testDB.Exec(`UPDATE workplaytime_eg.games SET raw = '{"total_play_time_median": 6}' WHERE id = 101`).Error)
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)

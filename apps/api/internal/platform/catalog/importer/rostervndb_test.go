@@ -12,10 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// seedVNDBWork creates a claimed work + an EXACT VNDB work anchor whose
-// external_id is the VNDB vid VERBATIM ("v100") — the roster gate. The claim's
-// product_work_id is derived from the vid so distinct works never collide on
-// uq_catalog_work_claim.
 func seedVNDBWork(t *testing.T, vid string) int64 {
 	t.Helper()
 	pwid, err := strconv.ParseInt(strings.TrimPrefix(vid, "v"), 10, 64)
@@ -30,8 +26,6 @@ func seedVNDBWork(t *testing.T, vid string) int64 {
 
 func seedVNDBChar(t *testing.T, id, native, romaji, image string) {
 	t.Helper()
-	// The full step-72 chars column set: every non-pointer column is NOT NULL
-	// (weight/age stay NULL here).
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.chars (id, image, bloodt, cup_size, sex, spoil_sex, gender, spoil_gender, main, main_spoil, s_bust, s_waist, s_hip, birthday, height, description, ingested_at)
 		VALUES (?,?,'','','','','','','',0,0,0,0,0,0,'',now())`, id, image).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.chars_names (id, lang, name, latin) VALUES (?, 'ja', ?, ?)`, id, native, romaji).Error)
@@ -48,18 +42,14 @@ func seedCharVN(t *testing.T, charID, vid, role string, spoil int16) {
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.chars_vns (id, vid, rid, role, spoil) VALUES (?,?,'',?,?)`, charID, vid, role, spoil).Error)
 }
 
-// TestRosterVNDBWave covers the fresh-import path: gate by exact VNDB work
-// anchor, kind + spoiler mapping, native display_name + romaji spelling_variant
-// alias, the portrait-backfill threshold, zero persons, and idempotency.
 func TestRosterVNDBWave(t *testing.T) {
 	clean(t)
 	work := seedVNDBWork(t, "v100")
-	// c3 lives only on the un-anchored v999 → out of gate (never loaded).
 	seedVNDBChar(t, "c1", "主人公", "Shujinkou", "ch1")
 	seedVNDBChar(t, "c2", "悪役", "Akuyaku", "ch2")
 	seedVNDBChar(t, "c3", "端役", "Hayaku", "")
-	seedVNDBImage(t, "ch1", 0, 0)   // qualifies (safe)
-	seedVNDBImage(t, "ch2", 200, 0) // does NOT qualify (explicit)
+	seedVNDBImage(t, "ch1", 0, 0)
+	seedVNDBImage(t, "ch2", 200, 0)
 	seedCharVN(t, "c1", "v100", "main", 0)
 	seedCharVN(t, "c2", "v100", "appears", 2)
 	seedCharVN(t, "c3", "v999", "main", 0)
@@ -73,7 +63,6 @@ func TestRosterVNDBWave(t *testing.T) {
 	assert.Zero(t, st.SkippedNoWorkAnchor)
 	assert.Zero(t, st.Errors)
 
-	// kind: main→main(1), appears→appears(3). spoiler: from chars_vns.spoil.
 	c1 := vndbCharID(t, "c1")
 	c2 := vndbCharID(t, "c2")
 	assert.Equal(t, int64(model.WorkCharacterKindMain), scalarInt(t, fmt.Sprintf(`SELECT kind FROM catalog_work_character WHERE work_id=%d AND character_id=%d`, work, c1)))
@@ -81,24 +70,19 @@ func TestRosterVNDBWave(t *testing.T) {
 	assert.Equal(t, int64(model.SpoilerNone), scalarInt(t, fmt.Sprintf(`SELECT spoiler FROM catalog_work_character WHERE work_id=%d AND character_id=%d`, work, c1)))
 	assert.Equal(t, int64(model.SpoilerSevere), scalarInt(t, fmt.Sprintf(`SELECT spoiler FROM catalog_work_character WHERE work_id=%d AND character_id=%d`, work, c2)))
 
-	// New entity: display_name = native, self anchor rule, edge provenance.
 	var dn string
 	require.NoError(t, testDB.Raw(`SELECT display_name FROM catalog_character WHERE id=?`, c1).Scan(&dn).Error)
 	assert.Equal(t, "主人公", dn)
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='c1' AND link_kind=0 AND matched_by='rule:vndb-character-import'`))
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_work_character WHERE matched_by='import:character-roster-vndb' AND character_id=`+fmt.Sprint(c1)))
-	// romaji → spelling_variant alias.
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_character_alias WHERE character_id=%d AND name='Shujinkou' AND kind=%d`, c1, model.AliasKindSpellingVariant)))
 
-	// Portrait backfill: c1 only (c2 explicit), keyed by its catalog character id.
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM src_vndb.portrait_backfill`))
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM src_vndb.portrait_backfill WHERE catalog_character_id=%d AND image_id='ch1'`, c1)))
 
-	// Identity discipline: no persons; c3 never created.
 	assert.Zero(t, scalarInt(t, `SELECT count(*) FROM catalog_person`))
 	assert.Zero(t, scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='c3'`))
 
-	// Idempotency: a second run writes nothing.
 	st2, err := New(testDB, nil, Options{Source: "vndb"}).RunRoster("vndb")
 	require.NoError(t, err)
 	assert.Zero(t, st2.CharactersCreated)
@@ -108,33 +92,24 @@ func TestRosterVNDBWave(t *testing.T) {
 	assert.Equal(t, 2, st2.Already)
 }
 
-// TestRosterVNDBAttach proves the same-work same-name rule: a VNDB character
-// whose romaji equals an existing entity's alias on a shared work ATTACHES to
-// that entity (no new row) — the edge on the shared work keeps the first
-// source's kind (not overwritten), while a NEW work gets a fresh edge.
 func TestRosterVNDBAttach(t *testing.T) {
 	clean(t)
-	shared := seedVNDBWork(t, "v200") // existing entity already has an edge here
-	fresh := seedVNDBWork(t, "v201")  // no existing edge here
+	shared := seedVNDBWork(t, "v200")
+	fresh := seedVNDBWork(t, "v201")
 
-	// A pre-existing (Bangumi-style) character on the shared work: display_name
-	// differs from VNDB (space + 铃/鈴), but its romaji alias matches VNDB's.
 	var existing int64
 	require.NoError(t, testDB.Raw(`INSERT INTO catalog_character (display_name, lang, description, field_provenance)
 		VALUES ('神尾観铃','ja','','{}') RETURNING id`).Scan(&existing).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (4, ?, 3, '2', 0, 'rule:bangumi-character-import')`, existing).Error)
-	// source_id 3 / provenance 0 match the Bangumi-style origin this fixture is
-	// standing in for; provenance is NOT NULL with no default since wave 195.
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_character_alias (character_id, name, lang, kind, is_primary_for_locale, source_id, provenance)
 		VALUES (?, 'Kamio Misuzu', 'ja', ?, false, 3, 0)`, existing, model.AliasKindSpellingVariant).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work_character (work_id, character_id, kind, spoiler, matched_by, created_at, updated_at)
 		VALUES (?, ?, ?, 0, 'import:character-roster-bangumi', now(), now())`, shared, existing, model.WorkCharacterKindSecondary).Error)
 
-	// VNDB char c50 shares the native/romaji and appears on both works.
 	seedVNDBChar(t, "c50", "神尾 観鈴", "Kamio Misuzu", "")
-	seedCharVN(t, "c50", "v200", "primary", 0) // primary → main(1); conflicts on shared
-	seedCharVN(t, "c50", "v201", "primary", 0) // fresh work → new edge
+	seedCharVN(t, "c50", "v200", "primary", 0)
+	seedCharVN(t, "c50", "v201", "primary", 0)
 
 	st, err := New(testDB, nil, Options{Source: "vndb"}).RunRoster("vndb")
 	require.NoError(t, err)
@@ -143,16 +118,11 @@ func TestRosterVNDBAttach(t *testing.T) {
 	assert.Equal(t, 1, st.EdgesWritten, "fresh work edge only")
 	assert.Equal(t, 1, st.Already, "shared-work edge already exists → not overwritten")
 
-	// The VNDB self-anchor points at the EXISTING entity via the attach rule.
 	assert.Equal(t, existing, scalarInt(t, `SELECT entity_id FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='c50' AND matched_by='rule:same-work-character-name'`))
-	// Still exactly one catalog character (no duplicate).
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_character`))
-	// Shared-work edge kept the first source's kind (secondary), NOT VNDB's main.
 	assert.Equal(t, int64(model.WorkCharacterKindSecondary), scalarInt(t, fmt.Sprintf(`SELECT kind FROM catalog_work_character WHERE work_id=%d AND character_id=%d`, shared, existing)))
-	// Fresh work got a new edge pointing at the same entity, kind=main(1) from VNDB.
 	assert.Equal(t, int64(model.WorkCharacterKindMain), scalarInt(t, fmt.Sprintf(`SELECT kind FROM catalog_work_character WHERE work_id=%d AND character_id=%d`, fresh, existing)))
 
-	// Idempotency: a second run resolves via the anchor and writes nothing.
 	st2, err := New(testDB, nil, Options{Source: "vndb"}).RunRoster("vndb")
 	require.NoError(t, err)
 	assert.Zero(t, st2.CharactersCreated)
@@ -161,9 +131,6 @@ func TestRosterVNDBAttach(t *testing.T) {
 	assert.Equal(t, 2, st2.Already)
 }
 
-// seedClaimingChar creates a catalog character that holds a VNDB (source 2) ref
-// for vid at the given link_kind, optionally soft-deleted — the shape a merge
-// leaves behind when it demotes two competing exacts to probable.
 func seedClaimingChar(t *testing.T, name, vid string, linkKind int16, deleted bool) int64 {
 	t.Helper()
 	var id int64
@@ -177,19 +144,10 @@ func seedClaimingChar(t *testing.T, name, vid string, linkKind int16, deleted bo
 	return id
 }
 
-// TestRosterVNDBClaimedIDsAreNotReminted pins the wave-199 rule: an external id
-// an ALIVE character already claims is not a new character at ANY grade. A
-// probable claim (what a merge leaves when it demotes two competing exacts)
-// skips the character and shows up in its own counter; a soft-deleted PROBABLE
-// holder does not block minting; an alive exact holder resumes exactly as
-// before. A soft-deleted EXACT holder is covered by its own test below.
 func TestRosterVNDBClaimedIDsAreNotReminted(t *testing.T) {
 	clean(t)
 	work := seedVNDBWork(t, "v300")
 
-	// c60: an alive survivor claims it at PROBABLE → skip (no second body).
-	// c61: only a merged-away character claims it (probable) → mint.
-	// c62: an alive character claims it EXACT → resume onto that entity.
 	seedVNDBChar(t, "c60", "生存者", "Seizonsha", "")
 	seedVNDBChar(t, "c61", "亡霊", "Bourei", "")
 	seedVNDBChar(t, "c62", "常連", "Jouren", "")
@@ -209,22 +167,17 @@ func TestRosterVNDBClaimedIDsAreNotReminted(t *testing.T) {
 	assert.Equal(t, 2, st.EdgesWritten, "c61 + c62; c60 gets no edge at all")
 	assert.Zero(t, st.Errors, "the skipped plan is dropped up front, not counted as an error")
 
-	// c60: no second body, no new ref, no grade promotion — the probable link is
-	// left exactly as the merge left it.
 	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='c60'`))
 	assert.Equal(t, int64(model.LinkKindProbable), scalarInt(t, `SELECT link_kind FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='c60'`))
 	assert.Zero(t, scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_work_character WHERE character_id=%d`, survivor)))
 	assert.Zero(t, scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_character_alias WHERE character_id=%d`, survivor)))
 
-	// c61: minted as a brand-new entity, distinct from the soft-deleted holder.
 	fresh := scalarInt(t, `SELECT entity_id FROM catalog_external_ref WHERE entity_type=4 AND source_id=2 AND external_id='c61' AND matched_by='rule:vndb-character-import'`)
 	assert.NotZero(t, fresh)
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_work_character WHERE work_id=%d AND character_id=%d`, work, fresh)))
 
-	// c62: unchanged behaviour — the edge lands on the already-anchored entity.
 	assert.Equal(t, int64(1), scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_work_character WHERE work_id=%d AND character_id=%d`, work, anchored)))
 
-	// The dry run reports the same skip count (and plans no edge for c60).
 	stDry, err := New(testDB, nil, Options{Source: "vndb", DryRun: true}).RunRoster("vndb")
 	require.NoError(t, err)
 	assert.Equal(t, 1, stDry.SkippedClaimedProbable)
@@ -232,11 +185,6 @@ func TestRosterVNDBClaimedIDsAreNotReminted(t *testing.T) {
 	assert.Equal(t, 2, stDry.EdgesWritten, "c61 + c62 only")
 }
 
-// TestRosterVNDBRetiredExactSquat documents the one case where a soft-deleted
-// holder still blocks minting: uq_catalog_external_ref_exact ignores deleted_at,
-// so a retired character's EXACT ref keeps occupying the id. Minting would fail
-// the whole wave on a unique violation, so the id is skipped and counted under
-// its own name rather than mixed into the probable-claim number.
 func TestRosterVNDBRetiredExactSquat(t *testing.T) {
 	clean(t)
 	seedVNDBWork(t, "v310")
@@ -250,7 +198,6 @@ func TestRosterVNDBRetiredExactSquat(t *testing.T) {
 	assert.Zero(t, st.SkippedClaimedProbable)
 	assert.Zero(t, st.CharactersCreated)
 	assert.Zero(t, st.EdgesWritten)
-	// No edge onto the retired entity either.
 	assert.Zero(t, scalarInt(t, fmt.Sprintf(`SELECT count(*) FROM catalog_work_character WHERE character_id=%d`, dead)))
 }
 

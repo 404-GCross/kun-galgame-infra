@@ -17,21 +17,12 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// S2S face: Basic client credentials only (backend-to-backend). Any valid
-// first-party OAuth client authenticates; the tenant `site` is DERIVED from the
-// client's binding (oauth_clients.catalog_site — the shared per-client site
-// key), never taken from the request body, so a client can only meter/scan for
-// its own site. This mirrors trust/community/image's S2S plumbing verbatim
-// (charter ruling 9 — no new mechanism); each platform service keeps its own
-// copy of this small helper rather than sharing one upstream.
-
 const localClient = "ai:oauth_client"
 
 type ctxKey string
 
 const ctxKeyClient ctxKey = "ai:oauth_client"
 
-// S2SAuth authenticates backend callers via "Basic <b64(client_id:secret)>".
 func S2SAuth(clients *siteRepo.OAuthClientRepository) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		client, err := authenticateBasic(c, clients)
@@ -67,7 +58,6 @@ func authenticateBasic(c fiber.Ctx, clients *siteRepo.OAuthClientRepository) (*s
 	return client, nil
 }
 
-// S2SBridge lifts the authenticated client into the Huma context.
 func S2SBridge(ctx huma.Context, next func(huma.Context)) {
 	fc := humafiber.Unwrap(ctx)
 	if client, ok := fc.Locals(localClient).(*siteModel.OAuthClient); ok {
@@ -81,8 +71,6 @@ func clientFromCtx(ctx context.Context) *siteModel.OAuthClient {
 	return c
 }
 
-// siteBinding returns the tenant site the authenticated client acts as, or a
-// 403 when the client is not bound to a site (oauth_clients.catalog_site empty).
 func siteBinding(ctx context.Context) (string, *houseError) {
 	client := clientFromCtx(ctx)
 	if client == nil || client.CatalogSite == "" {

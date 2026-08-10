@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// One site as a list row (the console lists sites vertically — a grid of cards
-// wasted width and made scanning domains harder). Actions are inline icon
-// buttons, matching the OAuth client rows.
 defineProps<{ site: Site }>()
 const emit = defineEmits<{
   edit: []

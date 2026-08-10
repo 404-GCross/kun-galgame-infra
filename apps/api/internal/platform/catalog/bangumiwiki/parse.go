@@ -6,21 +6,8 @@ import (
 	"strings"
 )
 
-// In-house infobox parser. Written black-box from bangumi/wiki-syntax-spec
-// plus full-dump differential testing against the reference implementation
-// (github.com/bangumi/wiki-parser-go v0.0.2) — bug-for-bug compatible on the
-// 2026-06-30 dump (zero divergence over ~958k infoboxes; see testdata/golden
-// and the step-08 execution report). Deliberately conservative: quirks of
-// the reference behavior are preserved, "more spec-correct" would be a
-// regression for Silver-layer stability.
-
-// errSyntax is the root of every parse error.
 var errSyntax = errors.New("invalid wiki syntax")
 
-// asciiCutset is what the reference implementation trims: ASCII whitespace
-// ONLY. Unicode spaces (U+00A0 no-break space, U+3000 ideographic space, ...)
-// are part of keys/values — strings.TrimSpace would eat them and diverge
-// (caught by the full-dump diff: 414 rows).
 const asciiCutset = " \t\r\n"
 
 func trimASCII(s string) string {
@@ -31,9 +18,6 @@ func syntaxErr(lino int, line, msg string) error {
 	return fmt.Errorf("%w: %s (line %d: %q)", errSyntax, msg, lino, line)
 }
 
-// parseInfobox parses one "{{Infobox ...}}" block into the mirror types.
-// Empty / whitespace-only input yields a zero Infobox with no error
-// (reference behavior, pinned in TestParse_EmptyInput).
 func parseInfobox(input string) (Infobox, error) {
 	s := trimASCII(input)
 	if s == "" {
@@ -48,31 +32,25 @@ func parseInfobox(input string) (Infobox, error) {
 
 	lines := strings.Split(s, "\n")
 
-	// The type is the remainder of the first line; on a single-line infobox
-	// the closing braces are part of that line.
 	typeLine := strings.TrimPrefix(lines[0], "{{Infobox")
 	if len(lines) == 1 {
 		typeLine = strings.TrimSuffix(typeLine, "}}")
 	}
 	box := Infobox{Type: trimASCII(typeLine)}
 
-	// One line ("{{Infobox X}}") or two lines ("{{Infobox X\n}}") carry no
-	// fields by definition.
 	if len(lines) <= 2 {
 		return box, nil
 	}
 
-	// Content lines are everything between the first line and the final
-	// "}}" line.
 	content := lines[1 : len(lines)-1]
 
 	var (
 		inArray bool
-		current Field // the array field being accumulated
+		current Field
 	)
 	for i, raw := range content {
 		line := trimASCII(raw)
-		lino := i + 2 // 1-based, counting the "{{Infobox" line
+		lino := i + 2
 
 		if inArray {
 			switch {

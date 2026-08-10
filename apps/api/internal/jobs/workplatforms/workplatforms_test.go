@@ -19,9 +19,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test: catalog Gold schema + src_bangumi Silver schema + a
-// minimal dlsite mirror fixture in its OWN schema (workplatforms_dl) via a
-// search_path DSN (the workaliases pattern).
 var (
 	testDB    *gorm.DB
 	testDSN   string
@@ -66,7 +63,6 @@ func TestMain(m *testing.M) {
 
 func clean(t *testing.T) {
 	t.Helper()
-	// catalog_platform (seeded registry) is deliberately NOT truncated.
 	for _, table := range []string{
 		"catalog_work_platform", "catalog_external_ref", "catalog_release", "catalog_work",
 		"src_bangumi.subject", "workplatforms_dl.works",
@@ -132,26 +128,21 @@ func mkSubject(t *testing.T, id int64, infobox string) {
 
 func strPtr(s string) *string { return &s }
 
-// TestImportWorkPlatforms pins both lanes end to end: the viewer-flag skip
-// (smartphone/play), the win-first ordering, the empty-platform guard, the
-// medium gate, the bgm normalization (alias map + direct registry hit +
-// unmapped counting), the claimed exclusion, and second-apply idempotence.
 func TestImportWorkPlatforms(t *testing.T) {
 	clean(t)
 	gal := mediumID(t, "galgame")
 	other := otherMediumID(t)
 
-	// dlsite lane candidates.
 	wPC := mkWork(t, gal, "PC限定", nil)
-	relPC := mkDlsiteRelAnchor(t, wPC, "RJ100001", nil) // pc + viewer flags → win only
+	relPC := mkDlsiteRelAnchor(t, wPC, "RJ100001", nil)
 	wPorts := mkWork(t, gal, "移植持ち", nil)
-	relPorts := mkDlsiteRelAnchor(t, wPorts, "RJ100002", nil) // pc+android+ios → win,and,ios
+	relPorts := mkDlsiteRelAnchor(t, wPorts, "RJ100002", nil)
 	wNoMirror := mkWork(t, gal, "鏡像穴", nil)
-	mkDlsiteRelAnchor(t, wNoMirror, "RJ100003", nil) // mirror has no platform array
+	mkDlsiteRelAnchor(t, wNoMirror, "RJ100003", nil)
 	wFilled := mkWork(t, gal, "既充填", nil)
-	relFilled := mkDlsiteRelAnchor(t, wFilled, "RJ100004", strPtr("win")) // not a candidate
+	relFilled := mkDlsiteRelAnchor(t, wFilled, "RJ100004", strPtr("win"))
 	wOther := mkWork(t, other, "非galgame", nil)
-	mkDlsiteRelAnchor(t, wOther, "RJ100005", nil) // medium-gated out
+	mkDlsiteRelAnchor(t, wOther, "RJ100005", nil)
 	require.NoError(t, testDB.Exec(`INSERT INTO workplatforms_dl.works (workno, product_json) VALUES
 		('RJ100001', '{"platform": ["pc", "smartphone", "play"]}'),
 		('RJ100002', '{"platform": ["pc", "android", "ios"]}'),
@@ -159,7 +150,6 @@ func TestImportWorkPlatforms(t *testing.T) {
 		('RJ100004', '{"platform": ["pc"]}'),
 		('RJ100005', '{"platform": ["pc"]}')`).Error)
 
-	// bgm lane candidates.
 	wArr := mkWork(t, gal, "数组形", nil)
 	mkBgmAnchor(t, wArr, "2001")
 	mkSubject(t, 2001, `{"Fields":[{"Key":"平台","Array":true,"Value":"","Items":[{"Value":"PC"},{"Value":"Nintendo Switch"},{"Value":"Steam"}]}]}`)
@@ -176,7 +166,6 @@ func TestImportWorkPlatforms(t *testing.T) {
 	ctx := context.Background()
 	opts := Opts{DSN: testDSN, DlsiteDSN: dlTestDSN, Source: "all"}
 
-	// Dry: plan only.
 	st, err := Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.DlCandidates, "empty-platform galgame anchors only (filled + non-galgame gated out)")
@@ -191,7 +180,6 @@ func TestImportWorkPlatforms(t *testing.T) {
 	require.NoError(t, testDB.Table("catalog_release").Where("platform IS NOT NULL").Count(&n).Error)
 	assert.Equal(t, int64(1), n, "dry run must not write (only the pre-filled row)")
 
-	// Apply.
 	opts.Apply = true
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
@@ -228,7 +216,6 @@ func TestImportWorkPlatforms(t *testing.T) {
 	require.NoError(t, testDB.Table("catalog_work_platform").Where("work_id = ?", wClaimed).Count(&n).Error)
 	assert.Zero(t, n, "claimed work got nothing")
 
-	// Second apply: dlsite guard finds no candidates, bgm rows all conflict.
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.DlCandidates, "only the no-mirror hole stays a candidate (filled rows guard-removed)")
@@ -237,9 +224,6 @@ func TestImportWorkPlatforms(t *testing.T) {
 	assert.Equal(t, 4, st.BgmConflict)
 }
 
-// TestNormalizeSpellingTail pins the step-96-addendum heuristics against raw
-// strings taken verbatim from the measured unmapped tail (refs/proj/96),
-// including the negative guards (stores / ambiguous generations stay "").
 func TestNormalizeSpellingTail(t *testing.T) {
 	reg := map[string]struct{}{}
 	for _, k := range []string{"win", "and", "web", "swi", "mac", "lin", "p98", "p88",
@@ -249,23 +233,19 @@ func TestNormalizeSpellingTail(t *testing.T) {
 		reg[k] = struct{}{}
 	}
 	cases := map[string]string{
-		// windows version tail
 		"PC (Windows)": "win", "Windows  7 / 8 / 8.1 / 10": "win", "Win95/Win98": "win",
 		"WindowsXP": "win", "WIndows 10": "win", "Window 10以上": "win", "WINDOWS 95/98/Me/2K/XP": "win",
 		"日本語版Windows®3.1/95": "win", "DVD-ROM／Windows": "win", "PC、PS2": "win", "PC（Steam）": "win",
-		// retro families
 		"PC-9801VM以降": "p98", "PC9801Vシリーズ以降：5\"2HD/3.5\"2HD": "p98", "PC98-21": "p98",
 		"PC8801mk2SR以降：5\"HD": "p88", "Sharp X68000": "x68", "X68K": "x68", "Sharp X1": "x1s",
 		"X1": "x1s", "MSX2/MSX2+": "msx", "FM-7": "fm7", "FM-77": "fm7", "FM-8": "fm8", "TOWNS": "fmt",
-		"PC-FX": "pcf",
-		// modern spellings
+		"PC-FX":    "pcf",
 		"Mac OS X": "mac", "Macintosh": "mac", "Nintendo Switch™": "swi", "Nitendo Switch": "swi",
 		"PlayStation®Vita": "psv", "PlayStationPortable®": "psp", "PlayStation2": "ps2",
 		"Play Station 2": "ps2", "XBOX360 (2009-08-27)": "xb3", "Xbox X/S": "xxs", "Xbox One（完全版）": "xbo",
 		"浏览器": "web", "网页": "web", "WEBアプリ": "web", "FLASH": "web", "HTML5": "web",
 		"安卓": "and", "Andoroid": "and", "SteamOS": "lin", "SNES": "sfc", "DS": "nds",
 		"Sega CD": "scd", "3DO": "tdo", "DVDPG": "dvd", "Wii Virtual Console": "wii",
-		// negative guards — never guessed
 		"PS": "", "Mobile": "", "手机": "", "dlsite": "", "DLsite": "", "Steam": "",
 		"Windows Phone": "", "Xbox": "", "Arcade": "", "PSVR": "", "Oculus Quest": "",
 		"Neo Geo Pocket": "", "Commodore 64": "", "PCC": "", "ONS": "", "Doll": "",

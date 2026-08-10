@@ -6,9 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestRenderWeb pins the template table's contract: a site-native value becomes
-// exactly one URL, and a value that is not the bare id the template expects is
-// refused rather than repaired.
 func TestRenderWeb(t *testing.T) {
 	cases := []struct {
 		site, value, want string
@@ -19,14 +16,12 @@ func TestRenderWeb(t *testing.T) {
 		{site: "imdb", value: "1234", want: "https://www.imdb.com/name/nm0001234", ok: true},
 		{site: "imdb", value: "12345678", want: "https://www.imdb.com/name/nm12345678", ok: true},
 		{site: "anison", value: "10", want: "http://anison.info/data/person/10.html", ok: true},
-		// substar is the one template whose value legitimately carries a path.
 		{site: "substar", value: "adult/name", want: "https://subscribestar.adult/name", ok: true},
-		// refusals — never guessed into a URL that may not resolve.
 		{site: "imdb", value: "nm0001234"},
 		{site: "wp", value: "Some Title"},
 		{site: "wp", value: "a/b"},
 		{site: "kofi", value: "  "},
-		{site: "dlsite", value: "RJ123456"}, // not in the table at all
+		{site: "dlsite", value: "RJ123456"},
 	}
 	for _, c := range cases {
 		got, ok := renderWeb(c.site, c.value)
@@ -51,9 +46,6 @@ func TestIsStoreHost(t *testing.T) {
 	}
 }
 
-// TestPersonWebSites locks the lane matrix's one derived set: the person lane
-// is the label lane minus the two company-only spaces plus the credits ones,
-// and it never carries an identity space.
 func TestPersonWebSites(t *testing.T) {
 	for _, s := range []string{"mobygames_comp", "gamefaqs_comp"} {
 		assert.False(t, personWebSites.has(s), s)
@@ -69,8 +61,6 @@ func TestPersonWebSites(t *testing.T) {
 		assert.False(t, labelWebSites.has(s), s)
 		assert.False(t, workWebSites.has(s), s)
 	}
-	// Every allowed web site must be renderable, or the lane would count it
-	// as malformed forever.
 	for _, set := range []siteSet{workWebSites, labelWebSites, personWebSites} {
 		for _, s := range set.list {
 			_, known := webTemplates[s]

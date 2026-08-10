@@ -48,11 +48,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// fakeUploader stands in for the image service so the write path is exercised
-// with no network. Hash = sha-256 of the uploaded bytes, exactly the image
-// service's content-addressing, so identical bytes collide on the
-// (work_id, image_hash) unique key — the ON CONFLICT idempotency backstop is
-// real, not simulated.
 type fakeUploader struct {
 	fail    error
 	uploads int
@@ -86,7 +81,7 @@ func truncate(t *testing.T) {
 func mkWork(t *testing.T, medium int16, name string, site *string) int64 {
 	t.Helper()
 	w := model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name, Site: site}
-	if site != nil { // a claimed row always fills product_work_id (the claim key)
+	if site != nil {
 		pid := int64(700000 + len(name))
 		w.ProductWorkID = &pid
 	}
@@ -109,9 +104,6 @@ func coversOf(t *testing.T, workID int64) []model.CatalogWorkCover {
 	return rows
 }
 
-// writeMirror lays down a tiny mirror: a dims.jsonl plus the referenced cover
-// files (distinct bytes per subject so hashes differ). subjects marked withFile
-// get a real cover.jpg; the rest appear only in dims (missing-file case).
 func writeMirror(t *testing.T, entries []dimsEntry, withFile map[string]bool) string {
 	t.Helper()
 	root := t.TempDir()
@@ -137,9 +129,6 @@ func resolveTestRegistry(t *testing.T) registry {
 	return reg
 }
 
-// TestLoadCandidates pins the candidate universe: ONLY bodyless galgame works
-// carrying an EXACT rule:bgm-title-year Bangumi anchor. Probable anchors, a
-// different matched_by, claimed works, and non-galgame media are all excluded.
 func TestLoadCandidates(t *testing.T) {
 	truncate(t)
 	reg := resolveTestRegistry(t)
@@ -154,7 +143,7 @@ func TestLoadCandidates(t *testing.T) {
 	wClaimed := mkWork(t, reg.galgameMedium, "claimed-exact", &claimed)
 	mkRef(t, wClaimed, reg.bangumiSource, "333", model.LinkKindExact, ruleBgmTitleYear)
 
-	wManga := mkWork(t, 2, "manga-exact", nil) // medium 2 = manga
+	wManga := mkWork(t, 2, "manga-exact", nil)
 	mkRef(t, wManga, reg.bangumiSource, "444", model.LinkKindExact, ruleBgmTitleYear)
 
 	wOtherRule := mkWork(t, reg.galgameMedium, "bodyless-otherrule", nil)
@@ -167,11 +156,6 @@ func TestLoadCandidates(t *testing.T) {
 	assert.Equal(t, "111", cands[0].SubjectID)
 }
 
-// TestWritePath drives process() with a fake uploader and asserts every branch:
-// the portrait is written (portrait_pinned=true, source=bangumi), landscape and
-// no-dims and missing-file are skipped, the XOR guard refuses a claimed work,
-// the uploaded hash is reference-pinged, and both idempotency layers hold (the
-// preload skip AND the ON CONFLICT dedup under a stale preload).
 func TestWritePath(t *testing.T) {
 	truncate(t)
 	reg := resolveTestRegistry(t)
@@ -183,10 +167,10 @@ func TestWritePath(t *testing.T) {
 	wMissing := mkWork(t, reg.galgameMedium, "missing", nil)
 
 	dimsRows := []dimsEntry{
-		{SubjectID: 9001, W: 800, H: 1200, File: "9001/cover.jpg"}, // portrait, present
-		{SubjectID: 9002, W: 1200, H: 800, File: "9002/cover.jpg"}, // landscape, present
-		{SubjectID: 9004, W: 800, H: 1200, File: "9004/cover.jpg"}, // portrait, present (claimed → XOR)
-		{SubjectID: 9006, W: 800, H: 1200, File: "9006/cover.jpg"}, // portrait, file MISSING
+		{SubjectID: 9001, W: 800, H: 1200, File: "9001/cover.jpg"},
+		{SubjectID: 9002, W: 1200, H: 800, File: "9002/cover.jpg"},
+		{SubjectID: 9004, W: 800, H: 1200, File: "9004/cover.jpg"},
+		{SubjectID: 9006, W: 800, H: 1200, File: "9006/cover.jpg"},
 	}
 	mirror := writeMirror(t, dimsRows, map[string]bool{"9001": true, "9002": true, "9004": true})
 	d, err := loadDims(mirror)
@@ -195,8 +179,8 @@ func TestWritePath(t *testing.T) {
 	cands := []candidate{
 		{WorkID: wPortrait, SubjectID: "9001", Site: nil},
 		{WorkID: wLandscape, SubjectID: "9002", Site: nil},
-		{WorkID: 424242, SubjectID: "9004", Site: &claimed}, // claimed → XOR refuse (id irrelevant, refused pre-write)
-		{WorkID: wNoDims, SubjectID: "9005", Site: nil},     // 9005 absent from dims
+		{WorkID: 424242, SubjectID: "9004", Site: &claimed},
+		{WorkID: wNoDims, SubjectID: "9005", Site: nil},
 		{WorkID: wMissing, SubjectID: "9006", Site: nil},
 	}
 	ctx := context.Background()
@@ -224,10 +208,8 @@ func TestWritePath(t *testing.T) {
 	assert.EqualValues(t, 0, rows[0].SortOrder)
 	assert.EqualValues(t, 0, rows[0].Sexual, "Bangumi covers default SFW (sexual 0)")
 	assert.EqualValues(t, 0, rows[0].Violence)
-	// The claimed work never got a native row (bridge-not-copy).
 	assert.Empty(t, coversOf(t, 424242))
 
-	// --- second pass with a FRESH preload: the preload skip fires, zero writes ---
 	fake2 := &fakeUploader{}
 	exist2, err := preloadExistingCovers(ctx, testDB, []int64{wPortrait}, reg.bangumiSource)
 	require.NoError(t, err)
@@ -237,7 +219,6 @@ func TestWritePath(t *testing.T) {
 	assert.Equal(t, 1, r2.c.coverExists, "preloaded Bangumi cover → skip before upload")
 	assert.Equal(t, 0, fake2.uploads, "no upload on the idempotent second pass")
 
-	// --- ON CONFLICT backstop: a STALE (empty) preload still cannot duplicate ---
 	fake3 := &fakeUploader{}
 	r3 := &runner{db: testDB, cli: fake3, sourceID: reg.bangumiSource, exist: map[int64]bool{}}
 	require.False(t, r3.writeCover(ctx, mirror, cands[0], d.entry["9001"], true))
@@ -246,10 +227,6 @@ func TestWritePath(t *testing.T) {
 	require.Len(t, coversOf(t, wPortrait), 1, "still exactly one cover row")
 }
 
-// TestTwoCoversReadFace proves the payoff: an exact-anchored bodyless work whose
-// read face carries BOTH a step-55 DLsite landscape cover (portrait_pinned=false)
-// AND this wave's Bangumi portrait (portrait_pinned=true), surfaced through the
-// real ReadService kungal/moyu consume.
 func TestTwoCoversReadFace(t *testing.T) {
 	truncate(t)
 	reg := resolveTestRegistry(t)
@@ -257,10 +234,9 @@ func TestTwoCoversReadFace(t *testing.T) {
 	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'dlsite'`).Scan(&dlsiteSource).Error)
 	require.NotZero(t, dlsiteSource)
 
-	work := mkWork(t, reg.galgameMedium, "two-covers", nil) // bodyless
+	work := mkWork(t, reg.galgameMedium, "two-covers", nil)
 	mkRef(t, work, reg.bangumiSource, "9100", model.LinkKindExact, ruleBgmTitleYear)
 
-	// Pre-existing step-55 DLsite landscape cover (native, portrait_pinned=false).
 	require.NoError(t, testDB.Create(&model.CatalogWorkCover{
 		WorkID: work, ImageHash: sha256hex("dlsite-landscape-9100"), SortOrder: 0, Kind: "main",
 		PortraitPinned: false, SourceID: dlsiteSource,
@@ -279,7 +255,6 @@ func TestTwoCoversReadFace(t *testing.T) {
 		[]candidate{{WorkID: work, SubjectID: "9100", Site: nil}}, d))
 	require.Equal(t, 1, r.c.coverUploaded)
 
-	// Read through the real read face.
 	detail, err := service.NewReadService(testDB).WorkByID(ctx, work, 0)
 	require.NoError(t, err)
 	require.Len(t, detail.Covers, 2, "read face must carry both the landscape and the portrait")
@@ -298,8 +273,6 @@ func TestTwoCoversReadFace(t *testing.T) {
 	assert.EqualValues(t, reg.bangumiSource, portrait.SourceID, "portrait attributed to Bangumi")
 }
 
-// TestQuotaAbort: an exhausted image quota aborts the run (writeCover returns
-// quota=true) and writes no row.
 func TestQuotaAbort(t *testing.T) {
 	truncate(t)
 	reg := resolveTestRegistry(t)
@@ -317,8 +290,6 @@ func TestQuotaAbort(t *testing.T) {
 	assert.Empty(t, coversOf(t, work), "no row written on quota abort")
 }
 
-// TestRunGuards pins the never-defaulted DSN + required mirror + refuse-apply-
-// without-creds discipline at the Run entry point.
 func TestRunGuards(t *testing.T) {
 	cfg := minimalConfig()
 	_, err := Run(context.Background(), cfg, Opts{DSN: "", BangumiMirror: "x"})
@@ -329,19 +300,14 @@ func TestRunGuards(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--bangumi-mirror")
 
-	// --apply with no catalog image creds must refuse before touching anything.
 	_, err = Run(context.Background(), cfg, Opts{Apply: true, DSN: "x", BangumiMirror: "x"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "catalog image client not configured")
 }
 
-// sha256hex is the sha-256 hex digest of s — a stand-in image hash distinct
-// from any uploaded cover's content hash.
 func sha256hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
 }
 
-// minimalConfig is a zero-value config (empty catalog image creds) for exercising
-// the Run entry-point guards without loading the environment.
 func minimalConfig() *config.Config { return &config.Config{} }

@@ -6,40 +6,22 @@ import (
 	"api/internal/platform/authz"
 )
 
-// Cell sources, as the matrix reports them per square. They are exactly the
-// four states a cell can be in, and each one admits exactly ONE operation —
-// which is why the frontend never has to choose between two buttons.
 const (
-	// SourceNone: the role does not hold the key. → OpGrant
-	SourceNone = "none"
-	// SourceCode: held via the compiled-in bundle, with no overlay row. → OpDeny
-	SourceCode = "code"
-	// SourceGrant: held via an EffectGrant row. → OpRevokeGrant
+	SourceNone  = "none"
+	SourceCode  = "code"
 	SourceGrant = "grant"
-	// SourceDeny: withheld by an EffectDeny row despite the code bundle.
-	// → OpRevokeDeny
-	SourceDeny = "deny"
+	SourceDeny  = "deny"
 )
 
-// Cell is one (permission, role) square of the matrix.
 type Cell struct {
-	Granted bool   `json:"granted"`
-	Source  string `json:"source"`
-	// Editable is whether THIS caller may add or remove a GRANT here — the
-	// original toggle. Decided server-side by the same validator the write path
-	// runs; the frontend renders the verdict and never recomputes it.
-	Editable bool `json:"editable"`
-	// CanDeny is whether this caller may write a deny row here: a code-floor
-	// grant on an editable role that no invariant pins in place.
-	CanDeny bool `json:"can_deny"`
-	// CanRestore is whether this caller may delete the deny row here, returning
-	// the role to its code floor.
-	CanRestore bool `json:"can_restore"`
-	// Reason explains a cell that offers NO operation at all (empty otherwise).
-	Reason string `json:"reason,omitempty"`
+	Granted    bool   `json:"granted"`
+	Source     string `json:"source"`
+	Editable   bool   `json:"editable"`
+	CanDeny    bool   `json:"can_deny"`
+	CanRestore bool   `json:"can_restore"`
+	Reason     string `json:"reason,omitempty"`
 }
 
-// KeyRow is one permission with its five role cells.
 type KeyRow struct {
 	Key          string          `json:"key"`
 	DescEN       string          `json:"desc_en"`
@@ -48,27 +30,19 @@ type KeyRow struct {
 	Grants       map[string]Cell `json:"grants"`
 }
 
-// DomainView is one domain's block of the matrix.
 type DomainView struct {
 	Name    string   `json:"name"`
 	TitleZH string   `json:"title_zh"`
 	Keys    []KeyRow `json:"keys"`
 }
 
-// Matrix is the whole console export.
 type Matrix struct {
-	Roles []string `json:"roles"`
-	// EditableRoles are the rows the overlay may ever touch, so the frontend
-	// can grey the immutable columns without knowing why.
-	EditableRoles []string `json:"editable_roles"`
-	// ManagesPermissions is whether the caller holds oauth.permissions.manage.
+	Roles              []string     `json:"roles"`
+	EditableRoles      []string     `json:"editable_roles"`
 	ManagesPermissions bool         `json:"manages_permissions"`
 	Domains            []DomainView `json:"domains"`
 }
 
-// Service is the console's use-case layer: it reads the overlay once, builds
-// the matrix (including this caller's editable cells), and performs validated
-// writes followed by an immediate local refresh + peer announcement.
 type Service struct {
 	reg   *Registry
 	store *Store
@@ -76,12 +50,10 @@ type Service struct {
 	dist  *Distributor
 }
 
-// NewService wires the console service.
 func NewService(reg *Registry, store *Store, dist *Distributor) *Service {
 	return &Service{reg: reg, store: store, val: NewValidator(reg), dist: dist}
 }
 
-// state reads the overlay rows into the validator's view of them.
 func (s *Service) state(ctx context.Context) (OverlayState, error) {
 	rows, err := s.store.Overrides(ctx)
 	if err != nil {
@@ -94,7 +66,6 @@ func (s *Service) state(ctx context.Context) (OverlayState, error) {
 	return st, nil
 }
 
-// Matrix builds the full export for caller.
 func (s *Service) Matrix(ctx context.Context, caller Caller) (*Matrix, error) {
 	st, err := s.state(ctx)
 	if err != nil {
@@ -126,8 +97,6 @@ func (s *Service) Matrix(ctx context.Context, caller Caller) (*Matrix, error) {
 	return out, nil
 }
 
-// sourceOf classifies one square. The overlay row, when there is one, decides:
-// its effect IS the state, and the code bundle only decides the roleless cells.
 func sourceOf(granted bool, effect string) string {
 	switch {
 	case effect == EffectGrant:
@@ -141,9 +110,6 @@ func sourceOf(granted bool, effect string) string {
 	}
 }
 
-// opFor is the ONE operation a cell in this state admits. Every other operation
-// on that cell is refused by a state precondition, so offering it would be
-// offering a button that cannot work.
 func opFor(source string) Op {
 	switch source {
 	case SourceGrant:
@@ -157,10 +123,6 @@ func opFor(source string) Op {
 	}
 }
 
-// cell decides one square: whether the key is held, where that comes from, and
-// which operation — if any — this caller may perform on it. "May perform" is
-// literally "would the write validate", so the button the UI offers is exactly
-// the write the API would accept.
 func (s *Service) cell(caller Caller, st OverlayState, role string, p authz.Permission) Cell {
 	granted := s.reg.Effective(role, p)
 	source := sourceOf(granted, st.Effect(role, p))
@@ -182,15 +144,8 @@ func (s *Service) cell(caller Caller, st OverlayState, role string, p authz.Perm
 	return c
 }
 
-// WriteRequest is what a console endpoint asks for, before the state is known.
-// A removal does not say WHICH row it removes: the caller sees a cell, not a
-// row, and which of the two deletions it meant follows from what is there. The
-// service resolves that against the same state it validates against, so the
-// operation cannot be resolved one way and validated another.
 type WriteRequest struct {
-	// Add distinguishes an INSERT from a DELETE.
-	Add bool
-	// Effect is EffectGrant or EffectDeny; read only when Add is true.
+	Add        bool
 	Effect     string
 	Role       string
 	Permission authz.Permission
@@ -206,16 +161,11 @@ func (s *Service) resolve(st OverlayState, req WriteRequest) Action {
 	case st.HasDeny(req.Role, req.Permission):
 		act.Op = OpRevokeDeny
 	default:
-		// Including "no row at all": OpRevokeGrant is the operation whose
-		// precondition explains what to do instead.
 		act.Op = OpRevokeGrant
 	}
 	return act
 }
 
-// Apply validates and performs one overlay write, then makes it take effect:
-// this process refreshes synchronously (so the caller's very next request sees
-// the new table) and peers are nudged to do the same.
 func (s *Service) Apply(ctx context.Context, caller Caller, req WriteRequest) error {
 	st, err := s.state(ctx)
 	if err != nil {
@@ -242,7 +192,6 @@ func (s *Service) Apply(ctx context.Context, caller Caller, req WriteRequest) er
 	return nil
 }
 
-// Audit returns the newest audit rows.
 func (s *Service) Audit(ctx context.Context, limit int) ([]AuditEntry, error) {
 	return s.store.RecentAudit(ctx, limit)
 }

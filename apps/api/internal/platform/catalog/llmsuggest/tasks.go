@@ -13,14 +13,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// Options configures a task run.
 type Options struct {
 	Model       string
 	Concurrency int
-	Limit       int    // 0 = all
-	DryRun      bool   // sample + print, no DB writes
-	GoldSetPath string // for the goldset task
-	Batch       bool   // goldset: judge in batches (prompt_version v1-batch)
+	Limit       int
+	DryRun      bool
+	GoldSetPath string
+	Batch       bool
 }
 
 const goldsetBatchSize = 10
@@ -38,8 +37,6 @@ const (
 		"For an array field, emit each item as a separate field reusing the same key. If a value is empty use an empty string."
 )
 
-// extractionSchema mirrors a flattened bangumiwiki.Infobox (type + key/value
-// fields) — the suggested parse of a residue row.
 var extractionSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -62,8 +59,6 @@ func namePairUser(a, b string) string {
 	return fmt.Sprintf("Name A: %s\nName B: %s", a, b)
 }
 
-// RunGoldset judges every gold pair (resume-aware) and persists the verdicts,
-// so calibration metrics can be computed from the DB afterwards.
 func RunGoldset(ctx context.Context, db *gorm.DB, c *Client, opts Options) (judged, errs int, err error) {
 	pairs, err := LoadGoldSet(opts.GoldSetPath)
 	if err != nil {
@@ -132,8 +127,6 @@ func runGoldsetSingle(ctx context.Context, db *gorm.DB, c *Client, model string,
 	return int(nJudged.Load()), int(nErrs.Load())
 }
 
-// runGoldsetBatch judges chunks of goldsetBatchSize pairs per request — the
-// 4-7× throughput lever, gated behind calibration (T0.3).
 func runGoldsetBatch(ctx context.Context, db *gorm.DB, c *Client, model string, conc int, work []goldItem) (int, int) {
 	var chunks [][]goldItem
 	for i := 0; i < len(work); i += goldsetBatchSize {
@@ -187,15 +180,12 @@ func dryRunNamePairs(ctx context.Context, c *Client, pairs []GoldPair, limit int
 	return 0, 0, nil
 }
 
-// residueRow is one parse_error row to re-extract.
 type residueRow struct {
 	Table string
 	ID    int64
 	Raw   string
 }
 
-// RunResidue extracts fields from the 1,137 parse_error residue rows as
-// SUGGESTIONS (infobox_parsed is never touched).
 func RunResidue(ctx context.Context, db *gorm.DB, c *Client, opts Options) (done, errs int, err error) {
 	var rows []residueRow
 	for _, tbl := range []string{"subject", "person", "character"} {
@@ -251,12 +241,9 @@ func RunResidue(ctx context.Context, db *gorm.DB, c *Client, opts Options) (done
 	return done, errs, nil
 }
 
-// extractResidue returns the raw JSON content (schema-valid) with up to 2 retries.
 func extractResidue(ctx context.Context, c *Client, raw string) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		// Cap input so input+output stays inside the 8192 ctx (residue rows are
-		// the malformed ones and can be long).
 		res, err := c.ChatJSON(ctx, residueSystem, "Raw infobox:\n"+truncate(raw, 4000), "infobox", extractionSchema, 1800)
 		if err != nil {
 			lastErr = err

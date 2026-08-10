@@ -1,13 +1,3 @@
-// attribution_gate_test.go — wave 200: evidence is not attribution.
-//
-// The spine used ONE work set for two different jobs. As evidence ("which works
-// does this producer co-occur with") breadth is a virtue. As attribution
-// ("which works is this producer responsible for") breadth is a lie: an English
-// localisation publisher became a co-author of the Japanese original. Worse, it
-// self-healed the wrong way — deleting such an edge only invited the next mint
-// to write it again, because the rule that proposed it never changed.
-//
-// So the two sets are pinned apart here, in both directions.
 package orglabels
 
 import (
@@ -20,21 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLocalisationPublisherIsEvidenceButNotAttribution: a producer whose ONLY
-// tie to the work is the English release must not be minted onto that work.
 func TestLocalisationPublisherIsEvidenceButNotAttribution(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
 	}
 	cleanAll(t)
 
-	mkWork(t, 910) // olang ja
+	mkWork(t, 910)
 	mkWorkAnchor(t, sourceVNDB, "v910", 910)
 
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.producers (id,type,lang,name,latin,alias,description) VALUES
 		('p90','co','en','Sekai Project','','',''),
 		('p91','co','ja','きゃべつそふと','','','')`).Error)
-	// rJA is the Japanese original; rEN is the English edition of the same work.
 	require.NoError(t, testDB.Create(&srcv.Release{ID: "rJA", OLang: "ja", Official: true}).Error)
 	require.NoError(t, testDB.Create(&srcv.Release{ID: "rEN", OLang: "en", Official: true}).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.releases_vn (id,vid,rtype) VALUES
@@ -49,21 +36,12 @@ func TestLocalisationPublisherIsEvidenceButNotAttribution(t *testing.T) {
 		by[o.extID] = o
 	}
 
-	// Evidence keeps the localisation publisher — it IS a signal that this
-	// company and this work belong to the same neighbourhood, and the grader
-	// needs every one of those it can get.
 	assert.Equal(t, []int64{910}, by["p90"].works, "the EN publisher stays visible as evidence")
-	// Attribution does not. And the set is EMPTY, not absent: that distinction
-	// is the whole fix, because an empty set that reads as "unset" falls back
-	// to the evidence set and restores the bug.
 	assert.Empty(t, by["p90"].attribWorks, "the EN publisher is not attributable to a Japanese work")
 	assert.True(t, by["p90"].editionAware, "vndb states editions, so the empty set is an ANSWER")
 	assert.Equal(t, []int64{910}, by["p91"].attribWorks, "the original developer is")
 }
 
-// TestMintFollowsAttributionNotEvidence closes the loop: the gate above is only
-// worth anything if the writer reads it. A localisation-only producer that
-// mints a label must mint it with NO work edges.
 func TestMintFollowsAttributionNotEvidence(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -87,9 +65,6 @@ func TestMintFollowsAttributionNotEvidence(t *testing.T) {
 	assert.Zero(t, edges, "a company known only from the English release must not be credited with the Japanese work")
 }
 
-// TestPatchGroupIsNeverAttributed: a fan patch is in the original language and
-// would sail through a language-only gate. `patch` is the second half of the
-// rule, and it needs its own witness.
 func TestPatchGroupIsNeverAttributed(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -116,8 +91,6 @@ func TestPatchGroupIsNeverAttributed(t *testing.T) {
 	t.Fatal("p93 not loaded")
 }
 
-// TestBangumiKeepsOneSet: a source with no edition layer must keep behaving
-// exactly as before — the split is a vndb capability, not a global narrowing.
 func TestBangumiKeepsOneSet(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -141,8 +114,6 @@ func TestBangumiKeepsOneSet(t *testing.T) {
 	_, err = anchorAll(context.Background(), testDB, testDB, "bangumi", 0, true)
 	require.NoError(t, err)
 	var edges int64
-	// The capacity is the bangumi lane's own business (edgeKindFor); what this
-	// test guards is that an edge is minted at all.
 	require.NoError(t, testDB.Raw(
 		`SELECT count(*) FROM catalog_work_label WHERE work_id = 940`).Scan(&edges).Error)
 	assert.Equal(t, int64(1), edges, "the bangumi lane still mints its edge")

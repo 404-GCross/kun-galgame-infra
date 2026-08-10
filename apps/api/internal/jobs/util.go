@@ -1,7 +1,5 @@
 package jobs
 
-// chunk splits src into consecutive slices of at most n elements. Shared
-// by jobs that batch work (e.g. reference-ping ≤1000 hashes/request).
 func chunk[T any](src []T, n int) [][]T {
 	if n < 1 {
 		n = 1

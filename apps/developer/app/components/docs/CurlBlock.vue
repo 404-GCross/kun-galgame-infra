@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// A generated curl example with a copy affordance. The dark terminal-style
-// surface is a fixed solid color (content2), NOT theme-inverted, so a request
-// example reads like a shell everywhere; wide lines scroll inside the block.
 defineProps<{ code: string }>()
 </script>
 

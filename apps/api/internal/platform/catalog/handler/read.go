@@ -18,9 +18,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// registerRead wires the S2S read surface (step 18): anchor read-through,
-// credits-by-work, entity search. All Basic-authed like the other S2S ops; the
-// read face imposes no site binding (step 16 semantics).
 func (s *S2SServer) registerRead(api huma.API) {
 	tags := []string{"catalog-s2s"}
 	huma.Register(api, huma.Operation{
@@ -65,8 +62,6 @@ func (s *S2SServer) registerRead(api huma.API) {
 	}, s.characterByID)
 }
 
-// ---- by-anchor ----
-
 type byAnchorInput struct {
 	Source     string `query:"source" minLength:"1" doc:"Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry"`
 	ExternalID string `query:"external_id" minLength:"1" doc:"The id within that source (e.g. a DLsite RJ number, a VNDB v-id)"`
@@ -88,14 +83,12 @@ func (s *S2SServer) workByAnchor(ctx context.Context, in *byAnchorInput) (*byAnc
 	return &byAnchorOutput{Body: okEnvelope(buildWorkResponse(detail, votes))}, nil
 }
 
-// ---- work by id (internal browser drill-down; same bundle) ----
-
 type workByIDInput struct {
 	ID int64 `path:"id" doc:"Catalog work id"`
 }
 
 func (s *S2SServer) workByID(ctx context.Context, in *workByIDInput) (*byAnchorOutput, error) {
-	detail, err := s.read.WorkByID(ctx, in.ID, 0) // S2S: spoiler-free tag set, unchanged
+	detail, err := s.read.WorkByID(ctx, in.ID, 0)
 	if err != nil {
 		return nil, workDetailErr(err)
 	}
@@ -106,15 +99,6 @@ func (s *S2SServer) workByID(ctx context.Context, in *workByIDInput) (*byAnchorO
 	return &byAnchorOutput{Body: okEnvelope(buildWorkResponse(detail, votes))}, nil
 }
 
-// coverVotes tallies the detail's covers in one batched query (wave 175). It is
-// the read side of an ADVISORY facet, so it is additive to a bundle that was
-// already assembled: the counts decorate the cover rows and change neither their
-// order nor their membership.
-//
-// The viewer is always nobody here. A per-viewer `voted` flag needs a human to
-// point at, and this face has no verified one — the ?uid= that used to name one
-// was an assertion, retired in wave 181. The flag lives on the user plane's own
-// tally read (user_read.go), where the viewer is the token.
 func (s *S2SServer) coverVotes(ctx context.Context, detail *service.WorkDetail) (map[int64]service.CoverVoteTally, error) {
 	if len(detail.Covers) == 0 {
 		return nil, nil
@@ -138,51 +122,27 @@ func workDetailErr(err error) error {
 	return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 }
 
-// buildWorkResponse maps a service WorkDetail to the wire DTO (shared by the
-// by-anchor and by-id read-throughs). `votes` is the advisory best-cover tally
-// keyed by cover id (wave 175); an empty map renders every cover at zero.
 func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.CoverVoteTally) dto.WorkByAnchorResponse {
 	resp := dto.WorkByAnchorResponse{
 		Work: dto.WorkCore{
 			ID: detail.Work.ID, MediumID: detail.Work.MediumID, DisplayName: detail.Work.DisplayName,
 			OLang: detail.Work.OLang, ContentRating: detail.Work.ContentRating, Status: detail.Work.Status,
 		},
-		// Pre-size to non-nil so an empty (bare / freshly-minted) work serializes
-		// `[]` rather than `null` — a consumer that does `titles.length` on the
-		// projection must never see a null slice (docs/proj/16 #3).
-		Titles:     make([]dto.WorkTitle, 0, len(detail.Titles)),
-		Releases:   make([]dto.ReleaseBrief, 0, len(detail.Releases)),
-		Labels:     make([]dto.WorkLabel, 0, len(detail.Labels)),
-		Refs:       make([]dto.WorkRef, 0, len(detail.Refs)),
-		Characters: make([]dto.WorkCharacter, 0, len(detail.Characters)),
-		// Intro pre-sized non-nil so a work with no intro (or a claimed work whose
-		// galgame body has none — strict XOR) serializes `[]`, not `null`.
-		Intro: make([]dto.WorkIntro, 0, len(detail.Intros)),
-		// Covers pre-sized non-nil so a work with no cover (or a claimed work whose
-		// galgame body has none — strict XOR) serializes `[]`, not `null`.
-		Covers: make([]dto.WorkCover, 0, len(detail.Covers)),
-		// Screenshots pre-sized non-nil so a work with neither a bridged nor a
-		// native screenshot serializes `[]`, not `null`.
-		Screenshots: make([]dto.WorkScreenshot, 0, len(detail.Screenshots)),
-		// Ratings pre-sized non-nil so a work with no rating (or a claimed work
-		// whose metas are unscored — strict XOR) serializes `[]`, not `null`.
-		Ratings: make([]dto.WorkRating, 0, len(detail.Ratings)),
-		// Tags pre-sized non-nil so a work with no tag (or a claimed work whose
-		// galgame body has none — strict XOR) serializes `[]`, not `null`.
-		Tags: make([]dto.WorkTag, 0, len(detail.Tags)),
-		// Popularity pre-sized non-nil so a work with no counter (or a claimed
-		// work whose meta publishes none — strict XOR) serializes `[]`, not `null`.
-		Popularity: make([]dto.WorkPopularity, 0, len(detail.Popularity)),
-		// Playtimes pre-sized non-nil so a work with no estimate serializes
-		// `[]`, not `null` (this facet has no claimed bridge — no XOR arm).
-		Playtimes: make([]dto.WorkPlaytime, 0, len(detail.Playtimes)),
-		// Series pre-sized non-nil so a series-less work serializes `[]`.
-		Series: make([]dto.WorkSeries, 0, len(detail.Series)),
-		// Platforms pre-sized non-nil so a platform-less work serializes `[]`.
-		Platforms: make([]dto.WorkPlatform, 0, len(detail.Platforms)),
-		// Relations pre-sized non-nil so a relation-less work serializes `[]`.
-		Relations: make([]dto.WorkRelation, 0, len(detail.Relations)),
-		// SeriesSiblings pre-sized non-nil so a sibling-less work serializes `[]`.
+		Titles:         make([]dto.WorkTitle, 0, len(detail.Titles)),
+		Releases:       make([]dto.ReleaseBrief, 0, len(detail.Releases)),
+		Labels:         make([]dto.WorkLabel, 0, len(detail.Labels)),
+		Refs:           make([]dto.WorkRef, 0, len(detail.Refs)),
+		Characters:     make([]dto.WorkCharacter, 0, len(detail.Characters)),
+		Intro:          make([]dto.WorkIntro, 0, len(detail.Intros)),
+		Covers:         make([]dto.WorkCover, 0, len(detail.Covers)),
+		Screenshots:    make([]dto.WorkScreenshot, 0, len(detail.Screenshots)),
+		Ratings:        make([]dto.WorkRating, 0, len(detail.Ratings)),
+		Tags:           make([]dto.WorkTag, 0, len(detail.Tags)),
+		Popularity:     make([]dto.WorkPopularity, 0, len(detail.Popularity)),
+		Playtimes:      make([]dto.WorkPlaytime, 0, len(detail.Playtimes)),
+		Series:         make([]dto.WorkSeries, 0, len(detail.Series)),
+		Platforms:      make([]dto.WorkPlatform, 0, len(detail.Platforms)),
+		Relations:      make([]dto.WorkRelation, 0, len(detail.Relations)),
 		SeriesSiblings: make([]dto.WorkSeriesSibling, 0, len(detail.SeriesSiblings)),
 	}
 	if detail.Work.Site != nil {
@@ -223,9 +183,7 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 			CharacterID: c.CharacterID, DisplayName: c.DisplayName, Latin: derefStr(c.Latin),
 			Gender: derefI16(c.Gender), Kind: c.Kind, Spoiler: c.Spoiler, ImageHash: derefStr(c.ImageHash),
 			FigureHash: derefStr(c.FigureHash),
-			// va pre-sized non-nil so a roster-only character (no VA) serializes
-			// `[]`, not `null` (docs/proj/16 #3).
-			Va: make([]dto.WorkCharacterVA, 0, len(c.Va)),
+			Va:         make([]dto.WorkCharacterVA, 0, len(c.Va)),
 		}
 		for _, v := range c.Va {
 			wc.Va = append(wc.Va, dto.WorkCharacterVA{CreditNameID: v.CreditNameID, Name: v.Name})
@@ -236,8 +194,6 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 		resp.Intro = append(resp.Intro, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID, Machine: in.Machine})
 	}
 	for _, cv := range detail.Covers {
-		// The tally is decoration: absent from the map = nobody voted, which is a
-		// zero count, never a reason to reorder or omit the cover.
 		tally := votes[cv.ID]
 		resp.Covers = append(resp.Covers, dto.WorkCover{
 			ID: cv.ID, ImageHash: cv.ImageHash, Kind: cv.Kind, PortraitPinned: cv.PortraitPinned,
@@ -259,7 +215,6 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 	for _, tg := range detail.Tags {
 		resp.Tags = append(resp.Tags, dto.WorkTag{
 			Name: tg.Name, Count: tg.Count, SourceID: tg.SourceID,
-			// Additive canonical overlay (step 74); nil when the tag is unmapped.
 			CanonicalID: tg.CanonicalID, Tier: tg.Tier, Kind: tg.Kind,
 		})
 	}
@@ -311,8 +266,6 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 	return resp
 }
 
-// platformsFromExtra parses the extra.platforms code array (the step-76/96
-// write shape). Absent/malformed → nil (the field is omitempty).
 func platformsFromExtra(extra []byte) []string {
 	if len(extra) == 0 {
 		return nil
@@ -325,8 +278,6 @@ func platformsFromExtra(extra []byte) []string {
 	}
 	return e.Platforms
 }
-
-// ---- credits ----
 
 type creditsInput struct {
 	ID int64 `path:"id" doc:"Catalog work id"`
@@ -341,10 +292,7 @@ func (s *S2SServer) workCredits(ctx context.Context, in *creditsInput) (*credits
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
-	// Groups pre-sized to non-nil so a credit-less work serializes `[]`, not
-	// `null` (docs/proj/16 #3).
 	resp := dto.WorkCreditsResponse{WorkID: in.ID, Groups: make([]dto.CreditGroup, 0)}
-	// rows are ordered by role_id; group consecutive rows.
 	var cur *dto.CreditGroup
 	for _, r := range rows {
 		if cur == nil || cur.RoleID != r.RoleID {
@@ -371,21 +319,12 @@ func (s *S2SServer) workCredits(ctx context.Context, in *creditsInput) (*credits
 	return &creditsOutput{Body: okEnvelope(resp)}, nil
 }
 
-// ---- work title search (product-side create picker) ----
-
 type searchWorksInput struct {
-	Q string `query:"q" minLength:"1" doc:"Title search text (NFKC-folded substring match)"`
-	// -1 = no filter (Huma cannot express optional scalars as pointers).
-	MediumID int16 `query:"medium_id" default:"-1" doc:"Filter to one medium; -1 = all"`
-	Limit    int   `query:"limit" default:"20" doc:"Max hits (capped at 50)"`
-	// The B-bucket supply (wave 155 W4, 03 定案 §8-1). Absent = no gate, so
-	// every existing caller is byte-identical; a submitter's own view asks for
-	// `live,draft,pending` and gets it in ONE query.
+	Q          string `query:"q" minLength:"1" doc:"Title search text (NFKC-folded substring match)"`
+	MediumID   int16  `query:"medium_id" default:"-1" doc:"Filter to one medium; -1 = all"`
+	Limit      int    `query:"limit" default:"20" doc:"Max hits (capped at 50)"`
 	ClaimState string `query:"claim_state" doc:"Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state"`
-	// The tenant gate (wave 162, 161 §6.P3-verdict STOP-5) — the sibling of the
-	// parameter the pending-claims queue already takes. Absent = no gate, so
-	// every existing caller's result set is byte-identical.
-	Site string `query:"site" doc:"Restrict to works claimed by ONE site; absent = every tenant and every unclaimed work. Live SQL predicate — no reindex delay"`
+	Site       string `query:"site" doc:"Restrict to works claimed by ONE site; absent = every tenant and every unclaimed work. Live SQL predicate — no reindex delay"`
 }
 
 type searchWorksOutput struct {
@@ -405,7 +344,6 @@ func (s *S2SServer) searchWorks(ctx context.Context, in *searchWorksInput) (*sea
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
-	// Pre-size non-nil so an empty result serializes `[]`, not `null`.
 	resp := dto.WorkSearchResponse{Items: make([]dto.WorkSearchHit, 0, len(hits))}
 	for _, h := range hits {
 		resp.Items = append(resp.Items, dto.WorkSearchHit{
@@ -416,10 +354,6 @@ func (s *S2SServer) searchWorks(ctx context.Context, in *searchWorksInput) (*sea
 	return &searchWorksOutput{Body: okEnvelope(resp)}, nil
 }
 
-// ---- entity search ----
-
-// entityTypeLabel is the label documents' entity_type, and "b" their document
-// id prefix (cmd/reindex-catalog writes both).
 const (
 	entityTypeLabel  = "label"
 	labelDocIDPrefix = "b"
@@ -449,9 +383,6 @@ func (s *S2SServer) searchEntities(ctx context.Context, in *searchInput) (*searc
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
-	// Label hits carry their brand logo (wave 170). The index does not know the
-	// hash, so the page's ids are hydrated from Postgres in one query rather
-	// than the documents being reshaped.
 	logos, err := s.labelLogos(ctx, res.Hits)
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
@@ -467,10 +398,6 @@ func (s *S2SServer) searchEntities(ctx context.Context, in *searchInput) (*searc
 	return &searchOutput{Body: okEnvelope(resp)}, nil
 }
 
-// labelLogos maps the LABEL hits of one search page to their logo hashes, keyed
-// by the hit's prefixed document id ("b{id}"). Non-label hits and labels
-// without a logo are absent, so the caller reads "". No label hit on the page
-// means no query at all.
 func (s *S2SServer) labelLogos(ctx context.Context, hits []catsearch.EntityDoc) (map[string]string, error) {
 	docIDs := make(map[int64]string, len(hits))
 	ids := make([]int64, 0, len(hits))
@@ -498,8 +425,6 @@ func (s *S2SServer) labelLogos(ctx context.Context, hits []catsearch.EntityDoc) 
 	}
 	return out, nil
 }
-
-// ---- stats (dashboard) ----
 
 type statsOutput struct {
 	Body Envelope[dto.CatalogStats]
@@ -546,8 +471,6 @@ func (s *S2SServer) getStats(ctx context.Context, _ *struct{}) (*statsOutput, er
 	return &statsOutput{Body: okEnvelope(st)}, nil
 }
 
-// ---- label → works (attribution reverse) ----
-
 type labelWorksInput struct {
 	ID     int64 `path:"id" doc:"Catalog label id"`
 	Limit  int   `query:"limit" default:"50" doc:"Page size (capped at 50)"`
@@ -571,9 +494,6 @@ func (s *S2SServer) labelWorks(ctx context.Context, in *labelWorksInput) (*label
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
-	// 404 on a missing label id, aligning with names/{id}/works and
-	// characters/{id}/works (step 19 finding ②: this endpoint used to return
-	// 200 + label:null). The head being nil is the sole miss signal.
 	if head == nil {
 		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
 	}
@@ -587,8 +507,6 @@ func (s *S2SServer) labelWorks(ctx context.Context, in *labelWorksInput) (*label
 	}
 	return &labelWorksOutput{Body: okEnvelope(resp)}, nil
 }
-
-// ---- name → works (entity reverse: what a credited name worked on) ----
 
 type nameWorksInput struct {
 	ID     int64 `path:"id" doc:"Catalog credit-name id"`
@@ -615,16 +533,12 @@ func (s *S2SServer) nameWorks(ctx context.Context, in *nameWorksInput) (*nameWor
 			DisplayName: res.Head.Name,
 			Lang:        res.Head.Lang,
 			Latin:       derefStr(res.Head.Latin),
-			// Siblings pre-sized non-nil so no person / no siblings serializes
-			// `[]`, not `null` (docs/proj/16 #3).
-			Siblings: make([]dto.SiblingName, 0, len(res.Siblings)),
-			// The person block (wave 172). NameWorks has already applied the
-			// link-visibility gate to all five, so this copies them verbatim.
-			PhotoHash: res.Head.PhotoHash,
-			Gender:    res.Head.Gender,
-			BirthY:    res.Head.BirthY,
-			BirthM:    res.Head.BirthM,
-			BirthD:    res.Head.BirthD,
+			Siblings:    make([]dto.SiblingName, 0, len(res.Siblings)),
+			PhotoHash:   res.Head.PhotoHash,
+			Gender:      res.Head.Gender,
+			BirthY:      res.Head.BirthY,
+			BirthM:      res.Head.BirthM,
+			BirthD:      res.Head.BirthD,
 		},
 		Items: make([]dto.NameWorkRow, 0, len(res.Works)),
 		Total: res.Total,
@@ -656,8 +570,6 @@ func (s *S2SServer) nameWorks(ctx context.Context, in *nameWorksInput) (*nameWor
 	}
 	return &nameWorksOutput{Body: okEnvelope(resp)}, nil
 }
-
-// ---- character → works (entity reverse: what a character appears in) ----
 
 type characterWorksInput struct {
 	ID     int64 `path:"id" doc:"Catalog character id"`
@@ -700,12 +612,8 @@ func (s *S2SServer) characterWorks(ctx context.Context, in *characterWorksInput)
 	return &characterWorksOutput{Body: okEnvelope(resp)}, nil
 }
 
-// ---- character by id (entity detail: identity + aliases) ----
-
 type characterByIDInput struct {
-	ID int64 `path:"id" doc:"Catalog character id"`
-	// Spoilers caps traits[] spoiler_level (0 none / 1 minor / 2 major).
-	// Default 0 — no spoiler leaks unless the consumer asks. Clamped to 0..2.
+	ID       int64 `path:"id" doc:"Catalog character id"`
 	Spoilers int16 `query:"spoilers" doc:"max trait spoiler level to include (0-2, default 0)"`
 }
 
@@ -725,8 +633,6 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
-	// 404 on a missing id, aligning with labels/{id} and the entity reverse
-	// reads (step 20, 85f7f08); a nil detail is the sole miss signal.
 	if detail == nil {
 		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
 	}
@@ -734,20 +640,15 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 		ID: detail.ID, DisplayName: detail.DisplayName, Latin: derefStr(detail.Latin),
 		Lang: detail.Lang, Gender: derefI16(detail.Gender), Description: detail.Description,
 		InstanceOf: derefI64(detail.InstanceOf), ImageHash: derefStr(detail.ImageHash),
-		FigureHash: derefStr(detail.FigureHash),
-		// Typed attribute columns flattened (step 81); a nil pointer maps to the
-		// zero value, which the omitempty tags drop.
+		FigureHash:    derefStr(detail.FigureHash),
 		BirthdayMonth: derefI16(detail.BirthdayMonth), BirthdayDay: derefI16(detail.BirthdayDay),
 		BloodType: derefI16(detail.BloodType), HeightCm: derefI16(detail.HeightCm),
 		WeightKg: derefI16(detail.WeightKg), BustCm: derefI16(detail.BustCm),
 		WaistCm: derefI16(detail.WaistCm), HipCm: derefI16(detail.HipCm), Cup: derefStr(detail.Cup),
 		Extra: detail.Extra, AttrSources: detail.AttrSources,
-		// Aliases/Intros pre-sized non-nil so a character with no aliases or no
-		// intro serializes `[]`, not `null` (docs/proj/16 #3).
 		Aliases: make([]dto.CharacterAlias, 0, len(detail.Aliases)),
 		Intros:  make([]dto.WorkIntro, 0, len(detail.Intros)),
-		// Traits pre-sized non-nil so a trait-less character serializes `[]`.
-		Traits: make([]dto.CharacterTrait, 0, len(detail.Traits)),
+		Traits:  make([]dto.CharacterTrait, 0, len(detail.Traits)),
 	}
 	for _, a := range detail.Aliases {
 		resp.Aliases = append(resp.Aliases, dto.CharacterAlias{
@@ -756,8 +657,6 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 		})
 	}
 	for _, in := range detail.Intros {
-		// Character intros are catalog-native source rows (no MT pilot) — Machine
-		// is always false here, mapped for shape consistency.
 		resp.Intros = append(resp.Intros, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID, Machine: in.Machine})
 	}
 	for _, tr := range detail.Traits {
@@ -770,10 +669,6 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 	return &characterByIDOutput{Body: okEnvelope(resp)}, nil
 }
 
-// --- small helpers ---
-
-// pageParams clamps offset-pagination inputs to the §2.7 read-face convention
-// (cap 50, non-negative offset).
 func pageParams(limit, offset int) (int, int) {
 	if limit <= 0 || limit > 50 {
 		limit = 50

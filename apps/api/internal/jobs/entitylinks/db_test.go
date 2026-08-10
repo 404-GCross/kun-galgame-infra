@@ -25,7 +25,6 @@ var testDB *gorm.DB
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_DSN")
 	if dsn == "" {
-		// No password: pgx reads PGPASSWORD / ~/.pgpass for localhost.
 		dsn = "host=localhost port=5432 user=postgres dbname=kun_catalog_test sslmode=disable"
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -55,8 +54,6 @@ func cleanAll(t *testing.T) {
 		require.NoError(t, testDB.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 }
-
-// ── fixtures ────────────────────────────────────────────────────────────────
 
 func mkWork(t *testing.T, id int64) {
 	t.Helper()
@@ -93,9 +90,6 @@ func mkRef(t *testing.T, entityType int16, entityID int64, source int16, ext str
 	}).Error)
 }
 
-// mkVndbRelease stages one src_vndb.releases row — the release chain only
-// feeds the work grain from OFFICIAL releases, so every fixture states the
-// flag explicitly.
 func mkVndbRelease(t *testing.T, id string, official bool) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(
@@ -106,8 +100,6 @@ func mkVndbRelease(t *testing.T, id string, official bool) {
 		    false, false, false, ?, '', '', '')`, id, official).Error)
 }
 
-// mkExtlink stages one shared extlink pool row and hangs it off an owner
-// through the owner's junction table.
 func mkExtlink(t *testing.T, id int, site, value, junction, ownerID string) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(
@@ -150,12 +142,6 @@ func countRelated(t *testing.T) int64 {
 	return n
 }
 
-// ── work lane ───────────────────────────────────────────────────────────────
-
-// TestWorkLane exercises all three work feeds at once: the release chain's
-// typed official site (with the http/https + trailing-slash twins collapsing
-// onto ONE row, and a storefront URL dropped), the vn chain's wikidata render,
-// and the Bangumi infobox sub-lane.
 func TestWorkLane(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -174,21 +160,17 @@ func TestWorkLane(t *testing.T) {
 	mkRef(t, model.EntityTypeWork, 901, vndb, "v901", model.LinkKindExact)
 	mkRef(t, model.EntityTypeWork, 901, bangumi, "9001", model.LinkKindExact)
 
-	// Two spellings of one site + a storefront + an unlisted store site.
 	mkExtlink(t, 1, "website", "http://alpha.example.com/", "src_vndb.releases_extlinks", "r1")
 	mkExtlink(t, 2, "website", "https://alpha.example.com", "src_vndb.releases_extlinks", "r1")
 	mkExtlink(t, 3, "website", "https://www.dlsite.com/maniax/work/=/product_id/RJ01.html",
 		"src_vndb.releases_extlinks", "r1")
 	mkExtlink(t, 4, "dlsite", "RJ012345", "src_vndb.releases_extlinks", "r1")
 	mkExtlink(t, 5, "wikidata", "4242", "src_vndb.vn_extlinks", "v901")
-	// An UNOFFICIAL release's website (fan patch / mirror page) never reaches
-	// the work grain — the release chain filters on src_vndb.releases.official.
 	mkExtlink(t, 6, "website", "https://fanpatch.example.org/sg", "src_vndb.releases_extlinks", "r2")
 	mkSubject(t, 9001, `{"Fields":[{"Key":"官网","Value":"http://windmill.suki.jp/"}]}`)
 
 	ctx := context.Background()
 
-	// Dry run plans everything and writes nothing.
 	dry, err := run(ctx, testDB, Opts{Only: LaneWork})
 	require.NoError(t, err)
 	assert.Equal(t, 3, dry.Work.Planned, "site + wikidata + bangumi site")
@@ -197,7 +179,6 @@ func TestWorkLane(t *testing.T) {
 	assert.Equal(t, 0, dry.Work.Written)
 	assert.Zero(t, countRelated(t))
 
-	// --limit caps the plan for a rehearsal.
 	capped, err := run(ctx, testDB, Opts{Only: LaneWork, Limit: 1})
 	require.NoError(t, err)
 	assert.Equal(t, 1, capped.Work.Planned)
@@ -217,15 +198,12 @@ func TestWorkLane(t *testing.T) {
 		 AND source_id=? AND external_id='windmill.suki.jp'`, site).Scan(&rule).Error)
 	assert.Equal(t, ruleBGMWorkSite, rule)
 
-	// Second --apply writes zero and adds no row.
 	before := countRelated(t)
 	again, err := run(ctx, testDB, Opts{Only: LaneWork, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 0, again.Work.Written)
 	assert.Equal(t, before, countRelated(t))
 }
-
-// ── label + person lanes ────────────────────────────────────────────────────
 
 func TestLabelAndPersonLanes(t *testing.T) {
 	if testDB == nil {
@@ -241,9 +219,7 @@ func TestLabelAndPersonLanes(t *testing.T) {
 
 	mkExtlink(t, 10, "twitter", "Alice_Soft", "src_vndb.producers_extlinks", "p1")
 	mkExtlink(t, 11, "pixiv", "12345", "src_vndb.staff_extlinks", "s1")
-	// An identity space is never mirrored as a related link.
 	mkExtlink(t, 12, "bgmtv", "3300", "src_vndb.staff_extlinks", "s1")
-	// A company-only space is not part of the person matrix.
 	mkExtlink(t, 13, "mobygames_comp", "acme", "src_vndb.staff_extlinks", "s1")
 
 	ctx := context.Background()
@@ -256,11 +232,6 @@ func TestLabelAndPersonLanes(t *testing.T) {
 	assert.Equal(t, int64(2), countRelated(t), "bgmtv and mobygames_comp contribute nothing")
 }
 
-// ── negative knowledge ──────────────────────────────────────────────────────
-
-// TestSkipIdentityAndRejection locks the two gates that protect existing
-// judgements: a source that already anchors the entity is left alone, and a
-// rejected (entity, source, external_id) is never re-asserted.
 func TestSkipIdentityAndRejection(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -271,7 +242,6 @@ func TestSkipIdentityAndRejection(t *testing.T) {
 	vndb := sourceID(t, "vndb")
 	twitter, site := sourceID(t, "twitter"), sourceID(t, "official_site")
 	mkRef(t, model.EntityTypeLabel, 810, vndb, "p2", model.LinkKindExact)
-	// The label already holds a twitter identity claim from an earlier wave.
 	mkRef(t, model.EntityTypeLabel, 810, twitter, "someone_else", model.LinkKindProbable)
 	require.NoError(t, testDB.Create(&model.CatalogMatchRejection{
 		EntityType: model.EntityTypeLabel, EntityID: 810, SourceID: site,

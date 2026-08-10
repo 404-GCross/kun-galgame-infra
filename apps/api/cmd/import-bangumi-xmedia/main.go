@@ -1,15 +1,3 @@
-// import-bangumi-xmedia lands the cross-media registration wave (step 31): for
-// every anime/manga/novel subject reachable from an exact-anchored galgame via
-// the Bangumi 改编 relation, register an unclaimed catalog work (bid self-anchor)
-// and lay an adaptation edge (the cross-media work adaptation_of the galgame).
-// Registration is identity-level only — no credits/characters. Cross-media
-// subjects not reachable from an anchored galgame are NOT registered (evidence
-// gate); music/real waves are deferred.
-//
-//	go run ./cmd/import-bangumi-xmedia            # dry-run (default)
-//	go run ./cmd/import-bangumi-xmedia --run      # write (×2 = idempotent)
-//
-// Single connection: src_bangumi lives in the catalog DB.
 package main
 
 import (

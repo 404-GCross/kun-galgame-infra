@@ -6,10 +6,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// loadLabelWorks returns work_id → the labels attributed to it (distinct
-// catalog_work_label edges). This is W(L) inverted, the index the co-occurrence
-// tally walks: for each work in W(O) it accumulates a share for every label on
-// that work.
 func loadLabelWorks(db *gorm.DB) (map[int64][]int64, error) {
 	var rows []struct {
 		WorkID  int64 `gorm:"column:work_id"`
@@ -27,19 +23,6 @@ func loadLabelWorks(db *gorm.DB) (map[int64][]int64, error) {
 	return m, nil
 }
 
-// loadLabelNorms returns the NFKC-folded name → label ids index used for the
-// name-equality branch of the grader. It unions the display_name fold with
-// every label alias fold, so a source name matching either resolves the label.
-// Both sides use Postgres lower(normalize(x,NFKC)) (the *_norm generated
-// columns) so equality is byte-identical (bgmtype4gated precedent).
-//
-// MERGED-AWAY LABELS ARE EXCLUDED, on both sides of the union. A retired label
-// keeps its display_name forever, so without the gate it competes for identity
-// from beyond the grave: the spine sees two same-named labels, refuses to
-// anchor, and files a merge candidate — the very merge that already happened.
-// That made the candidate lane a dead end, since executing the merge could not
-// clear the ambiguity that raised it (NEXTON 41/13231, wave 189). The alias
-// side joins back to the label for the same reason.
 func loadLabelNorms(db *gorm.DB) (map[string][]int64, error) {
 	var rows []struct {
 		Norm    string `gorm:"column:norm"`
@@ -62,10 +45,6 @@ func loadLabelNorms(db *gorm.DB) (map[string][]int64, error) {
 	return m, nil
 }
 
-// loadLabelDisplayNorms is loadLabelNorms WITHOUT the alias union — the label's
-// own name and nothing else. The spine needs the two separately: an alias is
-// good enough to stop it minting a twin, but not to nominate a merge. See the
-// banner on planSpine. Merged-away labels are excluded here too — same reason.
 func loadLabelDisplayNorms(db *gorm.DB) (map[string][]int64, error) {
 	var rows []struct {
 		Norm    string `gorm:"column:norm"`
@@ -84,19 +63,11 @@ func loadLabelDisplayNorms(db *gorm.DB) (map[string][]int64, error) {
 	return m, nil
 }
 
-// existingAnchors holds the idempotency index for one source: which external
-// ids already carry a label anchor, and which labels are already identity-
-// claimed (exact OR probable) by this source. A label claimed by either tier
-// must not be re-anchored by a second org (裁定4 "同源一 label 双锚非法") — this
-// is what makes a second --apply run write zero.
 type existingAnchors struct {
-	byExtID        map[string]int16 // external_id → link_kind (present = already anchored)
-	claimedByLabel map[int64]bool   // label_id → an identity anchor (exact/probable) from this source exists
+	byExtID        map[string]int16
+	claimedByLabel map[int64]bool
 }
 
-// loadExistingAnchors preloads the source's entity_type=label refs. Only the
-// identity tiers (exact=0 / probable=1) seed the claim index; related=2 links
-// (E2b) never claim identity.
 func loadExistingAnchors(db *gorm.DB, source int16) (*existingAnchors, error) {
 	var rows []struct {
 		ExternalID string `gorm:"column:external_id"`
@@ -120,20 +91,10 @@ func loadExistingAnchors(db *gorm.DB, source int16) (*existingAnchors, error) {
 	return ea, nil
 }
 
-// rejKey is the (label, external id) grain of a human "these are not the same
-// company" ruling.
 func rejKey(labelID int64, externalID string) string {
 	return fmt.Sprintf("%d\x00%s", labelID, externalID)
 }
 
-// loadRejections preloads this source's human rejections (doc 17 R7 negative
-// knowledge). Without it a reviewer's ruling has no way to stick: deleting a
-// wrong anchor only removes the row, and the very next run's name/co-work rule
-// re-derives it from the same upstream data. Observed in wave 198 — a stripped
-// erogamescape anchor was back within the minute, because the store lists the
-// disbanded brand's titles under its successor's maker page, so the co-work
-// rule keeps seeing the overlap. The rejection is the only durable record that
-// a human looked at exactly this pairing and said no.
 func loadRejections(db *gorm.DB, source int16) (map[string]struct{}, error) {
 	var rows []struct {
 		EntityID   int64  `gorm:"column:entity_id"`

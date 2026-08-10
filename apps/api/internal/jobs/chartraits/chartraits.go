@@ -1,19 +1,3 @@
-// Package chartraits imports the VNDB trait vocabulary + hierarchy + the
-// character×trait links into the catalog (step 93, refs/proj/93):
-//
-//   - phase 1 vocab: src_vndb.traits (3,327) → catalog_character_trait,
-//     change-detected upsert keyed by vndb_tid (a dump refresh + re-run updates
-//     renamed/reflagged rows in place; an unchanged re-run writes zero).
-//   - phase 2 hierarchy: src_vndb.traits_parents (~3.7k) →
-//     catalog_character_trait_parent, vndb tids resolved to OUR ids;
-//     insert-if-absent + stale-edge delete (the dump is the truth).
-//   - phase 3 links: src_vndb.chars_traits × EXACT vndb character anchors
-//     (entity_type=4, source_id=2, link_kind=0; matched_by unrestricted — the
-//     66/69 ruling) → catalog_character_trait_link, streamed in 1k-row
-//     multi-row upserts with change detection (spoiler re-grades upstream →
-//     refresh-runnable, the step-62 discipline). ~2.9M rows.
-//
-// Single --dsn (src_vndb is a schema inside the catalog DB). Dry-run default.
 package chartraits
 
 import (
@@ -27,34 +11,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// linkBatchSize keeps a multi-row upsert at 4 bind params per row — far under
-// the 65,535 cap (the PG bind-parameter ceiling, multiple prior stings).
 const linkBatchSize = 1000
 
-// Opts configures a run.
 type Opts struct {
 	Apply bool
-	DSN   string // catalog DB (hosts src_vndb) — REQUIRED
+	DSN   string
 }
 
-// Stats reports a run. Planned counters are identical in dry and apply.
 type Stats struct {
-	VocabTotal     int // src vocabulary rows seen
-	VocabWritten   int // created or value-changed (apply); planned writes (dry)
+	VocabTotal     int
+	VocabWritten   int
 	VocabUnchanged int
 
-	EdgesTotal   int // resolved DAG edges in the dump
+	EdgesTotal   int
 	EdgesAdded   int
-	EdgesDeleted int // stale edges removed (dump = truth)
+	EdgesDeleted int
 
-	LinksSeen      int // anchored link rows streamed
-	LinksWritten   int // created or value-changed
+	LinksSeen      int
+	LinksWritten   int
 	LinksUnchanged int
 
 	Errors int
 }
 
-// Run executes the import.
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
@@ -89,9 +68,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// runVocab upserts the vocabulary rows (phase 1). Change detection compares
-// every loaded column; dry mode counts rows whose stored values differ (or are
-// absent) without writing.
 func runVocab(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	var rows []struct {
 		ID           string `gorm:"column:id"`
@@ -112,8 +88,6 @@ func runVocab(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	st.VocabTotal = len(rows)
 
 	if !opts.Apply {
-		// Dry plan: count rows that would be created or changed, in one query
-		// per run (anti-join on all columns).
 		var unchanged int64
 		if err := db.WithContext(ctx).Raw(`SELECT count(*) FROM src_vndb.traits s
 			JOIN catalog_character_trait t ON t.vndb_tid = s.id
@@ -158,8 +132,6 @@ func runVocab(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	return nil
 }
 
-// loadIDMap returns vndb_tid → our id (after phase 1 the map is complete for
-// apply; in dry mode it may be partial or empty — edge planning handles that).
 func loadIDMap(ctx context.Context, db *gorm.DB) (map[string]int64, error) {
 	var rows []struct {
 		ID      int64  `gorm:"column:id"`
@@ -175,8 +147,6 @@ func loadIDMap(ctx context.Context, db *gorm.DB) (map[string]int64, error) {
 	return out, nil
 }
 
-// runEdges rebuilds the DAG edge set (phase 2): insert-if-absent + delete
-// stale. The dump is the truth for hierarchy topology.
 func runEdges(ctx context.Context, db *gorm.DB, opts Opts, idByTID map[string]int64, st *Stats) error {
 	var rows []struct {
 		ID     string `gorm:"column:id"`
@@ -192,7 +162,7 @@ func runEdges(ctx context.Context, db *gorm.DB, opts Opts, idByTID map[string]in
 		t, okT := idByTID[r.ID]
 		p, okP := idByTID[r.Parent]
 		if !okT || !okP {
-			continue // dry mode before first apply: vocabulary not landed yet
+			continue
 		}
 		want[edge{t, p}] = struct{}{}
 	}
@@ -244,13 +214,6 @@ func runEdges(ctx context.Context, db *gorm.DB, opts Opts, idByTID map[string]in
 	return nil
 }
 
-// runLinks streams the anchored link projection (phase 3) and flushes 1k-row
-// change-detected upserts. DISTINCT ON keeps one row per (character, trait)
-// even when a character carries multiple vndb anchors (lowest external_id
-// wins, deterministic). The stream joins the SRC vocabulary (always present)
-// so a dry run before the first apply still plans honestly; OUR trait id
-// resolves via LEFT JOIN (phase 1 has landed it by the time apply reaches
-// phase 3 — a NULL id in apply mode is counted as an error, never written).
 func runLinks(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	rows, err := db.WithContext(ctx).Raw(`
 		SELECT DISTINCT ON (r.entity_id, ct.tid) r.entity_id AS character_id,
@@ -282,8 +245,6 @@ func runLinks(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 			batch = batch[:0]
 			return nil
 		}
-		// Guard: an unresolved trait id can only mean phase 1 failed for that
-		// row — never write a 0 FK.
 		kept := batch[:0]
 		for _, l := range batch {
 			if l.traitID == 0 {
@@ -315,7 +276,7 @@ func runLinks(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 			st.Errors++
 			slog.Warn("link batch upsert", "size", len(batch), "err", res.Error)
 			batch = batch[:0]
-			return nil // keep going; errors are counted
+			return nil
 		}
 		st.LinksWritten += int(res.RowsAffected)
 		st.LinksUnchanged += len(batch) - int(res.RowsAffected)

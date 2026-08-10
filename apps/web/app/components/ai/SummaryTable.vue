@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// The three-dimension usage summary: one row per (site, route, channel) with
-// call/token/cost totals and the terminal-status distribution rendered as
-// colored chips. A '' channel means the calls were served degraded.
 import {
   AI_STATUS_KEYS,
   AI_STATUS_META,
@@ -16,7 +13,6 @@ const props = defineProps<{
 
 const fmtInt = (n?: number) => (n ?? 0).toLocaleString()
 
-// Non-zero status counts for a row, in display order, so the chips stay compact.
 const statusChips = (row: AiSummaryRow) =>
   AI_STATUS_KEYS.map((key) => ({
     key,

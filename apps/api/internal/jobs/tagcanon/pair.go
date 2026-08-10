@@ -13,41 +13,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// ProposeOpts configures the propose phase (doc 87 P2 --propose): blocking →
-// candidate pairs → LLM seam → JSONL verdicts, plus single-source tier/kind
-// proposals for names clearing the usage gate.
 type ProposeOpts struct {
-	// DSN is REQUIRED — the catalog DB holding all three vocabularies (single
-	// pool, as 74). A bare run cannot touch a live DB.
-	DSN string
-	// DlsiteDSN is OPTIONAL: the dlsite staging DB (genre_taxonomy) used ONLY to
-	// enrich dlsite names with their ja original (doc 87 ruling 2; the same
-	// second-pool convention as cmd/backfill-dlsite-genres). Blank → dlsite orig
-	// falls back to the zh name (degraded, still functional).
-	DlsiteDSN string
-	// TagMapPath overrides docs/tagMap.ts (env KUN_VNDB_TAGMAP_PATH also works).
-	// The inverted map gives every vndb tag its English original. Missing →
-	// vndb orig falls back to the zh name.
-	TagMapPath string
-	// SingleThreshold gates single-source admission (doc 87 ruling 4; default
-	// 100). A single-source name with usage ≥ threshold gets an LLM tier/kind
-	// proposal; below it is dropped this wave.
+	DSN             string
+	DlsiteDSN       string
+	TagMapPath      string
 	SingleThreshold int
-	// Out is the JSONL verdict path (REQUIRED).
-	Out string
-	// Workers sizes the LLM call pool (<=1 serial). MaxPairs caps the blocking
-	// budget (0 = pinned default).
-	Workers  int
-	MaxPairs int
-	MaxEdit  int
-	// Prior is OPTIONAL: a previous wave's verdict/decisions JSONL (doc 90
-	// ruling 5). Pairs already judged there are skipped (counted, never
-	// re-judged); singles are never filtered — a judged single is either
-	// mapped (already out of the pool) or errored (must be re-judged).
-	Prior string
+	Out             string
+	Workers         int
+	MaxPairs        int
+	MaxEdit         int
+	Prior           string
 }
 
-// ProposeStats reports a propose run.
 type ProposeStats struct {
 	Block          blockStats
 	Pairs          int
@@ -57,9 +34,6 @@ type ProposeStats struct {
 	SkippedPrior   int
 }
 
-// Propose runs blocking + the LLM seam and writes the verdict JSONL. mt is the
-// matcher seam (REQUIRED). Sources are resolved by key so the JSONL is
-// environment-portable.
 func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, error) {
 	if opts.DSN == "" {
 		return nil, fmt.Errorf("catalog DSN is required (--dsn)")
@@ -86,7 +60,6 @@ func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, 
 		return nil, err
 	}
 
-	// Blocking runs over the non-meta slice (ruling 3: meta stays out of pairing).
 	blockingPool := make([]candName, 0, len(pool))
 	for _, c := range pool {
 		if !isMeta(c.Norm) {
@@ -99,11 +72,6 @@ func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, 
 
 	st := &ProposeStats{Block: bst, RelationCounts: map[Relation]int{}}
 
-	// --prior: skip pairs a previous wave already judged (doc 90 ruling 5). The
-	// key is the unordered (source,name) x (source,name) identity blocking
-	// on, so a pair re-surfacing across waves is judged exactly once. Only pairs
-	// are filtered: a previously judged single is either already mapped (and so
-	// excluded from the pool upstream) or errored (and must be re-judged).
 	if opts.Prior != "" {
 		priorKeys, err := loadPriorPairKeys(opts.Prior)
 		if err != nil {
@@ -124,7 +92,6 @@ func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, 
 	var mu sync.Mutex
 	var recs []pairRec
 
-	// ── pair matching ─────────────────────────────────────────────────────────
 	runPooled(ctx, len(pairs), opts.Workers, func(i int) {
 		p := pairs[i]
 		v, model, err := mt.MatchPair(ctx, PairInput{
@@ -153,14 +120,6 @@ func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, 
 	})
 	st.Pairs = len(pairs)
 
-	// ── single-source admission (usage ≥ threshold) ──────────────────────────
-	// Every ≥threshold name is proposed, INCLUDING names that also appear in an
-	// exact pair. We do NOT suppress those here on the pair verdict: an exact
-	// pair only canonicalizes the name if it survives review (a low/medium-exact
-	// pair can be dropped or human-rejected), and suppressing early would leave a
-	// high-usage name with no canonical row at all. Precedence is resolved at
-	// apply time — apply-reviewed's `absorbed` set drops a single row only when
-	// an APPROVED exact group actually covers the name (group membership wins).
 	singles := make([]candName, 0)
 	for _, c := range pool {
 		if c.Usage < opts.SingleThreshold {
@@ -197,10 +156,6 @@ func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, 
 	return st, nil
 }
 
-// buildPool assembles the enriched candidate pool: the three source vocabularies
-// (reusing the 74 loaders + bgm junk prefilter), MINUS junk and names already in
-// a canonical group (catalog_tag_source_map), each enriched with its original
-// form and (bgm/dlsite) work-id set.
 func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, error) {
 	src, err := resolveSources(ctx, db)
 	if err != nil {
@@ -224,18 +179,16 @@ func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, 
 	if err != nil {
 		return nil, err
 	}
-	mapped, err := loadMappedNames(ctx, db) // "sourceID\x00name" already canonical
+	mapped, err := loadMappedNames(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 
-	// original-name enrichers
 	vndbOrig := loadVndbOrig(opts.TagMapPath)
 	dlOrig, err := loadDlsiteOrig(ctx, opts.DlsiteDSN)
 	if err != nil {
 		return nil, err
 	}
-	// co-occurrence work-id sets (bgm/dlsite share the catalog_work id space)
 	bgmWorks, err := loadNameWorkIDs(ctx, db, src.bangumi)
 	if err != nil {
 		return nil, err
@@ -248,7 +201,7 @@ func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, 
 	pool := make([]candName, 0, len(vndb)+len(bgm)+len(dl))
 	add := func(e vocabEntry, orig func(string) string, works map[string]map[int64]struct{}) {
 		if _, already := mapped[mapKey(e.SourceID, e.Name)]; already {
-			return // already in a 74 canonical group — settled, out of scope
+			return
 		}
 		c := candName{
 			SourceID: e.SourceID, SourceKey: srcKeys[e.SourceID],
@@ -272,12 +225,11 @@ func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, 
 		if bgm[i].Junk || bgmJunk(bgm[i].Norm, labelNorms) != "" {
 			continue
 		}
-		add(bgm[i], nil, bgmWorks) // bgm orig = name (folksonomy is already original)
+		add(bgm[i], nil, bgmWorks)
 	}
 	for _, e := range dl {
 		add(e, dlOrig, dlWorks)
 	}
-	// deterministic pool order
 	sort.Slice(pool, func(i, j int) bool {
 		if pool[i].SourceID != pool[j].SourceID {
 			return pool[i].SourceID < pool[j].SourceID
@@ -287,9 +239,6 @@ func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, 
 	return pool, nil
 }
 
-// loadMappedNames returns the set of (source_id, source_name) already carried by
-// catalog_tag_source_map (the 74 canonical layer) — those names are settled and
-// excluded from 70b pairing.
 func loadMappedNames(ctx context.Context, db *gorm.DB) (map[string]struct{}, error) {
 	var rows []struct {
 		SourceID   int16  `gorm:"column:source_id"`
@@ -307,8 +256,6 @@ func loadMappedNames(ctx context.Context, db *gorm.DB) (map[string]struct{}, err
 
 func mapKey(source int16, name string) string { return fmt.Sprintf("%d\x00%s", source, name) }
 
-// loadNameWorkIDs returns, per catalog_work_tag name of a source, the set of
-// work ids carrying it (co-occurrence blocking input; bgm/dlsite only).
 func loadNameWorkIDs(ctx context.Context, db *gorm.DB, sourceID int16) (map[string]map[int64]struct{}, error) {
 	var rows []struct {
 		Name   string `gorm:"column:name"`
@@ -333,11 +280,6 @@ func loadNameWorkIDs(ctx context.Context, db *gorm.DB, sourceID int16) (map[stri
 	return out, nil
 }
 
-// loadVndbOrig builds the zh→EN reverse map from docs/tagMap.ts (the exact
-// function vndbresolve used to localize galgame_tag.name). Collisions (several
-// English tags mapping to one Chinese) keep the lexicographically smallest
-// English for determinism. Returns a lookup that falls back to the name itself
-// (an unmapped tag already carries its English original).
 func loadVndbOrig(tagMapPath string) func(string) string {
 	path := tagMapPath
 	if path == "" {
@@ -362,10 +304,6 @@ func loadVndbOrig(tagMapPath string) func(string) string {
 	}
 }
 
-// loadDlsiteOrig connects the optional dlsite staging DB and returns a zh→ja
-// genre-name lookup (genre_taxonomy zh_CN → genre_id → ja_JP). Blank DSN → a
-// pass-through (dlsite orig = zh name). This is the ONLY use of a second pool,
-// and only in propose (apply is single-DSN).
 func loadDlsiteOrig(ctx context.Context, dsn string) (func(string) string, error) {
 	if dsn == "" {
 		return func(s string) string { return s }, nil
@@ -407,9 +345,6 @@ func loadDlsiteOrig(ctx context.Context, dsn string) (func(string) string, error
 	}, nil
 }
 
-// runPooled runs fn(i) for i in [0,n) either serially (workers<=1) or across a
-// worker pool. fn is responsible for its own locking. Order of execution is
-// irrelevant (records are sorted before writing).
 func runPooled(ctx context.Context, n, workers int, fn func(i int)) {
 	if workers <= 1 {
 		for i := range n {
@@ -442,8 +377,6 @@ func runPooled(ctx context.Context, n, workers int, fn func(i int)) {
 	wg.Wait()
 }
 
-// sortRecords orders records deterministically (kind, then keys) so the JSONL is
-// stable across runs regardless of worker scheduling.
 func sortRecords(recs []pairRec) {
 	sort.SliceStable(recs, func(i, j int) bool {
 		a, b := recs[i], recs[j]
@@ -469,13 +402,10 @@ func sortRecords(recs []pairRec) {
 	})
 }
 
-// openGorm opens a silent-logger gorm handle (shared by pair/apply phases).
 func openGorm(dsn string) (*gorm.DB, error) {
 	return database.OpenJob(dsn)
 }
 
-// pairKey is the unordered pair identity used by --prior skipping: the same
-// (source,name) dedupe key blocking uses, joined order-independently.
 func pairKey(aSource, aName, bSource, bName string) string {
 	ka := aSource + ":" + aName
 	kb := bSource + ":" + bName
@@ -485,10 +415,6 @@ func pairKey(aSource, aName, bSource, bName string) string {
 	return ka + "\x00" + kb
 }
 
-// loadPriorPairKeys reads a previous wave's verdict/decisions JSONL and returns
-// the set of already-judged pair keys. Non-pair records are ignored. A missing
-// or unreadable file is a hard error — falling back to a full re-judge is an
-// operator decision (re-run without --prior), never a silent one.
 func loadPriorPairKeys(path string) (map[string]struct{}, error) {
 	recs, err := readRecords(path)
 	if err != nil {

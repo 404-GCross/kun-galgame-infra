@@ -12,8 +12,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// callWire runs fn as a fiber handler and returns the status and decoded JSON
-// body it produced.
 func callWire(t *testing.T, fn fiber.Handler) (int, map[string]any) {
 	t.Helper()
 	app := fiber.New()
@@ -58,8 +56,6 @@ func TestProtocolErrorsAreRFC6749(t *testing.T) {
 		}
 	})
 
-	// RFC 6749 §5.2: invalid_client is the one error that answers 401, because
-	// it is a failure of client authentication rather than of the request.
 	t.Run("invalid_client is 401, everything else is 400", func(t *testing.T) {
 		status, body := callWire(t, func(c fiber.Ctx) error {
 			return protoErr(c, errors.ErrOAuthInvalidClientSecret)
@@ -69,9 +65,6 @@ func TestProtocolErrorsAreRFC6749(t *testing.T) {
 		}
 	})
 
-	// The status is load-bearing: every RP treats 5xx as transient (keep the
-	// session) and 4xx as a verdict on the credential. A 400 here would log the
-	// entire userbase out over a transient internal fault.
 	t.Run("internal faults are 500 server_error, never 4xx", func(t *testing.T) {
 		status, body := callWire(t, protoServerError)
 		if status != fiber.StatusInternalServerError {
@@ -95,10 +88,6 @@ func TestProtocolErrorsAreRFC6749(t *testing.T) {
 	})
 }
 
-// TestOAuthErrString pins the internal-code → RFC 6749 error-string mapping.
-// RPs branch on these strings to decide "refresh dead → re-login" versus
-// "transient → retry", so a wrong mapping either strands users in a retry loop
-// or logs them out for no reason.
 func TestOAuthErrString(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -126,11 +115,6 @@ func TestOAuthErrString(t *testing.T) {
 	}
 }
 
-// TestDiscoveryDocument pins the discovery metadata an RP's auto-configuration
-// reads. A missing field is not neutral: an omitted response_modes_supported
-// reads as "unknown", which lets an operator configure a front-channel
-// connection this OP cannot serve, and then debug a login that silently never
-// completes.
 func TestDiscoveryDocument(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Server.SiteURL = "https://oauth.example.com/"
@@ -153,14 +137,10 @@ func TestDiscoveryDocument(t *testing.T) {
 		}
 	}
 
-	// We implement the query response mode only — advertising form_post or
-	// fragment would promise a flow that does not exist here.
 	if modes, _ := meta["response_modes_supported"].([]string); len(modes) != 1 || modes[0] != "query" {
 		t.Errorf("response_modes_supported = %v, want [query]", meta["response_modes_supported"])
 	}
 
-	// id_tokens are RS256; advertising anything else breaks zero-config
-	// verification in RP libraries.
 	if algs, _ := meta["id_token_signing_alg_values_supported"].([]string); len(algs) != 1 || algs[0] != "RS256" {
 		t.Errorf("id_token_signing_alg_values_supported = %v, want [RS256]", meta["id_token_signing_alg_values_supported"])
 	}

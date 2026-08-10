@@ -19,11 +19,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + registry seeds) and the src_bangumi Silver schema co-located
-// in ONE database — the exact single-DSN shape the backfill runs against. Run
-// drives the DSN itself, so we capture it (not just the handle) to exercise
-// the real entry point.
 var (
 	testDB  *gorm.DB
 	testDSN string
@@ -80,8 +75,6 @@ func mkAnchor(t *testing.T, workID int64, externalID string, source, kind int16,
 	}).Error)
 }
 
-// mkSubject inserts a src_bangumi.subject fixture; metaTags/favorite == ""
-// leave the column NULL (datatypes.JSON zero value inserts NULL).
 func mkSubject(t *testing.T, id int64, metaTags, favorite string) {
 	t.Helper()
 	sub := srcb.Subject{
@@ -112,17 +105,6 @@ func popCount(t *testing.T, where string, args ...any) int64 {
 	return n
 }
 
-// TestBackfillBgmWorkMeta exercises the whole pipeline through the real Run
-// entry point: candidate selection (exact anchors of ANY matched_by, T2 admits
-// claimed on both fields — Field A since T2, Field B since T2b), field A's
-// defensive branches
-// (NULL / empty / non-array meta_tags, blank elements, in-subject duplicates)
-// and folksonomy coexistence (a voted same-name row keeps its votes, a fresh
-// meta-only name lands with count=0), field B's shelf mapping (done→collect,
-// present-0 real row, absent shelf no row, unknown key counted, negative
-// skipped), dry-run zero-write, apply value fidelity, second-pass idempotency
-// (A all-conflict / B all-unchanged), and the upsert heal (mutated value healed
-// on re-run).
 func TestBackfillBgmWorkMeta(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -131,38 +113,27 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 
 	claimed := "galgame_wiki"
 
-	// wFull: the showcase — meta_tags with an untrimmed element, a blank
-	// element, and a duplicate; favorite with all five shelves incl. a 0.
 	wFull := mkWork(t, reg.galgameMedium, "meta-full", nil)
 	mkSubject(t, 301, `["游戏", "  PC  ", "   ", "游戏"]`,
 		`{"wish": 5, "done": 12, "doing": 0, "on_hold": 2, "dropped": 1}`)
 	mkAnchor(t, wFull, "301", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
 
-	// wOther: a DIFFERENT matched_by exact anchor still qualifies (the 66/69
-	// unrestricted ruling); favorite has an absent shelf (no row), an unknown
-	// key (counted) and a negative value (skipped).
 	wOther := mkWork(t, reg.galgameMedium, "meta-other-rule", nil)
 	mkSubject(t, 302, `["Galgame"]`, `{"wish": 3, "done": -1, "doing": 4, "dropped": 0, "mystery": 9}`)
 	mkAnchor(t, wOther, "302", reg.bangumiSource, model.LinkKindExact, "rule:wiki-bid-typed")
 
-	// wEmpty: empty meta_tags array + empty favorite object → both counted.
 	wEmpty := mkWork(t, reg.galgameMedium, "meta-empty", nil)
 	mkSubject(t, 303, `[]`, `{}`)
 	mkAnchor(t, wEmpty, "303", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
 
-	// wNull: both columns NULL → both counted.
 	wNull := mkWork(t, reg.galgameMedium, "meta-null", nil)
 	mkSubject(t, 304, "", "")
 	mkAnchor(t, wNull, "304", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
 
-	// wBad: malformed meta_tags (an object) + malformed favorite (an array).
 	wBad := mkWork(t, reg.galgameMedium, "meta-bad", nil)
 	mkSubject(t, 305, `{"name":"游戏"}`, `[1,2,3]`)
 	mkAnchor(t, wBad, "305", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
 
-	// wClaimed: ADMITTED on BOTH fields (T2 Field A, T2b Field B): the meta tag
-	// "游戏" AND the wish favorite both write. wProbable: still excluded
-	// (exact-only).
 	wClaimed := mkWork(t, reg.galgameMedium, "meta-claimed", &claimed)
 	mkSubject(t, 306, `["游戏"]`, `{"wish": 1}`)
 	mkAnchor(t, wClaimed, "306", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
@@ -170,13 +141,10 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	mkSubject(t, 307, `["游戏"]`, `{"wish": 1}`)
 	mkAnchor(t, wProbable, "307", reg.bangumiSource, model.LinkKindProbable, "rule:bgm-title-only")
 
-	// Pre-existing 58b folksonomy row on wFull: same name as a planned meta tag
-	// ("游戏", 24 votes) — the collision must KEEP the votes.
 	require.NoError(t, testDB.Create(&model.CatalogWorkTag{
 		WorkID: wFull, Name: "游戏", Count: 24, SourceID: reg.bangumiSource,
 	}).Error)
 
-	// --- dry run: decides, writes nothing.
 	st, err := Run(ctx, Opts{DSN: testDSN})
 	require.NoError(t, err)
 	assert.Equal(t, 6, st.Candidates, "probable excluded; claimed admitted (T2)")
@@ -193,7 +161,6 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.Zero(t, st.MetaWritten+st.MetaConflict+st.FavWritten+st.FavUnchanged+st.Errors)
 	assert.EqualValues(t, 1, tagCount(t, ""), "dry run writes nothing (only the pre-seeded folksonomy row)")
 	assert.EqualValues(t, 0, popCount(t, ""))
-	// Shelf mapping fidelity in the plan: done → the collect metric.
 	require.GreaterOrEqual(t, len(st.FavSamples), 5)
 	assert.Equal(t, FavSample{WorkID: wFull, SubjectID: 301, Bucket: "wish", Metric: model.PopularityMetricBgmWish, Value: 5}, st.FavSamples[0])
 	assert.Equal(t, FavSample{WorkID: wFull, SubjectID: 301, Bucket: "done", Metric: model.PopularityMetricBgmCollect, Value: 12}, st.FavSamples[1],
@@ -201,7 +168,6 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.Equal(t, FavSample{WorkID: wFull, SubjectID: 301, Bucket: "doing", Metric: model.PopularityMetricBgmDoing, Value: 0}, st.FavSamples[2],
 		"a present 0 is a real planned row")
 
-	// --- apply: writes the decided plan exactly.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.MetaWritten, "PC + Galgame + wClaimed 游戏 — wFull 游戏 collided with the folksonomy row")
@@ -211,8 +177,6 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.EqualValues(t, 4, tagCount(t, ""))
 	assert.EqualValues(t, 9, popCount(t, ""))
 
-	// Coexistence proof: the voted folksonomy row KEPT its votes; the fresh
-	// meta-only names landed with count=0.
 	var rows []model.CatalogWorkTag
 	require.NoError(t, testDB.Where("work_id = ?", wFull).Order("name").Find(&rows).Error)
 	require.Len(t, rows, 2)
@@ -221,8 +185,6 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.Equal(t, "游戏", rows[1].Name)
 	assert.Equal(t, 24, rows[1].Count, "folksonomy votes survive the meta-tag collision")
 
-	// Popularity value fidelity: wOther has exactly wish/doing/dropped —
-	// absent on_hold never became a row, dropped:0 did.
 	var pops []model.CatalogWorkPopularity
 	require.NoError(t, testDB.Where("work_id = ?", wOther).Order("metric").Find(&pops).Error)
 	require.Len(t, pops, 3)
@@ -232,14 +194,11 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.EqualValues(t, 4, pops[1].Value)
 	assert.Equal(t, model.PopularityMetricBgmDropped, pops[2].Metric)
 	assert.EqualValues(t, 0, pops[2].Value, "present 0 is a real row")
-	// Claim admission on both fields: wClaimed's meta tag AND favorite both
-	// materialised. wProbable never enters.
 	assert.EqualValues(t, 1, tagCount(t, "WHERE work_id = ?", wClaimed), "T2: claimed meta tag materialises")
 	assert.EqualValues(t, 1, popCount(t, "WHERE work_id = ?", wClaimed), "T2b: claimed favorite materialises")
 	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id = ?", wProbable))
 	assert.EqualValues(t, 0, popCount(t, "WHERE work_id = ?", wProbable))
 
-	// --- second apply: idempotent — A all-conflict, B all-unchanged.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.MetaWritten+st.FavWritten+st.Errors, "second pass writes zero")
@@ -248,7 +207,6 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.EqualValues(t, 4, tagCount(t, ""))
 	assert.EqualValues(t, 9, popCount(t, ""))
 
-	// --- upsert heal: mutate one shelf value in the DB, re-run, healed.
 	require.NoError(t, testDB.Exec(
 		`UPDATE catalog_work_popularity SET value = 999 WHERE work_id = ? AND metric = ?`,
 		wFull, model.PopularityMetricBgmCollect).Error)
@@ -261,16 +219,10 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 		`SELECT value FROM catalog_work_popularity WHERE work_id = ? AND metric = ?`,
 		wFull, model.PopularityMetricBgmCollect).Scan(&healed).Error)
 	assert.EqualValues(t, 12, healed, "value healed back to the subject's shelf count")
-	// Meta tags stay a pure fill on the same re-run.
 	assert.Zero(t, st.MetaWritten)
 	assert.Equal(t, 4, st.MetaConflict)
 }
 
-// TestWriterClaimAdmissionAndDSNRequired pins the T2+T2b claim policy driven
-// directly through the writer: on the SAME claimed work Field A (writeTag)
-// AND Field B (writeFavorite) both MATERIALISE. Bodyless rows write on both
-// paths, with the conflict (A) / change-detected (B) idempotency backstops.
-// Also covers the refuse-to-guess DSN discipline.
 func TestWriterClaimAdmissionAndDSNRequired(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -281,7 +233,6 @@ func TestWriterClaimAdmissionAndDSNRequired(t *testing.T) {
 	wClaimed := mkWork(t, reg.galgameMedium, "claimed-direct", &claimed)
 	wBody := mkWork(t, reg.galgameMedium, "bodyless-direct", nil)
 
-	// Claim admission on ONE claimed work: Field A AND Field B both write.
 	w := &writer{db: testDB, stats: &Stats{}}
 	w.writeTag(ctx, tagRow{WorkID: wClaimed, SourceID: reg.bangumiSource, Name: "游戏"}, true)
 	assert.Equal(t, 1, w.stats.MetaWritten, "T2: Field A materialises the claimed meta tag")
@@ -290,7 +241,6 @@ func TestWriterClaimAdmissionAndDSNRequired(t *testing.T) {
 	assert.EqualValues(t, 1, tagCount(t, ""), "the Field A meta tag landed")
 	assert.EqualValues(t, 1, popCount(t, ""), "the claimed favorite row landed")
 
-	// Bodyless rows write on both paths; retries are conflict (A) / unchanged (B).
 	w.writeTag(ctx, tagRow{WorkID: wBody, SourceID: reg.bangumiSource, Name: "游戏"}, true)
 	assert.Equal(t, 2, w.stats.MetaWritten)
 	w.writeTag(ctx, tagRow{WorkID: wBody, SourceID: reg.bangumiSource, Name: "游戏"}, true)
@@ -303,7 +253,6 @@ func TestWriterClaimAdmissionAndDSNRequired(t *testing.T) {
 	assert.Equal(t, 3, w.stats.FavWritten, "changed value updates in place")
 	assert.EqualValues(t, 2, popCount(t, ""))
 
-	// DSN discipline: required, never guessed.
 	_, err = Run(ctx, Opts{})
 	require.Error(t, err)
 }

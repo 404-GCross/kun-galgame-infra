@@ -1,9 +1,3 @@
-// Package storage is the artifact-service object-store client: an S3-compatible
-// wrapper (Backblaze B2 in prod, MinIO in dev) specialised for LARGE private
-// blobs. Unlike internal/platform/image/storage (which buffers bytes through
-// PutObject), this client never touches file bytes — it only issues presigned
-// PUT / GET URLs and drives S3 multipart, so GB-scale uploads/downloads go
-// client⇄B2 directly. See docs/artifact/.
 package storage
 
 import (
@@ -22,31 +16,23 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Client is an artifact-service-scoped S3 client (presign + multipart).
 type Client struct {
 	s3      *s3.Client
 	presign *s3.PresignClient
 	bucket  string
 }
 
-// CompletedPart is one finished multipart part (number + ETag returned by the
-// client's PUT to the presigned part URL).
 type CompletedPart struct {
 	PartNumber int32
 	ETag       string
 }
 
-// UploadedPart is one part already stored for an in-progress multipart upload,
-// as reported by ListParts. Used to resume an interrupted upload: the client
-// skips these and only re-sends the missing parts.
 type UploadedPart struct {
 	PartNumber int32
 	ETag       string
 	Size       int64
 }
 
-// NewClient creates an S3 client from the given config. Works with B2 /
-// MinIO / R2 / S3 via the UsePathStyle knob (B2: false; MinIO dev: true).
 func NewClient(cfg config.S3Config) (*Client, error) {
 	if cfg.AccessKeyID == "" || cfg.SecretAccessKey == "" {
 		return nil, errors.New("artifact storage: AccessKeyID and SecretAccessKey are required")
@@ -77,12 +63,8 @@ func NewClient(cfg config.S3Config) (*Client, error) {
 	}, nil
 }
 
-// Bucket returns the bucket name the client is bound to.
 func (c *Client) Bucket() string { return c.bucket }
 
-// PresignPut returns a presigned single-PUT URL for the given key. The client
-// uploads the whole object body to this URL directly. No headers are baked
-// into the signature beyond the path so the caller can PUT raw bytes.
 func (c *Client) PresignPut(ctx context.Context, key string, ttl time.Duration) (string, error) {
 	req, err := c.presign.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(c.bucket),
@@ -94,8 +76,6 @@ func (c *Client) PresignPut(ctx context.Context, key string, ttl time.Duration) 
 	return req.URL, nil
 }
 
-// PresignGet returns a presigned GET URL. downloadName, when non-empty, sets
-// Content-Disposition so the browser saves the original filename.
 func (c *Client) PresignGet(ctx context.Context, key, downloadName string, ttl time.Duration) (string, error) {
 	in := &s3.GetObjectInput{
 		Bucket: aws.String(c.bucket),
@@ -111,12 +91,6 @@ func (c *Client) PresignGet(ctx context.Context, key, downloadName string, ttl t
 	return req.URL, nil
 }
 
-// CreateMultipart starts a multipart upload and returns its UploadId. The
-// download filename and content type are baked here as object metadata: B2 maps
-// Content-Disposition → b2-content-disposition and preserves both onto the
-// finished object, so the attachment name is set ONCE at upload start and the
-// completion path never pays an O(size) server-side copy. downloadName /
-// contentType may be empty (then left unset).
 func (c *Client) CreateMultipart(ctx context.Context, key, downloadName, contentType string) (string, error) {
 	in := &s3.CreateMultipartUploadInput{
 		Bucket: aws.String(c.bucket),
@@ -138,7 +112,6 @@ func (c *Client) CreateMultipart(ctx context.Context, key, downloadName, content
 	return *out.UploadId, nil
 }
 
-// PresignUploadPart returns a presigned URL for one part (1-based partNumber).
 func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, partNumber int32, ttl time.Duration) (string, error) {
 	req, err := c.presign.PresignUploadPart(ctx, &s3.UploadPartInput{
 		Bucket:     aws.String(c.bucket),
@@ -152,9 +125,6 @@ func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, pa
 	return req.URL, nil
 }
 
-// ListParts returns the parts already uploaded for an in-progress multipart
-// upload, so a resumed client can skip them and re-send only what's missing.
-// Follows S3 pagination (PartNumberMarker) to cover uploads with >1000 parts.
 func (c *Client) ListParts(ctx context.Context, key, uploadID string) ([]UploadedPart, error) {
 	var out []UploadedPart
 	var marker *string
@@ -190,8 +160,6 @@ func (c *Client) ListParts(ctx context.Context, key, uploadID string) ([]Uploade
 	return out, nil
 }
 
-// CompleteMultipart finalises a multipart upload. Parts must be sorted ascending
-// by PartNumber (the caller sorts before passing).
 func (c *Client) CompleteMultipart(ctx context.Context, key, uploadID string, parts []CompletedPart) error {
 	completed := make([]types.CompletedPart, 0, len(parts))
 	for _, p := range parts {
@@ -212,7 +180,6 @@ func (c *Client) CompleteMultipart(ctx context.Context, key, uploadID string, pa
 	return nil
 }
 
-// AbortMultipart cancels an in-progress multipart upload, freeing its parts.
 func (c *Client) AbortMultipart(ctx context.Context, key, uploadID string) error {
 	_, err := c.s3.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 		Bucket:   aws.String(c.bucket),
@@ -225,8 +192,6 @@ func (c *Client) AbortMultipart(ctx context.Context, key, uploadID string) error
 	return nil
 }
 
-// HeadSize returns the actual object size, used to verify the uploaded bytes
-// match the size the caller declared at init.
 func (c *Client) HeadSize(ctx context.Context, key string) (int64, error) {
 	out, err := c.s3.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(c.bucket),
@@ -241,7 +206,6 @@ func (c *Client) HeadSize(ctx context.Context, key string) (int64, error) {
 	return *out.ContentLength, nil
 }
 
-// Exists reports whether an object exists at the given key.
 func (c *Client) Exists(ctx context.Context, key string) (bool, error) {
 	_, err := c.s3.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(c.bucket),
@@ -261,7 +225,6 @@ func (c *Client) Exists(ctx context.Context, key string) (bool, error) {
 	return false, fmt.Errorf("artifact storage: head %q: %w", key, err)
 }
 
-// Delete removes an object. Used by the GC job (with the cleanup-scoped key).
 func (c *Client) Delete(ctx context.Context, key string) error {
 	_, err := c.s3.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(c.bucket),
@@ -273,15 +236,6 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// SetContentDisposition rewrites the object's metadata in place via a
-// server-side copy onto its own key (MetadataDirective=REPLACE), baking an
-// attachment Content-Disposition that carries downloadName. Used ONLY for
-// single-PUT uploads (always smaller than the multipart threshold, so the copy
-// is small and sub-second); multipart objects bake the same metadata at
-// CreateMultipartUpload instead, so a GB-scale completion never pays this
-// O(size) copy. B2 caps a single CopyObject at 5 GB — fine here, since single-
-// PUT objects are far under it (multipart, which can reach far past 5 GB, never
-// takes this path).
 func (c *Client) SetContentDisposition(ctx context.Context, key, downloadName, contentType string) error {
 	in := &s3.CopyObjectInput{
 		Bucket:             aws.String(c.bucket),
@@ -299,8 +253,6 @@ func (c *Client) SetContentDisposition(ctx context.Context, key, downloadName, c
 	return nil
 }
 
-// EnsureBucket creates the bucket if missing. Intended for local dev (MinIO);
-// production should pre-provision the (private) bucket.
 func (c *Client) EnsureBucket(ctx context.Context) error {
 	_, err := c.s3.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(c.bucket)})
 	if err == nil {
@@ -318,14 +270,10 @@ func (c *Client) EnsureBucket(ctx context.Context) error {
 	return nil
 }
 
-// ContentDisposition builds an RFC 5987 attachment header that survives
-// non-ASCII filenames (filename* + UTF-8), matching the production pattern.
 func ContentDisposition(name string) string {
 	return fmt.Sprintf("attachment; filename*=UTF-8''%s", percentEncode(name))
 }
 
-// percentEncode escapes a filename for the filename* (RFC 5987) field. Keeps
-// unreserved chars; percent-encodes everything else byte-wise (UTF-8).
 func percentEncode(s string) string {
 	const hex = "0123456789ABCDEF"
 	var b []byte

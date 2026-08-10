@@ -1,25 +1,3 @@
-// migrate-avatars backfills users.avatar_image_hash for users whose avatar is
-// still a legacy CDN URL, by re-uploading that image through image_service
-// (preset=avatar). Afterwards every avatar is image_service-managed (webp main
-// + 256/100 variants, global dedup) — identical to a live upload via
-// POST /auth/me/avatar.
-//
-// WHY one client: avatars are centralized — kungal/moyu both proxy avatar
-// uploads to OAuth, which uploads under a single "account" OAuth client. This
-// cmd reuses cfg.ImageClient (KUN_IMAGE_CLIENT_ID, = the account client in
-// prod), so migrated avatars land in the exact same pool as live ones.
-//
-// FORMATS (verified on prod): image.kungal.com avatars are webp (pass straight
-// through — image_service decodes webp), image.moyu.moe avatars are AVIF and the
-// DB stores the small "-mini" variant. image_service's avatar preset only
-// accepts jpeg/png/webp and its processor can't decode AVIF, so for moyu we
-// (a) rewrite "-mini.<ext>" -> the full-size original, and (b) transcode AVIF
-// (and any other non-webp/png/jpeg) -> PNG in-process before upload (plan A —
-// the live image_service is untouched). image_service then re-encodes to webp.
-//
-//	go run ./cmd/migrate-avatars                 # DRY RUN: classify from DB + report. No network, no upload, no write.
-//	go run ./cmd/migrate-avatars --probe 20      # download+transcode N samples, report. NO upload, NO write.
-//	go run ./cmd/migrate-avatars --apply         # download -> transcode -> upload -> set avatar_image_hash
 package main
 
 import (
@@ -39,13 +17,11 @@ import (
 	"sync"
 	"time"
 
-	// Decoders for image.Decode (side-effect registration). webp/png/jpeg are
-	// passed through to image_service; gif and friends get transcoded to PNG.
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "time/tzdata"
 
-	"github.com/gen2brain/avif" // pure-Go AVIF decoder (wazero); no cgo/system libs
+	"github.com/gen2brain/avif"
 
 	"api/internal/infrastructure/database"
 	"api/pkg/config"
@@ -53,7 +29,6 @@ import (
 	"api/pkg/logger"
 )
 
-// candidate is a user with a legacy avatar URL and no image_service hash yet.
 type candidate struct {
 	ID     uint   `gorm:"column:id"`
 	UUID   string `gorm:"column:uuid"`
@@ -99,7 +74,6 @@ func main() {
 		rows = rows[:*limit]
 	}
 
-	// Classification report (always printed).
 	byHost := map[string]int{}
 	byExt := map[string]int{}
 	for _, r := range rows {
@@ -117,7 +91,6 @@ func main() {
 		fmt.Printf("  · %-8s %d\n", e, n)
 	}
 
-	// Pure dry run: no network, no upload, no write.
 	if !*apply && *probe == 0 {
 		fmt.Printf("\nsample source-URL rewrites (legacy -> source we'd fetch):\n")
 		for i, r := range rows {
@@ -143,7 +116,7 @@ func main() {
 		BaseURL:      cfg.ImageClient.BaseURL,
 		ClientID:     cfg.ImageClient.ClientID,
 		ClientSecret: cfg.ImageClient.ClientSecret,
-		Timeout:      90 * time.Second, // upload waits for processing (3 variants)
+		Timeout:      90 * time.Second,
 	})
 	httpCli := &http.Client{Timeout: *dlTimeout}
 
@@ -194,7 +167,7 @@ func main() {
 				return
 			}
 
-			if !*apply { // probe: validated download+transcode, stop here
+			if !*apply {
 				mu.Lock()
 				okCount++
 				mu.Unlock()
@@ -250,9 +223,6 @@ func main() {
 	fmt.Printf("  skipped/errors:    %d  (see manifest for reasons)\n", skipped)
 }
 
-// sourceURL maps the stored avatar URL to the best image to actually fetch.
-// moyu stores the small "-mini" thumbnail; the full-size original lives at the
-// same path without "-mini", so prefer it for better quality.
 func sourceURL(avatar string) string {
 	if strings.Contains(avatar, "image.moyu.moe") {
 		return strings.Replace(avatar, "-mini.", ".", 1)
@@ -300,19 +270,13 @@ func download(cli *http.Client, url string, maxBytes int64) ([]byte, error) {
 	return b, nil
 }
 
-// avifDecodeMu serializes wazero-backed AVIF decodes across workers.
 var avifDecodeMu sync.Mutex
 
-// normalize returns bytes ready for image_service's avatar preset. webp/png/jpeg
-// pass through (image_service decodes them); everything else (avif, gif, …) is
-// decoded and re-encoded to PNG. Returns the detected/source format label.
 func normalize(raw []byte) ([]byte, string, error) {
 	switch f := sniff(raw); f {
 	case "webp", "png", "jpeg":
 		return raw, f, nil
 	case "avif":
-		// avif.Decode runs a wasm module via wazero; serialize to be safe under
-		// the concurrent worker pool (decode is ~ms, so this isn't a bottleneck).
 		avifDecodeMu.Lock()
 		img, err := avif.Decode(bytes.NewReader(raw))
 		avifDecodeMu.Unlock()
@@ -337,9 +301,6 @@ func encodePNG(img image.Image, srcFormat string) ([]byte, string, error) {
 	return buf.Bytes(), srcFormat + "->png", nil
 }
 
-// sniff identifies the image format by magic bytes (the legacy CDNs all return
-// application/octet-stream, so content-type is useless). AVIF is an ISO-BMFF
-// box: [size][ftyp][major brand …] with "avif"/"avis" among the brands.
 func sniff(b []byte) string {
 	switch {
 	case len(b) >= 12 && string(b[:4]) == "RIFF" && string(b[8:12]) == "WEBP":

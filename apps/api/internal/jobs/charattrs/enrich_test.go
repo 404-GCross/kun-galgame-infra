@@ -22,9 +22,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + seeds) plus the src_bangumi / src_vndb Silver schemas in ONE
-// database, exactly as production lays them out (the single-DSN premise).
 var (
 	testDB  *gorm.DB
 	testDSN string
@@ -81,7 +78,6 @@ func mkAnchor(t *testing.T, entityID int64, source int16, externalID, matchedBy 
 	}).Error)
 }
 
-// mkVNDB seeds a src_vndb.chars row. weight is a pointer (NULL when nil).
 func mkVNDB(t *testing.T, id, sex, bloodt, cup string, birthday, height, bust, waist, hip int16, weight *int16) {
 	t.Helper()
 	require.NoError(t, testDB.Create(&srcv.Char{
@@ -106,7 +102,6 @@ func reg(t *testing.T) registry {
 	return r
 }
 
-// loadChar reads back a character's attribute columns + provenance/extra.
 func loadChar(t *testing.T, id int64) charState {
 	t.Helper()
 	states, err := preloadStates(context.Background(), testDB, []int64{id})
@@ -114,7 +109,6 @@ func loadChar(t *testing.T, id int64) charState {
 	return states[id]
 }
 
-// bgmExtra reads the "bgm" namespace object out of a character's extra jsonb.
 func bgmExtra(t *testing.T, id int64) map[string]any {
 	t.Helper()
 	cs := loadChar(t, id)
@@ -137,57 +131,44 @@ func provSource(t *testing.T, id int64, col string) string {
 
 func i16(v int16) *int16 { return &v }
 
-// TestBothLanesSurvivorshipAndIdempotency drives the whole pipeline: VNDB-first
-// survivorship, Bangumi gap-fill, provenance, extra namespace, out-of-range
-// preservation, and second-pass zero-write.
 func TestBothLanesSurvivorshipAndIdempotency(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	r := reg(t)
 
-	// A: both sources. VNDB gives gender=f, birthday 7/5, height 160. Bangumi
-	// would give gender=男(1), birthday 6/17, height 999(oor) — all overridden or
-	// dropped — but Bangumi uniquely supplies blood + a long-tail (星座).
 	chBoth := mkChar(t, "both")
-	mkVNDB(t, "c1", "f", "unknown", "", 705, 160, 0, 0, 0, nil) // no blood, no cup, no BWH
+	mkVNDB(t, "c1", "f", "unknown", "", 705, 160, 0, 0, 0, nil)
 	mkBGM(t, 1, `{"Fields":[
 		{"Key":"性别","Value":"男"},{"Key":"生日","Value":"6月17日"},{"Key":"身高","Value":"999cm"},
 		{"Key":"血型","Value":"A型"},{"Key":"星座","Value":"巨蟹座"}]}`)
 	mkAnchor(t, chBoth, r.vndbSource, "c1", "rule:vndb-character-import", model.LinkKindExact)
 	mkAnchor(t, chBoth, r.bangumiSource, "1", "rule:bangumi-character-import", model.LinkKindExact)
 
-	// B: Bangumi only — full promotion + long-tail + Array fold.
 	chBgm := mkChar(t, "bgm-only")
 	mkBGM(t, 2, `{"Fields":[
 		{"Key":"性别","Value":"女"},{"Key":"体重","Value":"48kg"},{"Key":"BWH","Value":"B85(E)/W58/H86"},
 		{"Key":"CV","Value":"someVA"},{"Key":"别名","Value":"nick"},
 		{"Key":"能力","Value":"","Array":true,"Items":[{"Key":"","Value":"飞行"},{"Key":"","Value":"隐身"}]}]}`)
-	mkAnchor(t, chBgm, r.bangumiSource, "2", "rule:bgm-type4-gated", model.LinkKindExact) // non-title-year exact
+	mkAnchor(t, chBgm, r.bangumiSource, "2", "rule:bgm-type4-gated", model.LinkKindExact)
 
-	// C: VNDB only — sex=m, cup, BWH.
 	chVndb := mkChar(t, "vndb-only")
 	mkVNDB(t, "c3", "m", "o", "d", 1224, 175, 90, 60, 88, i16(65))
 	mkAnchor(t, chVndb, r.vndbSource, "c3", "rule:same-work-character-name", model.LinkKindExact)
 
-	// D: probable anchor — never a candidate.
 	chProb := mkChar(t, "probable")
 	mkVNDB(t, "c4", "f", "a", "", 0, 0, 0, 0, 0, nil)
 	mkAnchor(t, chProb, r.vndbSource, "c4", "rule:same-work-character-name", model.LinkKindProbable)
 
-	// --- dry run: decides, writes nothing.
 	st, err := Run(ctx, Opts{DSN: testDSN})
 	require.NoError(t, err)
-	// probable (chProb) is filtered in SQL → VNDB candidates = chBoth + chVndb.
 	assert.Equal(t, 2, st.VNDB.Candidates)
 	assert.Equal(t, 2, st.Bangumi.Candidates, "chBoth + chBgm")
 	assert.Positive(t, st.VNDB.RowsUpdated, "dry decides a plan")
 	assert.Nil(t, loadChar(t, chBoth).Gender, "dry writes nothing")
 
-	// --- apply.
 	_, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 
-	// A: VNDB won gender/birthday/height; Bangumi filled blood; height 999 dropped.
 	a := loadChar(t, chBoth)
 	assert.Equal(t, model.GenderFemale, deref(a.Gender), "vndb sex=f wins over bgm 男")
 	assert.Equal(t, int16(7), deref(a.Month), "vndb birthday wins")
@@ -197,13 +178,11 @@ func TestBothLanesSurvivorshipAndIdempotency(t *testing.T) {
 	assert.Equal(t, sourceVNDB, provSource(t, chBoth, "gender"))
 	assert.Equal(t, sourceVNDB, provSource(t, chBoth, "height_cm"))
 	assert.Equal(t, sourceBangumi, provSource(t, chBoth, "blood_type"))
-	// extra: 星座 long-tail + preserved out-of-range 身高 + preserved 生日? (6/17 clean → not kept)
 	aExtra := bgmExtra(t, chBoth)
 	assert.Equal(t, "巨蟹座", aExtra["星座"])
 	assert.Equal(t, "999cm", aExtra["身高"], "out-of-range raw preserved")
 	assert.NotContains(t, aExtra, "生日", "clean 6月17日 fully consumed")
 
-	// B: full bgm promotion + long-tail; CV/别名 excluded.
 	b := loadChar(t, chBgm)
 	assert.Equal(t, model.GenderFemale, deref(b.Gender))
 	assert.Equal(t, int16(48), deref(b.Weight))
@@ -215,17 +194,14 @@ func TestBothLanesSurvivorshipAndIdempotency(t *testing.T) {
 	assert.NotContains(t, bExtra, "CV")
 	assert.NotContains(t, bExtra, "别名")
 
-	// C: vndb-only.
 	c := loadChar(t, chVndb)
 	assert.Equal(t, model.GenderMale, deref(c.Gender))
 	assert.Equal(t, int16(12), deref(c.Month))
 	assert.Equal(t, "D", derefS(c.Cup))
 	assert.Equal(t, int16(90), deref(c.Bust))
 
-	// D: probable never materialized.
 	assert.Nil(t, loadChar(t, chProb).Gender)
 
-	// --- second apply: zero writes everywhere (idempotent).
 	st2, err := Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st2.VNDB.RowsUpdated, "vndb lane second-pass zero-write")
@@ -233,14 +209,12 @@ func TestBothLanesSurvivorshipAndIdempotency(t *testing.T) {
 	assert.Zero(t, st2.VNDB.Errors+st2.Bangumi.Errors)
 }
 
-// TestUserEditProtected asserts a human-owned column is never overwritten.
 func TestUserEditProtected(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	r := reg(t)
 
 	ch := mkChar(t, "user-owned")
-	// Human set gender=other with source="user"; VNDB says female.
 	require.NoError(t, testDB.Exec(
 		`UPDATE catalog_character SET gender = ?, field_provenance = ? WHERE id = ?`,
 		model.GenderOther, datatypes.JSON(`{"gender":[{"source":"user","at":"2026-07-01T00:00:00Z"}]}`), ch).Error)
@@ -253,7 +227,6 @@ func TestUserEditProtected(t *testing.T) {
 	assert.Equal(t, "user", provSource(t, ch, "gender"))
 }
 
-// TestUnknownLaneRejected guards the --only vocabulary.
 func TestUnknownLaneRejected(t *testing.T) {
 	_, err := Run(context.Background(), Opts{DSN: testDSN, Only: "bogus"})
 	require.Error(t, err)

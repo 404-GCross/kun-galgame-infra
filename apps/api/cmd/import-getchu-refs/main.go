@@ -1,16 +1,3 @@
-// import-getchu-refs writes the catalog's Getchu anchors from VNDB's own
-// curated external links (refs/proj/167 §1). No title matching, no probable
-// tier: VNDB records the getchu id on a release we have already anchored EXACT
-// to VNDB, so the new ref is exactly as strong as the one it rides on.
-//
-// Prerequisites: `ingest-vndb --only extlinks` and `--only releases_extlinks`
-// must have staged those two dump tables, and catalog_source must carry the
-// getchu row (seed).
-//
-// Dry-run is the DEFAULT; pass --apply to write.
-//
-//	go run ./cmd/import-getchu-refs
-//	go run ./cmd/import-getchu-refs --apply
 package main
 
 import (

@@ -6,26 +6,15 @@ import (
 	"strings"
 )
 
-// ReportStats is the DB-free census of a verdict JSONL: how many names landed in
-// each class, and how the confidences are distributed inside each class. It
-// answers "is this batch worth applying?" before any DSN is involved — the dry
-// run answers the different question "what would it write?", which needs the
-// catalog state.
 type ReportStats struct {
-	Total   int
-	ByClass map[Class]int
-	// ByClassBucket is class → confidence bucket → count.
+	Total         int
+	ByClass       map[Class]int
 	ByClassBucket map[Class]map[string]int
-	// Confident is the count that would auto-apply at MinConfidence.
-	Confident map[Class]int
-	// Sources is source key → verdict count.
-	Sources map[string]int
-	// Unknown counts lines whose class is not one of the three (a corrupted or
-	// hand-edited file) — never silently ignored.
-	Unknown int
+	Confident     map[Class]int
+	Sources       map[string]int
+	Unknown       int
 }
 
-// Report reads the verdict JSONL and censuses it. No DB, no LLM.
 func Report(in string, minConfidence float64) (*ReportStats, error) {
 	if in == "" {
 		return nil, fmt.Errorf("verdict JSONL is required (--in)")
@@ -63,7 +52,6 @@ func Report(in string, minConfidence float64) (*ReportStats, error) {
 	return st, nil
 }
 
-// String renders the census as the command's stdout block.
 func (s *ReportStats) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "total=%d unknown_class=%d\n", s.Total, s.Unknown)

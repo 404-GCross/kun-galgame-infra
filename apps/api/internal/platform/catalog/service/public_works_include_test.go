@@ -1,7 +1,3 @@
-// public_works_include_test.go — A2-1a: the works LIST include= rich-brief
-// blocks, and the hard gate that the DEFAULT (no include=) response is
-// byte-identical to the frozen W1 contract. Integration against
-// kun_catalog_test (service_test.go TestMain).
 package service
 
 import (
@@ -15,14 +11,10 @@ import (
 
 const testCDNBase = "https://cdn.example.test/img"
 
-// newPublicSvcCDN builds the public service with a real CDN base so cover URLs
-// (and therefore the cover blocks) are non-empty.
 func newPublicSvcCDN() *PublicService {
 	return NewPublicService(testDB, NewReadService(testDB), testResolve, testCDNBase)
 }
 
-// hash64 pads a short seed to the 64-char shape image hashes have (the URL
-// builder needs at least 4 chars; the padding keeps the fixtures readable).
 func hash64(seed string) string {
 	out := seed
 	for len(out) < 64 {
@@ -78,7 +70,6 @@ func addWorkLabel(t *testing.T, workID int64, displayName string, labelKind, edg
 	return l.ID
 }
 
-// stubMeta wires a fixed hash → ImageMeta table as the image_service lookup.
 func stubMeta(table map[string]ImageMeta) ImageMetaFunc {
 	return func(_ context.Context, hashes []string) (map[string]ImageMeta, error) {
 		out := make(map[string]ImageMeta, len(hashes))
@@ -91,9 +82,6 @@ func stubMeta(table map[string]ImageMeta) ImageMetaFunc {
 	}
 }
 
-// seedRichWork creates one bodyless galgame work carrying content for EVERY
-// include= block, so a leak into the default response cannot hide behind an
-// empty facet.
 func seedRichWork(t *testing.T) int64 {
 	t.Helper()
 	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Rich Brief")
@@ -109,21 +97,14 @@ func seedRichWork(t *testing.T) int64 {
 	return w.ID
 }
 
-// TestWorksListDefaultResponseIsByteIdentical is THE hard gate of the A2-1a
-// wave: with no include= the serialized page must be exactly the frozen W1
-// contract — same keys, same order, nothing added. The work carries content
-// for every new block, so any block that forgot its omitempty (or any loader
-// that ran unasked) shows up as a byte difference here.
 func TestWorksListDefaultResponseIsByteIdentical(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvcCDN()
-	// Enrichment wired ON: it must not leak into the default response either.
 	svc.WithImageMeta(stubMeta(map[string]ImageMeta{
 		hash64("aa11"): {Width: 800, Height: 1200, Thumbhash: "TH-AA"},
 	}))
 
 	id := seedRichWork(t)
-	// Freeze updated_at so the golden is stable.
 	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = ? WHERE id = ?`, "2026-01-02T03:04:05Z", id).Error; err != nil {
 		t.Fatalf("stamp updated_at: %v", err)
 	}
@@ -136,9 +117,6 @@ func TestWorksListDefaultResponseIsByteIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	// olang carries the real row value since the o_lang column-tag fix (the
-	// list scan struct previously never bound the selected `olang` column and
-	// the field shipped as "" from W1 — a value correction, not a shape change).
 	want := `{"items":[{"id":` + itoa(id) + `,"medium":"galgame","display_name":"Rich Brief",` +
 		`"content_rating":"all_ages","olang":"ja","release_date":"2021-06-04","claimed_by":null,` +
 		`"cover":"` + testCDNBase + `/aa/11/` + hash64("aa11") + `.webp",` +
@@ -148,27 +126,18 @@ func TestWorksListDefaultResponseIsByteIdentical(t *testing.T) {
 	}
 }
 
-// TestWorksListIncludeNamesAndIntros pins the D7 four-key pivot: catalog
-// BCP-47 tags land on ja-jp / zh-cn / zh-tw / en-us, a language outside the
-// four is dropped, search_hint titles never surface, and a machine-translated
-// intro carries its flag.
 func TestWorksListIncludeNamesAndIntros(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvcCDN()
 
 	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Pivot")
 	addWorkTitle(t, w.ID, "ja", "ぴぼっと", model.WorkTitleKindOfficial)
-	// An alias in the same language must lose to the official row (lowest kind).
 	addWorkTitle(t, w.ID, "ja", "ピボット別名", model.WorkTitleKindAlias)
-	// search_hint must NEVER surface, even when it is the only row for a key.
 	addWorkTitle(t, w.ID, "en", "pivot-searchhint", model.WorkTitleKindSearchHint)
 	addWorkTitle(t, w.ID, "zh-Hans", "枢轴", model.WorkTitleKindOfficial)
 	addWorkTitle(t, w.ID, "zh-Hant", "樞軸", model.WorkTitleKindOfficial)
-	// Outside the four product keys → dropped.
 	addWorkTitle(t, w.ID, "ko", "피벗", model.WorkTitleKindOfficial)
 
-	// ja has a source row; zh-Hans has ONLY a machine row (so it surfaces with
-	// machine=true); ko is dropped by the pivot.
 	addWorkIntro(t, w.ID, "ja", "原文", srcVNDB, 0)
 	addWorkIntro(t, w.ID, "zh-Hans", "机翻", srcVNDB, 1)
 	addWorkIntro(t, w.ID, "ko", "한국어", srcVNDB, 0)
@@ -211,14 +180,11 @@ func TestWorksListIncludeNamesAndIntros(t *testing.T) {
 	if it.Intros.EnUS != nil || it.Intros.ZhTW != nil {
 		t.Fatalf("intros = %+v, want en-us / zh-tw absent", it.Intros)
 	}
-	// Blocks not asked for stay absent.
 	if it.Labels != nil || it.Ratings != nil || it.Covers != nil {
 		t.Fatalf("unrequested blocks leaked: labels=%v ratings=%v covers=%v", it.Labels, it.Ratings, it.Covers)
 	}
 }
 
-// TestWorksListIncludeLabelsAndRatings pins the two flat blocks against the
-// detail face's shapes (same projection, source-native rating scales).
 func TestWorksListIncludeLabelsAndRatings(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvcCDN()
@@ -227,7 +193,6 @@ func TestWorksListIncludeLabelsAndRatings(t *testing.T) {
 	labelID := addWorkLabel(t, w.ID, "Brand X", model.LabelKindGameBrand, model.WorkLabelKindBrand)
 	addWorkRating(t, w.ID, srcVNDB, 8.4, 900)
 	addWorkRating(t, w.ID, srcErogamespace, 78, 51)
-	// A second work with nothing attached: its blocks stay absent, never [].
 	bare := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Bare")
 
 	page, err := svc.WorksList(t.Context(),
@@ -254,7 +219,6 @@ func TestWorksListIncludeLabelsAndRatings(t *testing.T) {
 	if rich.Ratings[0].Source != "vndb" || rich.Ratings[0].Score != 8.4 || rich.Ratings[0].VoteCount != 900 {
 		t.Fatalf("ratings[0] = %+v", rich.Ratings[0])
 	}
-	// erogamescape keeps its own 0-100 scale — never normalized against vndb's.
 	if rich.Ratings[1].Source != "erogamescape" || rich.Ratings[1].Score != 78 {
 		t.Fatalf("ratings[1] = %+v", rich.Ratings[1])
 	}
@@ -263,9 +227,6 @@ func TestWorksListIncludeLabelsAndRatings(t *testing.T) {
 	}
 }
 
-// TestWorksListIncludeCoverSlots pins the two-slot picker: the pinned portrait
-// wins its slot, the banner slot takes the landscape cover, both carry the
-// image_service metadata, and an sfw caller never sees a sexual-flagged cover.
 func TestWorksListIncludeCoverSlots(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvcCDN()
@@ -278,7 +239,6 @@ func TestWorksListIncludeCoverSlots(t *testing.T) {
 	}))
 
 	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Slots")
-	// The sexual cover sorts FIRST, so an sfw caller skipping it is visible.
 	addWorkCover(t, w.ID, sexualHash, 0, "main", false, 2, srcVNDB)
 	addWorkCover(t, w.ID, bannerHash, 1, "main", false, 0, srcVNDB)
 	addWorkCover(t, w.ID, portraitHash, 2, "main", true, 0, srcVNDB)
@@ -308,10 +268,6 @@ func TestWorksListIncludeCoverSlots(t *testing.T) {
 		t.Fatalf("sfw caller received a sexual-flagged cover: %+v / %+v", cov.Portrait, cov.Banner)
 	}
 
-	// nsfw=1 alone does NOT unlock the sexual cover: the age gate says which
-	// WORKS the caller may see, and every consumer holds it open just to reach
-	// the r18 registry. Whether sexual art may REPRESENT this work is a
-	// different question, answered by the work's own editorial display flag.
 	page, err = svc.WorksList(t.Context(), WorksListFilter{Sort: "id", NSFW: true, Include: inc}, "", 50)
 	if err != nil {
 		t.Fatalf("WorksList covers nsfw: %v", err)
@@ -321,8 +277,6 @@ func TestWorksListIncludeCoverSlots(t *testing.T) {
 		t.Fatalf("nsfw banner = %+v, want the display-safe cover: the work is not display_nsfw", cov.Banner)
 	}
 
-	// With the work's own flag set the sexual cover becomes eligible — and still
-	// loses to the display-safe candidate at the same tier.
 	setDisplayNSFW(t, w.ID, true)
 	page, err = svc.WorksList(t.Context(), WorksListFilter{Sort: "id", NSFW: true, Include: inc}, "", 50)
 	if err != nil {
@@ -332,19 +286,14 @@ func TestWorksListIncludeCoverSlots(t *testing.T) {
 	if cov.Banner == nil || cov.Banner.URL != testCDNBase+"/cc/dd/"+bannerHash+".webp" {
 		t.Fatalf("banner = %+v, want the display-safe cover to keep winning its tier", cov.Banner)
 	}
-	// The pinned portrait is unaffected by the gate.
 	if cov.Portrait == nil || cov.Portrait.URL != testCDNBase+"/aa/bb/"+portraitHash+".webp" {
 		t.Fatalf("nsfw portrait = %+v", cov.Portrait)
 	}
 }
 
-// TestWorksListCoverSlotsWithoutImageMeta pins the graceful degradation: with
-// no image_service lookup the portrait slot still falls back to the lowest
-// sort-order cover (a card always has key art), while the banner slot — whose
-// only evidence is the dimensions — stays null rather than guessing.
 func TestWorksListCoverSlotsWithoutImageMeta(t *testing.T) {
 	cleanTables(t)
-	svc := newPublicSvcCDN() // no WithImageMeta
+	svc := newPublicSvcCDN()
 
 	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "NoMeta")
 	addWorkCover(t, w.ID, hash64("1234"), 0, "main", false, 0, srcVNDB)
@@ -366,9 +315,6 @@ func TestWorksListCoverSlotsWithoutImageMeta(t *testing.T) {
 	}
 }
 
-// TestWorkDetailCoversCarryImageMeta pins deliverable 2's detail-face half:
-// the frozen covers[] block gains width/height/thumbhash through the same
-// helper, and omits them for a hash image_service does not know.
 func TestWorkDetailCoversCarryImageMeta(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvcCDN()
@@ -407,8 +353,6 @@ func TestWorkDetailCoversCarryImageMeta(t *testing.T) {
 	}
 }
 
-// TestParseWorksListIncludeIgnoresUnknown pins the §3.5 clause-2 posture: an
-// unknown token is silently ignored, never a 400.
 func TestParseWorksListIncludeIgnoresUnknown(t *testing.T) {
 	inc := ParseWorksListInclude(" names , covers ,relations,,garbage")
 	if !inc.Names || !inc.Covers {
@@ -425,8 +369,6 @@ func TestParseWorksListIncludeIgnoresUnknown(t *testing.T) {
 	}
 }
 
-// itoa keeps the golden string above readable without pulling strconv into
-// the test's import block for a single call.
 func itoa(v int64) string {
 	if v == 0 {
 		return "0"
@@ -441,12 +383,6 @@ func itoa(v int64) string {
 	return string(buf[i:])
 }
 
-// TestWorkLabelsExcludeSoftDeleted pins the read-face defense against a stale
-// attribution edge: a label merged away (soft-deleted, redirect left behind)
-// keeps its catalog_work_label rows, because the wiki official→label writer
-// projected the pre-merge id. All three display grains — the public detail, the
-// list include= block and the S2S WorkByID bundle — must render the survivor
-// only, or the work page shows the same company name twice.
 func TestWorkLabelsExcludeSoftDeleted(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()

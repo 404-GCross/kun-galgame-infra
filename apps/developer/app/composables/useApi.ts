@@ -18,9 +18,6 @@ interface ApiError {
   message: string
 }
 
-// The portal talks to ONE base on both sides: the same-origin /api/v1 path.
-// Nitro's /api/** relay forwards it to the oauth service server-side (see
-// server/routes/api/[...path].ts), so there is zero CORS and useFetch derives an
 // identical auto-key on server and client (no hydration mismatch).
 export const API_BASE = '/api/v1'
 
@@ -33,24 +30,16 @@ export const useApi = () => {
   }
 
   const handleUnauthorized = async () => {
-    // Refresh via the SHARED, single-flighted helper so concurrent 401s collapse
-    // into ONE /auth/refresh. On success store the new token into THIS
-    // composable's cookie ref so the retry below sends it.
     const result = await requestTokenRefresh()
     if (typeof result === 'string') {
       accessToken.value = result
       return true
     }
 
-    // Transient refresh failure (network / IdP blip): the session is still
-    // alive — surface this request's error without logging the user out; the
-    // next 401 retries the refresh.
     if (result === REFRESH_TRANSIENT) {
       return false
     }
 
-    // Dead session: clear local state and bounce to login, preserving the
-    // current URL as ?redirect= so post-login the user lands back here.
     accessToken.value = null
     useUserStore().clearUser()
     if (import.meta.client) {

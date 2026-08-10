@@ -1,19 +1,3 @@
-// reindex-catalog (re)builds the catalog search indexes — credit names,
-// characters, labels, works (wave 105), tags (A2-1d) — from kun_catalog into
-// Meilisearch, applying the doc-13 config matrix. Read-side only; writes no
-// Gold. Run after a bulk import wave (which skips write-through) or on a fresh
-// Meilisearch instance.
-//
-//	go run ./cmd/reindex-catalog                                # all five
-//	go run ./cmd/reindex-catalog --index=catalog_labels         # one
-//	go run ./cmd/reindex-catalog --batch=5000
-//
-// It is also the ONLY carrier of an index SETTINGS change: EnsureIndexes runs
-// unconditionally below, before any lane, so re-running this command is what
-// brings a deployed Meilisearch to the declared terminal state — filterable /
-// sortable / pagination settings included. There is deliberately no manual
-// "PATCH these settings" step for an operator to forget, and running it twice
-// changes nothing the second time.
 package main
 
 import (
@@ -100,9 +84,6 @@ func main() {
 	slog.Info("reindex-catalog complete", "duration", time.Since(start))
 }
 
-// --- shared preloads -------------------------------------------------------
-
-// loadPopularity returns entity id → raw credit count for a credit column.
 func loadPopularity(db *gorm.DB, col string) (map[int64]int, error) {
 	var rows []struct {
 		ID  int64 `gorm:"column:id"`
@@ -122,7 +103,6 @@ func loadPopularity(db *gorm.DB, col string) (map[int64]int, error) {
 	return m, nil
 }
 
-// loadSources returns entity id → ("key:ext" list, distinct key list).
 func loadSources(db *gorm.DB, entityType int16) (map[int64][]string, map[int64][]string, error) {
 	var rows []struct {
 		EntityID int64  `gorm:"column:entity_id"`
@@ -148,8 +128,6 @@ func loadSources(db *gorm.DB, entityType int16) (map[int64][]string, map[int64][
 	}
 	return srcs, keys, nil
 }
-
-// --- per-index reindexers --------------------------------------------------
 
 func reindexCreditNames(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int) error {
 	pop, err := loadPopularity(db, "credit_name_id")
@@ -258,11 +236,6 @@ func reindexLabels(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 	return nil
 }
 
-// reindexEntity handles the simple display_name entities (characters).
-//
-// aliasTable/aliasCol name the entity's alias table; the soft-delete purge and
-// the `deleted_at IS NULL` gate below assume the table carries deleted_at,
-// which every caller's does (tags, which do not, have their own reindexer).
 func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int, uid, table, prefix string, entityType int16, popCol, etype, aliasTable, aliasCol string) error {
 	pop, err := loadPopularity(db, popCol)
 	if err != nil {
@@ -322,14 +295,6 @@ func loadAliases(db *gorm.DB) (map[int64][]alias, error) {
 	return loadAliasTable(db, "catalog_name_alias", "credit_name_id")
 }
 
-// loadAliasTable reads one entity's alias table into owner id → aliases.
-//
-// Labels and characters have carried these tables all along — 14,845 aliases on
-// 10,240 labels, 168,655 on 137,569 characters — and neither index read them,
-// so an entity was findable only under its display_name. That is what made
-// `Yuzusoft` return nothing while the label plainly lists it as an alias: the
-// document simply had no such field. credit_names had the wiring from day one;
-// this generalises it rather than inventing anything.
 func loadAliasTable(db *gorm.DB, table, ownerCol string) (map[int64][]alias, error) {
 	var rows []struct {
 		OwnerID int64  `gorm:"column:owner_id"`
@@ -347,16 +312,6 @@ func loadAliasTable(db *gorm.DB, table, ownerCol string) (map[int64][]alias, err
 	return m, nil
 }
 
-// purgeSoftDeleted removes the documents of rows that have been soft-deleted
-// since they were last indexed.
-//
-// Skipping them in the build loop is NOT enough, and this is the whole reason
-// the merged 「ゆずソフト」 labels stayed searchable: the reindexer UPSERTS, it
-// never clears the index first, so a document written before its row was
-// deleted survives every subsequent run. Merging does not touch Meilisearch
-// either — the merge writes the redirect in Postgres and stops — so nothing in
-// the system ever removed these. Detail pages 301 correctly; search and every
-// picker built on it kept offering the dead id.
 func purgeSoftDeleted(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, uid, table, prefix string) error {
 	var ids []int64
 	if err := db.Raw(fmt.Sprintf(
@@ -377,11 +332,6 @@ func purgeSoftDeleted(ctx context.Context, db *gorm.DB, idx *catalogSearch.Index
 	return nil
 }
 
-// --- works lane (wave 105: public catalog title search) ---------------------
-
-// loadWorkPopularitySignal returns work id → log-damped max(bgm_collect,
-// dlsite dl_count) — a cross-population ranking signal (claimed works carry
-// bgm shelves since T2b; bodyless dlsite works carry dl_count).
 func loadWorkPopularitySignal(db *gorm.DB) (map[int64]float64, error) {
 	var rows []struct {
 		WorkID int64 `gorm:"column:work_id"`
@@ -404,12 +354,6 @@ type workTitle struct {
 	kind               int16
 }
 
-// loadWorkTitles returns work id → title rows (official first, then alias /
-// abbreviation / search-hint — kind ASC), scoped to the index population. It
-// reads catalog_work_title for every live galgame work, independent of claim
-// ownership. The native table already contains every official, alias,
-// abbreviation, and search-hint row; latin is preserved on the same row.
-// One query serves the whole population, never per work.
 func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 	const population = `w.deleted_at IS NULL AND w.status = 0
 		AND w.medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')`
@@ -437,11 +381,6 @@ func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 
 type workIntro struct{ lang, text string }
 
-// loadWorkIntros returns work id → merged synopsis rows for the index
-// population. Claimed and bodyless works both read catalog_work_intro, merged
-// to one row per language by (provenance, source_id): provenance ASC keeps a
-// machine translation from beating a source row, then source_id supplies the
-// stable source priority. One query serves the whole population.
 func loadWorkIntros(db *gorm.DB) (map[int64][]workIntro, error) {
 	const population = `w.deleted_at IS NULL AND w.status = 0
 		AND w.medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')`
@@ -466,7 +405,7 @@ func loadWorkIntros(db *gorm.DB) (map[int64][]workIntro, error) {
 			seen[r.WorkID] = langs
 		}
 		if langs[r.Lang] {
-			continue // a higher-priority row already claimed this language
+			continue
 		}
 		langs[r.Lang] = true
 		out[r.WorkID] = append(out[r.WorkID], workIntro{lang: r.Lang, text: r.Intro})
@@ -474,28 +413,6 @@ func loadWorkIntros(db *gorm.DB) (map[int64][]workIntro, error) {
 	return out, nil
 }
 
-// reindexWorks builds the catalog_works index (wave 105): every LIVE galgame
-// registry work — claimed AND bodyless — searchable by display_name + all
-// title rows (search hints included: findability-only, never displayed), with
-// content_rating filterable (the public nsfw gate) and a cross-population
-// popularity tiebreaker.
-//
-// A2-1d adds the product-search axes: the tag / label / engine / series id
-// arrays, the earliest-release ordinal, olang, claimed and updated_ts. They
-// exist so GET /v1/catalog/works/search can push its WHOLE filter set into
-// Meilisearch — that is what makes its total, its facets and its items share
-// one gate instead of the deprecated face's unfiltered-total trap.
-//
-// A2-R5 adds content_limit, the EDITORIAL DISPLAY axis: a claimed work's value
-// comes from the editor's declaration (catalog_work.display_nsfw — a wiki-body
-// LEFT JOIN until the W1-pre wave nativized it, refs/proj/140 §5b), a bodyless
-// work's from its rating. It is a second axis beside content_rating, never a
-// re-encoding of it.
-//
-// A2-1f adds the synopsis text, language-bucketed and rune-capped. It only
-// ever MATCHES when a caller passes search_intro=1: the face pins
-// attributesToSearchOn to the title family otherwise, so growing the index does
-// not widen anybody's existing query.
 func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int) error {
 	pop, err := loadWorkPopularitySignal(db)
 	if err != nil {
@@ -525,22 +442,13 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 			// Explicit column tag: GORM snake-cases OLang to o_lang, which
 			// matches no result column and would scan as "" — the trap that left
 			// the works list's olang empty from W1 until A2-1a.
-			OLang         string `gorm:"column:olang"`
-			ContentRating int16  `gorm:"column:content_rating"`
-			Site          string `gorm:"column:site"`
-			// The two other claim columns (A2-R1 区 C): the claim_state field is
-			// projected from all three through model.ClaimStateKey, which is the
-			// read face's own projection — so `claim_state=live` selects exactly
-			// the rows whose records render claimed_by.state=live.
+			OLang         string    `gorm:"column:olang"`
+			ContentRating int16     `gorm:"column:content_rating"`
+			Site          string    `gorm:"column:site"`
 			ProductWorkID *int64    `gorm:"column:product_work_id"`
 			ClaimState    *int16    `gorm:"column:claim_state"`
 			UpdatedAt     time.Time `gorm:"column:updated_at"`
-			// DisplayNSFW is the CLAIMED work's editorial display flag — the
-			// authority for the content_limit field, which model.DisplayLimitKey
-			// projects alongside the three claim columns (A2-R5). A column on the
-			// row since the W1-pre wave nativized it off the wiki body
-			// (refs/proj/140 §5b); it was a LEFT JOIN into galgame before.
-			DisplayNSFW bool `gorm:"column:display_nsfw"`
+			DisplayNSFW   bool      `gorm:"column:display_nsfw"`
 		}
 		if err := db.Raw(`SELECT w.id, w.display_name, w.olang, w.content_rating, coalesce(w.site,'') AS site,
 				w.product_work_id, w.claim_state, w.updated_at, w.display_nsfw
@@ -558,12 +466,10 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 			in := catalogSearch.WorkDocInput{
 				ID: r.ID, DisplayName: r.DisplayName, OLang: r.OLang,
 				ContentRating: r.ContentRating,
-				// claimed == "a product site owns this row", i.e. the works
-				// list's `w.site <> ''` (NULL and '' are both bodyless).
-				Claimed:      r.Site != "",
-				ClaimState:   model.ClaimStateKey(&r.Site, r.ProductWorkID, r.ClaimState),
-				ContentLimit: model.DisplayLimitKey(&r.Site, r.ProductWorkID, r.DisplayNSFW, r.ContentRating),
-				ReleasedOrd:  facets.releasedOrd[r.ID], UpdatedTS: r.UpdatedAt.Unix(),
+				Claimed:       r.Site != "",
+				ClaimState:    model.ClaimStateKey(&r.Site, r.ProductWorkID, r.ClaimState),
+				ContentLimit:  model.DisplayLimitKey(&r.Site, r.ProductWorkID, r.DisplayNSFW, r.ContentRating),
+				ReleasedOrd:   facets.releasedOrd[r.ID], UpdatedTS: r.UpdatedAt.Unix(),
 				Popularity: pop[r.ID], Sources: srcs[r.ID], SourceKeys: keys[r.ID],
 				TagIDs: facets.tagIDs[r.ID], LabelIDs: facets.labelIDs[r.ID],
 				EngineIDs: facets.engineIDs[r.ID], SeriesIDs: facets.seriesIDs[r.ID],

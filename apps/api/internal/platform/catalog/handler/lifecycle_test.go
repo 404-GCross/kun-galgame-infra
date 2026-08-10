@@ -16,11 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The lifecycle face over HTTP (wave 155 W2/W3), reduced by wave 185 to its
-// reads: the feed shapes are the contract downstream crons consume, so they are
-// what these cases pin. The writes this file used to drive moved to the
-// user-token plane and are tested there (user_claims_face_test.go).
-
 func TestSetupLifecycle_RegistersOperations(t *testing.T) {
 	app := fiber.New()
 	api := Setup(app, nil, nil, nil, nil, nil)
@@ -33,8 +28,6 @@ func TestSetupLifecycle_RegistersOperations(t *testing.T) {
 	} {
 		assert.NotNilf(t, paths[p], "operation %s must be registered", p)
 	}
-	// Wave 185's retirement stated as a test: both claim WRITES asserted their
-	// actor in the body, and re-registering either would put that door back.
 	for _, p := range []string{
 		"/api/v1/catalog/works/{id}/claim-actions/{action}",
 		"/api/v1/catalog/works/submit",
@@ -54,8 +47,6 @@ func TestSetupAdmin_RegistersClaimQueue(t *testing.T) {
 	}
 }
 
-// lifecycleApp wires the face the way cmd/catalog does, with the client the
-// path-scoped S2SAuth would have injected.
 func lifecycleApp(client *siteModel.OAuthClient, claims *service.ClaimLifecycleService) *fiber.App {
 	app := fiber.New()
 	app.Use("/api/v1/catalog", func(c fiber.Ctx) error {
@@ -69,8 +60,6 @@ func lifecycleApp(client *siteModel.OAuthClient, claims *service.ClaimLifecycleS
 	return app
 }
 
-// editGet issues a GET on the S2S face and returns the raw body — the feeds
-// need the bytes, not a decoded map.
 func editGet(t *testing.T, app *fiber.App, url string) (int, []byte) {
 	t.Helper()
 	resp, err := app.Test(httptest.NewRequest("GET", url, nil))
@@ -80,10 +69,6 @@ func editGet(t *testing.T, app *fiber.App, url string) (int, []byte) {
 	return resp.StatusCode, raw
 }
 
-// actOnClaim moves a claim through the service both live faces share. The S2S
-// action op that used to drive these fixtures over HTTP retired in wave 185, and
-// its user-plane twin needs a signed token per call — the fixtures here are
-// about the state the READS then serve, so they are set up at the service.
 func actOnClaim(t *testing.T, claims *service.ClaimLifecycleService, p service.ClaimActionParams) *service.ClaimActionResult {
 	t.Helper()
 	res, err := claims.Act(t.Context(), p)
@@ -91,9 +76,6 @@ func actOnClaim(t *testing.T, claims *service.ClaimLifecycleService, p service.C
 	return res
 }
 
-// TestClaimEventFeedOverHTTP: the transitions are made where they now live —
-// the lifecycle service, which the user-token face drives — and the FEED, the
-// S2S read wave 185 left standing, is asserted over the wire.
 func TestClaimEventFeedOverHTTP(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"catalog_claim_event", "catalog_work_title", "catalog_work"} {
@@ -116,12 +98,10 @@ func TestClaimEventFeedOverHTTP(t *testing.T) {
 	actOnClaim(t, claims, service.ClaimActionParams{
 		WorkID: work.ID, Action: service.ClaimActionPublish, Site: "kungal", ActorUID: 5,
 	})
-	// A curator acts across tenants — the empty site the staff face passes.
 	actOnClaim(t, claims, service.ClaimActionParams{
 		WorkID: work.ID, Action: service.ClaimActionBan, ActorUID: 9, Reason: "policy",
 	})
 
-	// The feed serves what just happened, oldest first.
 	status, raw := editGet(t, app, "/api/v1/catalog/claim-events/feed?since=0&limit=10")
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var feed struct {
@@ -139,7 +119,6 @@ func TestClaimEventFeedOverHTTP(t *testing.T) {
 	assert.Equal(t, model.ClaimStateKeyHidden, feed.Data.Items[2].ToState)
 	assert.Equal(t, feed.Data.Items[2].ID, feed.Data.NextSince)
 
-	// An exhausted cursor echoes itself rather than rewinding.
 	status, raw = editGet(t, app, fmt.Sprintf("/api/v1/catalog/claim-events/feed?since=%d", feed.Data.NextSince))
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var tail struct {

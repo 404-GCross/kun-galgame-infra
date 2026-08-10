@@ -1,8 +1,3 @@
-// import-character-traits imports the VNDB trait vocabulary, hierarchy DAG and
-// character×trait links (step 93, refs/proj/93). Dry-run by default; all writes
-// are change-detected (refresh-runnable — re-run after a dump restage).
-//
-//	go run ./cmd/import-character-traits --dsn "$CATALOG" [--apply]
 package main
 
 import (

@@ -1,10 +1,3 @@
-// URL helpers for the image service. Pure functions — no network.
-//
-// The image service stores content at:
-//   <cdn_base>/<hash[:2]>/<hash[2:4]>/<hash>.<ext>          (main)
-//   <cdn_base>/<hash[:2]>/<hash[2:4]>/<hash>_<variant>.<ext> (variant)
-//
-// V1 always outputs `.webp` so the ext param defaults to "webp".
 
 export interface ImageURLOptions {
   cdnBase: string

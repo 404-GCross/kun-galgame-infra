@@ -2,10 +2,6 @@ package model
 
 import "time"
 
-// ImageSiteUsage is the per-site audit table. One row per (hash, site)
-// combination. Does NOT influence physical storage or moderation state
-// (those are single-valued per hash on the Image row). Purely for
-// bookkeeping: "kungal's and moyu's view of who uploaded what when".
 type ImageSiteUsage struct {
 	ID                  int64     `gorm:"primaryKey" json:"id"`
 	Hash                string    `gorm:"type:char(64);not null;uniqueIndex:idx_site_usage_hash_site,priority:1;index" json:"hash"`

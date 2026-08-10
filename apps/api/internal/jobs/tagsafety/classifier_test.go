@@ -17,9 +17,6 @@ func inputs(source string, names ...string) []NameInput {
 	return out
 }
 
-// TestRenderBatchPrompt pins the wire the parser depends on: a 1-based numbered
-// list carrying the verbatim name and the popularity pair. If this format drifts
-// without the prompt const drifting with it, alignment silently rots.
 func TestRenderBatchPrompt(t *testing.T) {
 	got := renderBatchPrompt(inputs("bangumi", "拔作", "纯爱"))
 	assert.Contains(t, got, "数据源:bangumi")
@@ -28,8 +25,6 @@ func TestRenderBatchPrompt(t *testing.T) {
 	assert.Contains(t, got, "共 2 条")
 }
 
-// TestParseBatchRoundTrip is the happy path: a well-formed strict-JSON reply
-// aligns onto every input slot, and a ```json fence is tolerated.
 func TestParseBatchRoundTrip(t *testing.T) {
 	in := inputs("bangumi", "拔作", "纯爱", "PC")
 	reply := "```json\n" + `{"results":[
@@ -49,9 +44,6 @@ func TestParseBatchRoundTrip(t *testing.T) {
 	assert.Equal(t, "平台词", got[2].Reason)
 }
 
-// TestParseBatchAlignmentGuards is the reason batching is safe: every way a
-// reply can be misaligned leaves that ONE slot empty (the caller re-asks on
-// resume) instead of writing another tag's verdict.
 func TestParseBatchAlignmentGuards(t *testing.T) {
 	in := inputs("bangumi", "拔作", "纯爱", "PC", "触手")
 	reply := `{"results":[
@@ -72,8 +64,6 @@ func TestParseBatchAlignmentGuards(t *testing.T) {
 	assert.Empty(t, got[3].Class, "out-of-range index cannot land anywhere")
 }
 
-// TestParseBatchUnusable: a reply that aligns nothing is an error (it triggers
-// the single pinned retry), and so is one that is not JSON at all.
 func TestParseBatchUnusable(t *testing.T) {
 	in := inputs("bangumi", "拔作")
 
@@ -86,8 +76,6 @@ func TestParseBatchUnusable(t *testing.T) {
 	assert.Contains(t, err.Error(), "decode batch reply")
 }
 
-// TestMockClassifier proves all three branches fire offline and that the model
-// id is unmistakably a mock.
 func TestMockClassifier(t *testing.T) {
 	in := inputs("bangumi", "PC", "Galgame", "NTR", "调教", "校园", "汉化")
 	got, model, err := MockClassifier{Model: "glm-5.2"}.ClassifyBatch(context.Background(), in)
@@ -104,10 +92,6 @@ func TestMockClassifier(t *testing.T) {
 	assert.Equal(t, ClassNormal, got[5].Class, "汉化 is meta, NOT junk — the prompt's pinned counter-example")
 }
 
-// TestClassifySystemPromptPins guards the two rulings the prompt exists to
-// enforce: genre and meta words are explicitly excluded from junk, and pure
-// romance/all-ages words are explicitly excluded from sexual. A prompt edit that
-// drops them should have to delete this test on purpose.
 func TestClassifySystemPromptPins(t *testing.T) {
 	for _, must := range []string{"纯爱", "全年龄", "汉化", "乙女", "kind=meta", `"results"`, "class"} {
 		assert.Contains(t, ClassifySystemPrompt, must)

@@ -10,29 +10,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// catalog.work.covers / catalog.work.screenshots — the work's image ROWS.
-//
-// This face edits the ROW SET only: which hashes are attached, in what order,
-// with what flags. It never uploads bytes. A client obtains a hash from the
-// image service first and submits it here, which keeps two decisions apart that
-// the wiki write path had fused: "what does this work look like" (an edit,
-// revertable) and "these bytes now exist" (a storage fact, not revertable).
-// Byte upload and its image-site scope are N2/N3's delivery; new bytes land in
-// the `catalog` site, and the galgame_wiki image key is never touched (03 §2).
-//
-// Ordering: sort_order is the ARRAY INDEX, not a submitted number. The order of
-// covers and screenshots is exactly the order the editor arranged them in, and
-// making the client also maintain a consistent integer per row is a second
-// source of truth for the same fact.
-//
-// Lane: source_id = curated, as with every other facet. Importer covers
-// (dlsite, vndb) and the mirror steps' rows outside the lane are untouched.
-
 const (
-	// coverKindMax bounds the free-form kind label (model: "" = the plain
-	// cover, otherwise a small vocabulary the read face passes through).
-	coverKindMax = 64
-	// safety axis values, mirroring the facet tables' 0..2 grading.
+	coverKindMax  = 64
 	maxSafetyAxis = 2
 )
 
@@ -107,9 +86,6 @@ func parseCovers(v any) ([]workCover, error) {
 			Sexual: sexual, Violence: violence,
 		})
 	}
-	// At most one portrait: consumers read portrait_pinned as "THE portrait
-	// cover" (kungal/moyu pick it directly), so two of them is not a richer
-	// answer, it is an ambiguous one.
 	if pinned > 1 {
 		return nil, fmt.Errorf("at most one cover may set portrait_pinned")
 	}

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Shared sub-navigation of the three review buckets, with live pending
-// counts (list endpoints' total with limit=1 — no dedicated count API).
 import { CANDIDATE_STATUS, PROPOSAL_STATUS } from '~/constants/catalog'
 import type {
   CatalogCandidatePage,

@@ -1,22 +1,3 @@
-// Package importer lands the first real entity-layer data — persons (as
-// credit names), characters and credit edges — from Bangumi and erogamespace
-// into the catalog Gold tables, under the doc-10 doctrine:
-//
-//   - Orphan-credit-name-first (invariant 2): every source person becomes ONE
-//     catalog_credit_name with person_id=NULL plus a SELF-REFERENTIAL exact
-//     anchor (rule:<source>-person-import). Person rows are never created and
-//     name→person links are never written — that is a human-review step under
-//     the §10 visibility policy. (Cross-source "same person" only ever becomes
-//     a probable match_candidate, never an automatic merge.)
-//   - Identity-gated: the Bangumi wave imports every work with an EXACT
-//     Bangumi anchor (step 69 widened it from the step-12 bid-audit pass
-//     layer); the EG wave only the eg-vndb-rosetta works.
-//   - Whole-source rollback: every credit carries source_id, so an entire
-//     source's import can be reverted cheaply.
-//
-// The self anchor is NOT a cross-source identity claim (those stay probable):
-// it asserts only "this credit name is source X's entity Y", a first-party
-// structural fact (R8 tier-0), which is what makes re-runs idempotent.
 package importer
 
 import (
@@ -47,51 +28,31 @@ const (
 	ruleDLsiteCreater = "rule:dlsite-creater-import"
 	ruleBangumiXmedia = "rule:bangumi-xmedia-import"
 
-	roleVoiceActor int64 = 1 // hand-pinned in seed (声優)
-	mediumASMR     int16 = 5 // catalog_medium key=asmr
+	roleVoiceActor int64 = 1
+	mediumASMR     int16 = 5
 )
 
-// Options configures an import run.
 type Options struct {
-	Source string // "bangumi" | "eg" | "all"
-	DryRun bool
-	Limit  int // cap works processed per wave (0 = all)
-	// ResolveAmbiguous turns on the step-29 three-layer handling of dlsite_ids
-	// claimed by several EG games (default off = skip them, step-28 behavior).
+	Source           string
+	DryRun           bool
+	Limit            int
 	ResolveAmbiguous bool
-	// ConflictsOut, when set, writes the B3 conflict worklist (a dlsite_id whose
-	// claimants resolve to several different wiki works) to this TSV path.
-	ConflictsOut string
-	// StaleAnchorsOut, when set, writes the VNDB releases stale-anchor worklist (a
-	// vndb r-id whose exact anchor sits under a work upstream no longer maps it
-	// to) to this TSV path. Written by dry runs too — it is a planning artifact.
-	StaleAnchorsOut string
+	ConflictsOut     string
+	StaleAnchorsOut  string
 }
 
-// Stats is the eight-item per-wave tally.
 type Stats struct {
-	NamesCreated        int
-	LabelsCreated       int
-	CharactersCreated   int
-	CreditsWritten      int
-	SkippedUnmappedRole int
-	SkippedGate         int
-	// SkippedClaimedProbableName counts distinct source alias ids skipped
-	// because an ALIVE credit_name already answers to them at probable grade —
-	// the trace of a merge that folded two same-source exacts together. Minting
-	// a second credit_name for such an id would re-split that merge, so the
-	// whole credit row is dropped instead.
+	NamesCreated               int
+	LabelsCreated              int
+	CharactersCreated          int
+	CreditsWritten             int
+	SkippedUnmappedRole        int
+	SkippedGate                int
 	SkippedClaimedProbableName int
-	// SkippedClaimedProbableChar counts distinct source character ids whose VA
-	// credits were dropped for the same reason (the character exists, but only
-	// at probable grade — resolving onto it would be an adjudication).
 	SkippedClaimedProbableChar int
-	// SkippedRetiredExactChar counts distinct source character ids whose only
-	// exact holder is soft-deleted: the id still squats the non-liveness-aware
-	// exact identity index, so it is neither resolvable nor free.
-	SkippedRetiredExactChar int
-	Already                 int
-	Errors                  int
+	SkippedRetiredExactChar    int
+	Already                    int
+	Errors                     int
 }
 
 func (s *Stats) add(o Stats) {
@@ -108,7 +69,6 @@ func (s *Stats) add(o Stats) {
 	s.Errors += o.Errors
 }
 
-// Importer holds the catalog + eg handles and the preloaded anchor maps.
 type Importer struct {
 	catalog          *gorm.DB
 	eg               *gorm.DB
@@ -127,7 +87,6 @@ func New(catalog, eg *gorm.DB, opts Options) *Importer {
 	}
 }
 
-// Run dispatches the requested wave(s).
 func (im *Importer) Run(source string) (Stats, error) {
 	var total Stats
 	if source == "bangumi" || source == "all" {
@@ -167,8 +126,6 @@ func (im *Importer) Run(source string) (Stats, error) {
 	return total, nil
 }
 
-// loadEGRosettaWorkMap returns EG game id → catalog work id for the
-// eg-vndb-rosetta probable refs (the EG identity gate).
 func (im *Importer) loadEGRosettaWorkMap() (map[int64]int64, error) {
 	var rows []struct {
 		ExternalID int64 `gorm:"column:external_id"`
@@ -186,11 +143,8 @@ func (im *Importer) loadEGRosettaWorkMap() (map[int64]int64, error) {
 	return m, nil
 }
 
-// anchorKey identifies a source entity: source|external_id.
 func anchorKey(source int16, extID string) string { return fmt.Sprintf("%d|%s", source, extID) }
 
-// loadAnchors preloads (source|external_id) → entity_id for one entity type,
-// scoped to the two import sources — the resume/dedup index.
 func (im *Importer) loadAnchors(entityType int16) (map[string]int64, error) {
 	var rows []struct {
 		SourceID   int16  `gorm:"column:source_id"`
@@ -210,8 +164,6 @@ func (im *Importer) loadAnchors(entityType int16) (map[string]int64, error) {
 	return m, nil
 }
 
-// roleMap loads source_role → role_id for one source (bangumi source_role is
-// "type:position"; eg is the shubetu integer as text).
 func (im *Importer) roleMap(source int16) (map[string]int64, error) {
 	var rows []struct {
 		SourceRole string `gorm:"column:source_role"`
@@ -228,7 +180,6 @@ func (im *Importer) roleMap(source int16) (map[string]int64, error) {
 	return m, nil
 }
 
-// nameItem / labelItem / charItem are new entities queued for creation.
 type nameItem struct{ extID, name, lang string }
 type labelItem struct {
 	extID, name, lang string
@@ -241,8 +192,6 @@ func entitySnapshot(kind string, entity any) datatypes.JSON {
 	return b
 }
 
-// batchRefsRevs writes the self exact anchors + action=imported revisions
-// (revision 1 — these entities are brand new).
 func (im *Importer) batchRefsRevs(tx *gorm.DB, refs []model.CatalogExternalRef, revs []model.CatalogRevision) error {
 	if err := tx.CreateInBatches(refs, 1000).Error; err != nil {
 		return err
@@ -250,8 +199,6 @@ func (im *Importer) batchRefsRevs(tx *gorm.DB, refs []model.CatalogExternalRef, 
 	return tx.CreateInBatches(revs, 1000).Error
 }
 
-// createCreditNames creates orphan (person_id NULL) credit names + self anchors
-// + imported revisions, returning extID → new id.
 func (im *Importer) createCreditNames(tx *gorm.DB, source int16, rule string, items []nameItem) (map[string]int64, error) {
 	out := make(map[string]int64, len(items))
 	if len(items) == 0 {
@@ -325,22 +272,10 @@ func selfRef(etype int16, id int64, source int16, extID, rule string) model.Cata
 	}
 }
 
-// touchWorks bumps catalog_work.updated_at for works whose facets an importer
-// just changed, so the public /v1/catalog/changes feed — which walks
-// catalog_work on an (updated_at, id) keyset — actually sees side-table writes.
-// Callers pass only works they really wrote to; an idempotent re-run writes
-// nothing and therefore touches nothing.
-//
-// The Run* entry points are one-shot CLI passes with no ambient context, hence
-// the background one here.
 func touchWorks(db *gorm.DB, workIDs []int64) error {
 	return repository.TouchWorks(context.Background(), db, workIDs)
 }
 
-// insertWorkLabelEdges inserts attribution edges insert-if-absent and returns
-// the works that really gained one. Raw SQL rather than a GORM batch create
-// because only RETURNING can tell an inserted row from a conflict-skipped one,
-// and the changes feed must not move for edges that were already there.
 func insertWorkLabelEdges(db *gorm.DB, edges []model.CatalogWorkLabel) ([]int64, error) {
 	var touched []int64
 	const batch = 1000
@@ -367,8 +302,6 @@ func insertWorkLabelEdges(db *gorm.DB, edges []model.CatalogWorkLabel) ([]int64,
 	return touched, nil
 }
 
-// relationEndpoints flattens relation edges to the works on BOTH ends — a
-// series or sequel edge changes what each side renders, so both need the bump.
 func relationEndpoints(edges []model.CatalogWorkRelation) []int64 {
 	out := make([]int64, 0, len(edges)*2)
 	for _, e := range edges {
@@ -384,14 +317,6 @@ func importedRev(etype int16, id int64, snap datatypes.JSON) model.CatalogRevisi
 	}
 }
 
-// insertCredits batch-inserts credit edges with ON CONFLICT DO NOTHING on the
-// doc-10 expression unique (work, credit_name, role, COALESCE(character,0)) —
-// a raw insert because GORM's OnConflict cannot target an expression index.
-// Returns the number actually written.
-//
-// RETURNING work_id hands back exactly the rows that landed, which is what the
-// host works' updated_at bump keys off: a re-run inserts nothing, so nothing is
-// touched and the public changes feed stays quiet.
 func (im *Importer) insertCredits(tx *gorm.DB, credits []model.CatalogCredit) (int, error) {
 	written := 0
 	var touched []int64
@@ -420,8 +345,6 @@ func (im *Importer) insertCredits(tx *gorm.DB, credits []model.CatalogCredit) (i
 	return written, touchWorks(tx, touched)
 }
 
-// resolver looks up a source external id → entity id, preferring the
-// freshly-created ids over the preloaded anchors.
 func resolver(anchors map[string]int64, source int16, fresh map[string]int64) func(string) (int64, bool) {
 	return func(ext string) (int64, bool) {
 		if id, ok := fresh[ext]; ok {
@@ -434,10 +357,6 @@ func resolver(anchors map[string]int64, source int16, fresh map[string]int64) fu
 	}
 }
 
-// materialize turns credit plans into rows, resolving every source ext id to a
-// catalog entity id. A plan whose credit name (or required character) does not
-// resolve is dropped and counted (should be 0 — every person/character is
-// created or already anchored).
 func materialize(plans []creditPlan, cn, label, char func(string) (int64, bool), source int16) ([]model.CatalogCredit, int) {
 	src := source
 	out := make([]model.CatalogCredit, 0, len(plans))
@@ -478,8 +397,6 @@ func int64Keys(m map[int64]int64) []int64 {
 	return out
 }
 
-// capMap deterministically keeps the first n entries by ascending key (the
-// --limit debugging aid).
 func capMap(m map[int64]int64, n int) map[int64]int64 {
 	keys := int64Keys(m)
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })

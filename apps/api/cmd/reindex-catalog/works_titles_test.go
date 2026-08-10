@@ -1,9 +1,3 @@
-// works_titles_test.go — the reindexer's Catalog-native title loader.
-//
-// Titles have already been materialized into catalog_work_title, so claimed and
-// bodyless works now share one projection lane. The cases pin every title kind,
-// latin preservation, deterministic ordering, and population scoping without
-// provisioning any retired tables.
 package main
 
 import (
@@ -12,8 +6,6 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// titlesOf flattens the loader's result for one work into
-// (lang, title, latin, kind).
 func titlesOf(t *testing.T, workID int64) [][4]any {
 	t.Helper()
 	all, err := loadWorkTitles(facetTestDB)
@@ -27,12 +19,9 @@ func titlesOf(t *testing.T, workID int64) [][4]any {
 	return out
 }
 
-// TestLoadWorkTitlesUsesCatalogRowsForEveryWork covers the native-only rule in
-// one corpus.
 func TestLoadWorkTitlesUsesCatalogRowsForEveryWork(t *testing.T) {
 	truncateFacetTables(t)
 
-	// Claimed works use the same Catalog-native rows as every other work.
 	claimed := mkWork(t, "claimed-title", model.WorkStatusLive, galgameMedium)
 	if err := facetTestDB.Exec(
 		`UPDATE catalog_work SET site = 'kungal', product_work_id = 97001 WHERE id = ?`,
@@ -55,7 +44,6 @@ func TestLoadWorkTitlesUsesCatalogRowsForEveryWork(t *testing.T) {
 		}
 	}
 
-	// Bodyless works use the same projection and retain every kind.
 	bodyless := mkWork(t, "bodyless-title", model.WorkStatusLive, galgameMedium)
 	for _, r := range []struct {
 		lang, title, latin string
@@ -71,7 +59,6 @@ func TestLoadWorkTitlesUsesCatalogRowsForEveryWork(t *testing.T) {
 		}
 	}
 
-	// ── outside the population: a stub work contributes nothing ──
 	stub := mkWork(t, "stub-title", model.WorkStatusStub, galgameMedium)
 	if err := facetTestDB.Exec(`INSERT INTO catalog_work_title (work_id, lang, title, kind)
 		VALUES (?, 'ja', 'スタブ', 0)`, stub).Error; err != nil {

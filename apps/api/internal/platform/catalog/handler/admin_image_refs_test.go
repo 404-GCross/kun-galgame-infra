@@ -15,11 +15,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// The pre-delete reference check over HTTP. What matters here is that an
-// operator about to destroy bytes gets an honest answer: an unreferenced hash
-// must be a plain 200 with an empty list (a 404 reads as "the check failed" and
-// gets clicked through), and a referenced one must name the entities.
-
 const refHash = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
 
 func TestSetupAdmin_RegistersImageReferenceOperations(t *testing.T) {
@@ -33,9 +28,6 @@ func TestSetupAdmin_RegistersImageReferenceOperations(t *testing.T) {
 	}
 }
 
-// TestValidImageHash: the guard that keeps a malformed hash from reaching six
-// table scans, and keeps an uppercase or truncated hash from silently
-// answering "no references" for an image that has some.
 func TestValidImageHash(t *testing.T) {
 	assert.True(t, validImageHash(refHash))
 	assert.False(t, validImageHash(""), "empty")
@@ -45,8 +37,6 @@ func TestValidImageHash(t *testing.T) {
 	assert.False(t, validImageHash(strings.Repeat("z", 64)), "non-hex")
 }
 
-// imageRefApp wires the admin face over a real service, the way cmd/catalog
-// does (the gate is exercised separately in admin_gate_test.go).
 func imageRefApp(db *gorm.DB) *fiber.App {
 	app := fiber.New()
 	SetupAdmin(app, nil, nil, nil, service.NewImageReferenceService(db))
@@ -73,8 +63,6 @@ func adminPost(t *testing.T, app *fiber.App, url, payload string) (int, map[stri
 	return resp.StatusCode, body
 }
 
-// TestImageReferences_BadHash400: a malformed hash is rejected before any
-// service call (a nil service proves nothing downstream ran).
 func TestImageReferences_BadHash400(t *testing.T) {
 	app := imageRefApp(nil)
 	status, _ := adminGet(t, app, "/api/v1/admin/catalog/image-references?hash=nope")
@@ -83,8 +71,6 @@ func TestImageReferences_BadHash400(t *testing.T) {
 	assert.Equal(t, fiber.StatusBadRequest, status)
 }
 
-// TestImageReferences_ListThenDetach walks the console's whole flow against a
-// real database: ask who holds the hash, let go, ask again.
 func TestImageReferences_ListThenDetach(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{"catalog_work_cover", "catalog_work", "catalog_person"} {
@@ -115,7 +101,6 @@ func TestImageReferences_ListThenDetach(t *testing.T) {
 	assert.Equal(t, float64(2), data["total_removed"])
 	assert.Equal(t, float64(1), data["removed"].(map[string]any)["work_cover"])
 
-	// The console's normal case: nothing references the hash → 200 + empty list.
 	status, body = adminGet(t, app, "/api/v1/admin/catalog/image-references?hash="+refHash)
 	require.Equal(t, fiber.StatusOK, status)
 	data = body["data"].(map[string]any)

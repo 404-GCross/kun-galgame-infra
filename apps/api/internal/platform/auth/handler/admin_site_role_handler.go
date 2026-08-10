@@ -11,10 +11,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// AssignSiteRole grants a site-scoped role to a user.
-// POST /admin/users/:uuid/site-roles {site_id, role_name, note?, expires_at?}.
-// Route-gated by oauth.roles.grant_site (admin/ren). Self-grant is refused,
-// mirroring the global role matrix.
 func (h *AdminHandler) AssignSiteRole(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	if uuid == "" {
@@ -39,9 +35,6 @@ func (h *AdminHandler) AssignSiteRole(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"granted": true})
 }
 
-// RevokeSiteRole removes a site-scoped grant.
-// DELETE /admin/users/:uuid/site-roles?site_id=<id>&role_name=<name>. Idempotent.
-// Query params (not a DELETE body) so intermediaries don't strip it.
 func (h *AdminHandler) RevokeSiteRole(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	if uuid == "" {
@@ -63,8 +56,6 @@ func (h *AdminHandler) RevokeSiteRole(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"revoked": true})
 }
 
-// siteRoleError maps a service AppError to the right HTTP status: validation →
-// 400 (with the policy message), site/user not-found → 404, else 500.
 func siteRoleError(c fiber.Ctx, err error) error {
 	if appErr, ok := err.(*errors.AppError); ok {
 		switch appErr.Code {

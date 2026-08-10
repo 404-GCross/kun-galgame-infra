@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// Console shell for the signed-in developer surface (/dashboard, /apps/**).
-// Shared header on top, a sticky left rail for console navigation + the account
-// block, and the page in a wide content column. Two columns on lg+, the rail
-// collapses below (the header already carries nav + account there). Single real
-// root element (CLAUDE.md §11).
 const auth = useAuth()
 const route = useRoute()
 
@@ -42,7 +37,6 @@ const handleLogout = async () => {
     <div
       class="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 md:px-6 lg:flex-row lg:gap-8"
     >
-      <!-- Console rail (lg+; header covers nav/account on smaller screens) -->
       <aside class="hidden shrink-0 py-10 lg:block lg:w-60">
         <div class="lg:sticky lg:top-24 lg:space-y-6">
           <div>
@@ -69,7 +63,6 @@ const handleLogout = async () => {
             </nav>
           </div>
 
-          <!-- Account card -->
           <div
             v-if="auth.user.value"
             class="rounded-xl border border-default-200 bg-content1 p-3"

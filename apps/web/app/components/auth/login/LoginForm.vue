@@ -3,35 +3,17 @@ const auth = useAuth()
 const router = useRouter()
 const route = useRoute()
 
-// Pre-fillable via ?account= (the step-up flow passes the target account's
-// email so the user only types the password).
 const account = ref((route.query.account as string) || '')
 const password = ref('')
 const error = ref('')
 const isLoading = ref(false)
-// Set when the user re-logs-in the account that's already active (in the force=1
-// "登录其他账号" flow, no pending OAuth redirect) — we show this in-place notice
-// instead of a silent jump to /profile.
 const sameAccountName = ref('')
 
-// If redirected from OAuth authorize, go back after login
 const redirectUrl = computed(() => route.query.redirect as string | undefined)
 
-// `force=1` keeps the login form visible even when a session already exists —
-// used by "add account" and the account-switch step-up, where the whole point
-// is to authenticate a DIFFERENT account. Without it onMounted would bounce the
-// still-logged-in user straight back out (the "page flashes then returns home"
-// symptom), and step-up would loop.
 const forceLogin = computed(() => route.query.force === '1')
-// `reauth=1` marks a FORCED re-authentication (prompt=login): re-entering the
-// current account should COMPLETE the flow, not stall on the "already this
-// account" notice (that notice is only for the add-account flow).
 const reauth = computed(() => route.query.reauth === '1')
 
-// Only follow a redirect that stays on THIS origin: a relative path (but not a
-// protocol-relative "//evil.com") or a same-origin absolute URL. Otherwise fall
-// back to the default landing — blocks open-redirect via ?redirect= (which the
-// force=1 add-account / step-up flows all funnel through here).
 const isSafeRedirect = (url: string): boolean => {
   if (url.startsWith('//')) return false
   if (url.startsWith('/')) return true
@@ -67,17 +49,10 @@ const handleSubmit = async () => {
 
     const next = response.data.user
     // Re-logged the account that's already active → no-op. Don't silently
-    // proceed (a confusing flash with no feedback); show an in-place notice.
-    // Applies to BOTH flows — in the OAuth flow the notice offers "继续访问" to
-    // finish the handshake as this account instead of a silent bounce back to
-    // the downstream.
     if (!reauth.value && prevUuid && next.uuid === prevUuid) {
       sameAccountName.value = next.name
       return
     }
-    // Switched to a different account in the account-center "登录其他账号" form
-    // (no redirect carries the result onward) → confirm with a toast. The OAuth
-    // flow redirects away, so a toast there would be lost — skip it.
     if (!redirectUrl.value && forceLogin.value && prevUuid) {
       useKunMessage(`已切换到「${next.name}」`, 'success')
     }
@@ -89,8 +64,6 @@ const handleSubmit = async () => {
   }
 }
 
-// "返回" from the "already this account" notice → back to wherever the user
-// opened the switcher / add-account from.
 const goBack = () => router.back()
 
 onMounted(async () => {

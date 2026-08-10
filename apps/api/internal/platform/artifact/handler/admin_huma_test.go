@@ -11,15 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAdminHuma_RenGate_Forbidden locks in the authorization rewire: the
-// browsing / mutating admin ops (list, delete, reclaim) must return 403 when the
-// caller lacks the "ren" role — and must do so BEFORE any DB access (nil deps are
-// never reached because requireRen runs first). The prefix is already admin-gated
-// at the Fiber layer; this is the extra ren restriction, now enforced in-handler
-// because Huma routes don't inherit the /admin group middleware.
 func TestAdminHuma_RenGate_Forbidden(t *testing.T) {
-	s := &AdminHumaServer{h: NewAdmin(nil, nil, nil, 0)} // nil deps: ren check precedes them
-	ctx := context.Background()                          // no roles lifted → not ren
+	s := &AdminHumaServer{h: NewAdmin(nil, nil, nil, 0)}
+	ctx := context.Background()
 
 	assert403 := func(name string, err error) {
 		t.Helper()
@@ -36,8 +30,6 @@ func TestAdminHuma_RenGate_Forbidden(t *testing.T) {
 	assert403("reclaim", err)
 }
 
-// TestRequireRen covers the ctx role lookup (fed by AdminAuthBridge) → the
-// artifact.files.manage permission check that gates browsing/mutating ops.
 func TestRequireRen(t *testing.T) {
 	s := &AdminHumaServer{}
 	ren := context.WithValue(context.Background(), ctxKeyAdminRoles, []string{"admin", "ren"})
@@ -47,8 +39,6 @@ func TestRequireRen(t *testing.T) {
 	assert.Error(t, s.requireRen(context.Background()), "no roles in ctx → refused")
 }
 
-// TestSetupAdmin_RegistersOperations is a smoke test that all four admin
-// operations are registered (also what cmd/gen-openapi -admin exports).
 func TestSetupAdmin_RegistersOperations(t *testing.T) {
 	api := SetupAdmin(fiber.New(), NewAdmin(nil, nil, nil, 0))
 	paths := api.OpenAPI().Paths

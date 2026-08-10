@@ -8,9 +8,6 @@ const reviewStatus = ref<string>('')
 const currentPage = ref(1)
 const limit = 50
 
-// SSR-rendered (kungal-style): list + stats fetched on the server so the
-// table and stat cards paint with data. The reactive query makes useFetch
-// refetch on page/filter change; refreshList/refreshStats run after mutations.
 const { data: listData, status: listStatus, refresh: refreshList } =
   await useApiFetch<ImageAdminListResponse>('/admin/image/list', {
     query: computed(() => ({
@@ -29,9 +26,6 @@ const stats = computed(() => statsData.value)
 const isLoading = computed(() => listStatus.value === 'pending')
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 
-// Reset to page 1 when the site filter changes, so narrowing the result set
-// never leaves currentPage on an out-of-range offset (→ backend returns nothing
-// → false "无数据" despite matches). Mirrors the review-tab / 刷新 resets.
 watch(site, () => {
   currentPage.value = 1
 })
@@ -47,9 +41,6 @@ const onReview = async (hash: string, status: string, reason?: string) => {
   }
 }
 
-// Delete confirmation lives in ImagesDeleteModal: it checks catalog for rows
-// that reference the hash and offers to detach them before the bytes go, so a
-// delete cannot silently leave a blank gallery behind.
 const delOpen = ref(false)
 const delHash = ref('')
 const delForce = ref(false)
@@ -77,7 +68,6 @@ const onDeleted = async () => {
       </div>
     </div>
 
-    <!-- Stats cards -->
     <div v-if="stats" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <KunCard content-class="justify-start gap-0" class-name="p-4">
         <div class="text-sm text-default-500">总上传次数</div>
@@ -108,7 +98,6 @@ const onDeleted = async () => {
       </KunCard>
     </div>
 
-    <!-- Filter bar -->
     <div class="rounded-xl bg-content1 p-4 shadow-sm space-y-3">
       <div class="flex flex-wrap gap-2">
         <KunButton

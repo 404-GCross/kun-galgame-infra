@@ -12,18 +12,6 @@ import (
 	"time"
 )
 
-// NOTE ON DUPLICATION. The transport below — even pacing, the retry schedule,
-// the finish_reason guard — mirrors internal/jobs/personadj/judge.go, whose
-// verdict vocabulary (merge/distinct/unsure) this wave cannot reuse. Extracting
-// the shared transport into one package is the right end state and is recorded
-// as a follow-up in refs/proj/168; it was not done inside this wave because it
-// would mean refactoring a live wave-156 production lane. Both copies carry the
-// same measured lessons, listed where they apply.
-
-// paceLimiter spaces requests evenly. The gateway's quota is inference requests
-// per minute per ACCOUNT, so worker count alone paces nothing: short prompts
-// finish fast and N workers then issue far more than N requests a minute. Wave
-// 156 measured 24% 429s at 20 unpaced workers.
 type paceLimiter struct {
 	mu   sync.Mutex
 	next time.Time
@@ -63,28 +51,22 @@ func (p *paceLimiter) wait(ctx context.Context) error {
 
 var retrySchedule = []time.Duration{2 * time.Second, 5 * time.Second, 15 * time.Second, 60 * time.Second}
 
-// HTTPJudge talks an OpenAI-compatible chat-completions endpoint.
 type HTTPJudge struct {
-	baseURL   string
-	token     string
-	model     string
-	maxTokens int
-	limiter   *paceLimiter
-	http      *http.Client
-	// adversarial swaps in the re-framed prompts (adversarial.go) for the pass
-	// over works three ordinary rounds contested.
+	baseURL     string
+	token       string
+	model       string
+	maxTokens   int
+	limiter     *paceLimiter
+	http        *http.Client
 	adversarial bool
 }
 
-// Adversarial switches this judge to the re-framed prompts.
 func (j *HTTPJudge) Adversarial() *HTTPJudge { j.adversarial = true; return j }
 
 func NewHTTPJudge(baseURL, token, model string, maxTokens, rpm int) *HTTPJudge {
 	return &HTTPJudge{
 		baseURL: strings.TrimRight(baseURL, "/"), token: token, model: model,
 		maxTokens: maxTokens, limiter: newPaceLimiter(rpm),
-		// A reasoning model can spend minutes before the first byte on a chunk
-		// of long intros; this is a wall ceiling, not a liveness knob.
 		http: &http.Client{Timeout: 10 * time.Minute},
 	}
 }
@@ -114,11 +96,6 @@ type chatResponse struct {
 	} `json:"error"`
 }
 
-// JudgeBatch judges a chunk in one request and parses one JSON object per line.
-//
-// A packet whose verdict does not come back is NOT silently dropped: it is
-// returned as unsure, so the caller's counts always add up and a partially
-// answered chunk cannot quietly shrink the population.
 func (j *HTTPJudge) JudgeBatch(ctx context.Context, bucket Bucket, cs []Candidate) ([]Verdict, error) {
 	if len(cs) == 0 {
 		return nil, nil
@@ -145,7 +122,7 @@ func (j *HTTPJudge) JudgeBatch(ctx context.Context, bucket Bucket, cs []Candidat
 		}
 		var v Verdict
 		if err := json.Unmarshal([]byte(line), &v); err != nil {
-			continue // a malformed line becomes a missing key, handled below
+			continue
 		}
 		byKey[v.Key] = v
 	}
@@ -157,15 +134,7 @@ func (j *HTTPJudge) JudgeBatch(ctx context.Context, bucket Bucket, cs []Candidat
 			v = Verdict{Key: c.Key(), Verdict: VerdictUnsure, Confidence: 0,
 				Reason: "模型未返回该条或裁决不在词表内"}
 		} else if j.adversarial && bucket == BucketCompare {
-			// Undo the swap the moment the reply is parsed, so the verdict
-			// file, the fold and the apply pass all speak one vocabulary in
-			// which a_better means "the user's text wins".
 			v.Verdict = SwapVerdict(v.Verdict)
-			// The REASON cannot be swapped — it is prose naming "A" and "B" as
-			// the model saw them, which is the opposite of what the verdict now
-			// means. Left unmarked it reads as a contradiction to anyone
-			// auditing the file later, so say so instead of silently shipping
-			// a reason that argues the other way.
 			v.Reason = swapNote + v.Reason
 		}
 		v.WorkID, v.Bucket, v.Model, v.PromptVersion = c.WorkID, bucket, model, version
@@ -196,9 +165,6 @@ func (j *HTTPJudge) chat(ctx context.Context, system, user string) (string, stri
 	if len(cr.Choices) == 0 {
 		return "", "", fmt.Errorf("gateway returned no choices")
 	}
-	// A reasoning model that exhausts its budget still returns well-formed
-	// prose; only finish_reason tells a finished answer from a truncated one.
-	// Wave 75 lost translations to exactly this before the guard existed.
 	if fr := cr.Choices[0].FinishReason; fr != "" && fr != "stop" {
 		return "", "", fmt.Errorf("generation finished with finish_reason=%q — refusing partial output", fr)
 	}
@@ -258,8 +224,6 @@ func (j *HTTPJudge) postOnce(ctx context.Context, raw []byte) ([]byte, bool, err
 	return data, false, nil
 }
 
-// MockJudge is the deterministic offline stand-in; it stamps a "mock:" model
-// prefix so a mock verdict that ever leaked into a real batch is unmistakable.
 type MockJudge struct {
 	Rule func(Candidate) (string, float64)
 }

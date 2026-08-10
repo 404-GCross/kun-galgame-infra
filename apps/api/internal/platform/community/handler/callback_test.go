@@ -23,8 +23,6 @@ func hmacHex(secret, ts string, body []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// D⑩ (wire): a bad signature → 401; a valid signature over a callback for an
-// absent post → 200 (idempotent no-op, so the trust worker does not dead-letter).
 func TestTrustCallbackHTTP(t *testing.T) {
 	const secret = "wire-secret"
 	svc := service.NewCallbackService(testDB)

@@ -6,9 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// The mirror writes <root>/<getchu_id>/<basename>. Deriving the path rather
-// than trusting the staging row's local_path is what lets this job run from a
-// machine that did not do the mirroring.
 func TestMirrorPath(t *testing.T) {
 	assert.Equal(t, "/data/getchu/1000236/c1000236sample1.jpg",
 		mirrorPath("/data/getchu", "1000236", "c1000236sample1.jpg"))

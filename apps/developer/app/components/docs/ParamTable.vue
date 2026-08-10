@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import type { DocsParam } from '~~/shared/types/docs'
 
-// Parameter reference table (path params first, then query — pre-sorted in the
-// model). Wide content scrolls inside its own container so the page body never
-// scrolls sideways (CLAUDE.md §12).
 defineProps<{ params: DocsParam[] }>()
 
 const inLabel: Record<string, string> = { path: 'path', query: 'query' }

@@ -14,40 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// taxonomy.go — the NARROW registrations of the four vocabulary entities
-// (03 定案 §4): catalog.label, catalog.tag, catalog.engine, catalog.series.
-//
-// The design ruling behind "narrow": taxonomy is not wiki content, it is the
-// registry's vocabulary layer, and the evidence is its own history — 124
-// taxonomy_revision rows across the whole life of two CRUD consoles. So the
-// two natures are split:
-//
-//   - FIELD EDITING (here): the describable properties of a vocabulary entry —
-//     its name, its intro, its links. Registered on the same engine as every
-//     other family, which is what makes revisions, diffs, per-field policy and
-//     revert arrive for free and lets taxonomy_revision retire.
-//   - VOCABULARY / IDENTITY OPERATIONS (not here, and never): create, delete,
-//     merge, redirect, re-category. Those are curation of the registry itself
-//     (03 §0 line 3), they run on the admin curation surface, and "revert" does
-//     not mean for them what it means for a field.
-//
-// Per-family narrowness, each with a reason:
-//
-//   - catalog.tag registers INTRO ONLY. A canonical tag's NAME is the join key
-//     of the whole convergence layer (catalog_tag_source_map, the folksonomy
-//     rows, every cross-source fold tagcanon computed); renaming one by field
-//     edit would silently re-point that machinery. Names change through
-//     curation, with the fold recomputed.
-//   - catalog.series carries name + intro; membership is a WORK field
-//     (catalog.work.series_ids), because that is where a human decides it.
-//   - catalog.engine's intro is a COLUMN (catalog_engine.description) rather
-//     than an intro table — the engine family never got one, and adding a table
-//     to match a sibling's shape would be a migration bought with nothing.
-//
-// Registration only in N1: no user-reachable route exists until N2. The generic
-// /internal/edit face serves these the moment they are registered, which is the
-// acceptance surface for this wave.
-
 const (
 	TypeLabel  = "catalog.label"
 	TypeTag    = "catalog.tag"
@@ -68,13 +34,8 @@ const (
 	FieldSeriesIntros = "catalog.series.intros"
 )
 
-// maxNameRunes bounds a vocabulary entry's display name.
 const maxNameRunes = 300
 
-// taxonomyPolicy is the shared default for all four families: proposing and
-// reviewing are both permission-gated and nothing automerges. Vocabulary is
-// small, shared by every consumer of the registry, and — unlike a work's own
-// fields — has no owning site to grant anyone a direct-edit lane.
 func taxonomyPolicy() editing.Policy {
 	return editing.Policy{
 		Propose:   editing.ProposePerm(string(perm.EditTaxonomy)),
@@ -83,9 +44,6 @@ func taxonomyPolicy() editing.Policy {
 	}
 }
 
-// RegisterTaxonomy registers all four vocabulary entity types on a registry.
-// db is the CATALOG pool. One entry point because the four are one decision:
-// either the vocabulary layer is editable through the engine or it is not.
 func RegisterTaxonomy(reg *editing.Registry, db *gorm.DB) error {
 	for _, register := range []func(*editing.Registry, *gorm.DB) error{
 		registerLabel, registerTag, registerEngine, registerSeries,
@@ -252,8 +210,6 @@ func registerSeries(reg *editing.Registry, db *gorm.DB) error {
 	})
 }
 
-// ── shared field machinery ──────────────────────────────────────────────────
-
 func validateName(v any) error {
 	s, ok := v.(string)
 	if !ok {
@@ -268,8 +224,6 @@ func validateName(v any) error {
 	return nil
 }
 
-// validateIntroText is the single-column intro (engine.description). An empty
-// string is legal: "this engine has no description" is a state, unlike a name.
 func validateIntroText(v any) error {
 	s, ok := v.(string)
 	if !ok {
@@ -314,10 +268,6 @@ func parseAliases(v any) ([]string, error) {
 	return out, nil
 }
 
-// decodeAliases reads catalog_engine.aliases (a jsonb array) as the field
-// value. A NULL / empty / malformed column reads as the empty list rather than
-// failing the snapshot: an unreadable legacy value must not make the entity
-// uneditable — the first edit replaces it with a well-formed array.
 func decodeAliases(raw []byte) ([]any, error) {
 	if len(raw) == 0 {
 		return []any{}, nil
@@ -353,20 +303,6 @@ func applyEngineAliases(ctx context.Context, tx *gorm.DB, entityID int64, value 
 	return nil
 }
 
-// applyEntityColumn is applyWorkColumn for any vocabulary entity: one scalar
-// column, existence asserted by RowsAffected.
-// curatedOnly refuses a series NAME edit on a series an importer reconciles
-// (wave 155 §3.1). jobs/workseries rewrites display_name of every dlsite-sourced
-// series whenever it differs from the upstream title, and DELETES the row
-// outright when it falls out of the upstream set — so a human rename there is
-// undone on the next run, and the revert history would point at a row that no
-// longer exists. The same narrowing, for the same reason, as applySeriesIDs'
-// "curated series only" rule: naming an upstream series is an identity-face
-// operation (03 定案 §0 line 3), not a field edit. Curated series (source 12,
-// the ones a human minted) are unaffected.
-//
-// Only the NAME is guarded: catalog_series_intro carries no importer writer, so
-// the intro of an upstream series is a legitimate curated addition.
 func curatedOnly(inner editing.ApplyFunc) editing.ApplyFunc {
 	return func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
 		var n int64

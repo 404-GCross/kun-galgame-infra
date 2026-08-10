@@ -9,11 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Source keys recorded in field_provenance (and the survivorship priority
-// ranks). VNDB outranks Bangumi: its attributes come from typed columns, more
-// trustworthy than a regex over free-text infobox values (refs/proj/81
-// survivorship). A field whose latest writer is NOT one of these (e.g. "user",
-// a future human edit) is never overwritten by this pipeline.
 const (
 	sourceVNDB    = "vndb"
 	sourceBangumi = "bangumi"
@@ -21,12 +16,8 @@ const (
 
 var pipelineRank = map[string]int{sourceVNDB: 2, sourceBangumi: 1}
 
-// extraNamespaces keys the per-source long-tail buckets inside catalog_character
-// extra. Only Bangumi contributes a long tail today.
 const extraNamespaceBGM = "bgm"
 
-// charState is the current persisted attribute state of a character, loaded
-// alongside its source row so the write decision needs no extra query.
 type charState struct {
 	ID              int64          `gorm:"column:entity_id"`
 	Month           *int16         `gorm:"column:birthday_month"`
@@ -48,9 +39,6 @@ type provEntry struct {
 	At     string `json:"at"`
 }
 
-// charWriter accumulates one character's column + provenance + extra updates,
-// then flushes a single UPDATE. It enforces the survivorship + user-protection
-// + idempotency rules (see decide).
 type charWriter struct {
 	source      string
 	now         string
@@ -67,8 +55,6 @@ func newCharWriter(source, now string, prov datatypes.JSON) *charWriter {
 	return &charWriter{source: source, now: now, provDoc: doc, updates: map[string]any{}}
 }
 
-// latestWriter returns the source key of a field's most recent provenance entry
-// (R8 array, latest first), or "" when the field has no provenance.
 func (w *charWriter) latestWriter(col string) string {
 	raw, ok := w.provDoc[col]
 	if !ok {
@@ -81,11 +67,6 @@ func (w *charWriter) latestWriter(col string) string {
 	return arr[0].Source
 }
 
-// decide implements the write rule: skip an idempotent no-op (same value, same
-// writer — the second-pass zero-write); write when the column is empty; on a
-// non-empty column write only when the current writer is a pipeline source AND
-// this source's priority is >= it (vndb over bangumi; a source re-parsing its
-// own field). A non-pipeline writer (user edit) is never overwritten.
 func (w *charWriter) decide(col string, curNil, equal bool) bool {
 	latest := w.latestWriter(col)
 	if equal && latest == w.source {
@@ -101,8 +82,6 @@ func (w *charWriter) decide(col string, curNil, equal bool) bool {
 	return pipelineRank[w.source] >= lr
 }
 
-// recordProv prepends this run's (source, at) entry to a column's provenance
-// array (latest first).
 func (w *charWriter) recordProv(col string) {
 	entry, _ := json.Marshal(provEntry{Source: w.source, At: w.now})
 	var arr []json.RawMessage
@@ -115,7 +94,6 @@ func (w *charWriter) recordProv(col string) {
 	w.touchedProv = true
 }
 
-// i16 plans a nullable-int column write; returns whether the write was planned.
 func (w *charWriter) i16(col string, cur, proposed *int16) bool {
 	if proposed == nil {
 		return false
@@ -129,7 +107,6 @@ func (w *charWriter) i16(col string, cur, proposed *int16) bool {
 	return true
 }
 
-// str plans a nullable-string column write; returns whether it was planned.
 func (w *charWriter) str(col string, cur, proposed *string) bool {
 	if proposed == nil {
 		return false
@@ -143,9 +120,6 @@ func (w *charWriter) str(col string, cur, proposed *string) bool {
 	return true
 }
 
-// setExtraNamespace replaces the source's whole extra namespace with the
-// freshly computed long-tail (idempotent: no UPDATE when the canonical JSON is
-// unchanged). Other namespaces are preserved. Returns whether extra changed.
 func (w *charWriter) setExtraNamespace(cur datatypes.JSON, ns string, val map[string]any) bool {
 	doc := map[string]json.RawMessage{}
 	if len(cur) > 0 {
@@ -169,7 +143,6 @@ func (w *charWriter) setExtraNamespace(cur datatypes.JSON, ns string, val map[st
 	return true
 }
 
-// flush issues the single UPDATE when anything was planned.
 func (w *charWriter) flush(ctx context.Context, db *gorm.DB, id int64) error {
 	if len(w.updates) == 0 {
 		return nil
@@ -182,9 +155,6 @@ func (w *charWriter) flush(ctx context.Context, db *gorm.DB, id int64) error {
 	return db.WithContext(ctx).Table("catalog_character").Where("id = ?", id).Updates(w.updates).Error
 }
 
-// canonJSON normalizes a JSON blob to Go's key-sorted marshaling so two
-// semantically-equal documents compare byte-equal (jsonb key order is not
-// stable across a round-trip).
 func canonJSON(raw []byte) string {
 	var v any
 	if json.Unmarshal(raw, &v) != nil {

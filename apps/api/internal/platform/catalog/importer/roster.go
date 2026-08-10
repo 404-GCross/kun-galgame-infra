@@ -10,56 +10,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// The character-roster wave lands the work↔character花名册 edges the credit
-// wave (step 13) deliberately left out: step 13 ruled "a character with no VA
-// only gets an entity, not an edge" (no independent work↔character edge
-// existed). The need is here now (kungal + letmoe + the /v1 API all show a
-// roster), so this wave fills catalog_work_character.
-//
-// Identity discipline (step 13, unchanged): a missing character is created as
-// an entity + a self-referential exact anchor (rule:<source>-character-import,
-// the SAME rule step 13 used) with zero person rows and zero name→person
-// links — the anchor layer is the only gate. The roster GATE is different from
-// step 13's bid-audit门: an EXACT work anchor means identity is already
-// settled, and the roster is a per-work fact, so the anchor alone gates it (no
-// second audit门). This widens the set well past step 13's pass layer.
-//
-// The edge is INDEPENDENT of credit: credits (incl. VA credits carrying a
-// character_id) are untouched, never deduped against — a voiced character
-// legitimately appears in both catalog_credit and catalog_work_character with
-// different semantics.
-
 const (
 	ruleRosterBangumi = "import:character-roster-bangumi"
 	ruleRosterEG      = "import:character-roster-eg"
 	ruleRosterVNDB    = "import:character-roster-vndb"
 )
 
-// RosterStats is the per-wave tally for the roster import.
 type RosterStats struct {
-	CharactersCreated   int // new character entities (missing exact anchor)
-	EdgesWritten        int // roster edges actually inserted
-	Already             int // edges the unique (work,character) already held
-	SkippedNoWorkAnchor int // roster row whose work has no exact anchor (out of gate)
-	SkippedNoName       int // staging character carries no usable name — cannot build the entity
-	Errors              int // materialize drops (character unresolved) — expected 0
-	// SkippedClaimedProbable counts source characters whose external id an ALIVE
-	// catalog character already claims at a non-exact grade (a merge demoted the
-	// two competing anchors to probable). The id is taken, so nothing is minted;
-	// the pending link is left for adjudication. Visible on its own so operators
-	// see the size of the "waiting on a human" set instead of it hiding inside
-	// `already`.
-	SkippedClaimedProbable int
-	// SkippedRetiredExactSquat counts ids whose only exact holder is a
-	// soft-deleted character. The id should be free again, but the exact-tier
-	// unique index ignores deleted_at, so the retired row still occupies it and
-	// minting would fail the wave. Expected 0 — a non-zero value is the signal
-	// that retired rows are not leaving the identity index.
+	CharactersCreated        int
+	EdgesWritten             int
+	Already                  int
+	SkippedNoWorkAnchor      int
+	SkippedNoName            int
+	Errors                   int
+	SkippedClaimedProbable   int
 	SkippedRetiredExactSquat int
-	// VNDB wave (step 47) only: the same-work same-name attach split.
-	AttachedExisting   int // VNDB char attached to an existing entity (no new row)
-	AliasesCreated     int // spelling_variant romaji aliases added (new + attached)
-	PortraitCandidates int // in-gate chars with a threshold-passing portrait (48's backfill set)
+	AttachedExisting         int
+	AliasesCreated           int
+	PortraitCandidates       int
 }
 
 func (s *RosterStats) add(o RosterStats) {
@@ -76,7 +44,6 @@ func (s *RosterStats) add(o RosterStats) {
 	s.PortraitCandidates += o.PortraitCandidates
 }
 
-// RunRoster dispatches the requested roster wave(s).
 func (im *Importer) RunRoster(source string) (RosterStats, error) {
 	var total RosterStats
 	if source == "bangumi" || source == "all" {
@@ -106,18 +73,13 @@ func (im *Importer) RunRoster(source string) (RosterStats, error) {
 	return total, nil
 }
 
-// rosterPlan is a would-be roster edge resolved by SOURCE external ids, so it
-// can be counted in dry-run (before entities exist) and materialized on apply.
 type rosterPlan struct {
 	workID    int64
 	charExtID string
 	kind      int16
-	spoiler   int16 // per-edge spoiler level (VNDB chars_vns.spoil; 0 for Bangumi/EG)
+	spoiler   int16
 }
 
-// loadExactWorkMap returns numeric external_id → work id for one source's EXACT
-// work anchors (the roster gate). An exact anchor means identity is settled, so
-// the roster (a per-work fact) needs no further audit门.
 func (im *Importer) loadExactWorkMap(source int16) (map[int64]int64, error) {
 	var rows []struct {
 		ExternalID int64 `gorm:"column:external_id"`
@@ -151,10 +113,6 @@ func (im *Importer) runRosterBangumi() (RosterStats, error) {
 		return st, err
 	}
 
-	// Pre-gate at the query by JOINing to the EXACT work anchors: subject_character
-	// spans all media (anime/manga/music), so this keeps only the reconciled
-	// galgame rows (no cross-media noise, no 20k-id IN clause). The character
-	// name is LEFT-JOINed so a missing name is counted, not silently dropped.
 	type scRow struct {
 		CharacterID int64   `gorm:"column:character_id"`
 		SubjectID   int64   `gorm:"column:subject_id"`
@@ -172,12 +130,10 @@ func (im *Importer) runRosterBangumi() (RosterStats, error) {
 		return st, err
 	}
 
-	// Pass A: new characters (missing exact anchor). Pass B: edge plans.
 	var newChars []charItem
 	seenChar := map[int64]bool{}
 	var plans []rosterPlan
 	for _, sc := range scs {
-		// workMap is uncapped-equal to the JOIN gate unless --limit trimmed it.
 		workID, ok := workMap[sc.SubjectID]
 		if !ok {
 			st.SkippedNoWorkAnchor++
@@ -200,7 +156,7 @@ func (im *Importer) runRosterBangumi() (RosterStats, error) {
 
 	st.CharactersCreated = len(newChars)
 	if im.dryRun {
-		st.EdgesWritten = len(plans) // would-be (clean-state == apply)
+		st.EdgesWritten = len(plans)
 		return st, nil
 	}
 
@@ -237,8 +193,6 @@ func (im *Importer) runRosterEG() (RosterStats, error) {
 		return st, err
 	}
 
-	// Load appearances whole and gate in Go (avoids a 20k-id IN clause; EG has
-	// no main/supporting distinction, so every roster edge is kind=unknown).
 	var apps []struct {
 		Game int64 `gorm:"column:game"`
 		Char int64 `gorm:"column:character_id"`
@@ -302,10 +256,6 @@ func (im *Importer) runRosterEG() (RosterStats, error) {
 	return st, err
 }
 
-// bangumiRosterKind maps a Bangumi subject_character.type to the roster edge
-// kind. 1=主角 / 2=配角 / 3=客串 are the documented buckets; the low-volume
-// undocumented tails (4/5/6 = mob/narration/background in the galgame subset)
-// map to unknown rather than being guessed.
 func bangumiRosterKind(t int) int16 {
 	switch t {
 	case 1:
@@ -319,9 +269,6 @@ func bangumiRosterKind(t int) int16 {
 	}
 }
 
-// materializeRoster resolves each plan's source character ext id to a catalog
-// character id. A plan whose character does not resolve is dropped and counted
-// (should be 0 — every character is created or already anchored).
 func materializeRoster(plans []rosterPlan, char func(string) (int64, bool), matchedBy string) ([]model.CatalogWorkCharacter, int) {
 	out := make([]model.CatalogWorkCharacter, 0, len(plans))
 	dropped := 0
@@ -338,11 +285,6 @@ func materializeRoster(plans []rosterPlan, char func(string) (int64, bool), matc
 	return out, dropped
 }
 
-// insertRosterEdges batch-inserts roster edges with ON CONFLICT (work_id,
-// character_id) DO NOTHING — insert-if-absent, so the first source to assert a
-// pair wins and re-runs write nothing. Returns the number actually written.
-// RETURNING work_id gives the host works whose roster really grew, so only they
-// surface on the public changes feed.
 func insertRosterEdges(tx *gorm.DB, edges []model.CatalogWorkCharacter) (int, error) {
 	written := 0
 	var touched []int64

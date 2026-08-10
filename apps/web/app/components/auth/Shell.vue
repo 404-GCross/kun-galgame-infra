@@ -1,12 +1,4 @@
 <script setup lang="ts">
-// Shared two-panel shell for the auth pages (login / register / forgot /
-// reset / logout). Purely presentational: it owns the card, the brand panel
-// and the page width, and renders the page's form through the default slot —
-// no auth state, no routing, no props that could drift from behaviour.
-//
-// Desktop (lg+): brand panel | form panel, side by side inside one card.
-// Mobile: the brand panel degrades to a compact header row above the form
-// (mascot dropped — vertical space is the scarce resource there).
 </script>
 
 <template>
@@ -37,7 +29,6 @@
         </div>
       </div>
 
-      <!-- Mobile drops the mascot: the brand panel is just a header row there -->
       <div class="hidden lg:block">
         <AuthMascot />
       </div>

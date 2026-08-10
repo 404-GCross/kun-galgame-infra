@@ -1,8 +1,3 @@
-// Role → chip color, centralized so the user table, role modal, and profile
-// badges stay in sync. They previously drifted (a new role had to be added in
-// three inline ternaries — and `creator`/`ren` were already missing in some);
-// add a new role's color here once. Mirrors the OAuth roles: `ren` (莲) is the
-// DB-only super admin, `creator` the trusted-publisher role.
 export const ROLE_COLOR: Record<
   string,
   'primary' | 'success' | 'warning' | 'secondary' | 'default'
@@ -16,7 +11,6 @@ export const ROLE_COLOR: Record<
 
 export const roleColor = (role: string) => ROLE_COLOR[role] ?? 'default'
 
-// Display labels for the role chips.
 export const ROLE_LABEL: Record<string, string> = {
   ren: '莲',
   admin: '管理员',
@@ -27,14 +21,10 @@ export const ROLE_LABEL: Record<string, string> = {
 
 export const roleLabel = (role: string) => ROLE_LABEL[role] ?? role
 
-// The single most significant role to badge (highest priority first); '' when
-// the account has no notable role (a plain user shows no chip).
 const ROLE_PRIORITY = ['ren', 'admin', 'moderator', 'creator']
 export const primaryRole = (roles: string[] = []) =>
   ROLE_PRIORITY.find((r) => roles.includes(r)) ?? ''
 
-// Roles that require re-authentication to switch INTO — mirrors the backend
-// step-up gate (SwitchActiveSession refuses these with 10016).
 export const STEP_UP_ROLES = ['admin', 'ren']
 export const needsStepUp = (roles: string[] = []) =>
   roles.some((r) => STEP_UP_ROLES.includes(r))

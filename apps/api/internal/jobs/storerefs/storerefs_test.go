@@ -17,8 +17,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Integration test: catalog Gold schema + a minimal EG mirror fixture in its
-// OWN schema (storerefs_eg) via a search_path DSN (the workratings pattern).
 var (
 	testDB    *gorm.DB
 	testDSN   string
@@ -97,15 +95,12 @@ func mkAnchor(t *testing.T, workID int64, externalID string, source int16) {
 	}).Error)
 }
 
-// TestImportStoreRefs pins: both lanes plan/write, dmm seed row exists (id 15),
-// probable grade + rule tags, negative knowledge blocks, InsertRefIfAbsent
-// never re-grades, second apply writes zero.
 func TestImportStoreRefs(t *testing.T) {
 	clean(t)
 	medium := mediumID(t)
 	egSrc := sourceID(t, "erogamespace")
 	steamSrc := sourceID(t, "steam")
-	dmmSrc := sourceID(t, "dmm") // the step-91 seed row — resolvable or the test fails
+	dmmSrc := sourceID(t, "dmm")
 
 	wA := mkWork(t, medium, "both-stores")
 	wB := mkWork(t, medium, "dmm-rejected")
@@ -116,12 +111,10 @@ func TestImportStoreRefs(t *testing.T) {
 	require.NoError(t, testDB.Exec(`INSERT INTO storerefs_eg.games (id, steam, dmm) VALUES
 		(201, 4710010, '1564apc14970'), (202, NULL, 'elf_0035'), (203, 1689910, NULL)`).Error)
 
-	// Negative knowledge: wB × dmm elf_0035 was human-rejected.
 	require.NoError(t, testDB.Create(&model.CatalogMatchRejection{
 		EntityType: model.EntityTypeWork, EntityID: wB, SourceID: dmmSrc,
 		ExternalID: "elf_0035", Reason: "test rejection",
 	}).Error)
-	// Pre-existing assertion: wC × steam already EXACT (human-verified, say).
 	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
 		EntityType: model.EntityTypeWork, EntityID: wC, SourceID: steamSrc,
 		ExternalID: "1689910", LinkKind: model.LinkKindExact, MatchedBy: "human:1",
@@ -130,7 +123,6 @@ func TestImportStoreRefs(t *testing.T) {
 	ctx := context.Background()
 	opts := Opts{DSN: testDSN, EGDSN: egTestDSN}
 
-	// Dry.
 	st, err := Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.Anchored)
@@ -139,7 +131,6 @@ func TestImportStoreRefs(t *testing.T) {
 	assert.Equal(t, 1, st.Rejected)
 	assert.Zero(t, st.SteamWritten+st.DmmWritten)
 
-	// Apply.
 	opts.Apply = true
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
@@ -153,22 +144,19 @@ func TestImportStoreRefs(t *testing.T) {
 		"entity_type = ? AND entity_id = ? AND source_id = ?", model.EntityTypeWork, wA, steamSrc).First(&ref).Error)
 	assert.Equal(t, model.LinkKindProbable, ref.LinkKind)
 	assert.Equal(t, "rule:eg-steam", ref.MatchedBy)
-	ref = model.CatalogExternalRef{} // fresh struct per First — GORM reuses populated PKs as conditions
+	ref = model.CatalogExternalRef{}
 	require.NoError(t, testDB.Where(
 		"entity_type = ? AND entity_id = ? AND source_id = ?", model.EntityTypeWork, wA, dmmSrc).First(&ref).Error)
 	assert.Equal(t, "1564apc14970", ref.ExternalID)
 	assert.Equal(t, "rule:eg-dmm", ref.MatchedBy)
-	// wC's steam ref kept its original grade.
 	ref = model.CatalogExternalRef{}
 	require.NoError(t, testDB.Where(
 		"entity_type = ? AND entity_id = ? AND source_id = ?", model.EntityTypeWork, wC, steamSrc).First(&ref).Error)
 	assert.Equal(t, model.LinkKindExact, ref.LinkKind, "existing assertion never re-graded")
-	// wB has NO dmm ref (rejection honored).
 	err = testDB.Where("entity_type = ? AND entity_id = ? AND source_id = ?",
 		model.EntityTypeWork, wB, dmmSrc).First(&model.CatalogExternalRef{}).Error
 	assert.Error(t, err)
 
-	// Second apply: zero writes.
 	st, err = Run(ctx, opts)
 	require.NoError(t, err)
 	assert.Zero(t, st.SteamWritten+st.DmmWritten)

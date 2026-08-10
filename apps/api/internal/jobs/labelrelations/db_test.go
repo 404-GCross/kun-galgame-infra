@@ -23,7 +23,6 @@ var testDB *gorm.DB
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_DSN")
 	if dsn == "" {
-		// No password: pgx reads PGPASSWORD / ~/.pgpass for localhost.
 		dsn = "host=localhost port=5432 user=postgres dbname=kun_catalog_test sslmode=disable"
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -41,9 +40,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// sourceVNDB is the seeded vndb source id (registry seed), mirrored here the
-// way the sibling job suites mirror it; the code under test still resolves it
-// by key at run time.
 const sourceVNDB int16 = 2
 
 func cleanAll(t *testing.T) {
@@ -63,7 +59,6 @@ func mkLabel(t *testing.T, id int64, name string) {
 	}).Error)
 }
 
-// mkAnchor files an EXACT vndb label anchor — the only tier the builder joins on.
 func mkAnchor(t *testing.T, ext string, label int64) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(
@@ -79,7 +74,6 @@ func mkUpstream(t *testing.T, id, pid, relation string) {
 		id, pid, relation).Error)
 }
 
-// readGraph returns the whole stored graph, ordered, for whole-table assertions.
 func readGraph(t *testing.T) []model.CatalogLabelRelation {
 	t.Helper()
 	var rows []model.CatalogLabelRelation
@@ -89,9 +83,6 @@ func readGraph(t *testing.T) []model.CatalogLabelRelation {
 	return rows
 }
 
-// The mirrored upstream pair becomes two rows — one per direction, each under
-// the inverse code. That is the whole contract the read face rests on: it never
-// inverts, so both directions must already be in the table.
 func TestMirroredPairBecomesTwoRows(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -101,7 +92,6 @@ func TestMirroredPairBecomesTwoRows(t *testing.T) {
 	mkLabel(t, 801, "VisualArt's")
 	mkAnchor(t, "p1", 800)
 	mkAnchor(t, "p2", 801)
-	// VNDB ships both directions; the builder passes them through verbatim.
 	mkUpstream(t, "p1", "p2", "par")
 	mkUpstream(t, "p2", "p1", "sub")
 
@@ -124,9 +114,6 @@ func TestMirroredPairBecomesTwoRows(t *testing.T) {
 	assert.Equal(t, model.LabelRelationSubsidiary, rows[1].Relation)
 }
 
-// An edge whose other endpoint has no exact label anchor is not a half-edge to
-// be kept — it has nothing to point at. It is skipped and counted, and comes in
-// on a later pass once reconcile-org-labels anchors the producer.
 func TestUnanchoredEndpointIsSkipped(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -134,7 +121,7 @@ func TestUnanchoredEndpointIsSkipped(t *testing.T) {
 	cleanAll(t)
 	mkLabel(t, 800, "Key")
 	mkAnchor(t, "p1", 800)
-	mkUpstream(t, "p1", "p2", "par") // p2 is not anchored
+	mkUpstream(t, "p1", "p2", "par")
 	mkUpstream(t, "p2", "p1", "sub")
 
 	st, err := build(context.Background(), testDB, true)
@@ -145,8 +132,6 @@ func TestUnanchoredEndpointIsSkipped(t *testing.T) {
 	assert.Zero(t, st.Written)
 	assert.Empty(t, readGraph(t))
 
-	// A probable anchor does NOT qualify: a structural edge inherits the
-	// identity confidence of its endpoints.
 	mkLabel(t, 801, "VisualArt's")
 	require.NoError(t, testDB.Exec(
 		`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by, created_at)
@@ -158,9 +143,6 @@ func TestUnanchoredEndpointIsSkipped(t *testing.T) {
 	assert.Empty(t, readGraph(t))
 }
 
-// The builder is a full rebuild of its source: a second apply over an unchanged
-// dump produces the same table, and an edge the dump dropped disappears rather
-// than lingering as a stale row nobody reaps.
 func TestRebuildIsIdempotentAndReapsStaleRows(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -184,7 +166,6 @@ func TestRebuildIsIdempotentAndReapsStaleRows(t *testing.T) {
 	first := readGraph(t)
 	require.Len(t, first, 4)
 
-	// ── second apply over an unchanged dump: identical table ────────────────
 	st2, err := build(ctx, testDB, true)
 	require.NoError(t, err)
 	assert.Equal(t, 4, st2.Written)
@@ -197,7 +178,6 @@ func TestRebuildIsIdempotentAndReapsStaleRows(t *testing.T) {
 		assert.Equal(t, first[i].Relation, second[i].Relation)
 	}
 
-	// ── the imprint pair leaves the dump: both rows disappear ───────────────
 	require.NoError(t, testDB.Exec(
 		`DELETE FROM src_vndb.producers_relations WHERE relation IN ('imp','ipa')`).Error)
 	st3, err := build(ctx, testDB, true)
@@ -210,7 +190,6 @@ func TestRebuildIsIdempotentAndReapsStaleRows(t *testing.T) {
 		assert.NotEqual(t, model.LabelRelationImprintOf, r.Relation)
 	}
 
-	// ── a dry run reports the same plan and writes nothing ──────────────────
 	require.NoError(t, testDB.Exec(`DELETE FROM src_vndb.producers_relations`).Error)
 	st4, err := build(ctx, testDB, false)
 	require.NoError(t, err)
@@ -218,10 +197,6 @@ func TestRebuildIsIdempotentAndReapsStaleRows(t *testing.T) {
 	assert.Len(t, readGraph(t), 2, "dry run left the previous graph untouched")
 }
 
-// Two producers that anchor to the SAME label (the outcome of a label merge)
-// would yield "X is the parent of X" — never a fact worth storing. An
-// unmapped upstream code is dropped loudly through its own counter, never
-// guessed into the closest-looking constant.
 func TestSelfEdgesAndUnknownCodesAreDropped(t *testing.T) {
 	if testDB == nil {
 		t.Skip("no test db")
@@ -229,7 +204,7 @@ func TestSelfEdgesAndUnknownCodesAreDropped(t *testing.T) {
 	cleanAll(t)
 	mkLabel(t, 800, "Key")
 	mkAnchor(t, "p1", 800)
-	mkAnchor(t, "p2", 800) // p2 was merged into the same label
+	mkAnchor(t, "p2", 800)
 	mkUpstream(t, "p1", "p2", "par")
 	mkUpstream(t, "p1", "p2", "zzz")
 

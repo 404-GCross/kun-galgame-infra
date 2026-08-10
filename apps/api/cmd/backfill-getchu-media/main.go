@@ -1,14 +1,3 @@
-// backfill-getchu-media fills catalog work screenshot galleries from the Getchu
-// crawler's mirrored sample CG (refs/proj/167 §9).
-//
-// Bytes come from a LOCAL mirror produced by kun-getchu-api:
-//
-//	getchu-crawler mirror --out DIR --kind sample --ids-file gap-ids.txt
-//
-// This binary never dials getchu.com. Both DSNs are REQUIRED.
-//
-//	go run ./cmd/backfill-getchu-media --dsn "$CATALOG" --getchu-dsn "$GETCHU" --mirror-dir DIR
-//	go run ./cmd/backfill-getchu-media --dsn "$CATALOG" --getchu-dsn "$GETCHU" --mirror-dir DIR --apply
 package main
 
 import (

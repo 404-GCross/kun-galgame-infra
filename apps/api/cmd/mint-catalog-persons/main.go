@@ -1,34 +1,3 @@
-// mint-catalog-persons turns the wave-152 person evidence graph into real
-// catalog_person entities: host person (reuse or create), credit_name.person_id
-// back-fill, et=0 source anchors and gender/birth survivorship
-// (refs/proj/153, program charter refs/proj/150). Logic lives in
-// internal/jobs/personmint.
-//
-// The two inputs are the DURABLE wave-152 artefacts committed in this repo —
-// nothing is recomputed:
-//
-//	refs/proj/152-artifacts/clusters.jsonl               (only tier=auto is consumed)
-//	refs/proj/152-artifacts/e4_p2_split_worklist.jsonl   (the exclusion list)
-//
-// Idempotent by construction: a person field is filled only when EMPTY, a
-// credit name is linked only from NULL, and an et=0 anchor is inserted only
-// when absent — so a second --apply writes zero rows. Person MERGE is out of
-// scope: a cluster resolving to two persons, or a person spread over several
-// clusters, defers to the P2b worklist (--out-dir).
-//
-// Dry-run is the DEFAULT; --dsn is REQUIRED and never defaulted — the
-// rehearsal copy locally (kun_catalog_rehearsal), the live catalog only in the
-// acceptance run.
-//
-//	# dry-run: accounting + defer buckets + sample chains
-//	go run ./cmd/mint-catalog-persons \
-//	    --clusters refs/proj/152-artifacts/clusters.jsonl \
-//	    --split-worklist refs/proj/152-artifacts/e4_p2_split_worklist.jsonl \
-//	    --out-dir /tmp/w153 \
-//	    --dsn "host=localhost port=5432 user=postgres dbname=kun_catalog_rehearsal sslmode=disable"
-//
-//	# apply
-//	go run ./cmd/mint-catalog-persons --apply --clusters ... --split-worklist ... --dsn ...
 package main
 
 import (
@@ -57,9 +26,8 @@ func main() {
 	offset := flag.Int("offset", 0, "skip this many auto clusters (for chunking)")
 	flag.Parse()
 
-	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
+	_ = godotenv.Load("apps/api/.env")
 
-	// config drives logging only; the catalog DB is reached exclusively via --dsn.
 	if cfg, err := config.Load(); err == nil {
 		logger.Init(cfg.Server.Env)
 	}
@@ -98,8 +66,6 @@ func main() {
 		"anchors_written", st.AnchorsWritten, "persons_updated", st.PersonsUpdated, "errors", st.Errors)
 }
 
-// dump writes the two human/P2b-facing artefacts: the deferred clusters (the
-// P2b worklist) and the gender disagreements that were deliberately left NULL.
 func dump(dir string, st *personmint.Stats) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
