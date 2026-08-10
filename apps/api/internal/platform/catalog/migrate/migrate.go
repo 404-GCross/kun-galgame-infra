@@ -96,6 +96,10 @@ func Run(db *gorm.DB) error {
 		&model.CatalogTag{},
 		&model.CatalogTagSourceMap{},
 		&model.CatalogTagIntro{}, // multilingual tag intros (refs/plans/10 W0 ruling 3)
+		// The tag chips' precomputed work_count. After catalog_tag, whose id it
+		// keys on; derived data, so it carries no FK — a tag merge that removes
+		// the tag simply leaves a row the refresh drops on its next pass.
+		&model.CatalogTagWorkCount{},
 
 		// Reconciliation family (step 04).
 		&model.CatalogExternalRef{},

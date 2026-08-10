@@ -60,14 +60,14 @@ const labelRollupChildren = `SELECT r.other_label_id FROM catalog_label_relation
 // parent also attributes to itself would be counted twice — once in work_count
 // and once in imprint_work_count — and the sum would no longer be the length of
 // the rolled-up list, which is the one promise this pair of numbers makes.
-var labelImprintWorkEdge = fmt.Sprintf(`(SELECT r.label_id AS key_id, wl.work_id
+var labelImprintWorkEdge = taxonomyEdge{sql: fmt.Sprintf(`(SELECT r.label_id AS key_id, wl.work_id
 	FROM catalog_label_relation r
 	JOIN catalog_label c ON c.id = r.other_label_id AND c.deleted_at IS NULL
 	JOIN catalog_work_label wl ON wl.label_id = r.other_label_id
 	WHERE r.relation IN (%d, %d)
 	  AND NOT EXISTS (SELECT 1 FROM catalog_work_label own
 	    WHERE own.work_id = wl.work_id AND own.label_id = r.label_id)) e`,
-	model.LabelRelationSubsidiary, model.LabelRelationImprint)
+	model.LabelRelationSubsidiary, model.LabelRelationImprint)}
 
 // labelRollupVia answers, for one page of works fetched under label_rollup=1,
 // which child label carried each work in — the `via <imprint>` attribution.
