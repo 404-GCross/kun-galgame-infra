@@ -387,13 +387,21 @@ func (s *PublicService) CalendarBounds(ctx context.Context, f CalendarFilter) (m
 	// outer one takes the extremes over the GATED population. Year-precision
 	// works (d=m=0) are deliberately included: their ordinal floors to the
 	// year's January, which is the correct lower bound for month navigation.
+	//
+	// The population gate is INSIDE the grouped subquery, not on a join above
+	// it. Every gate is a predicate on w, and each release meets exactly one w,
+	// so the per-work groups are identical either way — but with the join above,
+	// postgres grouped all ~308k dated releases into ~204k per-work minima
+	// (spilling 11MB to disk) before throwing away everything outside the gate.
+	// Same rows out, a fifth of the work in: this query is paid once per calendar
+	// request and was the service's most frequent slow-query entry.
 	q := `SELECT min(e.ord) AS min_ord, max(e.ord) AS max_ord
-		FROM (SELECT r.work_id, min(` + releaseOrd("r") + `) AS ord
+		FROM (SELECT min(` + releaseOrd("r") + `) AS ord
 			FROM catalog_release r
+			JOIN catalog_work w ON w.id = r.work_id
 			WHERE r.released_y IS NOT NULL AND r.deleted_at IS NULL
-			GROUP BY r.work_id) e
-		JOIN catalog_work w ON w.id = e.work_id
-		WHERE ` + strings.Join(where, " AND ")
+				AND ` + strings.Join(where, " AND ") + `
+			GROUP BY r.work_id) e`
 	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&row).Error; err != nil {
 		return 0, 0, false, err
 	}
