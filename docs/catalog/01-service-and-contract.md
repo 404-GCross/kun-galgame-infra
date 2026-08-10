@@ -109,6 +109,13 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
     - 作品级归属的定义收窄为「**原语言 · 非补丁** release 的公司」。`orglabels` 内部把**证据集**(用于共现判定,保持宽)与**可归属集**(用于铸边,收窄)拆开;判据是 `src_vndb.releases.olang`,而非旧闸读的 `releases_titles`——后者答的是「有没有该语言的标题」,双语本地化版照样通过。**必须先改规则再谈清理**:删掉的边下一次 mint 会照原规则推回来。
     - 新表 **`catalog_release_label`**(release ↔ label,`kind` 复用 `WorkLabelKind*`):被收窄挤出去的事实落在它真正成立的那一层,而不是被丢弃。`cmd/import-release-labels` 从 vndb 回填,**无语言闸**——release 自己就说明了版次。
     - **读面**:`releases[]` 每行加 **`labels[]`**,形状与作品级 `labels[]` 逐字同(一家公司一条 + `kinds[]` + `work_count`,共用同一折叠与同一聚合,故两个粒度的数不可能各说各话)。**恒在**,该版次无已知公司时为 `[]`——与同结构里的 `refs[]` 同规:缺键与消费端解析失败无从区分,而「不知道谁发行了这一版」是常见且真实的答案(上游发行方尚无 exact 锚时即如此)。`GET /v1/catalog/releases` 的条目同样恒带此键(时间线上一行提出的问题正是「这个移植是谁在出」,而作品块答不了它)。没有它,表写了没人读,作品页仍是一堆压平的公司。
+  - **wave 201——tag 的 `work_count` 改读上卷**:`labels` / `engines` / `series` 三条边靠外键直达作品,现算是一次索引区间扫描;`tag` 是唯一经映射表(`catalog_tag_source_map ⋈ catalog_work_tag`,约 120 万行)找作品的边,没有一种排序能同时服务两个方向,postgres 的最优计划要走遍全部过闸作品、展开每部约 39 条 tag 行(产出约 43 万行只留 6.9 万)。**生产实测 200–400ms,每次 `GET /works/{id}` 一遍,占本服务慢查询日志的 90%**。
+    - 这不是执行计划问题:强制全部 join order、加 `(name, source_id) INCLUDE (work_id)` 覆盖索引、把 canonical tag id 反规范化进边表,三条路各自实测只有 ~1.5×,因为这道题本身就要算这么多。
+    - 新表 **`catalog_tag_work_count`**(`tag_id` 主键 + `n_all` / `n_sfw` / `n_nsfw` + `computed_at`)。三列即读面的**全部参数空间**:chip 的数只随调用方 `nsfw` 变,展示轴那一支根本不随调用方变,其余闸门(未软删 / LIVE / galgame 媒介 / `claim_state=live`)由契约钉死。
+    - **上卷由读路径自己的聚合函数产出**(`workCountsLive`,传 nil id 列表即「全部键」),不是第二份 SQL。这是它可信的唯一理由:上卷**只可能过期,不可能算的是另一道题**——一份由另一个实现填的上卷,一旦任一侧改动就会静默分叉,而两边都会继续自信地作答。测试 `TestTagRollupMatchesTheLiveAggregate` 常驻守卫这条等式。
+    - **代价说白**:tag chip 的数从「构造上精确」降为「**截至 `computed_at` 精确**」。这是刻意的:tag 计数只在批量导入后才会动,而一个慢几分钟的浏览辅助数字,比一个每开一次作品页就要花掉三分之一秒的精确数字更值。**只对 tag 让**——另外三条边现算又快,让它们过期换不来任何东西。
+    - **引导回退**:上卷表**一行都没有**时读面自动回落到现算,所以读半边可以先于写半边上线,不会把全站 tag chip 一次性打成 0;表里一有行,缺席即 0 且被采信(回退是引导,不是常驻第二意见)。
+    - 刷新:`go run ./cmd/refresh-tag-counts --dsn …`,全量重算 + 单事务换页,重复跑是幂等的。
 
 ### 2.8 `GET /catalog/works/search?q=&medium_id=&limit=` — 作品标题搜索(只读)
 

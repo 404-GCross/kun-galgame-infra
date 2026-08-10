@@ -343,15 +343,33 @@ func (s *PublicService) EngineDetail(ctx context.Context, id int64, nsfw bool) (
 // never whether the taxonomy row itself exists).
 var taxonomyLiveClaim = []string{model.ClaimStateKeyLive}
 
-const (
-	labelWorkEdge  = `(SELECT label_id AS key_id, work_id FROM catalog_work_label) e`
-	engineWorkEdge = `(SELECT engine_id AS key_id, work_id FROM catalog_work_engine) e`
-	seriesWorkEdge = `(SELECT series_id AS key_id, work_id FROM catalog_series_member) e`
+// taxonomyEdge is one taxonomy → work edge: the SQL projecting (key_id,
+// work_id) pairs, plus — for the one edge that needs it — the table holding
+// those counts already computed.
+type taxonomyEdge struct {
+	sql string
+	// rollup names the table workCountsWithNSFW reads instead of aggregating
+	// this edge live. Empty is the default and the honest one: the count comes
+	// out of the same population the caller is about to page through, so it
+	// cannot be wrong. Only an edge whose live aggregate is genuinely too
+	// expensive earns a rollup — see model.CatalogTagWorkCount for why exactly
+	// one of these does.
+	rollup string
+}
+
+var (
+	labelWorkEdge  = taxonomyEdge{sql: `(SELECT label_id AS key_id, work_id FROM catalog_work_label) e`}
+	engineWorkEdge = taxonomyEdge{sql: `(SELECT engine_id AS key_id, work_id FROM catalog_work_engine) e`}
+	seriesWorkEdge = taxonomyEdge{sql: `(SELECT series_id AS key_id, work_id FROM catalog_series_member) e`}
 	// A canonical tag reaches works through the source-name map, exactly as the
-	// works list's tag_id filter does.
-	tagWorkEdge = `(SELECT m.tag_id AS key_id, wt.work_id
+	// works list's tag_id filter does — and that indirection is what makes this
+	// the one edge counted from a rollup rather than live.
+	tagWorkEdge = taxonomyEdge{
+		sql: `(SELECT m.tag_id AS key_id, wt.work_id
 		FROM catalog_work_tag wt
-		JOIN catalog_tag_source_map m ON m.source_id = wt.source_id AND m.source_name = wt.name) e`
+		JOIN catalog_tag_source_map m ON m.source_id = wt.source_id AND m.source_name = wt.name) e`,
+		rollup: "catalog_tag_work_count",
+	}
 )
 
 // workCountsFor batch-counts, per taxonomy id, the works a caller with this
@@ -362,7 +380,7 @@ const (
 // count(DISTINCT work_id) is required, not decorative: catalog_work_label is
 // keyed (work_id, label_id, kind) so one label may hold several edges to the
 // same work, and several source tags may map onto one canonical tag.
-func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []int64, nsfw bool) (map[int64]int, error) {
+func (s *PublicService) workCountsFor(ctx context.Context, edge taxonomyEdge, ids []int64, nsfw bool) (map[int64]int, error) {
 	counts, _, err := s.workCountsWithNSFW(ctx, edge, ids, nsfw)
 	return counts, err
 }
@@ -395,9 +413,23 @@ func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []in
 // Both come out of ONE aggregate over ONE population, via FILTER rather than a
 // second query, so the two can never disagree about which works they were
 // counting — the invariant that matters when a consumer renders them together.
-func (s *PublicService) workCountsWithNSFW(ctx context.Context, edge string, ids []int64, nsfw bool) (counts, nsfwWorks map[int64]int, err error) {
+func (s *PublicService) workCountsWithNSFW(ctx context.Context, edge taxonomyEdge, ids []int64, nsfw bool) (counts, nsfwWorks map[int64]int, err error) {
+	if edge.rollup != "" {
+		return s.workCountsFromRollup(ctx, edge, ids, nsfw)
+	}
+	return s.workCountsLive(ctx, edge, ids, nsfw)
+}
+
+// workCountsLive is the aggregate itself — workCountsWithNSFW's meaning,
+// computed from the edge every time. It stays the single definition of what
+// these numbers ARE: a rolled-up edge is refreshed by calling this with a nil
+// id list, so the stored counts are by construction the ones this would have
+// returned, and can only ever be out of date, never a different question.
+//
+// ids == nil means every key (refresh); a non-nil empty list means none.
+func (s *PublicService) workCountsLive(ctx context.Context, edge taxonomyEdge, ids []int64, nsfw bool) (counts, nsfwWorks map[int64]int, err error) {
 	counts, nsfwWorks = make(map[int64]int, len(ids)), make(map[int64]int, len(ids))
-	if len(ids) == 0 {
+	if ids != nil && len(ids) == 0 {
 		return counts, nsfwWorks, nil
 	}
 	// The visible-count FILTER carries the nsfw axis that used to sit in WHERE:
@@ -413,9 +445,15 @@ func (s *PublicService) workCountsWithNSFW(ctx context.Context, edge string, ids
 	args = append(args, nsfwArgs...)
 
 	// The works-list population predicate, verbatim — this equality IS the
-	// contract (count == what works?<filter>= pages through).
-	where := []string{"e.key_id IN ?", "w.deleted_at IS NULL", "w.status = ?", "w.medium_id = ?"}
-	args = append(args, ids, model.WorkStatusLive, galgameMediumID)
+	// contract (count == what works?<filter>= pages through). The key filter is
+	// the ONLY optional part: a refresh pass wants every key, and asking for
+	// them by listing all of them would be the same query with a worse plan.
+	where := []string{"w.deleted_at IS NULL", "w.status = ?", "w.medium_id = ?"}
+	if ids != nil {
+		where = append([]string{"e.key_id IN ?"}, where...)
+		args = append(args, ids)
+	}
+	args = append(args, model.WorkStatusLive, galgameMediumID)
 	// …and the CLAIM gate an entity page's member list passes (wave 146). Not a
 	// second opinion about it: the predicate is compiled by the very same
 	// claimStateWhere the works list compiles `claim_state=live` with, so the two
@@ -433,7 +471,7 @@ func (s *PublicService) workCountsWithNSFW(ctx context.Context, edge string, ids
 	q := `SELECT e.key_id,
 			count(DISTINCT e.work_id) FILTER (WHERE ` + visible + `) AS n,
 			count(DISTINCT e.work_id) FILTER (WHERE ` + nsfwPred + `) AS n_nsfw
-		FROM ` + edge + ` JOIN catalog_work w ON w.id = e.work_id
+		FROM ` + edge.sql + ` JOIN catalog_work w ON w.id = e.work_id
 		WHERE ` + strings.Join(where, " AND ") + ` GROUP BY e.key_id`
 	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&rows).Error; err != nil {
 		return nil, nil, err
@@ -458,7 +496,7 @@ func (s *PublicService) workCountsWithNSFW(ctx context.Context, edge string, ids
 // whose only works are r18 exists for an nsfw caller and vanishes for an sfw
 // one, exactly like its count. outerID is FIXED internal SQL (a qualified id
 // column), never caller input.
-func workExistsClause(edge, outerID string, nsfw bool) (string, []any) {
+func workExistsClause(edge taxonomyEdge, outerID string, nsfw bool) (string, []any) {
 	where := []string{"e.key_id = " + outerID, "w.deleted_at IS NULL", "w.status = ?", "w.medium_id = ?"}
 	args := []any{model.WorkStatusLive, galgameMediumID}
 	if !nsfw {
@@ -468,7 +506,7 @@ func workExistsClause(edge, outerID string, nsfw bool) (string, []any) {
 	pred, pargs := claimStateWhere(taxonomyLiveClaim)
 	where = append(where, pred)
 	args = append(args, pargs...)
-	return `EXISTS (SELECT 1 FROM ` + edge + ` JOIN catalog_work w ON w.id = e.work_id WHERE ` +
+	return `EXISTS (SELECT 1 FROM ` + edge.sql + ` JOIN catalog_work w ON w.id = e.work_id WHERE ` +
 		strings.Join(where, " AND ") + `)`, args
 }
 
