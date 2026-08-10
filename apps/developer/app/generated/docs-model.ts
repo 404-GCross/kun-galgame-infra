@@ -5871,6 +5871,65 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "labels",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all.",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "kinds",
+                                        "required": true,
+                                        "nullable": true,
+                                        "doc": "every capacity this company acted in, sorted; always at least one",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      {
+                                        "name": "label_kind",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "lang",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "logo_hash",
+                                        "required": true,
+                                        "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "work_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "lang",
                                   "type": "string"
                                 },
@@ -8990,6 +9049,65 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "doc": "default|digital|physical|trial|patch",
                                   "type": "string"
+                                },
+                                {
+                                  "name": "labels",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all.",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "kinds",
+                                        "required": true,
+                                        "nullable": true,
+                                        "doc": "every capacity this company acted in, sorted; always at least one",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      {
+                                        "name": "label_kind",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "lang",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "logo_hash",
+                                        "required": true,
+                                        "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "work_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
                                 },
                                 {
                                   "name": "lang",
