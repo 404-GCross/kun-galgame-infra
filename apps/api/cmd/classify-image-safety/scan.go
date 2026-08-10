@@ -135,7 +135,7 @@ func runScan(ctx context.Context, o scanOptions, w io.Writer) error {
 			for r := range work {
 				url := publicURL(o.BaseURL, r, o.Variant)
 				rec := scanRecord{Hash: r.Hash, URL: url, Width: r.Width, Height: r.Height, SizeBytes: r.SizeBytes, At: time.Now().UTC()}
-				v, err := moderateWithRetry(ctx, o.Client, url)
+				v, err := moderateWithRetry(ctx, o.Client, url, nil)
 				if err != nil {
 					rec.Error = err.Error()
 				} else {
@@ -166,16 +166,27 @@ feed:
 	return nil
 }
 
-func moderateWithRetry(ctx context.Context, c *omniImageClient, url string) (*omniVerdict, error) {
+func moderateWithRetry(ctx context.Context, c *omniImageClient, url string, p *pacer) (*omniVerdict, error) {
 	var lastErr error
 	for attempt := 0; attempt < 7; attempt++ {
+		if p != nil {
+			if err := p.wait(ctx); err != nil {
+				return nil, err
+			}
+		}
 		v, err := c.moderateImage(ctx, url)
 		if err == nil {
+			if p != nil {
+				p.ok()
+			}
 			return v, nil
 		}
 		lastErr = err
 		if _, retry := err.(retryable); !retry {
 			return nil, err
+		}
+		if p != nil {
+			p.throttled()
 		}
 		select {
 		case <-ctx.Done():

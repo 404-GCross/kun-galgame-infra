@@ -64,9 +64,7 @@ func runBackfill(ctx context.Context, o backfillOptions, w io.Writer) error {
 	}
 	fmt.Fprintf(w, "pending=%d apply=%v concurrency=%d\n", remaining, o.Apply, o.Concurrency)
 
-	interval := time.Duration(float64(time.Second) / o.QPS)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	pace := newPacer(time.Duration(float64(time.Second)/o.QPS), 400*time.Millisecond, 5*time.Second)
 
 	var (
 		mu      sync.Mutex
@@ -80,7 +78,7 @@ func runBackfill(ctx context.Context, o backfillOptions, w io.Writer) error {
 		go func() {
 			defer wg.Done()
 			for r := range work {
-				err := backfillOne(ctx, db, o, r)
+				err := backfillOne(ctx, db, o, r, pace)
 				mu.Lock()
 				if err != nil {
 					bad++
@@ -92,7 +90,7 @@ func runBackfill(ctx context.Context, o backfillOptions, w io.Writer) error {
 				}
 				if n := ok + bad; n%500 == 0 {
 					rate := float64(n) / time.Since(started).Seconds()
-					fmt.Fprintf(w, "progress done=%d errors=%d rate=%.2f/s\n", ok, bad, rate)
+					fmt.Fprintf(w, "progress done=%d errors=%d rate=%.2f/s pace=%s\n", ok, bad, rate, pace.current())
 				}
 				mu.Unlock()
 			}
@@ -125,11 +123,6 @@ feed:
 				break feed
 			}
 			select {
-			case <-ctx.Done():
-				break feed
-			case <-ticker.C:
-			}
-			select {
 			case work <- r:
 				processed++
 			case <-ctx.Done():
@@ -144,9 +137,9 @@ feed:
 	return nil
 }
 
-func backfillOne(ctx context.Context, db *gorm.DB, o backfillOptions, r imageRow) error {
+func backfillOne(ctx context.Context, db *gorm.DB, o backfillOptions, r imageRow, p *pacer) error {
 	url := publicURL(o.BaseURL, r, o.Variant)
-	v, err := moderateWithRetry(ctx, o.Client, url)
+	v, err := moderateWithRetry(ctx, o.Client, url, p)
 	if err != nil {
 		return err
 	}
