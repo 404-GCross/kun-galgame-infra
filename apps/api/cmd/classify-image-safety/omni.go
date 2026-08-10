@@ -15,6 +15,15 @@ import (
 // input: sexual, violence, violence/graphic and the self-harm family. Notably
 // sexual/minors is TEXT ONLY and never appears for an image, so no image-side
 // gate can be built on it.
+var imageScoredCategories = map[string]bool{
+	"sexual":                 true,
+	"violence":               true,
+	"violence/graphic":       true,
+	"self-harm":              true,
+	"self-harm/intent":       true,
+	"self-harm/instructions": true,
+}
+
 type omniImageClient struct {
 	baseURL string
 	token   string

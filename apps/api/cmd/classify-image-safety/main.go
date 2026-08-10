@@ -1,8 +1,10 @@
-// classify-image-safety scores sampled images with the moderations endpoint and
-// reports the distribution. It writes to no database.
+// classify-image-safety scores images with the moderations endpoint. scan and
+// report write to no database; backfill writes only images.review_labels->auto
+// and never touches review_status.
 //
 //	go run ./cmd/classify-image-safety -mode scan --dsn "$IMAGES_DSN" --out scores.jsonl --limit 2000
 //	go run ./cmd/classify-image-safety -mode report --in scores.jsonl
+//	go run ./cmd/classify-image-safety -mode backfill --dsn "$IMAGES_DSN" --limit 0 --apply
 package main
 
 import (
@@ -18,12 +20,12 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "", "scan | report")
+	mode := flag.String("mode", "", "scan | report | backfill")
 	dsn := flag.String("dsn", "", "images DSN (REQUIRED for scan)")
 	out := flag.String("out", "", "scan: JSONL output path (appended — resume-safe)")
 	in := flag.String("in", "", "report: JSONL input path")
 
-	limit := flag.Int("limit", 1000, "scan: images sampled")
+	limit := flag.Int("limit", 1000, "scan: images sampled; backfill: images processed (0 = all)")
 	salt := flag.String("salt", "kungal-safety-v1", "scan: sample ordering salt")
 	baseURL := flag.String("base-url", os.Getenv("KUN_IMAGE_PUBLIC_BASE_URL"), "scan: public image base URL")
 	variant := flag.String("variant", "", "scan: variant name to score instead of the main image")
@@ -34,6 +36,9 @@ func main() {
 
 	concurrency := flag.Int("concurrency", 8, "scan: parallel requests")
 	qps := flag.Float64("qps", 8, "scan: request rate ceiling")
+
+	batch := flag.Int("batch", 2000, "backfill: rows fetched per page")
+	apply := flag.Bool("apply", false, "backfill: write review_labels->auto (dry run without it)")
 	flag.Parse()
 
 	logger.Init("production")
@@ -53,6 +58,18 @@ func main() {
 			Variant:     *variant,
 			Concurrency: *concurrency,
 			QPS:         *qps,
+			Client:      newOmniImageClient(*omniBase, *omniToken, *omniModel),
+		}, os.Stdout)
+	case "backfill":
+		err = runBackfill(ctx, backfillOptions{
+			DSN:         *dsn,
+			BaseURL:     *baseURL,
+			Variant:     *variant,
+			Limit:       *limit,
+			Batch:       *batch,
+			Concurrency: *concurrency,
+			QPS:         *qps,
+			Apply:       *apply,
 			Client:      newOmniImageClient(*omniBase, *omniToken, *omniModel),
 		}, os.Stdout)
 	case "report":
