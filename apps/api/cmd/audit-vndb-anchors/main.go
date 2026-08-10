@@ -8,15 +8,22 @@
 // public faces render those anchors as links, so every one of them is a broken
 // link on a user-visible work page.
 //
-// WHY MARK AND NOT DELETE OR RE-POINT. The VNDB dump carries no redirect,
-// merge or tombstone table: a deleted entry has NO derivable successor, so
-// re-pointing is impossible and guessing is forbidden. Deleting the row does
-// not work either — 189 of the affected anchors carry
-// matched_by='rule:wiki-vndb-id' and are simply re-asserted by the next
-// importer run, which is precisely the "deletion is not a decision" failure.
-// The row therefore stays, keeps occupying its exact slot (so it still blocks
-// a duplicate claim on the same external id) and keeps recording what the wiki
-// asserted; only dead_at changes, and only user-facing projections read it.
+// WHY MARK AND NOT RE-POINT. The VNDB dump carries no redirect, merge or
+// tombstone table: a deleted entry has NO derivable successor, so re-pointing
+// is impossible and guessing is forbidden.
+//
+// WHY MARK AND NOT DELETE. 189 of the affected anchors carry
+// matched_by='rule:wiki-vndb-id' — the wiki asserted that id, and the row is
+// the only surviving record that it did. (Until wave 161 there was a second
+// reason: the importer behind that rule re-asserted deleted rows on its next
+// run. That importer is gone, so deletion would now stick — which makes this
+// a choice rather than a constraint, and the choice is still to keep the row.)
+// Keeping it costs one nullable timestamp and buys three things a DELETE
+// cannot: the provenance stays readable, the exact slot stays occupied so a
+// duplicate claim on the same external id is still blocked, and the state is
+// REVERSIBLE — VNDB restoring an entry clears dead_at on the next pass, where
+// a deleted row would simply be gone. Only user-facing projections read the
+// flag; importers and de-duplication continue to see the anchor.
 //
 // The audit is BIDIRECTIONAL and re-runnable:
 //
