@@ -1,8 +1,3 @@
-// classify-image-safety scores sampled images with the moderations endpoint and
-// reports the distribution. It writes to no database.
-//
-//	go run ./cmd/classify-image-safety -mode scan --dsn "$IMAGES_DSN" --out scores.jsonl --limit 2000
-//	go run ./cmd/classify-image-safety -mode report --in scores.jsonl
 package main
 
 import (
