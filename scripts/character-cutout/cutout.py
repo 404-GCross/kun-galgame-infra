@@ -175,10 +175,11 @@ def main():
 
         cleaned, n_comp, n_kept = drop_stray_components(a_toon)
         rgba = np.dstack([np.asarray(img, dtype=np.uint8), cleaned])
+        # The bbox is computed even under --no-crop: a null bbox is the
+        # "nothing survived segmentation" signal the flag list reads.
+        cropped, bbox = crop_to_subject(rgba, cleaned)
         if args.no_crop:
-            cropped, bbox = rgba, None
-        else:
-            cropped, bbox = crop_to_subject(rgba, cleaned)
+            cropped = rgba
 
         reasons = []
         if divergence > DIVERGENCE_LIMIT:
