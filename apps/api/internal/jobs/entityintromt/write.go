@@ -127,6 +127,14 @@ func (r *runner) process(ctx context.Context, cands []candidate, apply bool, del
 }
 
 func (r *runner) handle(ctx context.Context, c candidate, apply bool, delay time.Duration, idx int) {
+	// A source with no substance cannot yield a non-empty translation — the
+	// empty-output guard below would refuse it after a wasted LLM call, and
+	// fill-missing would then retry it EVERY sweep. Skip it up front (same
+	// decision dry and apply).
+	if substanceRunes(c.Text) < minSourceRunes {
+		r.inc(&r.stats.SkipShortSource)
+		return
+	}
 	dec, hash := decide(c)
 	switch dec {
 	case decSkipSame:
