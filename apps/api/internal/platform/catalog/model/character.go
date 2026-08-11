@@ -17,6 +17,7 @@ type CatalogCharacter struct {
 	Description      string         `gorm:"not null;default:''" json:"description"`
 	InstanceOf       *int64         `gorm:"index;type:bigint" json:"instance_of"`
 	ImageHash        *string        `json:"image_hash"`
+	ImageSourceHash  *string        `json:"image_source_hash"`
 	FigureHash       *string        `json:"figure_hash"`
 	FigureSourceHash *string        `json:"figure_source_hash"`
 	BirthdayMonth    *int16         `json:"birthday_month"`

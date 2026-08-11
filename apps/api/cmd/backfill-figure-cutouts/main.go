@@ -14,6 +14,7 @@ import (
 )
 
 func main() {
+	slotName := flag.String("slot", "", "which column to swap: figure (figure_hash) or bust (image_hash) — REQUIRED")
 	dsn := flag.String("dsn", "", "catalog DSN — REQUIRED")
 	dir := flag.String("dir", "", "cutout output directory holding manifest.jsonl — REQUIRED")
 	apply := flag.Bool("apply", false, "upload and swap (default: dry-run forecast only)")
@@ -31,8 +32,14 @@ func main() {
 	}
 	logger.Init(cfg.Server.Env)
 
+	slot, err := figurecutout.ParseSlot(*slotName)
+	if err != nil {
+		slog.Error("backfill-figure-cutouts", "error", err)
+		os.Exit(1)
+	}
+
 	st, err := figurecutout.Run(context.Background(), cfg, figurecutout.Opts{
-		DSN: *dsn, Dir: *dir, Apply: *apply, Limit: *limit,
+		DSN: *dsn, Dir: *dir, Slot: slot, Apply: *apply, Limit: *limit,
 		Workers: *workers, UploadGap: *gap, ImageBase: *imageBase,
 	})
 	if st != nil {

@@ -205,7 +205,7 @@ wave 181 之后,S2S 面上还剩五条会**写**的人类端点,每条都靠请�
 | **candidates** | `GET /candidates` · `POST /candidates/decide` | 匹配候选(如共享 twitter/pixiv handle 的名义对)——判「同一人/不是」 |
 | **proposals** | `GET /proposals` · `POST /proposals/{id}/{action}` | 合并提案(把两个实体判为同一个)——approve/reject |
 | **refs** | `GET /refs/probable` · `POST /refs/confirm` · `POST /refs/reject` | probable(1)级来源锚——升为 exact 或驳回 |
-| **image-references** | `GET /image-references?hash=` · `POST /image-references/detach` | 某个图片 hash 被哪些 catalog 行引用(封面/截图/角色胸像/角色立绘/**角色立绘白底原件**/会社 logo/人物照片七种),以及一次性摘除这些引用——删图前的预检,避免删掉字节留下空画廊 |
+| **image-references** | `GET /image-references?hash=` · `POST /image-references/detach` | 某个图片 hash 被哪些 catalog 行引用(封面/截图/角色胸像/**角色胸像白底原件**/角色立绘/**角色立绘白底原件**/会社 logo/人物照片八种),以及一次性摘除这些引用——删图前的预检,避免删掉字节留下空画廊 |
 
 admin 面走 oauth 的共享 JWT 中间件 + `RequireRole("ren")`(**超管专属**——目录人审是高权限运营面,普通 admin 不放行);**不经 site 绑定列**(它是运营人审,不是产品 S2S)。
 

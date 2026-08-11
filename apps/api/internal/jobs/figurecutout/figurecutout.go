@@ -29,14 +29,48 @@ import (
 
 const (
 	uploadRetries = 6
-	preset        = "character_figure"
-	uploaderSub   = "system:figure-cutout"
 	clientTimeout = 60 * time.Second
 )
+
+// Slot names which of the two character image columns a run swaps. The bust
+// slot renders through a `cover` preset, so its cutouts must keep the source
+// framing (scripts/character-cutout/cutout.py --no-crop) — a bounding-box crop
+// moves where the cover crop lands and can take the head off.
+type Slot struct {
+	Name        string
+	Column      string
+	SourceCol   string
+	Preset      string
+	UploaderSub string
+}
+
+var (
+	SlotFigure = Slot{
+		Name: "figure", Column: "figure_hash", SourceCol: "figure_source_hash",
+		Preset: "character_figure", UploaderSub: "system:figure-cutout",
+	}
+	SlotBust = Slot{
+		Name: "bust", Column: "image_hash", SourceCol: "image_source_hash",
+		Preset: "character", UploaderSub: "system:bust-cutout",
+	}
+)
+
+func ParseSlot(name string) (Slot, error) {
+	switch name {
+	case SlotFigure.Name:
+		return SlotFigure, nil
+	case SlotBust.Name:
+		return SlotBust, nil
+	default:
+		return Slot{}, fmt.Errorf("unknown --slot %q; want %q (figure_hash) or %q (image_hash)",
+			name, SlotFigure.Name, SlotBust.Name)
+	}
+}
 
 type Opts struct {
 	DSN       string
 	Dir       string
+	Slot      Slot
 	Apply     bool
 	Limit     int
 	Workers   int
@@ -76,6 +110,9 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 	if opts.Dir == "" {
 		return nil, fmt.Errorf("--dir is REQUIRED (the cutout output directory holding manifest.jsonl)")
 	}
+	if opts.Slot.Column == "" {
+		return nil, fmt.Errorf("--slot is REQUIRED; a bare run must not guess which image column it swaps")
+	}
 
 	entries, err := readManifest(filepath.Join(opts.Dir, "manifest.jsonl"))
 	if err != nil {
@@ -98,7 +135,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 		work = append(work, e)
 	}
 
-	pending, err := pendingSources(ctx, db, work)
+	pending, err := pendingSources(ctx, db, opts.Slot, work)
 	if err != nil {
 		return nil, err
 	}
@@ -115,13 +152,13 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 		work = work[:opts.Limit]
 	}
 
-	slog.Info("figure-cutout candidates", "manifest", st.Manifest, "flagged", st.Flagged,
+	slog.Info("figure-cutout candidates", "slot", opts.Slot.Name, "manifest", st.Manifest, "flagged", st.Flagged,
 		"already_done", st.Done, "to_write", len(work), "apply", opts.Apply)
 	if !opts.Apply || len(work) == 0 {
 		return st, nil
 	}
 
-	r := &runner{db: db, dir: opts.Dir, gap: opts.UploadGap, stats: st}
+	r := &runner{db: db, dir: opts.Dir, slot: opts.Slot, gap: opts.UploadGap, stats: st}
 	if r.cli, err = newClient(ctx, cfg, opts); err != nil {
 		return nil, err
 	}
@@ -154,7 +191,7 @@ func readManifest(path string) ([]entry, error) {
 // pendingSources answers which of these originals are still the live figure_hash
 // of at least one character that has not been swapped yet, so a resumed run
 // uploads nothing it would then fail to write.
-func pendingSources(ctx context.Context, db *gorm.DB, work []entry) (map[string]bool, error) {
+func pendingSources(ctx context.Context, db *gorm.DB, slot Slot, work []entry) (map[string]bool, error) {
 	hashes := make([]string, 0, len(work))
 	for _, e := range work {
 		hashes = append(hashes, e.Hash)
@@ -163,9 +200,9 @@ func pendingSources(ctx context.Context, db *gorm.DB, work []entry) (map[string]
 	for i := 0; i < len(hashes); i += 1000 {
 		batch := hashes[i:min(i+1000, len(hashes))]
 		var found []string
-		err := db.WithContext(ctx).Raw(
-			`SELECT DISTINCT figure_hash FROM catalog_character
-			 WHERE figure_hash IN ? AND figure_source_hash IS NULL AND deleted_at IS NULL`,
+		err := db.WithContext(ctx).Raw(fmt.Sprintf(
+			`SELECT DISTINCT %[1]s FROM catalog_character
+			 WHERE %[1]s IN ? AND %[2]s IS NULL AND deleted_at IS NULL`, slot.Column, slot.SourceCol),
 			batch).Scan(&found).Error
 		if err != nil {
 			return nil, fmt.Errorf("select pending figures: %w", err)
@@ -181,6 +218,7 @@ type runner struct {
 	db    *gorm.DB
 	cli   *imageclient.Client
 	dir   string
+	slot  Slot
 	gap   time.Duration
 	stats *Stats
 
@@ -225,10 +263,10 @@ func (r *runner) one(ctx context.Context, e entry) result {
 		return out
 	}
 
-	tx := r.db.WithContext(ctx).Exec(
+	tx := r.db.WithContext(ctx).Exec(fmt.Sprintf(
 		`UPDATE catalog_character
-		 SET figure_source_hash = figure_hash, figure_hash = ?, updated_at = now()
-		 WHERE figure_hash = ? AND figure_source_hash IS NULL AND deleted_at IS NULL`,
+		 SET %[2]s = %[1]s, %[1]s = ?, updated_at = now()
+		 WHERE %[1]s = ? AND %[2]s IS NULL AND deleted_at IS NULL`, r.slot.Column, r.slot.SourceCol),
 		res.Hash, e.Hash)
 	if tx.Error != nil {
 		out.errors++
@@ -246,7 +284,7 @@ func (r *runner) upload(ctx context.Context, body []byte, filename string) (*ima
 		if r.gap > 0 {
 			time.Sleep(r.gap)
 		}
-		res, err := r.cli.UploadWithSub(ctx, bytes.NewReader(body), filename, preset, uploaderSub)
+		res, err := r.cli.UploadWithSub(ctx, bytes.NewReader(body), filename, r.slot.Preset, r.slot.UploaderSub)
 		if err == nil {
 			return res, nil
 		}

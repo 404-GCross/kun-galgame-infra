@@ -17,10 +17,12 @@ import (
 )
 
 const (
-	KindWorkCover       = "work_cover"
-	KindWorkScreenshot  = "work_screenshot"
-	KindCharacterBust   = "character_bust"
-	KindCharacterFigure = "character_figure"
+	KindWorkCover      = "work_cover"
+	KindWorkScreenshot = "work_screenshot"
+	KindCharacterBust  = "character_bust"
+	// Same story as KindCharacterFigureSource, for the bust slot.
+	KindCharacterBustSource = "character_bust_source"
+	KindCharacterFigure     = "character_figure"
 	// The white-plate original a cut-out figure_hash was derived from. It is
 	// referenced by nothing the read face renders, which is exactly why it has
 	// to be listed here: unlisted bytes are collected once the image service
@@ -58,6 +60,11 @@ var specs = []kindSpec{
 	{
 		Kind: KindCharacterBust, Table: "catalog_character",
 		HashColumn: "image_hash", EntityColumn: "id", LabelColumn: "display_name",
+		Filter: "t.deleted_at IS NULL", DetachSet: "NULL",
+	},
+	{
+		Kind: KindCharacterBustSource, Table: "catalog_character",
+		HashColumn: "image_source_hash", EntityColumn: "id", LabelColumn: "display_name",
 		Filter: "t.deleted_at IS NULL", DetachSet: "NULL",
 	},
 	{

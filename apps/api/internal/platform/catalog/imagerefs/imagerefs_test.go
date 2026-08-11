@@ -20,7 +20,7 @@ import (
 
 func TestKindsCoversEveryImageColumn(t *testing.T) {
 	assert.Equal(t, []string{
-		KindWorkCover, KindWorkScreenshot, KindCharacterBust,
+		KindWorkCover, KindWorkScreenshot, KindCharacterBust, KindCharacterBustSource,
 		KindCharacterFigure, KindCharacterFigureSource, KindLabelLogo, KindPersonPhoto,
 	}, Kinds())
 }
@@ -28,7 +28,7 @@ func TestKindsCoversEveryImageColumn(t *testing.T) {
 func TestDetachSetMatchesColumnNullability(t *testing.T) {
 	want := map[string]string{
 		KindWorkCover: "", KindWorkScreenshot: "",
-		KindCharacterBust: "NULL", KindCharacterFigure: "NULL",
+		KindCharacterBust: "NULL", KindCharacterBustSource: "NULL", KindCharacterFigure: "NULL",
 		KindCharacterFigureSource: "NULL",
 		KindLabelLogo:             "''", KindPersonPhoto: "''",
 	}
@@ -93,7 +93,7 @@ func fixture(t *testing.T, db *gorm.DB) (workID, charID, labelID, personID int64
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{WorkID: work.ID, ImageHash: hashShared, SourceID: 1}).Error)
 
 	shared := hashShared
-	char := &model.CatalogCharacter{DisplayName: "角色", ImageHash: &shared, FigureHash: &shared, FigureSourceHash: &shared}
+	char := &model.CatalogCharacter{DisplayName: "角色", ImageHash: &shared, ImageSourceHash: &shared, FigureHash: &shared, FigureSourceHash: &shared}
 	require.NoError(t, db.Create(char).Error)
 	label := &model.CatalogLabel{DisplayName: "会社", LogoHash: hashShared}
 	require.NoError(t, db.Create(label).Error)
@@ -128,7 +128,7 @@ func TestCollectSeesEveryKindAndSkipsSoftDeleted(t *testing.T) {
 	refs, err := Collect(context.Background(), db)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]int{
-		KindWorkCover: 2, KindWorkScreenshot: 1, KindCharacterBust: 1,
+		KindWorkCover: 2, KindWorkScreenshot: 1, KindCharacterBust: 1, KindCharacterBustSource: 1,
 		KindCharacterFigure: 1, KindCharacterFigureSource: 1,
 		KindLabelLogo: 1, KindPersonPhoto: 1,
 	}, kindCounts(refs))
@@ -144,7 +144,7 @@ func TestCollectByHashCarriesLabels(t *testing.T) {
 	refs, err := CollectByHash(context.Background(), db, hashShared)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]int{
-		KindWorkCover: 1, KindWorkScreenshot: 1, KindCharacterBust: 1,
+		KindWorkCover: 1, KindWorkScreenshot: 1, KindCharacterBust: 1, KindCharacterBustSource: 1,
 		KindCharacterFigure: 1, KindCharacterFigureSource: 1,
 		KindLabelLogo: 1, KindPersonPhoto: 1,
 	}, kindCounts(refs))
@@ -183,7 +183,7 @@ func TestDetachReleasesEveryKind(t *testing.T) {
 	removed, err := Detach(ctx, db, hashShared)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]int64{
-		KindWorkCover: 1, KindWorkScreenshot: 1, KindCharacterBust: 1,
+		KindWorkCover: 1, KindWorkScreenshot: 1, KindCharacterBust: 1, KindCharacterBustSource: 1,
 		KindCharacterFigure: 1, KindCharacterFigureSource: 1,
 		KindLabelLogo: 1, KindPersonPhoto: 1,
 	}, removed)
@@ -199,6 +199,7 @@ func TestDetachReleasesEveryKind(t *testing.T) {
 	var char model.CatalogCharacter
 	require.NoError(t, db.First(&char, charID).Error)
 	assert.Nil(t, char.ImageHash)
+	assert.Nil(t, char.ImageSourceHash)
 	assert.Nil(t, char.FigureHash)
 	assert.Nil(t, char.FigureSourceHash)
 	var label model.CatalogLabel

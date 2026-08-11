@@ -485,7 +485,7 @@ export interface components {
              * @description The owning work / character / label / person
              */
             entity_id: number;
-            /** @description work_cover / work_screenshot / character_bust / character_figure / character_figure_source / label_logo / person_photo */
+            /** @description work_cover / work_screenshot / character_bust / character_bust_source / character_figure / character_figure_source / label_logo / person_photo */
             kind: string;
             /** @description The owning entity's display name */
             label: string;
