@@ -46,8 +46,9 @@ type AdminNewsItem struct {
 	DeadAt           *time.Time `json:"dead_at"`
 	FirstSeenAt      time.Time  `json:"first_seen_at"`
 	LastSeenAt       time.Time  `json:"last_seen_at"`
-	// Verdict is the newest verdict for the item's CURRENT text, absent when the
-	// text has never been graded or the graders were unreachable every time.
+	// Verdict is the newest verdict for the item's CURRENT text, absent only when
+	// that text has never been graded at all. It may itself be degraded, which is
+	// not a judgement — see Degraded.
 	Verdict *AdminVerdict `json:"verdict"`
 	// Attempts counts verdicts against the current text; at the ceiling the item
 	// is no longer re-queued and needs a human regardless of what the AI thinks.

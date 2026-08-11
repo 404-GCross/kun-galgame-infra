@@ -13,6 +13,7 @@ export const SIDEBAR_MENU: SidebarItem[] = [
   { icon: 'lucide:globe', label: '站点管理', to: '/sites', adminOnly: true },
   { icon: 'lucide:key', label: 'OAuth 客户端', to: '/oauth-clients', adminOnly: true },
   { icon: 'lucide:shield', label: 'T&S 审核', to: '/trust', adminOnly: true },
+  { icon: 'lucide:newspaper', label: '情报审核', to: '/news', adminOnly: true },
   { icon: 'lucide:user-plus', label: '创作者申请', to: '/creator-applications', adminOnly: true },
   { icon: 'lucide:image', label: '图片管理', to: '/images', adminOnly: true },
   { icon: 'lucide:activity', label: '后台任务', to: '/jobs', adminOnly: true },
