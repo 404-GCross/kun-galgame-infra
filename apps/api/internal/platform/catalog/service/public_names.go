@@ -32,16 +32,17 @@ var (
 )
 
 type displayAlias struct {
-	Name      string `gorm:"column:name"`
-	Lang      string `gorm:"column:lang"`
-	Kind      int16  `gorm:"column:kind"`
-	IsPrimary bool   `gorm:"column:is_primary"`
-	IsDisplay bool   `gorm:"column:is_display"`
+	Name       string `gorm:"column:name"`
+	Lang       string `gorm:"column:lang"`
+	Kind       int16  `gorm:"column:kind"`
+	IsPrimary  bool   `gorm:"column:is_primary"`
+	IsDisplay  bool   `gorm:"column:is_display"`
+	Provenance int16  `gorm:"column:provenance"`
 }
 
 func (s *PublicService) entityAliases(ctx context.Context, src aliasSource, ownerID int64) ([]displayAlias, error) {
 	q := fmt.Sprintf(`
-		SELECT a.name, a.lang, a.kind,
+		SELECT a.name, a.lang, a.kind, a.provenance,
 		       a.is_primary_for_locale AS is_primary,
 		       (a.name = o.%s) AS is_display
 		FROM %s a
@@ -77,6 +78,12 @@ func localizedNames(rows []displayAlias) map[string]dto.PublicLocalizedName {
 	out := make(map[string]dto.PublicLocalizedName, len(rows))
 	best := make(map[string]displayAlias, len(rows))
 	for _, r := range rows {
+		// A machine-translated name may be listed and searched, but never
+		// presented as THE localized name (refs/proj/178 §2: reviewed MT
+		// names enter aliases[] only; localized{} stays source-provenance).
+		if r.Provenance == model.AliasProvenanceMachine {
+			continue
+		}
 		locale, ok := canonicalLocale(r.Lang)
 		if !ok {
 			continue
