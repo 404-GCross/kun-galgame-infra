@@ -13,6 +13,7 @@ const (
 	ScopeGalgameRead  = "galgame:read"
 	ScopeGalgameNSFW  = "galgame:nsfw"
 	ScopeGalgameWrite = "galgame:write"
+	ScopeNewsRead     = "news:read"
 )
 
 func TierLimits(tier string) (ratePerMin, quotaDaily int, unlimited bool) {

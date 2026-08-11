@@ -51,6 +51,7 @@ x-infra-env: &infra-env
   KUN_COMMUNITY_PG_DATABASE: kun_community
   KUN_TRUST_PG_DATABASE: kun_trust
   KUN_AI_PG_DATABASE: kun_ai
+  KUN_NEWS_PG_DATABASE: kun_news
   # Redis
   REDIS_ENABLED: "true"
   REDIS_HOST: redis
@@ -248,6 +249,12 @@ services:
       KUN_CATALOG_IMAGE_CLIENT_ID: ${KUN_CATALOG_IMAGE_CLIENT_ID:-}
       KUN_CATALOG_IMAGE_CLIENT_SECRET: ${KUN_CATALOG_IMAGE_CLIENT_SECRET:-}
       KUN_CATALOG_IMAGE_CLIENT_BASE_URL: http://image:9278
+      # Same story for the news-scope sweep: the partner images we re-host are
+      # written once and never touched, so only news-image-refping keeps them
+      # alive — as the NEWS image client, never galgame_wiki. Empty → soft-skip.
+      KUN_NEWS_IMAGE_CLIENT_ID: ${KUN_NEWS_IMAGE_CLIENT_ID:-}
+      KUN_NEWS_IMAGE_CLIENT_SECRET: ${KUN_NEWS_IMAGE_CLIENT_SECRET:-}
+      KUN_NEWS_IMAGE_CLIENT_BASE_URL: http://image:9278
       # OIDC OP signing keys (docs/auth/03 §4/§5.4). KEK encrypts the ES256/
       # RS256 private keys at rest; first boot with a KEK bootstraps the key
       # pair and turns on /oauth/jwks + discovery. Unset => bootstrap skipped,
@@ -395,6 +402,10 @@ services:
       KUN_CATALOG_IMAGE_CLIENT_ID: ${KUN_CATALOG_IMAGE_CLIENT_ID:-}
       KUN_CATALOG_IMAGE_CLIENT_SECRET: ${KUN_CATALOG_IMAGE_CLIENT_SECRET:-}
       KUN_CATALOG_IMAGE_CLIENT_BASE_URL: http://image:9278
+      # The /v1/news face reads kun_news from this same process (a second DB
+      # connection, no second container). An unreachable kun_news degrades that
+      # face to 503 and leaves catalog serving.
+      KUN_NEWS_IMAGE_CLIENT_BASE_URL: http://image:9278
     # S2S read/admin face stays internal — product backends (wiki/forum/moyu)
     # reach it at http://catalog:9281 over dokploy-network. The ONLY public path
     # is the open-API /v1/catalog projection routed by the labels block below.
@@ -443,6 +454,18 @@ services:
       # internal devapi face over the docker network, and a 15.5h production log
       # necropsy found zero external consumers on the domain (1 Googlebot probe).
       # The wiki.kungal.com DNS record is removed separately (user action, C5).
+      # /v1/news — the partner news feed, served by this same process. A new
+      # public prefix on this service reaches nobody until it is routed HERE:
+      # the labels block replaces Dokploy's injected labels wholesale, so a
+      # prefix absent from it 404s at Traefik, not at the app.
+      traefik.http.routers.infra-news-pub.rule: Host(`api.nextmoe.dev`) && PathPrefix(`/v1/news`)
+      traefik.http.routers.infra-news-pub.entrypoints: websecure
+      traefik.http.routers.infra-news-pub.tls.certresolver: letsencrypt
+      traefik.http.routers.infra-news-pub.service: infra-catalog-pub
+      traefik.http.routers.infra-news-pub-http.rule: Host(`api.nextmoe.dev`) && PathPrefix(`/v1/news`)
+      traefik.http.routers.infra-news-pub-http.entrypoints: web
+      traefik.http.routers.infra-news-pub-http.middlewares: redirect-to-https@file
+      traefik.http.routers.infra-news-pub-http.service: infra-catalog-pub
       traefik.http.services.infra-catalog-pub.loadbalancer.server.port: "9281"
     depends_on:
       postgres: { condition: service_healthy }
@@ -453,6 +476,8 @@ services:
       # what keeps the deploy-migration-gap closed — without a dependent, the
       # migration job never runs on deploy.
       migrate-catalog: { condition: service_completed_successfully }
+      # Same gate for the news schema this process also serves.
+      migrate-news: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "/app", "healthcheck"]
       <<: *svc-health
@@ -723,6 +748,19 @@ services:
   # idempotent AutoMigrate + CREATE INDEX IF NOT EXISTS, no seed.
   migrate-ai:
     image: ghcr.io/kunmoe/infra-migrate-ai:latest
+    pull_policy: always
+    environment: { <<: *infra-env }
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # Auto-applied on every deploy (catalog waits for it, because catalog serves
+  # the /v1/news face). cmd/migrate-news is the single migration entry point
+  # against kun_news: idempotent AutoMigrate + IF NOT EXISTS raw section + the
+  # news_source seed. ⚠️ kun_news must EXIST first — the first deploy needs a
+  # manual `CREATE DATABASE kun_news` (initdb only runs on an empty data dir).
+  migrate-news:
+    image: ghcr.io/kunmoe/infra-migrate-news:latest
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:

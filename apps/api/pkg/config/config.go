@@ -18,6 +18,7 @@ type Config struct {
 	CommunityDatabase       DatabaseConfig
 	TrustDatabase           DatabaseConfig
 	AIDatabase              DatabaseConfig
+	NewsDatabase            DatabaseConfig
 	ImagesDatabase          DatabaseConfig
 	Redis                   RedisConfig
 	JWT                     JWTConfig
@@ -48,6 +49,8 @@ type Config struct {
 	GalgameImageClient ImageClientConfig
 
 	CatalogImageClient ImageClientConfig
+
+	NewsImageClient ImageClientConfig
 
 	ArtifactsDatabase DatabaseConfig
 	ArtifactS3        S3Config
@@ -316,6 +319,16 @@ func Load() (*Config, error) {
 		Timezone: getEnv("KUN_AI_PG_TIMEZONE", cfg.Database.Timezone),
 	}
 
+	cfg.NewsDatabase = DatabaseConfig{
+		Host:     getEnv("KUN_NEWS_PG_HOST", cfg.Database.Host),
+		Port:     getEnv("KUN_NEWS_PG_PORT", cfg.Database.Port),
+		User:     getEnv("KUN_NEWS_PG_USER", cfg.Database.User),
+		Password: getEnv("KUN_NEWS_PG_PASSWORD", cfg.Database.Password),
+		DBName:   getEnv("KUN_NEWS_PG_DATABASE", "kun_news"),
+		SSLMode:  getEnv("KUN_NEWS_PG_SSLMODE", cfg.Database.SSLMode),
+		Timezone: getEnv("KUN_NEWS_PG_TIMEZONE", cfg.Database.Timezone),
+	}
+
 	redisEnabled, _ := strconv.ParseBool(getEnv("REDIS_ENABLED", "false"))
 	redisPort, _ := strconv.Atoi(getEnv("REDIS_PORT", "6379"))
 	redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
@@ -433,6 +446,12 @@ func Load() (*Config, error) {
 		ClientSecret: getEnv("KUN_CATALOG_IMAGE_CLIENT_SECRET", ""),
 	}
 
+	cfg.NewsImageClient = ImageClientConfig{
+		BaseURL:      getEnv("KUN_NEWS_IMAGE_CLIENT_BASE_URL", cfg.ImageClient.BaseURL),
+		ClientID:     getEnv("KUN_NEWS_IMAGE_CLIENT_ID", ""),
+		ClientSecret: getEnv("KUN_NEWS_IMAGE_CLIENT_SECRET", ""),
+	}
+
 	cfg.ArtifactsDatabase = DatabaseConfig{
 		Host:     getEnv("KUN_ARTIFACTS_PG_HOST", cfg.Database.Host),
 		Port:     getEnv("KUN_ARTIFACTS_PG_PORT", cfg.Database.Port),
@@ -446,7 +465,8 @@ func Load() (*Config, error) {
 	pool := loadPoolConfig()
 	for _, d := range []*DatabaseConfig{
 		&cfg.Database, &cfg.GalgameDatabase, &cfg.CatalogDatabase, &cfg.CommunityDatabase,
-		&cfg.TrustDatabase, &cfg.AIDatabase, &cfg.ImagesDatabase, &cfg.ArtifactsDatabase,
+		&cfg.TrustDatabase, &cfg.AIDatabase, &cfg.NewsDatabase, &cfg.ImagesDatabase,
+		&cfg.ArtifactsDatabase,
 	} {
 		d.Pool = pool
 	}

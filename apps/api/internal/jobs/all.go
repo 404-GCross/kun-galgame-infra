@@ -35,6 +35,15 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name:     "news-image-refping",
+		Desc:     "情报 banner 与文中图 reference-ping，防 image_service TTL 回收（site=news）",
+		Schedule: Schedule{DailyAt: "04:20"},
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunNewsImageRefping(ctx, cfg, DefaultNewsImageRefpingOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "user-avatar-refping",
 		Desc:     "用户头像 reference-ping，防 image_service TTL 回收",
 		Schedule: Schedule{DailyAt: "04:30"},

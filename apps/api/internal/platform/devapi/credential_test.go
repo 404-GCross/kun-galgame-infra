@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+// The news feed republishes two partners' content under our byline, and both
+// authorised our downstream specifically. Who holds a key is therefore the gate,
+// so the scope must never become self-serviceable.
+func TestScopeNewsReadSelfServiceExcluded(t *testing.T) {
+	if ScopeNewsRead != "news:read" {
+		t.Errorf("ScopeNewsRead = %q, want %q", ScopeNewsRead, "news:read")
+	}
+	if slices.Contains(selfServiceScopes, ScopeNewsRead) {
+		t.Errorf("selfServiceScopes must NOT contain %q — news keys are granted by us, never self-issued", ScopeNewsRead)
+	}
+	if err := checkSelfServiceScopes([]string{ScopeNewsRead}); err != ErrScopeNotAllowed {
+		t.Errorf("checkSelfServiceScopes([news:read]) = %v, want ErrScopeNotAllowed", err)
+	}
+}
+
 func TestScopeGalgameWriteSelfServiceExcluded(t *testing.T) {
 	if ScopeGalgameWrite != "galgame:write" {
 		t.Errorf("ScopeGalgameWrite = %q, want %q", ScopeGalgameWrite, "galgame:write")

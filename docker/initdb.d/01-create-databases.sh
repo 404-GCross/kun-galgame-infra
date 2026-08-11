@@ -17,6 +17,8 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'
 	CREATE DATABASE kun_trust;
 	-- AI-gateway semantic layer (usage ledger + budget fuse), see cmd/migrate-ai.
 	CREATE DATABASE kun_ai;
+	-- Galgame news feed republished from partner sites, see cmd/migrate-news.
+	CREATE DATABASE kun_news;
 	-- Downstream repos' databases live on this shared server too (the hub owns
 	-- the single Postgres). kungal → kungalgame, moyu → kungalgame_patch,
 	-- sticker → kungalgame_sticker, letmoe → kun_letmoe.

@@ -22,6 +22,8 @@ import (
 	"api/internal/platform/catalog/service"
 	"api/internal/platform/devapi"
 	"api/internal/platform/editing"
+	newsHandler "api/internal/platform/news/handler"
+	newsService "api/internal/platform/news/service"
 	"api/internal/platform/permissions"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
@@ -151,8 +153,36 @@ func main() {
 		return c.Send(catalogSpec)
 	})
 
+	newsSpec, err := json.Marshal(newsHandler.SetupNewsPublicSpec(fiber.New()).OpenAPI())
+	if err != nil {
+		slog.Error("marshal news public spec", "error", err)
+		os.Exit(1)
+	}
+	application.Fiber.Get("/v1/news/openapi.json", func(c fiber.Ctx) error {
+		c.Set("Content-Type", "application/json")
+		c.Set("Cache-Control", "public, max-age=3600")
+		return c.Send(newsSpec)
+	})
+
+	// kun_news is a SECOND database on a process whose primary job is catalog.
+	// An unreachable news database degrades the news face to 503 instead of
+	// exiting: the first production deploy necessarily precedes
+	// `CREATE DATABASE kun_news`, and a hard failure there would crash-loop the
+	// catalog container over a face nobody is calling yet.
+	var newsSvc *newsService.PublicService
+	if newsDB, err := database.NewPostgresDB(cfg.NewsDatabase); err != nil {
+		slog.Warn("news db connect failed — /v1/news degraded to 503", "dbname", cfg.NewsDatabase.DBName, "error", err)
+	} else {
+		defer func() {
+			if err := newsDB.Close(); err != nil {
+				slog.Error("close news db", "error", err)
+			}
+		}()
+		newsSvc = newsService.NewPublicService(newsDB.DB(), cfg.ImageService.CDNBase)
+	}
+
 	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher, statsSvc,
-		clientRepo, tokenVerifier, devStore, devCache)
+		clientRepo, tokenVerifier, devStore, devCache, newsSvc)
 
 	galgameapp.MountRetiredPublic(application)
 
@@ -198,6 +228,7 @@ func setupPublicCatalog(
 	tokenVerifier *oidctoken.Verifier,
 	store devapi.Store,
 	devCache *cache.RedisCache,
+	newsSvc *newsService.PublicService,
 ) {
 	oauthDB := application.DB.DB()
 
@@ -293,6 +324,18 @@ func setupPublicCatalog(
 	v1.Get("/tags/:id", publicH.Tag)
 	v1.Get("/engines/:id", publicH.EngineDetail)
 	v1.Get("/series/:id", publicH.Series)
+
+	newsH := newsHandler.NewPublicHandler(newsSvc)
+	v1news := application.Fiber.Group("/v1/news",
+		mw.ResolveCredential,
+		recordUsage,
+		mw.RateLimit,
+		mw.Quota,
+		devapi.RequireScope(devapi.ScopeNewsRead),
+	)
+	v1news.Get("/sources", newsH.Sources)
+	v1news.Get("/", newsH.List)
+	v1news.Get("/:id", newsH.Detail)
 
 	flushDone := make(chan struct{})
 	go func() {
