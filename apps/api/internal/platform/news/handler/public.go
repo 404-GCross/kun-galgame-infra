@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"api/internal/platform/news/model"
 	"api/internal/platform/news/service"
 	"api/pkg/errors"
 	"api/pkg/response"
@@ -18,6 +19,7 @@ const (
 	msgBadCursor = "cursor is malformed or belongs to a different sort"
 	msgBadTime   = "published_after and published_before must be RFC3339"
 	msgBadWorkID = "work_id must be a positive integer"
+	msgBadLane   = "lane must be a comma-separated subset of: news, column"
 	msgOffline   = "news feed is unavailable"
 
 	cacheFeed = "public, max-age=60"
@@ -48,7 +50,13 @@ func (h *PublicHandler) List(c fiber.Ctx) error {
 	if h.offline(c) {
 		return nil
 	}
-	f := service.FeedFilter{Sources: parseCSV(c.Query("source"))}
+	f := service.FeedFilter{
+		Sources: parseCSV(c.Query("source")),
+		Lanes:   parseCSV(c.Query("lane")),
+	}
+	if !lanesKnown(f.Lanes) {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLane)
+	}
 
 	var ok bool
 	if f.PublishedAfter, ok = parseTime(c.Query("published_after")); !ok {
@@ -129,6 +137,18 @@ func parseCSV(raw string) []string {
 		}
 	}
 	return out
+}
+
+// lanesKnown rejects an unrecognised lane instead of filtering on it. A typo
+// would otherwise match no rows and return a perfectly well-formed empty feed,
+// which a consumer reads as "there is no news" rather than "you asked wrong".
+func lanesKnown(lanes []string) bool {
+	for _, l := range lanes {
+		if !model.IsKnownLane(l) {
+			return false
+		}
+	}
+	return true
 }
 
 func parseTime(raw string) (time.Time, bool) {

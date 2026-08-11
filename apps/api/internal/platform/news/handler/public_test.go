@@ -54,6 +54,21 @@ func TestSourcesIsNotParsedAsAnID(t *testing.T) {
 	}
 }
 
+// TestUnknownLaneIsRejected: filtering on a lane that does not exist would
+// return a well-formed empty feed, which reads as "there is no news" rather than
+// "you asked wrong". The face must say so instead.
+func TestUnknownLaneIsRejected(t *testing.T) {
+	if lanesKnown([]string{"weekly"}) {
+		t.Error("an unknown lane must be rejected")
+	}
+	if !lanesKnown([]string{"news", "column"}) {
+		t.Error("both real lanes must be accepted")
+	}
+	if !lanesKnown(nil) {
+		t.Error("no lane filter at all means every lane, not an error")
+	}
+}
+
 func TestBadParamsAreRejected(t *testing.T) {
 	if _, ok := parseLimit("51"); ok {
 		t.Error("limit 51 must be rejected")

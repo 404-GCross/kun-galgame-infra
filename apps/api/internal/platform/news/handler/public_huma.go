@@ -13,6 +13,7 @@ import (
 
 type newsListInput struct {
 	Source          string `query:"source" doc:"Comma-separated source keys to keep (ymgal, galgame_hihyou); omit or 'all' for every source"`
+	Lane            string `query:"lane" doc:"Comma-separated lanes to keep: news, column. Omit or 'all' for both. An unknown lane is rejected, never silently empty"`
 	WorkID          int64  `query:"work_id" doc:"Keep only items anchored to this catalog work id"`
 	PublishedAfter  string `query:"published_after" doc:"RFC3339 lower bound on the UPSTREAM publication time"`
 	PublishedBefore string `query:"published_before" doc:"RFC3339 upper bound on the UPSTREAM publication time"`
@@ -53,7 +54,9 @@ func SetupNewsPublicSpec(app *fiber.App) huma.API {
 		Description: "Every item carries its source block and source_url unconditionally: the partners authorised an INDEX, " +
 			"not a mirror. The article body is never served here and is not stored — preview plus banner is the whole " +
 			"authorisation, and readers reach the full text by following source_url to the partner's own site. " +
-			"Items we withdrew, and items whose upstream original has disappeared, are absent from this feed.",
+			"Items we withdrew, and items whose upstream original has disappeared, are absent from this feed. " +
+			"Two lanes share the feed — 'news' (short bulletins) and 'column' (longer editorial pieces) — and every " +
+			"item states which one it came from.",
 		Tags: tags,
 	}, func(context.Context, *newsListInput) (*newsListOutput, error) { return &newsListOutput{}, nil })
 	huma.Register(api, huma.Operation{

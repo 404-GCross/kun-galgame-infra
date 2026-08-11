@@ -43,8 +43,8 @@ func seed(t *testing.T) {
 func TestBannerAndInlineImagesAreCollected(t *testing.T) {
 	seed(t)
 	if err := testDB.Exec(`
-		INSERT INTO news_item (source_key, external_id, title, preview, source_url, banner_hash, published_at, status)
-		VALUES ('ymgal', 'r1', 't', 'p', 'https://x/1', 'bannerhash', now(), 1)`).Error; err != nil {
+		INSERT INTO news_item (source_key, lane, upstream_category, external_id, title, preview, source_url, banner_hash, banner_origin_url, published_at, status)
+		VALUES ('ymgal', 'news', '资讯', 'r1', 't', 'p', 'https://x/1', 'bannerhash', 'https://cdn.ymgal.games/1.webp', now(), 1)`).Error; err != nil {
 		t.Fatalf("insert item: %v", err)
 	}
 	var id int64
@@ -73,8 +73,8 @@ func TestBannerAndInlineImagesAreCollected(t *testing.T) {
 func TestWithdrawnItemsStillPinged(t *testing.T) {
 	seed(t)
 	if err := testDB.Exec(`
-		INSERT INTO news_item (source_key, external_id, title, preview, source_url, banner_hash, published_at, status, dead_at)
-		VALUES ('ymgal', 'r2', 't', 'p', 'https://x/2', 'deadbanner', now(), 3, now())`).Error; err != nil {
+		INSERT INTO news_item (source_key, lane, upstream_category, external_id, title, preview, source_url, banner_hash, banner_origin_url, published_at, status, dead_at)
+		VALUES ('ymgal', 'news', '资讯', 'r2', 't', 'p', 'https://x/2', 'deadbanner', 'https://cdn.ymgal.games/2.webp', now(), 3, now())`).Error; err != nil {
 		t.Fatalf("insert item: %v", err)
 	}
 	hashes, err := DistinctHashes(context.Background(), testDB)

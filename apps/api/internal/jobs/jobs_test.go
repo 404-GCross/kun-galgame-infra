@@ -57,6 +57,38 @@ func TestScheduleNextEveryAndBad(t *testing.T) {
 	}
 }
 
+// TestYmgalJobsAreActuallyScheduled guards the quiet failure: StartScheduler
+// treats a Zero() schedule as manual-only and merely logs it, so a poll whose
+// Every was dropped to 0 would never run again and nothing would report an
+// error. ymgal-news-poll is the first job in the registry to rely on Every.
+func TestYmgalJobsAreActuallyScheduled(t *testing.T) {
+	reg := NewRegistry()
+	RegisterAll(reg)
+
+	for name, want := range map[string]time.Duration{
+		"ymgal-news-poll": 10 * time.Minute,
+	} {
+		job, ok := reg.Get(name)
+		if !ok {
+			t.Fatalf("%s is not registered", name)
+		}
+		if job.Schedule.Zero() {
+			t.Errorf("%s has a Zero schedule — it would be registered as manual-only and never poll", name)
+		}
+		if job.Schedule.Every != want {
+			t.Errorf("%s Every = %v, want %v", name, job.Schedule.Every, want)
+		}
+	}
+
+	sweep, ok := reg.Get("ymgal-news-sweep")
+	if !ok {
+		t.Fatal("ymgal-news-sweep is not registered")
+	}
+	if sweep.Schedule.DailyAt == "" {
+		t.Error("ymgal-news-sweep must keep a daily schedule: the poll only reads page 1, so the sweep is the only thing that can notice an upstream deletion")
+	}
+}
+
 func TestRegistryListSortedAndGet(t *testing.T) {
 	r := NewRegistry()
 	r.Register(Job{Name: "sync-vndb"})

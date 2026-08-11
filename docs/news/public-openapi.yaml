@@ -115,6 +115,8 @@ components:
           type:
             - array
             - "null"
+        lane:
+          type: string
         preview:
           type: string
         published_at:
@@ -136,6 +138,7 @@ components:
       required:
         - id
         - source
+        - lane
         - source_url
         - title
         - preview
@@ -184,7 +187,7 @@ openapi: 3.1.0
 paths:
   /v1/news:
     get:
-      description: "Every item carries its source block and source_url unconditionally: the partners authorised an INDEX, not a mirror. The article body is never served here and is not stored — preview plus banner is the whole authorisation, and readers reach the full text by following source_url to the partner's own site. Items we withdrew, and items whose upstream original has disappeared, are absent from this feed."
+      description: "Every item carries its source block and source_url unconditionally: the partners authorised an INDEX, not a mirror. The article body is never served here and is not stored — preview plus banner is the whole authorisation, and readers reach the full text by following source_url to the partner's own site. Items we withdrew, and items whose upstream original has disappeared, are absent from this feed. Two lanes share the feed — 'news' (short bulletins) and 'column' (longer editorial pieces) — and every item states which one it came from."
       operationId: listNewsPublic
       parameters:
         - description: Comma-separated source keys to keep (ymgal, galgame_hihyou); omit or 'all' for every source
@@ -193,6 +196,13 @@ paths:
           name: source
           schema:
             description: Comma-separated source keys to keep (ymgal, galgame_hihyou); omit or 'all' for every source
+            type: string
+        - description: "Comma-separated lanes to keep: news, column. Omit or 'all' for both. An unknown lane is rejected, never silently empty"
+          explode: false
+          in: query
+          name: lane
+          schema:
+            description: "Comma-separated lanes to keep: news, column. Omit or 'all' for both. An unknown lane is rejected, never silently empty"
             type: string
         - description: Keep only items anchored to this catalog work id
           explode: false

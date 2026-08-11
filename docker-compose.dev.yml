@@ -58,6 +58,11 @@ x-dev-env: &dev-env
   KUN_AI_PG_DATABASE: kun_ai
   KUN_NEWS_PG_DATABASE: kun_news
   KUN_ARTIFACTS_PG_DATABASE: kun_artifacts
+  # 月幕 OpenAPI. Left empty on purpose: a dev box has no business polling a
+  # partner's live API on a timer. Put real credentials in apps/api/.env only
+  # when deliberately exercising the importer by hand.
+  KUN_YMGAL_CLIENT_ID: ${KUN_YMGAL_CLIENT_ID:-}
+  KUN_YMGAL_CLIENT_SECRET: ${KUN_YMGAL_CLIENT_SECRET:-}
   # Redis (local container below, or the box's own Redis on 6379 if it clashes)
   REDIS_ENABLED: "true"
   REDIS_HOST: 127.0.0.1

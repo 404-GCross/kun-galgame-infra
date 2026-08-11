@@ -15,6 +15,13 @@ import (
 
 // Run applies the full kun_news schema. Idempotent: safe on every deploy and
 // repeatedly against the same database.
+//
+// 2026-08-11 (wave 02) added news_item.lane NOT NULL with no default, to carry
+// 月幕's news/column split. Adding a NOT NULL column without a default is only
+// legal on an empty table; news_item held zero rows in every environment at that
+// point (prod's kun_news was created 08-11 and ingestion had not started). A
+// later lane-like column will need a default-then-backfill-then-drop-default
+// sequence instead.
 func Run(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&model.NewsSource{},
@@ -35,6 +42,14 @@ func rawSQL(db *gorm.DB) error {
 		// (source_key, external_id) is the ingestion identity: re-running an
 		// importer must UPDATE the row it wrote last time, never append a second
 		// copy of the same upstream article.
+		//
+		// lane is deliberately NOT part of this key. 月幕 serves news and column
+		// from two endpoints but both return a field called topicId out of one
+		// topic family, so the id space is assumed shared — under that assumption
+		// an article that moves between the two lanes must stay ONE row. The
+		// assumption is not provable from their docs, so the importer counts
+		// lane_flip on every upsert that finds a different lane: a non-zero count
+		// means the id spaces are actually separate and this key is wrong.
 		{"news_item_src_ext", `
 			CREATE UNIQUE INDEX IF NOT EXISTS news_item_src_ext
 			    ON news_item (source_key, external_id)`},

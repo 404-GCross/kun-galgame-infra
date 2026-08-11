@@ -176,6 +176,25 @@ presets:
       - image/webp
       - image/gif
 
+  # Partner news banners (月幕 / Galgame 批评). 460x259 matches galgame_banner
+  # because downstream renders both in the same card slot; a second banner
+  # geometry would buy nothing but another CDN folder.
+  #
+  # Uploaded under site_key "news"; that client's image_allowed_presets MUST
+  # list `news_banner` or every upload is 403'd.
+  news_banner:
+    variants:
+      - name: "mini"
+        width: 460
+        height: 259
+        fit: cover
+        format: webp
+        quality: 77
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+
   # Topic / inline post images. Main image only; no extra variants.
   topic:
     variants: []

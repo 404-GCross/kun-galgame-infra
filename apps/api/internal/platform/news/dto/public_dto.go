@@ -19,6 +19,7 @@ type PublicNewsSource struct {
 type PublicNewsItem struct {
 	ID          int64            `json:"id"`
 	Source      PublicNewsSource `json:"source"`
+	Lane        string           `json:"lane"`
 	SourceURL   string           `json:"source_url"`
 	Title       string           `json:"title"`
 	Preview     string           `json:"preview"`

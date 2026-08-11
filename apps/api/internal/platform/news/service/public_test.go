@@ -43,14 +43,21 @@ func newFixture(t *testing.T) *PublicService {
 
 func insert(t *testing.T, extID string, status int16, published time.Time, dead bool) int64 {
 	t.Helper()
+	return insertLane(t, extID, model.LaneNews, status, published, dead)
+}
+
+func insertLane(t *testing.T, extID, lane string, status int16, published time.Time, dead bool) int64 {
+	t.Helper()
 	deadExpr := "NULL"
 	if dead {
 		deadExpr = "now()"
 	}
 	if err := testDB.Exec(`
-		INSERT INTO news_item (source_key, external_id, title, preview, source_url, banner_hash, published_at, status, dead_at)
-		VALUES ('ymgal', ?, 'title', 'preview', 'https://www.ymgal.games/a/`+extID+`', '', ?, ?, `+deadExpr+`)`,
-		extID, published, status).Error; err != nil {
+		INSERT INTO news_item (source_key, lane, upstream_category, external_id, title, preview,
+			source_url, banner_hash, banner_origin_url, published_at, status, dead_at)
+		VALUES ('ymgal', ?, '资讯', ?, 'title', 'preview',
+			'https://www.ymgal.games/a/`+extID+`', '', '', ?, ?, `+deadExpr+`)`,
+		lane, extID, published, status).Error; err != nil {
 		t.Fatalf("insert %s: %v", extID, err)
 	}
 	var id int64
@@ -192,6 +199,44 @@ func TestWorkFilterAndImages(t *testing.T) {
 		t.Errorf("images = %v", it.Images)
 	}
 	_ = other
+}
+
+// TestLaneFilterAndPopulationKey: news and column share one feed, so a consumer
+// that wants only one of them must be able to say so — and the ETag population
+// key must move with the lane, or a client switching lanes would be served the
+// other lane's cached page.
+func TestLaneFilterAndPopulationKey(t *testing.T) {
+	svc := newFixture(t)
+	base := time.Now().UTC().Truncate(time.Second)
+	insertLane(t, "ln-news", model.LaneNews, model.StatusPublished, base, false)
+	insertLane(t, "ln-col", model.LaneColumn, model.StatusPublished, base.Add(-time.Minute), false)
+
+	all, err := svc.Feed(context.Background(), FeedFilter{}, "", 20)
+	if err != nil {
+		t.Fatalf("feed all: %v", err)
+	}
+	if len(all.Items) != 2 {
+		t.Fatalf("unfiltered feed returned %d items, want both lanes", len(all.Items))
+	}
+	for _, it := range all.Items {
+		if it.Lane == "" {
+			t.Error("every item must state its lane")
+		}
+	}
+
+	only, err := svc.Feed(context.Background(), FeedFilter{Lanes: []string{model.LaneColumn}}, "", 20)
+	if err != nil {
+		t.Fatalf("feed column: %v", err)
+	}
+	if len(only.Items) != 1 || only.Items[0].Lane != model.LaneColumn {
+		t.Fatalf("lane filter returned %d items (%+v)", len(only.Items), only.Items)
+	}
+
+	a := FeedFilter{Lanes: []string{model.LaneNews}}.PopulationKey()
+	b := FeedFilter{Lanes: []string{model.LaneColumn}}.PopulationKey()
+	if a == b {
+		t.Errorf("population key does not vary with lane (%q) — two lanes would share one ETag", a)
+	}
 }
 
 func TestSourcesFace(t *testing.T) {

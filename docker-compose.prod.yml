@@ -255,6 +255,12 @@ services:
       KUN_NEWS_IMAGE_CLIENT_ID: ${KUN_NEWS_IMAGE_CLIENT_ID:-}
       KUN_NEWS_IMAGE_CLIENT_SECRET: ${KUN_NEWS_IMAGE_CLIENT_SECRET:-}
       KUN_NEWS_IMAGE_CLIENT_BASE_URL: http://image:9278
+      # 月幕 Galgame OpenAPI, for the ymgal-news poll/sweep jobs that run on this
+      # scheduler host. MUST be the dedicated client 苍麟 issued us — the
+      # credentials on their public developer page share one rate-limit bucket
+      # with every other developer. Empty => both jobs soft-skip.
+      KUN_YMGAL_CLIENT_ID: ${KUN_YMGAL_CLIENT_ID:-}
+      KUN_YMGAL_CLIENT_SECRET: ${KUN_YMGAL_CLIENT_SECRET:-}
       # OIDC OP signing keys (docs/auth/03 §4/§5.4). KEK encrypts the ES256/
       # RS256 private keys at rest; first boot with a KEK bootstraps the key
       # pair and turns on /oauth/jwks + discovery. Unset => bootstrap skipped,

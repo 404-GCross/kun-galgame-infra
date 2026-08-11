@@ -22,7 +22,11 @@ var (
 	ErrNotFound  = stderrors.New("news: item not found")
 )
 
-const feedLane = "news-date-desc"
+// cursorSort names the ordering a cursor was minted under, so a cursor from a
+// different sort is rejected instead of silently paging the wrong lane. It is
+// NOT the item lane (model.LaneNews / model.LaneColumn) — the two were both
+// called "lane" while wave 02 was being written, which is why this one is not.
+const cursorSort = "news-date-desc"
 
 type PublicService struct {
 	db      *gorm.DB
@@ -35,6 +39,7 @@ func NewPublicService(db *gorm.DB, cdnBase string) *PublicService {
 
 type FeedFilter struct {
 	Sources         []string
+	Lanes           []string
 	WorkID          int64
 	PublishedAfter  time.Time
 	PublishedBefore time.Time
@@ -45,8 +50,13 @@ func (f FeedFilter) populationKey() string {
 	if len(f.Sources) > 0 {
 		sources = strings.Join(f.Sources, "+")
 	}
+	lanes := "all"
+	if len(f.Lanes) > 0 {
+		lanes = strings.Join(f.Lanes, "+")
+	}
 	return strings.Join([]string{
 		sources,
+		lanes,
 		strconv.FormatInt(f.WorkID, 10),
 		strconv.FormatInt(f.PublishedAfter.Unix(), 10),
 		strconv.FormatInt(f.PublishedBefore.Unix(), 10),
@@ -64,6 +74,10 @@ func (f FeedFilter) where() (where []string, args []any) {
 	if len(f.Sources) > 0 {
 		where = append(where, "i.source_key IN ?")
 		args = append(args, f.Sources)
+	}
+	if len(f.Lanes) > 0 {
+		where = append(where, "i.lane IN ?")
+		args = append(args, f.Lanes)
 	}
 	if !f.PublishedAfter.IsZero() {
 		where = append(where, "i.published_at >= ?")
@@ -109,6 +123,7 @@ func (f FeedFilter) PopulationKey() string { return f.populationKey() }
 type itemRow struct {
 	ID          int64
 	SourceKey   string `gorm:"column:source_key"`
+	Lane        string
 	Title       string
 	Preview     string
 	SourceURL   string `gorm:"column:source_url"`
@@ -132,7 +147,7 @@ func (s *PublicService) Feed(ctx context.Context, f FeedFilter, cursor string, l
 	}
 	args = append(args, limit)
 
-	q := `SELECT i.id, i.source_key, i.title, i.preview, i.source_url, i.banner_hash, i.published_at
+	q := `SELECT i.id, i.source_key, i.lane, i.title, i.preview, i.source_url, i.banner_hash, i.published_at
 		FROM news_item i WHERE ` + strings.Join(where, " AND ") + `
 		ORDER BY i.published_at DESC, i.id DESC LIMIT ?`
 
@@ -147,7 +162,7 @@ func (s *PublicService) Feed(ctx context.Context, f FeedFilter, cursor string, l
 	out := dto.PublicNewsFeedData{Items: items}
 	if len(rows) == limit && limit > 0 {
 		last := rows[len(rows)-1]
-		nc := encodeCursor(feedCursor{Sort: feedLane, ID: last.ID, Published: last.PublishedAt.UnixMicro()})
+		nc := encodeCursor(feedCursor{Sort: cursorSort, ID: last.ID, Published: last.PublishedAt.UnixMicro()})
 		out.NextCursor = &nc
 	}
 	return out, nil
@@ -155,7 +170,7 @@ func (s *PublicService) Feed(ctx context.Context, f FeedFilter, cursor string, l
 
 func (s *PublicService) Item(ctx context.Context, id int64) (dto.PublicNewsItem, error) {
 	var rows []itemRow
-	q := `SELECT i.id, i.source_key, i.title, i.preview, i.source_url, i.banner_hash, i.published_at
+	q := `SELECT i.id, i.source_key, i.lane, i.title, i.preview, i.source_url, i.banner_hash, i.published_at
 		FROM news_item i WHERE i.id = ? AND i.status = ? AND i.dead_at IS NULL`
 	if err := s.db.WithContext(ctx).Raw(q, id, model.StatusPublished).Scan(&rows).Error; err != nil {
 		return dto.PublicNewsItem{}, err
@@ -214,6 +229,7 @@ func (s *PublicService) buildItems(ctx context.Context, rows []itemRow) ([]dto.P
 		out[i] = dto.PublicNewsItem{
 			ID:          r.ID,
 			Source:      sources[r.SourceKey],
+			Lane:        r.Lane,
 			SourceURL:   r.SourceURL,
 			Title:       r.Title,
 			Preview:     r.Preview,
@@ -302,14 +318,14 @@ func encodeCursor(c feedCursor) string {
 
 func decodeCursor(raw string) (feedCursor, error) {
 	if raw == "" {
-		return feedCursor{Sort: feedLane}, nil
+		return feedCursor{Sort: cursorSort}, nil
 	}
 	b, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
 		return feedCursor{}, ErrBadCursor
 	}
 	var c feedCursor
-	if err := json.Unmarshal(b, &c); err != nil || c.Sort != feedLane {
+	if err := json.Unmarshal(b, &c); err != nil || c.Sort != cursorSort {
 		return feedCursor{}, ErrBadCursor
 	}
 	return c, nil

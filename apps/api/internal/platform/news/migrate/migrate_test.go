@@ -98,6 +98,11 @@ func TestColumnDiscipline(t *testing.T) {
 		{"news_item", "source_key"}, {"news_item", "external_id"}, {"news_item", "title"},
 		{"news_item", "preview"}, {"news_item", "source_url"}, {"news_item", "published_at"},
 		{"news_item", "status"},
+		// lane decides which upstream section an item came from and the read face
+		// filters on it; a DB default would let a row that never had a lane assigned
+		// silently answer a lane query.
+		{"news_item", "lane"}, {"news_item", "upstream_category"},
+		{"news_item", "banner_origin_url"},
 		{"news_item_work", "confidence"},
 	}
 	for _, c := range noDefault {
@@ -196,9 +201,10 @@ func seedSource(t *testing.T) {
 
 func insertItem(db *gorm.DB, extID, preview string, status int16) error {
 	return db.Exec(`
-		INSERT INTO news_item (source_key, external_id, title, preview, source_url, published_at, status)
-		VALUES (?, ?, 't', ?, 'https://x/1', now(), ?)`,
-		model.SourceKeyYmgal, extID, preview, status).Error
+		INSERT INTO news_item (source_key, lane, upstream_category, external_id, title, preview,
+			source_url, banner_origin_url, published_at, status)
+		VALUES (?, ?, '资讯', ?, 't', ?, 'https://x/1', '', now(), ?)`,
+		model.SourceKeyYmgal, model.LaneNews, extID, preview, status).Error
 }
 
 func columnDefault(t *testing.T, table, column string) string {

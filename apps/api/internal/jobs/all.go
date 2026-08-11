@@ -2,7 +2,10 @@ package jobs
 
 import (
 	"context"
+	"log/slog"
+	"time"
 
+	"api/internal/jobs/ymgalnews"
 	"api/pkg/config"
 )
 
@@ -78,4 +81,50 @@ func RegisterAll(r *Registry) {
 			return RunPruneDeveloperUsage(ctx, cfg, DefaultPruneDeveloperUsageOpts())
 		},
 	})
+
+	// 苍麟 asked for a polite cadence in his own words — 「搞个十分钟一次的定时任务
+	// 应该问题不大」 — and this poll spends exactly one request per lane per tick
+	// (page 1 only), which stays well inside what he allowed.
+	//
+	// NOTE: this is the first registered job to use Schedule.Every. The field and
+	// scheduler.runLoop have always supported it, but no job had exercised it in
+	// production before 2026-08-11. First run happens Every after boot, not at
+	// boot — do not watch the logs at startup expecting it.
+	r.Register(Job{
+		Name:     "ymgal-news-poll",
+		Desc:     "月幕情报/专栏增量轮询（每 lane 只取第 1 页）",
+		Schedule: Schedule{Every: 10 * time.Minute},
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return runYmgalNews(ctx, cfg, ymgalnews.Opts{
+				Lanes: []string{ymgalnews.LaneNews, ymgalnews.LaneColumn},
+				Pages: 1, Apply: true, Gap: time.Second,
+			})
+		},
+	})
+
+	// The deep sweep is what can see a deletion at all: the poll only ever looks
+	// at page 1, so an ad 苍麟 removed from further back would never come up. It
+	// reports dead candidates and deliberately does not act on them.
+	r.Register(Job{
+		Name:     "ymgal-news-sweep",
+		Desc:     "月幕深巡（前 5 页）+ 上游消失候选报告（只报不打）",
+		Schedule: Schedule{DailyAt: "04:05"},
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return runYmgalNews(ctx, cfg, ymgalnews.Opts{
+				Lanes: []string{ymgalnews.LaneNews, ymgalnews.LaneColumn},
+				Pages: 5, Apply: true, Gap: 2 * time.Second,
+			})
+		},
+	})
+}
+
+// runYmgalNews soft-skips when the upstream client is unconfigured, so a
+// deployment without the credentials logs and moves on instead of failing a job
+// every ten minutes.
+func runYmgalNews(ctx context.Context, cfg *config.Config, opts ymgalnews.Opts) (Summary, error) {
+	if cfg.Ymgal.ClientID == "" || cfg.Ymgal.ClientSecret == "" {
+		slog.Warn("ymgal news: client not configured — skipping (set KUN_YMGAL_CLIENT_ID/SECRET)")
+		return Summary{"skipped": "ymgal client not configured"}, nil
+	}
+	return ymgalnews.Run(ctx, cfg, opts)
 }

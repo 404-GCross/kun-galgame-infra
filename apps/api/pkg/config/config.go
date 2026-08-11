@@ -52,6 +52,8 @@ type Config struct {
 
 	NewsImageClient ImageClientConfig
 
+	Ymgal YmgalConfig
+
 	ArtifactsDatabase DatabaseConfig
 	ArtifactS3        S3Config
 	ArtifactService   ArtifactServiceConfig
@@ -129,6 +131,16 @@ type ArtifactServiceConfig struct {
 }
 
 type ImageClientConfig struct {
+	BaseURL      string
+	ClientID     string
+	ClientSecret string
+}
+
+// YmgalConfig is 月幕 Galgame's OpenAPI client. Use the dedicated client 苍麟
+// issued us, never the credentials published on their developer page: those are
+// shared by every developer and therefore share one rate-limit bucket, which is
+// someone else's production dependency.
+type YmgalConfig struct {
 	BaseURL      string
 	ClientID     string
 	ClientSecret string
@@ -450,6 +462,12 @@ func Load() (*Config, error) {
 		BaseURL:      getEnv("KUN_NEWS_IMAGE_CLIENT_BASE_URL", cfg.ImageClient.BaseURL),
 		ClientID:     getEnv("KUN_NEWS_IMAGE_CLIENT_ID", ""),
 		ClientSecret: getEnv("KUN_NEWS_IMAGE_CLIENT_SECRET", ""),
+	}
+
+	cfg.Ymgal = YmgalConfig{
+		BaseURL:      getEnv("KUN_YMGAL_BASE_URL", "https://www.ymgal.games"),
+		ClientID:     getEnv("KUN_YMGAL_CLIENT_ID", ""),
+		ClientSecret: getEnv("KUN_YMGAL_CLIENT_SECRET", ""),
 	}
 
 	cfg.ArtifactsDatabase = DatabaseConfig{
