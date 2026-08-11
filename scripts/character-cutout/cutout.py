@@ -81,11 +81,16 @@ class ToonOut:
 class IsnetAnime:
     name = "isnet-anime"
 
-    def __init__(self, path):
+    def __init__(self, path, gpu):
         import onnxruntime as ort
 
+        # device_id is not inherited from the torch device: onnxruntime defaults
+        # to GPU 0, which drives the desktop and has a kernel watchdog. A long run
+        # dies there with "CUDA failure 702: the launch timed out" after tens of
+        # thousands of images, nowhere near the model that appears in the traceback.
         self.sess = ort.InferenceSession(
-            str(path), providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+            str(path),
+            providers=[("CUDAExecutionProvider", {"device_id": gpu}), "CPUExecutionProvider"],
         )
         self.inp = self.sess.get_inputs()[0].name
 
@@ -143,19 +148,28 @@ def main():
     ap.add_argument("--quality", type=int, default=80)
     ap.add_argument("--no-crop", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--resume", action="store_true")
     args = ap.parse_args()
 
     device = f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu"
     args.output.mkdir(parents=True, exist_ok=True)
-    manifest = (args.output / "manifest.jsonl").open("w")
+    manifest_path = args.output / "manifest.jsonl"
 
     srcs = sorted(p for p in args.input.iterdir() if p.suffix.lower() in {".webp", ".png", ".jpg"})
     if args.limit:
         srcs = srcs[: args.limit]
+    if args.resume and manifest_path.exists():
+        # The manifest, not the output listing, is the record of what finished: a
+        # crash can leave a half-written .webp whose presence would skip a real image.
+        done = {json.loads(l)["hash"] for l in manifest_path.open()}
+        srcs = [p for p in srcs if p.stem not in done]
+        print(f"resume: {len(done)} already done", file=sys.stderr)
+    manifest = manifest_path.open("a" if args.resume else "w")
+
     print(f"{len(srcs)} images -> {args.output} on {device}", file=sys.stderr)
 
     toon = ToonOut(device, args.cache)
-    isnet = IsnetAnime(ensure_isnet(args.cache))
+    isnet = IsnetAnime(ensure_isnet(args.cache), args.gpu)
 
     flagged = 0
     for i, p in enumerate(srcs):
@@ -214,6 +228,7 @@ def main():
             + "\n"
         )
         if (i + 1) % 200 == 0:
+            manifest.flush()
             print(f"  {i + 1}/{len(srcs)}  flagged {flagged}", file=sys.stderr)
 
     manifest.close()
