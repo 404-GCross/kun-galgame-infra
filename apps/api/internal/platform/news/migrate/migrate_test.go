@@ -104,6 +104,15 @@ func TestColumnDiscipline(t *testing.T) {
 		{"news_item", "lane"}, {"news_item", "upstream_category"},
 		{"news_item", "banner_origin_url"},
 		{"news_item_work", "confidence"},
+		// degraded=false is the meaningful value here — it is what makes a verdict
+		// count as scored. A DB default would let a row that never recorded whether
+		// the model actually spoke pass as a clean judgement.
+		{"news_moderation_verdict", "degraded"},
+		{"news_moderation_verdict", "item_id"},
+		{"news_moderation_verdict", "content_fingerprint"},
+		{"news_moderation_verdict", "tier0_decision"},
+		{"news_moderation_decision", "item_id"}, {"news_moderation_decision", "actor_uid"},
+		{"news_moderation_decision", "from_status"}, {"news_moderation_decision", "to_status"},
 	}
 	for _, c := range noDefault {
 		if def := columnDefault(t, c.table, c.column); def != "" {
@@ -114,6 +123,12 @@ func TestColumnDiscipline(t *testing.T) {
 	// different fact from status=withdrawn ("we pulled it").
 	if nullable := columnNullable(t, "news_item", "dead_at"); nullable != "YES" {
 		t.Errorf("news_item.dead_at must be nullable, got is_nullable=%q", nullable)
+	}
+	// ai_flagged must stay NULLABLE. NULL is "the model never spoke"; false is
+	// "the model said it is clean". A NOT NULL here would merge the two, which is
+	// precisely how a degraded verdict becomes an accidental approval.
+	if nullable := columnNullable(t, "news_moderation_verdict", "ai_flagged"); nullable != "YES" {
+		t.Errorf("news_moderation_verdict.ai_flagged must be nullable, got is_nullable=%q", nullable)
 	}
 }
 

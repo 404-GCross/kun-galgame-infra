@@ -67,6 +67,7 @@ func TestYmgalJobsAreActuallyScheduled(t *testing.T) {
 
 	for name, want := range map[string]time.Duration{
 		"ymgal-news-poll": 10 * time.Minute,
+		"news-moderate":   5 * time.Minute,
 	} {
 		job, ok := reg.Get(name)
 		if !ok {

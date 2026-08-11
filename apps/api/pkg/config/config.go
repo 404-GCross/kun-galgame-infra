@@ -52,6 +52,8 @@ type Config struct {
 
 	NewsImageClient ImageClientConfig
 
+	NewsModeration NewsModerationConfig
+
 	Ymgal YmgalConfig
 
 	ArtifactsDatabase DatabaseConfig
@@ -71,6 +73,20 @@ type Config struct {
 
 type AIClientConfig struct {
 	BaseURL      string
+	ClientID     string
+	ClientSecret string
+}
+
+// NewsModerationConfig is how the news moderation job reaches trust (Tier0) and
+// the AI gateway. Both services derive the caller's site from the OAuth client's
+// catalog_site, which is what scopes the Tier0 word list and the AI spend, so
+// these calls must be made as the news client and not as a generic first-party
+// one. The credentials default to the news image client because it is the same
+// oauth_clients row — one machine identity for the whole track — with the env
+// pair kept as an escape hatch if the two ever need splitting.
+type NewsModerationConfig struct {
+	TrustBaseURL string
+	AIBaseURL    string
 	ClientID     string
 	ClientSecret string
 }
@@ -565,6 +581,13 @@ func Load() (*Config, error) {
 		BaseURL:      getEnv("KUN_AI_CLIENT_BASE_URL", "http://127.0.0.1:9284"),
 		ClientID:     getEnv("KUN_AI_CLIENT_ID", ""),
 		ClientSecret: getEnv("KUN_AI_CLIENT_SECRET", ""),
+	}
+
+	cfg.NewsModeration = NewsModerationConfig{
+		TrustBaseURL: getEnv("KUN_NEWS_TRUST_BASE_URL", cfg.TrustClient.BaseURL),
+		AIBaseURL:    getEnv("KUN_NEWS_AI_BASE_URL", cfg.AIClient.BaseURL),
+		ClientID:     getEnv("KUN_NEWS_CLIENT_ID", cfg.NewsImageClient.ClientID),
+		ClientSecret: getEnv("KUN_NEWS_CLIENT_SECRET", cfg.NewsImageClient.ClientSecret),
 	}
 
 	if err := cfg.validate(); err != nil {

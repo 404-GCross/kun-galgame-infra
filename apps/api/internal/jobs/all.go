@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"api/internal/jobs/newsmoderate"
 	"api/internal/jobs/ymgalnews"
 	"api/pkg/config"
 )
@@ -116,6 +117,41 @@ func RegisterAll(r *Registry) {
 			})
 		},
 	})
+
+	// Faster than ingestion (10 min) so a freshly ingested item is gradeable by
+	// the time a moderator opens the queue. Nothing here can publish: the gate
+	// only ever auto-REJECTS, and only on a deterministic Tier0 word match.
+	r.Register(Job{
+		Name:     "news-moderate",
+		Desc:     "情报审核评分（Tier0 + AI 顾问；降级不推进，只有人能发布）",
+		Schedule: Schedule{Every: 5 * time.Minute},
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return runNewsModerate(ctx, cfg, newsmoderate.Opts{
+				Apply: true, Limit: 50, Gap: 200 * time.Millisecond,
+			})
+		},
+	})
+}
+
+// runNewsModerate soft-skips an unconfigured deployment for the same reason
+// runYmgalNews does. The credential is the news OAuth client, and it must carry
+// catalog_site='news' — trust and the AI gateway both derive the caller's site
+// from it and answer 403 without one.
+func runNewsModerate(ctx context.Context, cfg *config.Config, opts newsmoderate.Opts) (Summary, error) {
+	c := cfg.NewsModeration
+	if c.ClientID == "" || c.ClientSecret == "" {
+		slog.Warn("news moderation: client not configured — skipping (set KUN_NEWS_IMAGE_CLIENT_ID/SECRET)")
+		return Summary{"skipped": "news client not configured"}, nil
+	}
+	st, err := newsmoderate.Run(ctx, cfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	return Summary{
+		"candidates": st.Candidates, "need_scoring": st.NeedScoring, "scored": st.Scored,
+		"auto_rejected": st.AutoRejected, "degraded": st.Degraded,
+		"exhausted": st.Exhausted, "failed": st.Failed,
+	}, nil
 }
 
 // runYmgalNews soft-skips when the upstream client is unconfigured, so a

@@ -48,5 +48,6 @@ func Open() (*gorm.DB, func(), bool) {
 // Truncate empties every news item table, children first. news_source survives:
 // it is the seeded registry, not fixture data.
 func Truncate(db *gorm.DB) error {
-	return db.Exec(`TRUNCATE news_item_work, news_item_image, news_item RESTART IDENTITY CASCADE`).Error
+	return db.Exec(`TRUNCATE news_moderation_decision, news_moderation_verdict,
+		news_item_work, news_item_image, news_item RESTART IDENTITY CASCADE`).Error
 }

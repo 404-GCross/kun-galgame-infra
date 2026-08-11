@@ -170,6 +170,7 @@ func main() {
 	// `CREATE DATABASE kun_news`, and a hard failure there would crash-loop the
 	// catalog container over a face nobody is calling yet.
 	var newsSvc *newsService.PublicService
+	var newsAdminSvc *newsService.AdminService
 	if newsDB, err := database.NewPostgresDB(cfg.NewsDatabase); err != nil {
 		slog.Warn("news db connect failed — /v1/news degraded to 503", "dbname", cfg.NewsDatabase.DBName, "error", err)
 	} else {
@@ -179,7 +180,21 @@ func main() {
 			}
 		}()
 		newsSvc = newsService.NewPublicService(newsDB.DB(), cfg.ImageService.CDNBase)
+		newsAdminSvc = newsService.NewAdminService(newsDB.DB(), cfg.ImageService.CDNBase)
 	}
+
+	// The moderation face is the human half of the gate 月幕 asked for. It is a
+	// separate prefix with its own permission rather than a filter on the public
+	// face: the public face's whole contract is that unpublished items are not
+	// addressable there.
+	newsAdminH := newsHandler.NewAdminHandler(newsAdminSvc)
+	application.Fiber.Use(newsHandler.AdminPrefix,
+		middleware.JWTAuth(tokenVerifier), newsHandler.AdminGate(clientRepo))
+	adminNews := application.Fiber.Group(newsHandler.AdminPrefix)
+	adminNews.Get("/stats", newsAdminH.Stats)
+	adminNews.Get("/items", newsAdminH.Queue)
+	adminNews.Get("/items/:id", newsAdminH.Detail)
+	adminNews.Post("/items/:id/decision", newsAdminH.Decide)
 
 	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher, statsSvc,
 		clientRepo, tokenVerifier, devStore, devCache, newsSvc)

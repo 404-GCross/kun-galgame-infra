@@ -6,6 +6,7 @@ import (
 	"api/internal/platform/authz"
 	catalogPerm "api/internal/platform/catalog/perm"
 	devapiPerm "api/internal/platform/devapi/perm"
+	newsPerm "api/internal/platform/news/perm"
 	sitePerm "api/internal/platform/site/perm"
 	trustPerm "api/internal/platform/trust/perm"
 )
@@ -143,6 +144,15 @@ var live = NewRegistry(
 			{catalogPerm.EditTaxonomy, "Propose an edit on the shared vocabulary (label / tag / engine / series).", "对共享词表提交编辑提案(label/tag/engine/series)"},
 			{catalogPerm.EditTaxonomyReview, "Adjudicate a vocabulary proposal.", "裁决词表提案"},
 			{catalogPerm.EditTrusted, "Write at the trusted tier through the editing engine (site ProposeTrusted lanes accept filings directly).", "以受信任层级走编辑引擎写入(站点 trusted 通道直接接受其提交)"},
+		},
+	},
+	Domain{
+		Name:    "news",
+		TitleZH: "情报 feed",
+		Bundles: newsPerm.Bundles,
+		Holder:  newsPerm.Resolver,
+		Keys: []Key{
+			{newsPerm.Review, "Decide a partner news item — publish / reject / withdraw. Publishing is a human act; the AI only advises.", "裁决合作方情报条目(发布/拒绝/撤回);发布只能由人做,AI 仅供参考"},
 		},
 	},
 	Domain{

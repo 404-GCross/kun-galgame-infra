@@ -22,12 +22,20 @@ import (
 // point (prod's kun_news was created 08-11 and ingestion had not started). A
 // later lane-like column will need a default-then-backfill-then-drop-default
 // sequence instead.
+//
+// 2026-08-11 (wave 03) added news_moderation_verdict and news_moderation_decision.
+// Both are new tables, so the NOT NULL-without-default columns on them carry none
+// of the constraint above. news_item itself is unchanged: "has this text been
+// scored" is answered by comparing a fingerprint computed from the item against
+// the verdict log, which needs no column on the item.
 func Run(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&model.NewsSource{},
 		&model.NewsItem{},
 		&model.NewsItemImage{},
 		&model.NewsItemWork{},
+		&model.NewsModerationVerdict{},
+		&model.NewsModerationDecision{},
 	); err != nil {
 		return fmt.Errorf("news automigrate: %w", err)
 	}
@@ -79,6 +87,30 @@ func rawSQL(db *gorm.DB) error {
 			DO $$ BEGIN
 			    ALTER TABLE news_item_work
 			        ADD CONSTRAINT news_item_work_item_fk
+			        FOREIGN KEY (item_id) REFERENCES news_item(id) ON DELETE CASCADE;
+			EXCEPTION WHEN duplicate_object THEN NULL; END $$`},
+		// Both moderation logs are append-only and are always read newest-first
+		// for one item, so (item_id, id DESC) is the only access path either of
+		// them needs. The verdict table's per-fingerprint attempt count rides the
+		// same index: once item_id is fixed the handful of rows behind it is a
+		// trivial scan, and a second index on content_fingerprint would earn
+		// nothing.
+		{"news_moderation_verdict_item", `
+			CREATE INDEX IF NOT EXISTS news_moderation_verdict_item
+			    ON news_moderation_verdict (item_id, id DESC)`},
+		{"news_moderation_decision_item", `
+			CREATE INDEX IF NOT EXISTS news_moderation_decision_item
+			    ON news_moderation_decision (item_id, id DESC)`},
+		{"news_moderation_verdict_item_fk", `
+			DO $$ BEGIN
+			    ALTER TABLE news_moderation_verdict
+			        ADD CONSTRAINT news_moderation_verdict_item_fk
+			        FOREIGN KEY (item_id) REFERENCES news_item(id) ON DELETE CASCADE;
+			EXCEPTION WHEN duplicate_object THEN NULL; END $$`},
+		{"news_moderation_decision_item_fk", `
+			DO $$ BEGIN
+			    ALTER TABLE news_moderation_decision
+			        ADD CONSTRAINT news_moderation_decision_item_fk
 			        FOREIGN KEY (item_id) REFERENCES news_item(id) ON DELETE CASCADE;
 			EXCEPTION WHEN duplicate_object THEN NULL; END $$`},
 		// 月幕 authorised the preview message and the banner, explicitly not the

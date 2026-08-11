@@ -261,6 +261,14 @@ services:
       # with every other developer. Empty => both jobs soft-skip.
       KUN_YMGAL_CLIENT_ID: ${KUN_YMGAL_CLIENT_ID:-}
       KUN_YMGAL_CLIENT_SECRET: ${KUN_YMGAL_CLIENT_SECRET:-}
+      # Where the news-moderate job reaches Tier0 and the AI adviser. Both are
+      # spelled out because the AI client's built-in default is 127.0.0.1:9284,
+      # which resolves to this container itself rather than the ai service.
+      # The job authenticates as the news image client above (same oauth_clients
+      # row), and that row must carry catalog_site='news': trust and ai both
+      # derive the caller's site from it and answer 403 without one.
+      KUN_NEWS_TRUST_BASE_URL: http://trust:9283
+      KUN_NEWS_AI_BASE_URL: http://ai:9284
       # OIDC OP signing keys (docs/auth/03 §4/§5.4). KEK encrypts the ES256/
       # RS256 private keys at rest; first boot with a KEK bootstraps the key
       # pair and turns on /oauth/jwks + discovery. Unset => bootstrap skipped,
