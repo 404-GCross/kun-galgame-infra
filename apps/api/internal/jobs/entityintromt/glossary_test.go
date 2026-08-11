@@ -243,7 +243,7 @@ func TestGlossaryReachesPromptAndHash(t *testing.T) {
 	vndb, _ := srcIDs(t)
 
 	const withText = "ヒロインの一人。星空のメモリアに登場する。"
-	const bareText = "モブキャラクター。"
+	const bareText = "学園の片隅にいつもいる、名前のない生徒。"
 
 	ch := mkCharacter(t, "水橋 かおり")
 	mkCharIntro(t, ch, "ja", withText, vndb)
