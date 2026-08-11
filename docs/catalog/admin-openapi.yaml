@@ -497,7 +497,7 @@ components:
           format: int64
           type: integer
         kind:
-          description: work_cover / work_screenshot / character_bust / character_figure / label_logo / person_photo
+          description: work_cover / work_screenshot / character_bust / character_figure / character_figure_source / label_logo / person_photo
           type: string
         label:
           description: The owning entity's display name

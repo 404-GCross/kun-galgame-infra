@@ -31,8 +31,8 @@ func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 // site-scope GC fuse" failure that froze 66k galgame images.
 //
 // The catalog-scope hash universe is the imagerefs registry
-// (internal/platform/catalog/imagerefs) — six image-bearing columns, and the
-// one place a seventh gets added. Read its package doc before changing what
+// (internal/platform/catalog/imagerefs) — seven image-bearing columns, and the
+// one place an eighth gets added. Read its package doc before changing what
 // this sweep pings.
 //
 // Claim state is deliberately NOT a filter — a claimed work's BRIDGED

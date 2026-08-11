@@ -21,8 +21,13 @@ const (
 	KindWorkScreenshot  = "work_screenshot"
 	KindCharacterBust   = "character_bust"
 	KindCharacterFigure = "character_figure"
-	KindLabelLogo       = "label_logo"
-	KindPersonPhoto     = "person_photo"
+	// The white-plate original a cut-out figure_hash was derived from. It is
+	// referenced by nothing the read face renders, which is exactly why it has
+	// to be listed here: unlisted bytes are collected once the image service
+	// TTL elapses, and then the cut-outs can never be regenerated.
+	KindCharacterFigureSource = "character_figure_source"
+	KindLabelLogo             = "label_logo"
+	KindPersonPhoto           = "person_photo"
 )
 
 type kindSpec struct {
@@ -30,11 +35,11 @@ type kindSpec struct {
 	Table        string
 	HashColumn   string
 	EntityColumn string
-	LabelTable  string
-	LabelJoinOn string
-	LabelColumn string
-	Filter string
-	DetachSet string
+	LabelTable   string
+	LabelJoinOn  string
+	LabelColumn  string
+	Filter       string
+	DetachSet    string
 }
 
 var specs = []kindSpec{
@@ -61,6 +66,11 @@ var specs = []kindSpec{
 		Filter: "t.deleted_at IS NULL", DetachSet: "NULL",
 	},
 	{
+		Kind: KindCharacterFigureSource, Table: "catalog_character",
+		HashColumn: "figure_source_hash", EntityColumn: "id", LabelColumn: "display_name",
+		Filter: "t.deleted_at IS NULL", DetachSet: "NULL",
+	},
+	{
 		Kind: KindLabelLogo, Table: "catalog_label",
 		HashColumn: "logo_hash", EntityColumn: "id", LabelColumn: "display_name",
 		Filter: "t.deleted_at IS NULL", DetachSet: "''",
@@ -76,7 +86,7 @@ type Ref struct {
 	Hash     string `gorm:"column:hash"`
 	Kind     string `gorm:"column:kind"`
 	EntityID int64  `gorm:"column:entity_id"`
-	Label string `gorm:"column:label"`
+	Label    string `gorm:"column:label"`
 }
 
 func Kinds() []string {

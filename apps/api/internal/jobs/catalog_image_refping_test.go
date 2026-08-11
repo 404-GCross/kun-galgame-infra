@@ -20,6 +20,7 @@ const (
 	hCharB      = "bbbb222222222222222222222222222222222222222222222222222222222222"
 	hCharC      = "cccc333333333333333333333333333333333333333333333333333333333333"
 	hCharD      = "3333999999999999999999999999999999999999999999999999999999999999"
+	hCharE      = "7777dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 	hCoverB     = "dddd444444444444444444444444444444444444444444444444444444444444"
 	hCoverSha   = "eeee555555555555555555555555555555555555555555555555555555555555"
 	hCharCoverX = "ffff666666666666666666666666666666666666666666666666666666666666"
@@ -126,26 +127,26 @@ func TestCatalogRefping_IncludesFullBodyFigures(t *testing.T) {
 	migrateCatalogRefpingTables(t, db)
 
 	sp := func(s string) *string { return &s }
-	mk := func(img, fig *string) *catalogmodel.CatalogCharacter {
-		c := &catalogmodel.CatalogCharacter{DisplayName: "x", ImageHash: img, FigureHash: fig}
+	mk := func(img, fig, src *string) *catalogmodel.CatalogCharacter {
+		c := &catalogmodel.CatalogCharacter{DisplayName: "x", ImageHash: img, FigureHash: fig, FigureSourceHash: src}
 		require.NoError(t, db.Create(c).Error)
 		return c
 	}
 
-	mk(sp(hCharA), sp(hCharB))
-	mk(nil, sp(hCharC))
-	mk(sp(hCharA), nil)
-	mk(nil, sp(""))
-	gone := mk(nil, sp(hCharD))
+	mk(sp(hCharA), sp(hCharB), nil)
+	mk(nil, sp(hCharC), sp(hCharE))
+	mk(sp(hCharA), nil, nil)
+	mk(nil, sp(""), nil)
+	gone := mk(nil, sp(hCharD), sp(hCharD))
 	require.NoError(t, db.Delete(gone).Error)
 
 	got, err := collectCatalogRefpingHashes(context.Background(), db)
 	require.NoError(t, err)
 	sort.Strings(got)
 
-	want := []string{hCharA, hCharB, hCharC}
+	want := []string{hCharA, hCharB, hCharC, hCharE}
 	sort.Strings(want)
-	assert.Equal(t, want, got, "both image_hash and figure_hash must be kept alive")
+	assert.Equal(t, want, got, "image_hash, figure_hash and the pre-cutout figure_source_hash must all be kept alive")
 }
 
 func TestCatalogRefping_IncludesLabelLogos(t *testing.T) {

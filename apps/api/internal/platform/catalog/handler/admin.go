@@ -89,7 +89,7 @@ type imageReferencesInput struct {
 }
 
 type imageReferenceItem struct {
-	Kind     string `json:"kind" doc:"work_cover / work_screenshot / character_bust / character_figure / label_logo / person_photo"`
+	Kind     string `json:"kind" doc:"work_cover / work_screenshot / character_bust / character_figure / character_figure_source / label_logo / person_photo"`
 	EntityID int64  `json:"entity_id" doc:"The owning work / character / label / person"`
 	Label    string `json:"label" doc:"The owning entity's display name"`
 }

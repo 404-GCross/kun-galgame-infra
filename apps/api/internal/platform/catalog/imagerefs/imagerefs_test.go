@@ -21,7 +21,7 @@ import (
 func TestKindsCoversEveryImageColumn(t *testing.T) {
 	assert.Equal(t, []string{
 		KindWorkCover, KindWorkScreenshot, KindCharacterBust,
-		KindCharacterFigure, KindLabelLogo, KindPersonPhoto,
+		KindCharacterFigure, KindCharacterFigureSource, KindLabelLogo, KindPersonPhoto,
 	}, Kinds())
 }
 
@@ -29,13 +29,13 @@ func TestDetachSetMatchesColumnNullability(t *testing.T) {
 	want := map[string]string{
 		KindWorkCover: "", KindWorkScreenshot: "",
 		KindCharacterBust: "NULL", KindCharacterFigure: "NULL",
-		KindLabelLogo: "''", KindPersonPhoto: "''",
+		KindCharacterFigureSource: "NULL",
+		KindLabelLogo:             "''", KindPersonPhoto: "''",
 	}
 	for _, s := range specs {
 		assert.Equalf(t, want[s.Kind], s.DetachSet, "detach value for %s", s.Kind)
 	}
 }
-
 
 var (
 	testOnce sync.Once
@@ -93,7 +93,7 @@ func fixture(t *testing.T, db *gorm.DB) (workID, charID, labelID, personID int64
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{WorkID: work.ID, ImageHash: hashShared, SourceID: 1}).Error)
 
 	shared := hashShared
-	char := &model.CatalogCharacter{DisplayName: "角色", ImageHash: &shared, FigureHash: &shared}
+	char := &model.CatalogCharacter{DisplayName: "角色", ImageHash: &shared, FigureHash: &shared, FigureSourceHash: &shared}
 	require.NoError(t, db.Create(char).Error)
 	label := &model.CatalogLabel{DisplayName: "会社", LogoHash: hashShared}
 	require.NoError(t, db.Create(label).Error)
@@ -129,7 +129,8 @@ func TestCollectSeesEveryKindAndSkipsSoftDeleted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]int{
 		KindWorkCover: 2, KindWorkScreenshot: 1, KindCharacterBust: 1,
-		KindCharacterFigure: 1, KindLabelLogo: 1, KindPersonPhoto: 1,
+		KindCharacterFigure: 1, KindCharacterFigureSource: 1,
+		KindLabelLogo: 1, KindPersonPhoto: 1,
 	}, kindCounts(refs))
 	for _, r := range refs {
 		assert.Emptyf(t, r.Label, "the full sweep skips the label joins (%s)", r.Kind)
@@ -144,7 +145,8 @@ func TestCollectByHashCarriesLabels(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]int{
 		KindWorkCover: 1, KindWorkScreenshot: 1, KindCharacterBust: 1,
-		KindCharacterFigure: 1, KindLabelLogo: 1, KindPersonPhoto: 1,
+		KindCharacterFigure: 1, KindCharacterFigureSource: 1,
+		KindLabelLogo: 1, KindPersonPhoto: 1,
 	}, kindCounts(refs))
 
 	byKind := map[string]Ref{}
@@ -182,7 +184,8 @@ func TestDetachReleasesEveryKind(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]int64{
 		KindWorkCover: 1, KindWorkScreenshot: 1, KindCharacterBust: 1,
-		KindCharacterFigure: 1, KindLabelLogo: 1, KindPersonPhoto: 1,
+		KindCharacterFigure: 1, KindCharacterFigureSource: 1,
+		KindLabelLogo: 1, KindPersonPhoto: 1,
 	}, removed)
 
 	refs, err := CollectByHash(ctx, db, hashShared)
@@ -197,6 +200,7 @@ func TestDetachReleasesEveryKind(t *testing.T) {
 	require.NoError(t, db.First(&char, charID).Error)
 	assert.Nil(t, char.ImageHash)
 	assert.Nil(t, char.FigureHash)
+	assert.Nil(t, char.FigureSourceHash)
 	var label model.CatalogLabel
 	require.NoError(t, db.First(&label, labelID).Error)
 	assert.Equal(t, "", label.LogoHash)
