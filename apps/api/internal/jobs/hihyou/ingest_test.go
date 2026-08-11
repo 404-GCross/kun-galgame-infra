@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"api/internal/platform/news/model"
 	"api/internal/platform/news/newstest"
 	"api/pkg/config"
+	"api/pkg/imageclient"
 
 	"gorm.io/gorm"
 )
@@ -146,6 +149,85 @@ func TestImportWritesPendingItemsAndIsIdempotent(t *testing.T) {
 	if again.Created != 0 || again.Updated != 0 || again.Unchanged != 3 {
 		t.Fatalf("re-import: created=%d updated=%d unchanged=%d, want 0/0/3",
 			again.Created, again.Updated, again.Unchanged)
+	}
+}
+
+// A row that already exists with the right text is the case 04c actually meets:
+// the whole 04b backfill ran with --no-images. If pictures only ever arrive on
+// create or on a text change, that run leaves 4,425 rows without a banner
+// forever and reports success while uploading nothing.
+func TestPicturesArriveForRowsWhoseTextDidNotChange(t *testing.T) {
+	db, _ := openTestDB(t)
+	// Three pictures under one heading: a banner plus a gallery, which is the
+	// shape that makes the two storage paths distinguishable.
+	a := article("【Gal周报202期】x",
+		text(17, false, "新作资讯"),
+		text(17, true, "1.《A》情报公开"), text(17, false, body),
+		picture("http://i0.hdslb.com/bfs/new_dyn/a.png"),
+		picture("//i0.hdslb.com/bfs/article/b.png"),
+		picture("https://i0.hdslb.com/bfs/article/c.png"),
+		text(17, true, "2.《B》发售日决定"), text(17, false, body),
+		text(17, true, "3.《C》汉化发布"), text(17, false, body),
+	)
+	a.Data.ID = 1003
+	a.Data.PublishTime = 1786257779
+	seg := Segment(a)
+	it := seg.Items[0]
+	if len(it.Pictures) != 3 {
+		t.Fatalf("fixture yields %d pictures", len(it.Pictures))
+	}
+	published := time.Unix(1786257779, 0).UTC()
+	ctx := context.Background()
+
+	dry := &writer{db: db, opts: Opts{Apply: true, NoImages: true}, uploaded: map[string]string{}}
+	if err := dry.applyItem(ctx, 1003, published, it, &stats{}); err != nil {
+		t.Fatal(err)
+	}
+	var row model.NewsItem
+	if err := db.Where("external_id = ?", ExternalID(1003, it.Ordinal)).Take(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.BannerHash != "" {
+		t.Fatalf("--no-images stored a banner %q", row.BannerHash)
+	}
+
+	// A pre-seeded upload cache stands in for the image host: picture() consults
+	// it before the client, so nothing here reaches the network.
+	hashes := map[string]string{}
+	for _, u := range it.Pictures {
+		hashes[u] = "hash-" + path.Base(u)
+	}
+	st := &stats{}
+	live := &writer{db: db, opts: Opts{Apply: true}, uploaded: hashes,
+		images: &imageclient.Client{}}
+	if err := live.applyItem(ctx, 1003, published, it, st); err != nil {
+		t.Fatal(err)
+	}
+	if st.unchanged != 1 || st.updated != 0 {
+		t.Fatalf("unchanged=%d updated=%d — the text must not have changed", st.unchanged, st.updated)
+	}
+	if err := db.Where("external_id = ?", ExternalID(1003, it.Ordinal)).Take(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.BannerHash != hashes[it.Pictures[0]] {
+		t.Errorf("banner_hash = %q, want the first picture's hash", row.BannerHash)
+	}
+	var n int64
+	db.Model(&model.NewsItemImage{}).Where("item_id = ?", row.ID).Count(&n)
+	if want := int64(len(it.Pictures) - 1); n != want {
+		t.Errorf("stored %d gallery rows, want %d", n, want)
+	}
+
+	// And a third run must not fetch them again: origin URLs already on disk are
+	// what decides the work, so an empty cache would fail on a network attempt.
+	blank := &writer{db: db, opts: Opts{Apply: true}, uploaded: map[string]string{},
+		images: &imageclient.Client{}}
+	if err := blank.applyItem(ctx, 1003, published, it, &stats{}); err != nil {
+		t.Fatal(err)
+	}
+	db.Model(&model.NewsItemImage{}).Where("item_id = ?", row.ID).Count(&n)
+	if want := int64(len(it.Pictures) - 1); n != want {
+		t.Errorf("after re-run: %d gallery rows, want %d", n, want)
 	}
 }
 

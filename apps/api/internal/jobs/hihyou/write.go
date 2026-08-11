@@ -136,7 +136,14 @@ func (w *writer) applyItem(ctx context.Context, cv int64, published time.Time, i
 		!existing.PublishedAt.Equal(published)
 	if !changed {
 		st.unchanged++
-		return nil
+		if !w.opts.Apply {
+			return nil
+		}
+		// The only place a row created without its pictures can still get them:
+		// text that never changes never reaches the update branch. 04b wrote 4,425
+		// rows with --no-images, and picture() tells the log a failed upload is
+		// "retried next run" — without this, both are permanent.
+		return w.backfillImages(ctx, existing, it, st)
 	}
 	if !w.opts.Apply {
 		st.wouldUpdate++
@@ -157,24 +164,57 @@ func (w *writer) applyItem(ctx context.Context, cv int64, published time.Time, i
 	if existing.Status == model.StatusPublished {
 		updates["status"] = model.StatusPending
 	}
-	if existing.BannerHash == "" {
-		if banner, origin := w.picture(ctx, first(it.Pictures), st); banner != "" {
-			updates["banner_hash"], updates["banner_origin_url"] = banner, origin
-		}
-	}
 	if err := w.db.WithContext(ctx).Model(&model.NewsItem{}).
 		Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
 		return err
 	}
 	st.updated++
-	// Pictures are re-run on update too, not only on create: a segmentation
+	// Pictures are reconciled on update too, not only on create: a segmentation
 	// change moves paragraph boundaries, so the block's images can change with
-	// its text. FirstOrCreate on (item_id, image_hash) makes the repeat a no-op.
-	return w.pictures(ctx, existing.ID, it.Pictures[minInt(1, len(it.Pictures)):], st)
+	// its text.
+	return w.backfillImages(ctx, existing, it, st)
+}
+
+// backfillImages brings a stored row up to the pictures its item currently has.
+// It is a no-op for a row that already has them, and it never re-fetches: what
+// to download is decided by the origin URLs already on disk, not by re-uploading
+// and letting the unique key absorb the duplicate.
+func (w *writer) backfillImages(ctx context.Context, row model.NewsItem, it Item, st *stats) error {
+	if w.images == nil {
+		return nil
+	}
+	if row.BannerHash == "" {
+		if banner, origin := w.picture(ctx, first(it.Pictures), st); banner != "" {
+			if err := w.db.WithContext(ctx).Model(&model.NewsItem{}).Where("id = ?", row.ID).
+				Updates(map[string]any{"banner_hash": banner, "banner_origin_url": origin}).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return w.pictures(ctx, row.ID, it.Pictures[minInt(1, len(it.Pictures)):], st)
 }
 
 func (w *writer) pictures(ctx context.Context, itemID int64, urls []string, st *stats) error {
+	if len(urls) == 0 || w.images == nil {
+		return nil
+	}
+	// Skipping by origin URL is what keeps a re-run cheap: deduplicating on the
+	// hash instead would mean downloading and uploading all 8,080 pictures again
+	// to discover that every one of them is already there.
+	var have []string
+	if err := w.db.WithContext(ctx).Model(&model.NewsItemImage{}).
+		Where("item_id = ?", itemID).Pluck("origin_url", &have).Error; err != nil {
+		return err
+	}
+	stored := make(map[string]bool, len(have))
+	for _, u := range have {
+		stored[u] = true
+	}
+
 	for i, u := range urls {
+		if stored[u] {
+			continue
+		}
 		hash, _ := w.picture(ctx, u, st)
 		if hash == "" {
 			continue
@@ -193,11 +233,14 @@ func (w *writer) pictures(ctx context.Context, itemID int64, urls []string, st *
 
 func (w *writer) picture(ctx context.Context, src string, st *stats) (hash, origin string) {
 	src = strings.TrimSpace(src)
-	if src == "" || w.images == nil {
+	if src == "" {
 		return "", src
 	}
 	if h, ok := w.uploaded[src]; ok {
 		return h, src
+	}
+	if w.images == nil {
+		return "", src
 	}
 	h, err := w.upload(ctx, src)
 	if err != nil {
