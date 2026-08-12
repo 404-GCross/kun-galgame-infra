@@ -112,6 +112,23 @@ func TestLocalizedNamesElection(t *testing.T) {
 	}
 }
 
+func TestLocalizedNamesRefuseMachineProvenance(t *testing.T) {
+	machine := alias("爱丽丝", "zh-Hans", model.AliasKindTranslation, false, false)
+	machine.Provenance = model.AliasProvenanceMachine
+	sourced := alias("アリス", "ja", model.AliasKindTranslation, true, true)
+
+	got := localizedNames([]displayAlias{machine, sourced})
+	if _, ok := got["zh-Hans"]; ok {
+		t.Fatal("a machine-translated name must never be elected into localized{} (refs/proj/178 §2)")
+	}
+	if got["ja"].Value != "アリス" {
+		t.Fatalf("localized[ja] = %+v, want the sourced ja name to survive the gate", got["ja"])
+	}
+	if flat := flatAliases([]displayAlias{machine, sourced}); len(flat) != 1 || flat[0] != "爱丽丝" {
+		t.Fatalf("aliases[] = %+v, want the machine name still listed there", flat)
+	}
+}
+
 func TestLocalizedNamesEmptyIsNeverNil(t *testing.T) {
 	got := localizedNames(nil)
 	if got == nil || len(got) != 0 {

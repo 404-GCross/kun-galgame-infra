@@ -307,11 +307,11 @@ func TestApply_AllLanes(t *testing.T) {
 	ctx := context.Background()
 
 	ch := mkCharacter(t, "角色")
-	mkCharIntro(t, ch, "ja", "キャラクター紹介", vndb)
+	mkCharIntro(t, ch, "ja", "主人公の幼なじみで、明るく世話好きなヒロイン。", vndb)
 	pe := mkPerson(t, "人物")
 	mkPersonIntro(t, pe, "en", "A voice actress.", vndb)
 	la := mkLabel(t, "会社")
-	mkLabelIntro(t, la, "ja", "ブランド紹介", vndb)
+	mkLabelIntro(t, la, "ja", "美少女ゲームを中心に展開する老舗ブランド。", vndb)
 
 	st, err := Run(ctx, MockTranslator{}, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)

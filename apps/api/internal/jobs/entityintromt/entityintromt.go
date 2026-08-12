@@ -60,6 +60,7 @@ type LaneStats struct {
 	WouldInsert      int
 	WouldRetranslate int
 	SkipUnchanged    int
+	SkipShortSource  int
 	Inserted         int
 	Retranslated     int
 	Refused          int
@@ -120,6 +121,7 @@ func Run(ctx context.Context, tr Translator, opts Opts) ([]*LaneStats, error) {
 		slog.Info("entity-intro-mt lane done", "lane", lane.key, "apply", opts.Apply,
 			"candidates", st.Candidates, "with_glossary", st.WithGlossary, "would_insert", st.WouldInsert,
 			"would_retranslate", st.WouldRetranslate, "skip_unchanged", st.SkipUnchanged,
+			"skip_short_source", st.SkipShortSource,
 			"inserted", st.Inserted, "retranslated", st.Retranslated,
 			"refused", st.Refused, "errors", st.Errors)
 		out = append(out, st)
