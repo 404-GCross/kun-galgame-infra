@@ -15,7 +15,7 @@
   with a non-zero `code` and the appropriate HTTP status.
 - Base path `/api/v1/community`. Bind port **9282** (`KUN_COMMUNITY_PORT`).
 - `GET /openapi.json` (unauthenticated) serves the live spec; `GET /healthz`.
-- Migrations are NOT run at startup — `cmd/migrate-community` is the single entry
+- Migrations are NOT run at startup — `cmd/migrate community` is the single entry
   point against `kun_community`.
 
 ## 2. Authentication & tenancy

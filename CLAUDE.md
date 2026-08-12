@@ -47,26 +47,30 @@ English, and short. When in doubt, delete it — a wrong comment costs more than
 
 ## Local development (one command)
 
-`pnpm dev` starts **everything**: it brings up the platform base from
-`docker-compose.dev.yml` (redis / minio / meili / mailpit / all migrations +
-the two rarely-edited platform services **community / ai** from prebuilt GHCR
-images) and then runs `air` for the five frequently-edited Go services
+`pnpm dev` starts **everything an infra session needs**: it brings up the
+platform base from `docker-compose.dev.yml` (redis / minio / meili / mailpit +
+the migrations, all from the single `infra-migrate` image — one binary, one
+target per invocation) and then runs `air` for the five frequently-edited Go services
 (**oauth / catalog / image / artifact / trust**, hot-reloaded from source)
 plus the Nuxt frontends. catalog (:9281) hosts the catalog faces and the
 `/v1/galgame` **410 tombstone only** (`galgameapp.MountRetiredPublic`); the
 standalone galgame service (:9280) and every live galgame face are retired,
 so do not reintroduce a galgame HTTP client or treat the retired galgame
 route table as a live contract. Ctrl-C stops only the hot stack; the base
-stays up. So a bare `pnpm dev` is enough — you do **not** need to start
-community / ai yourself (a past mistake: assuming a base service isn't running).
+stays up. Before assuming a base service isn't running, check — a past mistake
+was starting a second copy of one that was already up.
 
-- Editing community / ai? They run from images by default. Add that service
-  to the `full` profile stop-list and run it via `air` / `go run`, or just
-  `docker compose -f docker-compose.dev.yml restart <svc>` after a rebuild.
+- **community / ai are `full`-profile**, not part of a bare `pnpm dev`: nothing
+  the default stack runs dials :9282 or :9284, so starting them cost two image
+  pulls and two idle containers. Need them (product-repo work, or editing them)?
+  `pnpm dev:full`, or `docker compose -f docker-compose.dev.yml --profile full
+  up -d community ai`.
 - `pnpm dev:full` = the whole platform from images with no source build (for
   developing a **product** repo, not infra). `pnpm dev:down` tears the base down.
 - Ports match prod (9277-9284); Postgres is the box's own `127.0.0.1:5432`, not
-  a compose service. Full model: `docs/dev-environment.md`.
+  a compose service — its host/port/user/password are `${VAR:-default}` in the
+  dev compose, so override them from a root `.env` instead of editing the file.
+  Full model: `docs/dev-environment.md`.
 - First run needs GHCR auth (images are private) — a bare `gh auth token` lacks
   `read:packages` and pulls fail `unauthorized`. One-time:
   `gh auth refresh -h github.com -s read:packages` then
@@ -125,7 +129,7 @@ community / ai yourself (a past mistake: assuming a base service isn't running).
 **Whenever this change touches the database schema (a GORM model adding/changing a field or table, or raw SQL/constraints/indexes in `cmd/migrate*`), you must explicitly tell the user at the end of the task: whether a migration needs to run, which command to run, and against which database.** Deployment (push → CI → Dokploy redeploy) **does not run migrations automatically** — skipping one makes the live code read a column that doesn't exist (GORM `SELECT *` silently reads it as a zero value) → **silent failure**.
 
 - Main database `kun_galgame_infra` (oauth + the various site models) → `go run ./cmd/migrate` (**not run automatically by deployment**).
-- Catalog models → `go run ./cmd/migrate-catalog` against `KUN_CATALOG_PG_DATABASE`. Wave 161 removed the galgame family from this binary; it must not be recreated after the retirement DROP. Prod runs the catalog migration on deploy (`compose depends_on`), but outage-class changes still follow the manual migrate-first order.
+- Catalog models → `go run ./cmd/migrate catalog` against `KUN_CATALOG_PG_DATABASE`. Wave 161 removed the galgame family from this binary; it must not be recreated after the retirement DROP. Prod runs the catalog migration on deploy (`compose depends_on`), but outage-class changes still follow the manual migrate-first order.
 - `cmd/image` / `cmd/artifact` → ship with `AutoMigrate` at service startup (runs automatically with deployment, no manual step needed).
 - Production execution: the `infra-tools` image + an env-file dumped from the corresponding container's `.Config.Env` (see the prod ops notes).
 - Lesson learned: in 2026-06 the `oauth_clients.moemoepoint_awarder` column was not migrated → the entire site could not award moemoepoints for ~29h.

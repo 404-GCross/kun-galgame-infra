@@ -12,7 +12,7 @@ Deployment (push → CI → Dokploy redeploy) does **not** run `cmd/migrate` aut
 | Models touched | Command | Target database |
 |---|---|---|
 | oauth + site models (main family) | `go run ./cmd/migrate` | `kun_galgame_infra` — **never auto-run by deploy** |
-| galgame (wiki-family) and/or catalog models | `go run ./cmd/migrate-catalog` (single entry for both families since W5) | galgame models → `KUN_GALGAME_PG_DATABASE` (prod `kun_catalog`, local dev `kun_galgame_wiki`); catalog models → `KUN_CATALOG_PG_DATABASE` (`kun_catalog`) | 
+| galgame (wiki-family) and/or catalog models | `go run ./cmd/migrate catalog` (single entry for both families since W5) | galgame models → `KUN_GALGAME_PG_DATABASE` (prod `kun_catalog`, local dev `kun_galgame_wiki`); catalog models → `KUN_CATALOG_PG_DATABASE` (`kun_catalog`) | 
 | `cmd/image` / `cmd/artifact` models | none — `AutoMigrate` runs at service startup | (automatic with deploy) |
 
 Prod runs `migrate-catalog` on every deploy (compose `depends_on`), but outage-class schema changes still follow manual migrate-first ordering.

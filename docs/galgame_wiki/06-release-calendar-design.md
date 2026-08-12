@@ -278,7 +278,7 @@ ALTER TABLE galgame ADD COLUMN release_ym integer
 ## 10. 迁移与回填
 
 > **数据库 schema 变更 → 必须跑迁移**:加 `release_precision` 列(+ 可选 `release_ym` generated 列)+ `idx_galgame_calendar` 索引 + `chk_galgame_release_precision` 约束。
-> 命令(现为 W5 单一入口):`go run ./cmd/migrate-catalog`,galgame 族对 **`KUN_GALGAME_PG_DATABASE`**(生产 `kun_catalog`,本地 `kun_galgame_wiki`)。生产部署随 compose 自动跑;outage 级变更仍按「先迁移后部署」手动执行。
+> 命令(现为 W5 单一入口):`go run ./cmd/migrate catalog`,galgame 族对 **`KUN_GALGAME_PG_DATABASE`**(生产 `kun_catalog`,本地 `kun_galgame_wiki`)。生产部署随 compose 自动跑;outage 级变更仍按「先迁移后部署」手动执行。
 
 回填:**精度无法从已塌缩的 `release_date` 反推**(`2026-01-01` 既可能是真 1/1,也可能是"只知年")。需一个一次性回填,从 **VNDB 原始 `released` 串**重解析精度写回:
 

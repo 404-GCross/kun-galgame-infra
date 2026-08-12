@@ -293,13 +293,13 @@ commit
 
 跑在 `kun_galgame_wiki`,**不随部署自动执行**(见 [deploy-migration-gap]):
 
-1. **`action='synced'`** 加进 `galgame_revision` CHECK。注意该 CHECK 是迁移入口里**显式 DROP/ADD**(见 `model/pr.go` 注释;W5 起在 `cmd/migrate-catalog/galgame.go`),要同时改**模型 struct tag** 与**该 raw SQL**,否则旧库保留旧约束、INSERT 报 23514。
+1. **`action='synced'`** 加进 `galgame_revision` CHECK。注意该 CHECK 是迁移入口里**显式 DROP/ADD**(见 `model/pr.go` 注释;W5 起在 `cmd/migrate catalog/galgame.go`),要同时改**模型 struct tag** 与**该 raw SQL**,否则旧库保留旧约束、INSERT 报 23514。
 2. **新表** `galgame_external_id`、`galgame_sync_log`(AutoMigrate 可建)。
 3. **(v2 可选)** `galgame_field_provenance`。
 4. **身份库** 预建系统 bot 用户,记录其 id 为 `SystemSyncUserID`。
 5. **纯代码(无 schema)**:`ReconcileSource` 泛化 + covers/screenshots 协调 + 编辑路径并集保护 + resolver + enrich job。
 
-执行顺序(吸取上次教训):**先跑迁移(W5 起 `cmd/migrate-catalog`)加约束/表,再部署写 `action='synced'` 的新代码**,否则新代码 INSERT 撞缺失约束/表。
+执行顺序(吸取上次教训):**先跑迁移(W5 起 `cmd/migrate catalog`)加约束/表,再部署写 `action='synced'` 的新代码**,否则新代码 INSERT 撞缺失约束/表。
 
 ## 11. 分阶段实施
 

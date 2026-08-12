@@ -3,7 +3,7 @@
 # (tables, indexes, sequences, constraints). Diffing the fingerprint before/after
 # an operation shows exactly which objects it created/dropped/changed — the proof
 # for 章程裁定 6 (the galgame and catalog migration bodies coexist in one DB and
-# never touch each other's tables — both live inside cmd/migrate-catalog since
+# never touch each other's tables — both live inside cmd/migrate catalog since
 # W5). Filter by prefix to isolate a family, e.g.:
 #
 #   scripts/wiki-retirement/object-fingerprint.sh kun_catalog_w1 | grep -E ' (catalog|src)_' > before.catalog

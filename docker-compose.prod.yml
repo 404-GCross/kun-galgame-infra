@@ -728,40 +728,44 @@ services:
   # longer read by this job — had it stayed, the deploy after the N5 DROP would
   # have recreated the whole family as empty shells.
   migrate-catalog:
-    image: ghcr.io/kunmoe/infra-migrate-catalog:latest
+    image: ghcr.io/kunmoe/infra-migrate:latest
+    command: ["catalog"]
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
 
-  # Auto-applied on every deploy (community waits for it). cmd/migrate-community
+  # Auto-applied on every deploy (community waits for it). `migrate community`
   # is the single migration entry point against kun_community (the service itself
   # never migrates on startup).
   migrate-community:
-    image: ghcr.io/kunmoe/infra-migrate-community:latest
+    image: ghcr.io/kunmoe/infra-migrate:latest
+    command: ["community"]
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
 
-  # Auto-applied on every deploy (trust waits for it). cmd/migrate-trust is the
+  # Auto-applied on every deploy (trust waits for it). `migrate trust` is the
   # single migration entry point against kun_trust (the service never migrates
   # on startup); idempotent AutoMigrate + raw SQL + reason seed.
   migrate-trust:
-    image: ghcr.io/kunmoe/infra-migrate-trust:latest
+    image: ghcr.io/kunmoe/infra-migrate:latest
+    command: ["trust"]
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
 
-  # Auto-applied on every deploy (ai waits for it). cmd/migrate-ai is the single
+  # Auto-applied on every deploy (ai waits for it). `migrate ai` is the single
   # migration entry point against kun_ai (the service never migrates on startup);
   # idempotent AutoMigrate + CREATE INDEX IF NOT EXISTS, no seed.
   migrate-ai:
-    image: ghcr.io/kunmoe/infra-migrate-ai:latest
+    image: ghcr.io/kunmoe/infra-migrate:latest
+    command: ["ai"]
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:
@@ -769,12 +773,13 @@ services:
     restart: "no"
 
   # Auto-applied on every deploy (catalog waits for it, because catalog serves
-  # the /v1/news face). cmd/migrate-news is the single migration entry point
+  # the /v1/news face). `migrate news` is the single migration entry point
   # against kun_news: idempotent AutoMigrate + IF NOT EXISTS raw section + the
   # news_source seed. ⚠️ kun_news must EXIST first — the first deploy needs a
   # manual `CREATE DATABASE kun_news` (initdb only runs on an empty data dir).
   migrate-news:
-    image: ghcr.io/kunmoe/infra-migrate-news:latest
+    image: ghcr.io/kunmoe/infra-migrate:latest
+    command: ["news"]
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:
