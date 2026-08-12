@@ -61,6 +61,25 @@ func TestVerbatimGate(t *testing.T) {
 	}
 }
 
+func TestNameAppears(t *testing.T) {
+	intro := "与身为恶魔般的学生会长的月森鈴一起。\n\n「沙耶」\n主人公的青梅竹马。\n转校生香坂 玲奈也来了。"
+	cases := []struct {
+		name   string
+		target rosterChar
+		want   bool
+	}{
+		{"heading style full name", rosterChar{Name: "沙耶"}, true},
+		{"spaced name matches unspaced text", rosterChar{Name: "香坂 玲奈"}, true},
+		{"given-name segment alone", rosterChar{Name: "如月 玲奈"}, true},
+		{"surname alone is not a match", rosterChar{Name: "月森 玲子"}, false},
+		{"zh alias rescues a missing name", rosterChar{Name: "Saya", ZhName: "沙耶"}, true},
+		{"absent everywhere", rosterChar{Name: "空蝉 譲二"}, false},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, nameAppears(intro, c.target), c.name)
+	}
+}
+
 func TestParseExtraction(t *testing.T) {
 	got, err := parseExtraction("```json\n{\"沙耶\": \"青梅竹马。\"}\n```")
 	require.NoError(t, err)

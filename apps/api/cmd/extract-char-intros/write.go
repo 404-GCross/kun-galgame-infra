@@ -27,6 +27,7 @@ type stats struct {
 	Conflict           int
 	RefusedNotVerbatim int
 	RefusedShort       int
+	RefusedNameAbsent  int
 	UnmatchedName      int
 	CallErrors         int
 	Touched            int
@@ -60,6 +61,12 @@ func (w *writer) write(ctx context.Context, cand candidateWork, found map[string
 		passage = strings.TrimSpace(passage)
 		if utf8.RuneCountInString(passage) < minIntroRunes {
 			w.st.RefusedShort++
+			continue
+		}
+		if !nameAppears(cand.Intro, target) {
+			w.st.RefusedNameAbsent++
+			slog.Warn("the work intro never names this character", "work", cand.WorkID,
+				"character", target.CharacterID, "name", name)
 			continue
 		}
 		if !verbatim(cand.Intro, passage) {
@@ -128,6 +135,36 @@ func verbatim(intro, passage string) bool {
 		}
 	}
 	return true
+}
+
+// nameAppears requires the WORK INTRO (not the passage — the model is allowed
+// to drop a 「名字」 heading, so good extracts often omit the name) to name the
+// character: full name, zh alias, or a given-name segment (≥2 runes). The
+// family name alone does NOT count — in the 100-work rehearsal the model
+// attached a passage about 月森鈴 to her roster-mate 月森玲子, whose own name
+// never appears in that intro; a surname match would have let that through.
+func nameAppears(intro string, target rosterChar) bool {
+	hay := normalizeForMatch(intro)
+	for _, cand := range []string{target.Name, target.ZhName} {
+		cand = strings.TrimSpace(cand)
+		if cand == "" {
+			continue
+		}
+		if full := normalizeForMatch(cand); full != "" && strings.Contains(hay, full) {
+			return true
+		}
+		segs := strings.Fields(cand)
+		for i, seg := range segs {
+			if i == 0 && len(segs) > 1 {
+				continue
+			}
+			n := normalizeForMatch(seg)
+			if utf8.RuneCountInString(n) >= 2 && strings.Contains(hay, n) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 var matchStripper = strings.NewReplacer(
