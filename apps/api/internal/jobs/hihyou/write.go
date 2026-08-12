@@ -37,11 +37,15 @@ type writer struct {
 	// same header image across issues, and the corpus holds 8,125 pictures: a
 	// cold re-download per occurrence is the difference between minutes and hours.
 	uploaded map[string]string
+	// URLs warm already tried and lost. Without this the serial pass retries
+	// each one immediately, doubling both the wait and the reported failures
+	// for a picture that is simply gone upstream.
+	failed map[string]bool
 }
 
 func newWriter(cfg *config.Config, db *gorm.DB, opts Opts) *writer {
 	w := &writer{db: db, opts: opts, uploaded: map[string]string{},
-		http: &http.Client{Timeout: 60 * time.Second}}
+		failed: map[string]bool{}, http: &http.Client{Timeout: 60 * time.Second}}
 	if opts.NoImages {
 		return w
 	}
@@ -242,7 +246,7 @@ func (w *writer) picture(ctx context.Context, src string, st *stats) (hash, orig
 	if h, ok := w.uploaded[src]; ok {
 		return h, src
 	}
-	if w.images == nil {
+	if w.images == nil || w.failed[src] {
 		return "", src
 	}
 	h, err := w.upload(ctx, src)

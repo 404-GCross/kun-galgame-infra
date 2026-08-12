@@ -26,6 +26,7 @@ func main() {
 	only := flag.String("only", "", "comma-separated issue numbers to process")
 	dsn := flag.String("dsn", "", "kun_news DSN override (default: KUN_NEWS_PG_*)")
 	imageBase := flag.String("image-base", "", "image_service base URL override (local dev)")
+	concurrency := flag.Int("concurrency", 8, "parallel picture fetch/upload (database writes stay serial)")
 	flag.Parse()
 
 	_ = godotenv.Load("apps/api/.env")
@@ -57,6 +58,7 @@ func main() {
 		Only:        issues,
 		DSN:         *dsn,
 		ImageBase:   *imageBase,
+		Concurrency: *concurrency,
 	})
 	if sum != nil {
 		b, _ := json.MarshalIndent(sum, "", "  ")

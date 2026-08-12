@@ -231,6 +231,47 @@ func TestPicturesArriveForRowsWhoseTextDidNotChange(t *testing.T) {
 	}
 }
 
+// warm is what makes the 8,080-picture pass concurrent, so it is also what
+// would re-download the whole corpus on a second run. Its first job is to seed
+// the cache from what is already stored: every URL resolved here is a fetch
+// that does not happen, and the writer holds no image client, so a fetch would
+// fail the test rather than quietly succeed.
+func TestWarmResolvesStoredPicturesWithoutFetching(t *testing.T) {
+	db, _ := openTestDB(t)
+	a := article("【Gal周报203期】x",
+		text(17, false, "新作资讯"),
+		text(17, true, "1.《A》情报公开"), text(17, false, body),
+		picture("https://i0.hdslb.com/bfs/article/w1.png"),
+		picture("https://i0.hdslb.com/bfs/article/w2.png"),
+		text(17, true, "2.《B》发售日决定"), text(17, false, body),
+		text(17, true, "3.《C》汉化发布"), text(17, false, body),
+	)
+	a.Data.ID = 1004
+	a.Data.PublishTime = 1786257779
+	it := Segment(a).Items[0]
+	ctx := context.Background()
+
+	seeded := map[string]string{it.Pictures[0]: "hash-w1", it.Pictures[1]: "hash-w2"}
+	first := &writer{db: db, opts: Opts{Apply: true}, uploaded: seeded,
+		failed: map[string]bool{}, images: &imageclient.Client{}}
+	if err := first.applyItem(ctx, 1004, time.Unix(1786257779, 0).UTC(), it, &stats{}); err != nil {
+		t.Fatal(err)
+	}
+
+	second := &writer{db: db, opts: Opts{Apply: true, Concurrency: 4},
+		uploaded: map[string]string{}, failed: map[string]bool{}, images: &imageclient.Client{}}
+	st := &stats{}
+	second.warm(ctx, it.Pictures, st)
+	if st.imagesUp != 0 || st.imagesFail != 0 {
+		t.Errorf("warm fetched %d / failed %d — everything was already stored", st.imagesUp, st.imagesFail)
+	}
+	for _, u := range it.Pictures {
+		if second.uploaded[u] != seeded[u] {
+			t.Errorf("%s resolved to %q, want %q", u, second.uploaded[u], seeded[u])
+		}
+	}
+}
+
 func TestImportSeedsSourceRow(t *testing.T) {
 	// One newstest.Open per test and no more: the suite lock is a session-level
 	// advisory lock, so a second handle inside the same test waits on the first

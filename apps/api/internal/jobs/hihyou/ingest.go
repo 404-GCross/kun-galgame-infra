@@ -21,6 +21,7 @@ type Opts struct {
 	Only        []int
 	DSN         string
 	ImageBase   string
+	Concurrency int // parallel picture fetch/upload; the database writes stay serial
 }
 
 type stats struct {
@@ -140,6 +141,13 @@ func Import(ctx context.Context, cfg *config.Config, opts Opts) (*Summary, error
 			continue
 		}
 		published := time.Unix(e.Article.Data.PublishTime, 0).UTC()
+		if opts.Apply {
+			var urls []string
+			for _, it := range seg.Items {
+				urls = append(urls, it.Pictures...)
+			}
+			w.warm(ctx, urls, st)
+		}
 		for _, it := range seg.Items {
 			if err := w.applyItem(ctx, seg.CV, published, it, st); err != nil {
 				return nil, fmt.Errorf("issue %d item %d: %w", seg.IssueNo, it.Ordinal, err)
