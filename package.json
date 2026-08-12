@@ -12,6 +12,8 @@
     "dev:apps": "pnpm -F \"./apps/**\" --parallel --stream run dev",
     "dev:full": "bash scripts/dev.sh --full",
     "dev:down": "docker compose -f docker-compose.dev.yml --profile full down",
+    "dev:doctor": "bash scripts/dev-doctor.sh",
+    "dev:db": "bash scripts/create-dev-databases.sh",
     "build": "pnpm -F \"./apps/**\" --parallel run build",
     "format": "pnpm -F \"./apps/**\" --parallel run format",
     "lint": "pnpm -F \"./apps/web\" run lint",

@@ -33,6 +33,13 @@ PROFILE_ARGS=()
 FULL=0
 [[ "${1:-}" == "--full" ]] && { FULL=1; PROFILE_ARGS=(--profile full); }
 
+# Preflight. ~2s against a several-minute first run, and it is what stands
+# between a contributor and a migrate container that exits 1 with no explanation
+# (missing database / wrong password / Docker Desktop's VM loopback). Run
+# unconditionally rather than only on a fresh checkout: the half-succeeded retry
+# is exactly when it is needed. SKIP_DOCTOR=1 to bypass.
+[[ "${SKIP_DOCTOR:-0}" == 1 ]] || ./scripts/dev-doctor.sh || exit 1
+
 # The box may already provide a backing service on its shared port (a native
 # redis on :6379 is common). The compose copy uses host networking, so it would
 # fail to bind — and the shared env points every service at 127.0.0.1:<port>

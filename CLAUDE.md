@@ -70,7 +70,15 @@ was starting a second copy of one that was already up.
 - Ports match prod (9277-9284); Postgres is the box's own `127.0.0.1:5432`, not
   a compose service — its host/port/user/password are `${VAR:-default}` in the
   dev compose, so override them from a root `.env` instead of editing the file.
-  Full model: `docs/dev-environment.md`.
+  Create the 12 databases with `pnpm dev:db` (idempotent): `docker/initdb.d` runs
+  only when Postgres itself initialises an empty data dir, which on the box's own
+  server is never. Full model: `docs/dev-environment.md`.
+- `pnpm dev` preflights with `pnpm dev:doctor` (read-only, ~2s; `SKIP_DOCTOR=1`
+  bypasses). It is the answer to "the migrate container exited 1 with no output" —
+  it checks the shell, the daemon, Postgres, the databases, GHCR, and whether a
+  **host-networked container** can actually reach Postgres. That last one is the
+  Windows/macOS trap: `network_mode: host` means the Docker Desktop VM's loopback,
+  so the supported shape is Postgres + repo + shell all inside one WSL2 distro.
 - First run needs GHCR auth (images are private) — a bare `gh auth token` lacks
   `read:packages` and pulls fail `unauthorized`. One-time:
   `gh auth refresh -h github.com -s read:packages` then

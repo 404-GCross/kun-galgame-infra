@@ -79,10 +79,62 @@ migrate job dying instantly on a fresh Windows checkout:
 
 There is no `extra_hosts` / `host.docker.internal` fallback in the compose file
 — pointing one service at the Windows host would not fix the other direction
-(services reaching *each other* on `127.0.0.1`). So the supported path is:
-**install Postgres inside WSL2, run `pnpm dev` from a WSL2 shell**, with Docker
-Desktop on the WSL2 backend. `pnpm dev` is `bash scripts/dev.sh` and does not
-run under `cmd.exe` / PowerShell anyway.
+(services reaching *each other* on `127.0.0.1`). So the supported path is
+**everything inside one WSL2 distro**: Postgres, the repo, and the shell you run
+`pnpm dev` from. `pnpm dev` is `bash scripts/dev.sh` and does not run under
+`cmd.exe` / PowerShell anyway.
+
+#### Windows setup, start to finish
+
+```powershell
+wsl --install -d Ubuntu     # PowerShell, once; reboot if it asks
+```
+
+Then, **inside the Ubuntu shell** (everything below is WSL2, never PowerShell):
+
+```sh
+sudo apt update && sudo apt install -y postgresql postgresql-client git curl jq
+sudo service postgresql start
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'pick-your-own';"
+
+# Clone into the LINUX filesystem. Not /mnt/c — cross-OS 9p writes are slow
+# enough that air's rebuild loop becomes unusable.
+cd ~ && git clone <this repo> && cd kun-galgame-infra
+
+printf 'KUN_PG_PASSWORD=pick-your-own\n' > .env   # root .env, gitignored
+./scripts/create-dev-databases.sh                 # creates the 12 databases
+pnpm install && pnpm dev
+```
+
+Docker: either Docker Desktop with the WSL2 integration enabled for this distro,
+or `apt install docker.io` **inside** the distro. Both work — the requirement is
+that the daemon and Postgres agree on what "host" means, which `pnpm dev:doctor`
+verifies for real (it runs a host-networked container and has it dial your
+Postgres port).
+
+Two Windows-specific failure shapes worth naming:
+
+- **`set: pipefail^M: invalid option name`** (or `$'\r': command not found`) —
+  Git for Windows checked the scripts out with CRLF. `.gitattributes` pins `*.sh`
+  to LF, so a fresh clone is fine; an older clone is fixed with
+  `git rm --cached -r . && git reset --hard`.
+- **Windows-side Postgres, WSL2-side stack** — the doctor reports it as "a
+  host-networked container CANNOT reach …". Install Postgres in the distro
+  instead; that is the supported shape.
+
+macOS has the same VM problem with no WSL2 to fall back on: use a Linux VM, or
+run the Go services natively (`go run ./cmd/<svc>`, Replace mode below) against a
+native Postgres and skip the containerised services.
+
+### Preflight: `pnpm dev:doctor`
+
+`pnpm dev` runs this first (`SKIP_DOCTOR=1` bypasses it), and it is worth running
+on its own whenever something is off. It is read-only — starts nothing, creates
+nothing — and checks, in order: the shell is not Git Bash; docker / jq / pnpm and
+a reachable daemon; Postgres answering on the configured coordinates; **a
+host-networked container reaching that same port** (the check that catches the
+Docker Desktop shape); every database present; and GHCR readable. Each failure
+prints the fix.
 
 ## Prerequisites
 
@@ -104,14 +156,20 @@ run under `cmd.exe` / PowerShell anyway.
    a compose service here, so on your own server it never runs automatically:
 
    ```sh
-   psql -h 127.0.0.1 -U postgres -f docker/initdb.d/01-create-databases.sh   # or run the CREATE DATABASE lines
+   ./scripts/create-dev-databases.sh           # or: pnpm dev:db
+   ./scripts/create-dev-databases.sh --check   # report only, create nothing
    ```
 
-   (`kun_galgame_infra`, `kun_images`, `kun_artifacts`, `kun_catalog`,
-   `kun_community`, `kun_trust`, `kun_ai`, `kun_news`, plus the downstream
-   repos' databases.) A migrate job that exits 1 seconds after start is almost
-   always one of these two: wrong password, or a database that doesn't exist —
-   `docker compose -f docker-compose.dev.yml logs migrate` says which.
+   It reads your coordinates from the rendered compose config (so the `.env`
+   above applies) and the database list from that same initdb hook, and skips
+   the ones that already exist. Twelve in total: `kun_galgame_infra`,
+   `kun_images`, `kun_artifacts`, `kun_catalog`, `kun_community`, `kun_trust`,
+   `kun_ai`, `kun_news`, plus the downstream repos' (`kungalgame`,
+   `kungalgame_patch`, `kungalgame_sticker`, `kun_letmoe`).
+
+   A migrate job that exits 1 seconds after start is almost always one of these
+   two: wrong password, or a database that doesn't exist. `pnpm dev:doctor` says
+   which without reading a single log line.
 
 2. **GHCR access for the platform images** (they are private). The default `gh`
    token does **not** carry `read:packages`, so `docker login` with it fails
