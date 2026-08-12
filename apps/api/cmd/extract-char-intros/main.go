@@ -107,8 +107,8 @@ func run(ctx context.Context, db *gorm.DB, ex extractor, o opts) error {
 			return err
 		}
 	}
-	fmt.Printf("\nworks=%d extracted=%d inserted=%d conflict=%d refused_not_verbatim=%d refused_short=%d unmatched_name=%d call_errors=%d touched_works=%d\n",
-		len(works), st.Extracted, st.Inserted, st.Conflict, st.RefusedNotVerbatim, st.RefusedShort, st.UnmatchedName, st.CallErrors, st.Touched)
+	fmt.Printf("\nworks=%d extracted=%d inserted=%d conflict=%d refused_not_verbatim=%d refused_short=%d refused_name_absent=%d unmatched_name=%d call_errors=%d touched_works=%d\n",
+		len(works), st.Extracted, st.Inserted, st.Conflict, st.RefusedNotVerbatim, st.RefusedShort, st.RefusedNameAbsent, st.UnmatchedName, st.CallErrors, st.Touched)
 	if !o.Apply {
 		fmt.Println("[dry run] nothing written — re-run with --apply")
 	}
