@@ -21,7 +21,10 @@ import (
 const (
 	bannerPreset = "news_banner"
 	uploaderSub  = "system:hihyou-weekly"
-	maxImageB    = 10 << 20
+	// What we are willing to DOWNLOAD, which is not what the service accepts:
+	// the largest picture in the corpus is 19.7 MB and shrink() refits it before
+	// upload. A 10 MiB ceiling here would drop 546 pictures at the fetch.
+	maxImageB = 24 << 20
 )
 
 type writer struct {
@@ -280,6 +283,10 @@ func (w *writer) upload(ctx context.Context, src string) (string, error) {
 	name := path.Base(src)
 	if name == "" || name == "." || name == "/" {
 		name = "news.webp"
+	}
+	body, name, err = shrink(body, name)
+	if err != nil {
+		return "", err
 	}
 	res, err := w.images.UploadWithSub(ctx, bytes.NewReader(body), name, bannerPreset, uploaderSub)
 	if err != nil {
