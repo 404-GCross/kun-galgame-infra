@@ -85,13 +85,17 @@ func runGrade(ctx context.Context, o gradeOptions, w io.Writer) error {
 		remaining, o.Apply, o.Concurrency, len(gradeLadder), estimate, o.MaxNeurons)
 
 	ctx, abort := context.WithCancelCause(ctx)
-	defer abort(nil)
-
 	stopGuard, err := startUsageGuard(ctx, o, abort, w)
 	if err != nil {
+		abort(nil)
 		return err
 	}
-	defer stopGuard()
+	// The guard only unblocks once ctx is cancelled, so cancelling has to happen
+	// inside the same deferred call — two separate defers run LIFO and hang.
+	defer func() {
+		abort(nil)
+		stopGuard()
+	}()
 
 	fetch := &http.Client{Timeout: 60 * time.Second}
 	var (
