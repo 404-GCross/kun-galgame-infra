@@ -43,7 +43,7 @@ func loadEGTexts(ctx context.Context, egDB *gorm.DB) (map[int64]string, error) {
 		Text        string `gorm:"column:text"`
 	}
 	if err := egDB.WithContext(ctx).Raw(query).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("load erogamespace appearance texts: %w", err)
+		return nil, fmt.Errorf("load erogamescape appearance texts: %w", err)
 	}
 	out := make(map[int64]string, len(rows))
 	for _, r := range rows {

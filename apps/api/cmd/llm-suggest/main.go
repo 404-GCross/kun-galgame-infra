@@ -26,7 +26,7 @@ func main() {
 	llmBase := flag.String("llm-base", "http://127.0.0.1:8002/v1", "vLLM OpenAI base URL")
 	model := flag.String("model", "qwen3-14b", "served model id")
 	goldPath := flag.String("goldset", defaultGoldSet, "gold set JSONL path")
-	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (build-goldset; default: erogamespace on the catalog server)")
+	egDSN := flag.String("eg-dsn", "", "erogamescape staging DSN (build-goldset; default: erogamescape on the catalog server)")
 	buildGold := flag.Bool("build-goldset", false, "regenerate the gold set JSONL from local dumps, then exit")
 	calibrate := flag.Bool("calibrate", false, "print calibration metrics from persisted goldset verdicts, then exit")
 	batch := flag.Bool("batch", false, "goldset: judge in batches (throughput comparison; prompt_version v1-batch)")
@@ -135,12 +135,12 @@ func main() {
 func openEG(cfg *config.Config, dsn string) *gorm.DB {
 	if dsn == "" {
 		egCfg := cfg.CatalogDatabase
-		egCfg.DBName = "erogamespace"
+		egCfg.DBName = "erogamescape"
 		dsn = egCfg.DSN()
 	}
 	db, err := database.OpenJob(dsn)
 	if err != nil {
-		slog.Error("erogamespace connect", "error", err)
+		slog.Error("erogamescape connect", "error", err)
 		os.Exit(1)
 	}
 	return db

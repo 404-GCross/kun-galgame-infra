@@ -151,5 +151,5 @@ func TestCharEGRequiresDSN(t *testing.T) {
 	require.Error(t, err, "the default all-lane run includes char-eg, so it needs the DSN too")
 
 	_, err = Run(ctx, Opts{DSN: testDSN, Only: LaneCharVNDB})
-	require.NoError(t, err, "an in-DB lane needs no erogamespace access")
+	require.NoError(t, err, "an in-DB lane needs no erogamescape access")
 }

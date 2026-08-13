@@ -78,7 +78,7 @@ func deriveEGDSN(catalogDSN string) (string, error) {
 	if !reDBName.MatchString(catalogDSN) {
 		return "", fmt.Errorf("cannot derive eg dsn: no dbname= in catalog dsn")
 	}
-	return reDBName.ReplaceAllString(catalogDSN, "dbname=erogamespace"), nil
+	return reDBName.ReplaceAllString(catalogDSN, "dbname=erogamescape"), nil
 }
 
 func openPools(opts Opts, needEG bool) (catalog, eg *gorm.DB, err error) {
@@ -98,7 +98,7 @@ func openPools(opts Opts, needEG bool) (catalog, eg *gorm.DB, err error) {
 		}
 		eg, err = openGorm(egDSN)
 		if err != nil {
-			return nil, nil, fmt.Errorf("open erogamespace pool: %w", err)
+			return nil, nil, fmt.Errorf("open erogamescape pool: %w", err)
 		}
 	}
 	return catalog, eg, nil

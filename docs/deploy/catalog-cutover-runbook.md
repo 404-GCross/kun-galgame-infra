@@ -4,7 +4,7 @@
 >
 > 背景与前置知识不在此重复,互链既有文档:部署总览 [00-architecture](./00-architecture.md)、日常运维 [06-operations](./06-operations.md)、Dokploy [12-dokploy](./12-dokploy.md)、镜像/CI [13-registry-ci](./13-registry-ci.md)、备份还原 [14-backup-restore](./14-backup-restore.md)、带数据上线范本 [16-data-cutover](./16-data-cutover.md)。契约见 [../catalog/README](../catalog/README.md)。
 >
-> **一句话形态**:push → CI 建镜像(含 `infra-catalog`/`infra-migrate-catalog`)+ 手动建 `infra-tools` → 生产建 `kun_catalog`/`erogamespace` 两库并灌 dump → Dokploy redeploy(**逐服务核 sha**)→ **显式核 schema**(不信自动链)→ 绑定 `catalog_site` → infra-tools 幂等重跑富集/对账/重建索引 → 验服务与消费面。
+> **一句话形态**:push → CI 建镜像(含 `infra-catalog`/`infra-migrate-catalog`)+ 手动建 `infra-tools` → 生产建 `kun_catalog`/`erogamescape` 两库并灌 dump → Dokploy redeploy(**逐服务核 sha**)→ **显式核 schema**(不信自动链)→ 绑定 `catalog_site` → infra-tools 幂等重跑富集/对账/重建索引 → 验服务与消费面。
 
 ---
 
@@ -33,7 +33,7 @@
   1. 主库 `kun_galgame_infra`:`oauth_clients.catalog_site` 列(步骤 16,`cmd/migrate`);
   2. wiki 库 `kun_galgame_wiki`:`galgame_bangumi_meta` 表(步骤 10 欠账,`cmd/migrate-galgame`);
   3. **新库** `kun_catalog`:整套 Gold+src_bangumi+src_llm schema(`cmd/migrate catalog`)——**库需手建**(§2)。
-- [ ] **dump 体积预估**(本地 `pg_dump -Fc` 实测,2026-07-06):`kun_catalog` ≈ **435 MB**(库 ~3.0 GB;dump ~26 s),`erogamespace` ≈ **358 MB**(库 ~4.2 GB;dump ~24 s)。scp 前留足带宽/磁盘。
+- [ ] **dump 体积预估**(本地 `pg_dump -Fc` 实测,2026-07-06):`kun_catalog` ≈ **435 MB**(库 ~3.0 GB;dump ~26 s),`erogamescape` ≈ **358 MB**(库 ~4.2 GB;dump ~24 s)。scp 前留足带宽/磁盘。
 - [ ] **富集/对账欠账**知晓:生产 wiki 的 bangumi 首次富集(~**6,093** 部 bid 锚游戏)+ 生产 wiki 相对本地快照的新增游戏认领(§6)。
 - [ ] pg_dump 版本 ≥ 生产 PG(本地 18.4,生产 `postgres:18-alpine` → 兼容)。
 
@@ -67,11 +67,11 @@ ls -lh /root/pre-catalog-cutover_kun_galgame_wiki_*.dump   # 记录体积作证�
 
 ### 2.1 · 建两个新库
 
-**生产 Postgres 的 `initdb.d` 只在首次初始化生效**,故 `kun_catalog`/`erogamespace` 必须手建:
+**生产 Postgres 的 `initdb.d` 只在首次初始化生效**,故 `kun_catalog`/`erogamescape` 必须手建:
 ```bash
 sudo docker exec "$PG" psql -U postgres -c "CREATE DATABASE kun_catalog;"
-sudo docker exec "$PG" psql -U postgres -c "CREATE DATABASE erogamespace;"
-sudo docker exec "$PG" psql -U postgres -c "\l" | grep -E 'kun_catalog|erogamespace'   # 确认存在
+sudo docker exec "$PG" psql -U postgres -c "CREATE DATABASE erogamescape;"
+sudo docker exec "$PG" psql -U postgres -c "\l" | grep -E 'kun_catalog|erogamescape'   # 确认存在
 ```
 
 ### 2.2 · 灌 dump（本地 → 生产）
@@ -82,14 +82,14 @@ sudo docker exec "$PG" psql -U postgres -c "\l" | grep -E 'kun_catalog|erogamesp
 ```bash
 cd /home/kun/Desktop/code/website/kun-galgame-infra
 PGPASSWORD=<本地pg密码> pg_dump -h localhost -U postgres -Fc -d kun_catalog   -f /tmp/kun_catalog.dump
-PGPASSWORD=<本地pg密码> pg_dump -h localhost -U postgres -Fc -d erogamespace -f /tmp/erogamespace.dump
+PGPASSWORD=<本地pg密码> pg_dump -h localhost -U postgres -Fc -d erogamescape -f /tmp/erogamescape.dump
 scp /tmp/kun_catalog.dump   kungal-neo:/root/
-scp /tmp/erogamespace.dump kungal-neo:/root/
+scp /tmp/erogamescape.dump kungal-neo:/root/
 ```
 **生产**还原(容器内 `pg_restore` 读 stdin):
 ```bash
 cat /root/kun_catalog.dump   | sudo docker exec -i "$PG" pg_restore -U postgres --no-owner --no-privileges -d kun_catalog
-cat /root/erogamespace.dump | sudo docker exec -i "$PG" pg_restore -U postgres --no-owner --no-privileges -d erogamespace
+cat /root/erogamescape.dump | sudo docker exec -i "$PG" pg_restore -U postgres --no-owner --no-privileges -d erogamescape
 ```
 > `kun_catalog` dump 含 **Gold + `src_bangumi` + `src_llm`** 全 schema+数据。`--no-owner --no-privileges` 抹掉本地 owner。`pg_restore` 对已存在对象可能刷少量 warning(权限/注释),非致命;若报大量 error 停下核对。
 
@@ -195,13 +195,13 @@ run_tool reindex-search --index=galgames
 
 ### 6.c · 认领生产 wiki 新增游戏 → catalog
 
-`reconcile-galgame-works` 的 `--eg-dsn` **缺省即指 catalog PG 服务器上的 `erogamespace` 库**(= §2 灌入的同一 pg,同 user/pass)→ 无需手拼 DSN、无需碰密码:
+`reconcile-galgame-works` 的 `--eg-dsn` **缺省即指 catalog PG 服务器上的 `erogamescape` 库**(= §2 灌入的同一 pg,同 user/pass)→ 无需手拼 DSN、无需碰密码:
 ```bash
 dump_env "${PROJ}-catalog-1"
 run_tool reconcile-galgame-works            # dry:统计将认领的新增数
 run_tool reconcile-galgame-works --apply    # 认领生产 wiki 相对本地快照的新增游戏
 ```
-> 读 wiki(`GalgameDatabase`)+ 写 catalog(`CatalogDatabase`)+ 读 erogamespace(缺省 DSN)——三库都在 `&infra-env` 覆盖内,故 `catalog-1` 的 env-file 足够。**未来 dlsite 波**(缓搬)到来时,按 §2 同法把 `dlsite` 库进生产,再补相应 import cmd。
+> 读 wiki(`GalgameDatabase`)+ 写 catalog(`CatalogDatabase`)+ 读 erogamescape(缺省 DSN)——三库都在 `&infra-env` 覆盖内,故 `catalog-1` 的 env-file 足够。**未来 dlsite 波**(缓搬)到来时,按 §2 同法把 `dlsite` 库进生产,再补相应 import cmd。
 
 ### 6.d · bangumi id 审计基线
 
@@ -238,7 +238,7 @@ sudo docker run --rm --network dokploy-network curlimages/curl:latest -s -o /dev
 | 对象 | 回滚 | 说明 |
 |------|------|------|
 | catalog 服务 / 镜像 | Dokploy 常规回退到上一 tag | 无状态,安全 |
-| `kun_catalog` / `erogamespace` 库 | `DROP DATABASE` 重灌 §2 | cutover 期无消费者依赖,可反复重来 |
+| `kun_catalog` / `erogamescape` 库 | `DROP DATABASE` 重灌 §2 | cutover 期无消费者依赖,可反复重来 |
 | `oauth_clients.catalog_site` 列 + `galgame_bangumi_meta` 表 | **留着无害** | 都是加法;回滚仅需把 `catalog_site` 置 NULL |
 | **wiki 富集(§6a)** | **不可简单回滚** | `enrich-bangumi` 只填空语义(不覆盖已有),但要精确复原需**从 §2.0 的备份 `pre-catalog-cutover_kun_galgame_wiki_*.dump` 还原整库**——仅灾难场景用:`cat <dump> \| sudo docker exec -i "$PG" pg_restore -U postgres --clean --if-exists --no-owner -d kun_galgame_wiki` |
 

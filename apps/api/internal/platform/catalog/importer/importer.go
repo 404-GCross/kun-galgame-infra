@@ -98,7 +98,7 @@ func (im *Importer) Run(source string) (Stats, error) {
 	}
 	if source == "eg" || source == "all" {
 		if im.eg == nil {
-			return total, fmt.Errorf("eg wave requested but no erogamespace connection")
+			return total, fmt.Errorf("eg wave requested but no erogamescape connection")
 		}
 		s, err := im.runEG()
 		if err != nil {
@@ -108,7 +108,7 @@ func (im *Importer) Run(source string) (Stats, error) {
 	}
 	if source == "eg-music" || source == "all" {
 		if im.eg == nil {
-			return total, fmt.Errorf("eg-music wave requested but no erogamespace connection")
+			return total, fmt.Errorf("eg-music wave requested but no erogamescape connection")
 		}
 		s, err := im.runEGMusic()
 		if err != nil {

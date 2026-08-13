@@ -111,7 +111,7 @@ type candidate struct {
 func (im *Importer) RunBgmType4Gated(dlsiteDB *gorm.DB) (BgmGatedStats, error) {
 	var st BgmGatedStats
 	if im.eg == nil || dlsiteDB == nil {
-		return st, fmt.Errorf("bgm-type4-gated needs both erogamespace (eg) and dlsite connections")
+		return st, fmt.Errorf("bgm-type4-gated needs both erogamescape (eg) and dlsite connections")
 	}
 
 	xsrc, err := im.loadCrossSourceNorms(dlsiteDB)
