@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "", "scan | report | backfill")
+	mode := flag.String("mode", "", "scan | report | backfill | grade")
 	dsn := flag.String("dsn", "", "images DSN (REQUIRED for scan)")
 	out := flag.String("out", "", "scan: JSONL output path (appended — resume-safe)")
 	in := flag.String("in", "", "report: JSONL input path")
@@ -31,7 +31,14 @@ func main() {
 	qps := flag.Float64("qps", 8, "scan: request rate ceiling")
 
 	batch := flag.Int("batch", 2000, "backfill: rows fetched per page")
-	apply := flag.Bool("apply", false, "backfill: write review_labels->auto (dry run without it)")
+	apply := flag.Bool("apply", false, "backfill: write review_labels->auto; grade: write review_labels->grade (dry run without it)")
+
+	cfAccount := flag.String("cf-account", os.Getenv("CLOUDFLARE_ACCOUNT_ID"), "grade: Cloudflare account id")
+	cfToken := flag.String("cf-token", os.Getenv("CLOUDFLARE_API_TOKEN"), "grade: Workers AI token")
+	cfModel := flag.String("cf-model", "@cf/moondream/moondream3.1-9B-A2B", "grade: Workers AI vision model")
+	maxNeurons := flag.Float64("max-neurons", 0, "grade: stop once this many neurons are spent (0 = no cap)")
+	guardDSN := flag.String("guard-dsn", "", "grade: kun_ai DSN watched for live fail-open (empty disables the guard)")
+	guardShare := flag.Float64("guard-share", 0.106, "grade: abort when the live ai_usage failure share exceeds this")
 	flag.Parse()
 
 	logger.Init("production")
@@ -65,10 +72,24 @@ func main() {
 			Apply:       *apply,
 			Client:      newOmniImageClient(*omniBase, *omniToken, *omniModel),
 		}, os.Stdout)
+	case "grade":
+		err = runGrade(ctx, gradeOptions{
+			DSN:         *dsn,
+			BaseURL:     *baseURL,
+			Variant:     *variant,
+			Limit:       *limit,
+			Batch:       *batch,
+			Concurrency: *concurrency,
+			Apply:       *apply,
+			MaxNeurons:  *maxNeurons,
+			GuardDSN:    *guardDSN,
+			GuardShare:  *guardShare,
+			Client:      newMoondreamClient(*cfAccount, *cfToken, *cfModel),
+		}, os.Stdout)
 	case "report":
 		err = runReport(*in, os.Stdout)
 	default:
-		err = fmt.Errorf("--mode must be scan or report")
+		err = fmt.Errorf("--mode must be scan, report, backfill or grade")
 	}
 	if err != nil {
 		slog.Error("classify-image-safety", "mode", *mode, "error", err)

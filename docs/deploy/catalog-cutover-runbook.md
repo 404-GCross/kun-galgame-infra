@@ -32,7 +32,7 @@
 - [ ] **三个迁移欠账**明确(§3/§4 显式核验):
   1. 主库 `kun_galgame_infra`:`oauth_clients.catalog_site` 列(步骤 16,`cmd/migrate`);
   2. wiki 库 `kun_galgame_wiki`:`galgame_bangumi_meta` 表(步骤 10 欠账,`cmd/migrate-galgame`);
-  3. **新库** `kun_catalog`:整套 Gold+src_bangumi+src_llm schema(`cmd/migrate-catalog`)——**库需手建**(§2)。
+  3. **新库** `kun_catalog`:整套 Gold+src_bangumi+src_llm schema(`cmd/migrate catalog`)——**库需手建**(§2)。
 - [ ] **dump 体积预估**(本地 `pg_dump -Fc` 实测,2026-07-06):`kun_catalog` ≈ **435 MB**(库 ~3.0 GB;dump ~26 s),`erogamespace` ≈ **358 MB**(库 ~4.2 GB;dump ~24 s)。scp 前留足带宽/磁盘。
 - [ ] **富集/对账欠账**知晓:生产 wiki 的 bangumi 首次富集(~**6,093** 部 bid 锚游戏)+ 生产 wiki 相对本地快照的新增游戏认领(§6)。
 - [ ] pg_dump 版本 ≥ 生产 PG(本地 18.4,生产 `postgres:18-alpine` → 兼容)。

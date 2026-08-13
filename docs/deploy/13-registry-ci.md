@@ -37,8 +37,7 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 | `infra-catalog` | infra | `docker/go.Dockerfile` | `CMD=catalog` | 9281(含 galgame-wiki 面;`infra-galgame`/9280 已随 wiki 退役 W3/W5 移除) |
 | `infra-web` | infra | `docker/nuxt.Dockerfile` | `APP=web` | 3000 |
 | `infra-wiki` | infra | `docker/nuxt.Dockerfile` | `APP=wiki` | 3000 |
-| `infra-migrate` | infra | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性) |
-| `infra-migrate-catalog` | infra | `docker/go.Dockerfile` | `CMD=migrate-catalog` | —(一次性;W5 起同时迁 galgame 两族 schema,`infra-migrate-galgame` 已移除) |
+| `infra-migrate` | infra | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性;**所有库的唯一迁移镜像**,目标由参数给:裸跑=主库,`catalog`/`community`/`trust`/`ai`/`news`=对应库。原先每域一个的 `infra-migrate-catalog`/`-community`/`-trust`/`-ai`/`-news` 已合并进来,不再构建) |
 | `infra-tools` | infra | `docker/tools.Dockerfile` | —(打包全部 `cmd/*`) | —(一次性) |
 | `kungal-api` | nuxt4 | `docker/go.Dockerfile` | `CMD=server` | 2334 |
 | `kungal-web` | nuxt4 | `docker/nuxt.Dockerfile` | —(单一 app,无 `APP`) | 7777 |
@@ -52,7 +51,7 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 > 基础设施 `postgres`/`redis`/`minio`/`meili` 用上游官方镜像,不进 CI。
 >
 > **`*-tools` 镜像**:把该仓 `apps/api/cmd/*` 的**每个**二进制打进一个镜像(infra 用 cgo+libwebp 编,
-> 下游纯 Go)。`migrate`/`migrate-catalog` 只够空库起服务;完整数据 cutover([03-bootstrap §B](./03-bootstrap.md))
+> 下游纯 Go)。`migrate`(及其 `catalog` 等目标)只够空库起服务;完整数据 cutover([03-bootstrap §B](./03-bootstrap.md))
 > 需要 `migrate-users`/`migrate-galgame-data`/`migrate-moyu-galgame`/`dedup-galgame-alias`/`reindex-search` 等,
 > 而一镜像只含一个 `CMD` 二进制,**不能** `--entrypoint` 复用。`tools` 已是各仓 prod compose 的
 > jobs-profile 服务(environment 内联),按名跑一次性 job:
@@ -72,7 +71,7 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 
 每仓放一个 `.github/workflows/build.yml`。下面是 **infra(最复杂,cgo + 2×Nuxt + Go)** 的完整示例;kungal/moyu **同构**,仅 `matrix` 列表不同。
 
-> **省额度:infra 的实际 workflow 已改为「路径过滤 + 动态 matrix」**(下面这段是说明结构的简化示例,不是逐字现状)。GitHub 按 job 数×分钟计费且每 job 向上取整到 1 分钟,全量 matrix 即使全缓存每次 push 也要 ~10 分钟。现状:`changes` job 用 `dorny/paths-filter` 算出哪些组变了,只构建变更的镜像 —— `go`(oauth/image/artifact/catalog/community/trust/ai + 各 `migrate-*`,与服务同 sha 锁步 ← `apps/api/**`)、`web`(← `apps/web/**`+根 manifest)、`wiki`(← `apps/wiki/**`+根 manifest)、`developer`(← `apps/developer/**`);**只有 `infra-tools` 不随 push 构建,改为按需**(Actions → Run workflow → `scope=ondemand` 或 `all`)。docs-only 的 push 不构建任何镜像(~1 分钟)。**跑 prod 一次性数据 job 前,先 `scope=ondemand` 手动构建刷新 `infra-tools`,否则拉到旧镜像 → 静默失败。**
+> **省额度:infra 的实际 workflow 已改为「路径过滤 + 动态 matrix」**(下面这段是说明结构的简化示例,不是逐字现状)。GitHub 按 job 数×分钟计费且每 job 向上取整到 1 分钟,全量 matrix 即使全缓存每次 push 也要 ~10 分钟。现状:`changes` job 用 `dorny/paths-filter` 算出哪些组变了,只构建变更的镜像 —— `go`(oauth/image/artifact/catalog/community/trust/ai + 单一 `migrate`,与服务同 sha 锁步 ← `apps/api/**`)、`web`(← `apps/web/**`+根 manifest)、`wiki`(← `apps/wiki/**`+根 manifest)、`developer`(← `apps/developer/**`);**只有 `infra-tools` 不随 push 构建,改为按需**(Actions → Run workflow → `scope=ondemand` 或 `all`)。docs-only 的 push 不构建任何镜像(~1 分钟)。**跑 prod 一次性数据 job 前,先 `scope=ondemand` 手动构建刷新 `infra-tools`,否则拉到旧镜像 → 静默失败。**
 
 ```yaml
 # kun-galgame-infra/.github/workflows/build.yml
@@ -98,7 +97,6 @@ jobs:
           - { name: infra-image,           file: docker/cgo.Dockerfile,  args: "CMD=image" }
           - { name: infra-catalog,         file: docker/go.Dockerfile,   args: "CMD=catalog" }
           - { name: infra-migrate,         file: docker/go.Dockerfile,   args: "CMD=migrate" }
-          - { name: infra-migrate-catalog, file: docker/go.Dockerfile,   args: "CMD=migrate-catalog" }
           - { name: infra-web,             file: docker/nuxt.Dockerfile, args: "APP=web" }
           - { name: infra-wiki,            file: docker/nuxt.Dockerfile, args: "APP=wiki" }
     steps:

@@ -5,15 +5,18 @@
 # rebuilding every image on each push burned billed minutes even fully cached.
 # This workflow builds ONLY the images whose inputs changed (path-filtered
 # dynamic matrix):
-#   - go images (oauth/image/artifact/catalog/community/trust/ai + migrate-*)  ← apps/api/** + Dockerfiles
+#   - go images (oauth/image/artifact/catalog/community/trust/ai + migrate)  ← apps/api/** + Dockerfiles
 #   - web                                          ← apps/web/** + root manifests + nuxt.Dockerfile
 #   - tools                                        ← on-demand only (Run workflow → scope)
 # A docs-only push therefore builds nothing and costs ~1 min (the `changes` job).
 #
-# The migrate-* images build in LOCKSTEP with the go services (same apps/api
-# source + sha) — REQUIRED because prod now auto-applies migrations on deploy
-# (compose `depends_on: migrate`), so the migrate image must never lag the code.
-# Only `tools` (data-cutover one-offs) is on-demand: Actions → Run workflow → scope.
+# `infra-migrate` builds in LOCKSTEP with the go services (same apps/api source
+# + sha) — REQUIRED because prod now auto-applies migrations on deploy (compose
+# `depends_on: migrate`), so the migrate image must never lag the code. It is ONE
+# image for every database: the compose migrate-* services all run it and pass
+# the target as an argument (`command: ["catalog"]`), so there is no per-domain
+# image to keep in sync. Only `tools` (data-cutover one-offs) is on-demand:
+# Actions → Run workflow → scope.
 #
 # web BAKEs its browser-facing public config from build-args here.
 name: build-and-push
@@ -87,14 +90,9 @@ jobs:
             {"name":"infra-artifact","file":"docker/go.Dockerfile","args":"CMD=artifact","group":"go"},
             {"name":"infra-migrate","file":"docker/go.Dockerfile","args":"CMD=migrate","group":"go"},
             {"name":"infra-catalog","file":"docker/go.Dockerfile","args":"CMD=catalog","group":"go"},
-            {"name":"infra-migrate-catalog","file":"docker/go.Dockerfile","args":"CMD=migrate-catalog","group":"go"},
             {"name":"infra-community","file":"docker/go.Dockerfile","args":"CMD=community","group":"go"},
-            {"name":"infra-migrate-community","file":"docker/go.Dockerfile","args":"CMD=migrate-community","group":"go"},
             {"name":"infra-trust","file":"docker/go.Dockerfile","args":"CMD=trust","group":"go"},
-            {"name":"infra-migrate-trust","file":"docker/go.Dockerfile","args":"CMD=migrate-trust","group":"go"},
             {"name":"infra-ai","file":"docker/go.Dockerfile","args":"CMD=ai","group":"go"},
-            {"name":"infra-migrate-ai","file":"docker/go.Dockerfile","args":"CMD=migrate-ai","group":"go"},
-            {"name":"infra-migrate-news","file":"docker/go.Dockerfile","args":"CMD=migrate-news","group":"go"},
             {"name":"infra-mcp","file":"docker/go.Dockerfile","args":"CMD=mcp","group":"go"},
             {"name":"infra-web","file":"docker/nuxt.Dockerfile","args":"APP=web\nPUBLIC_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"web"},
             {"name":"infra-developer","file":"apps/developer/Dockerfile","args":"","group":"developer"}

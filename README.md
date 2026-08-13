@@ -63,7 +63,7 @@ apps/
 packages/
   ui/               @kun/ui —— 共享 Nuxt UI layer(组件 / 色系 / 样式)
   image-client/     @kun/image-client —— 图床客户端
-docker/             Dockerfile(cgo / go / nuxt)+ 各服务 env + initdb.d(建 5 库)
+docker/             Dockerfile(cgo / go / nuxt)+ 各服务 env + initdb.d(建库清单,12 个)
 docs/               文档(deploy / migration / api / galgame_wiki / image_service …)
 scripts/            运维脚本(reset_all.sh)+ 源库 dump
 ```
@@ -72,14 +72,29 @@ scripts/            运维脚本(reset_all.sh)+ 源库 dump
 
 ### 本地开发(一条命令)
 
+前置:一台你自己的 Postgres(**不在 compose 里**)。坐标默认 `127.0.0.1:5432` / `postgres`,
+不一致就在仓库根写一个 `.env`(已 gitignore)覆盖 `KUN_PG_HOST/_PORT/_USER/_PASSWORD`。
+
 ```bash
 pnpm install
-pnpm dev        # 平台底座(docker-compose.dev.yml:redis/minio/meili/mailpit/迁移/community/ai)
+pnpm dev:db     # 建齐 12 个库(幂等;initdb.d 只在 Postgres 首次初始化时跑,这里永远不会自动跑)
+pnpm dev        # 平台底座(docker-compose.dev.yml:redis/minio/meili/mailpit/迁移)
                 # + air 热重载五个常改 Go 服务(oauth/catalog/image/artifact/trust)+ Nuxt 前端
 ```
 
+`pnpm dev` 会先跑 `pnpm dev:doctor` 体检(约 2 秒,只读):shell 是不是 Git Bash、docker
+能不能连、Postgres 通不通、**host 网络的容器能不能真的够到它**、12 个库齐不齐、GHCR 有没有权限
+—— 每条失败都直接给修法。迁移容器「启动几秒就 exit 1」基本只有两个原因(密码不对 / 库不存在),
+体检直接说是哪个。
+
+> **Windows**:整套栈依赖 `network_mode: host`,这是 Linux 特性 —— Docker Desktop 里的
+> "host" 是那台 Linux 虚拟机,够不到装在 Windows 上的 Postgres。受支持的路径是
+> **Postgres、仓库、shell 全在同一个 WSL2 发行版里**(仓库克隆到 `~` 而非 `/mnt/c`)。
+> 完整步骤见 [docs/dev-environment.md](./docs/dev-environment.md) → Windows setup。
+
 完整模型(镜像拉取、Replace 模式、数据脱敏快照)见 [docs/dev-environment.md](./docs/dev-environment.md);
-`pnpm dev:full` = 全平台纯镜像(开发下游产品仓时用),`pnpm dev:down` 停底座。
+community / ai 不在默认栈里(没人拨它们),需要时 `pnpm dev:full` = 全平台纯镜像(开发下游产品仓时用),
+`pnpm dev:down` 停底座。
 
 ### 生产
 

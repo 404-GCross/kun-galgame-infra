@@ -1,9 +1,11 @@
 # kun-galgame-infra — LOCAL DEV compose (one-command platform for every repo).
 #
 # Motivation: any product repo's `pnpm dev` / `air` should depend on ONE fact —
-# "localhost has a platform". This file brings up the seven platform services
-# from prebuilt GHCR images plus all local infrastructure, with ZERO cloud
-# credentials on the dev box (docs/dev-environment.md).
+# "localhost has a platform". This file brings up the platform services from
+# prebuilt GHCR images plus all local infrastructure, with ZERO cloud
+# credentials on the dev box (docs/dev-environment.md). A bare `up` pulls only
+# what an INFRA session actually consumes; everything a product repo needs on
+# top of that sits behind the `full` profile.
 #
 # Differs from docker-compose.prod.yml (Dokploy) and docker-compose.yml (local build):
 #   1. `image: ghcr.io/kunmoe/infra-*:${INFRA_IMAGE_TAG:-latest}` — prebuilt, PULLED
@@ -13,10 +15,12 @@
 #      9280 retired with the standalone galgame service, W3/W5). This
 #      is what makes the "stop a container, `go run ./cmd/<svc>` in its place"
 #      replacement workflow seamless (docs/dev-environment.md → Replace mode).
-#   3. All config is inline `environment:` and LITERAL — dev constants, no secrets,
-#      no ${SECRET} panel references, no R2/B2 endpoints or keys.
+#   3. All config is inline `environment:` — dev constants, no secrets, no
+#      ${SECRET} panel references, no R2/B2 endpoints or keys. The Postgres
+#      coordinates carry `${VAR:-default}` so a contributor can point them at
+#      their own server from a root `.env` without editing this file.
 #   4. Postgres is NOT a service here: the dev box's own Postgres at 127.0.0.1:5432
-#      (user postgres / password 191007) is the source of truth (see MEMORY:
+#      (default user postgres) is the source of truth (see MEMORY:
 #      local-dev-truth-5432). Create the databases with docker/initdb.d if fresh.
 #   5. Out-of-band jobs (image-gc / refping / cron / tools) and the web/wiki
 #      frontends are deliberately NOT included — frontends run their own pnpm dev.
@@ -36,15 +40,19 @@ x-svc-health: &svc-health
   start_period: 15s
 
 # ── shared backend env (union; services ignore keys they don't read) ──────────
-# Every value is a LITERAL dev constant. No secrets, no panel ${VAR}, no cloud
+# Every value is a dev constant. No secrets, no panel ${VAR}, no cloud
 # endpoints. In host network mode all peers are reachable at 127.0.0.1:<port>.
 x-dev-env: &dev-env
   KUN_ENV: development # flips Secure cookies OFF so login works over plain HTTP
   # Postgres — the dev box's OWN server (NOT a compose service). One server, N DBs.
-  KUN_PG_HOST: 127.0.0.1
-  KUN_PG_PORT: "5432"
-  KUN_PG_USER: postgres
-  KUN_PG_PASSWORD: "191007"
+  # The defaults are this repo's original dev box; they are NOT a shared
+  # convention, so every one is overridable from a root `.env` (gitignored) —
+  # a contributor whose local Postgres uses different credentials sets them
+  # there instead of editing this file. See docs/dev-environment.md.
+  KUN_PG_HOST: ${KUN_PG_HOST:-127.0.0.1}
+  KUN_PG_PORT: "${KUN_PG_PORT:-5432}"
+  KUN_PG_USER: ${KUN_PG_USER:-postgres}
+  KUN_PG_PASSWORD: "${KUN_PG_PASSWORD:-191007}"
   KUN_PG_DATABASE: kun_galgame_infra
   KUN_PG_SSLMODE: disable
   KUN_PG_TIMEZONE: Asia/Shanghai
@@ -209,6 +217,10 @@ services:
   # migrate-* run FIRST and the services depend on them completing. All are
   # idempotent + additive against the box's live DBs (AutoMigrate, CREATE INDEX
   # IF NOT EXISTS, guarded seeds), so a re-run on every `up` is a fast no-op.
+  #
+  # ONE image, one binary, N targets: bare = the platform DB, `<domain>` = that
+  # domain's DB (cmd/migrate). The five per-domain images this used to pull
+  # (infra-migrate-catalog/-community/-trust/-ai/-news) no longer exist.
   migrate:
     image: ghcr.io/kunmoe/infra-migrate:${INFRA_IMAGE_TAG:-latest}
     network_mode: host
@@ -219,31 +231,42 @@ services:
   # migrated the galgame wiki family via KUN_GALGAME_PG_DATABASE from W5 until
   # wave 161 retired that family; the env var is now unread by this job.
   migrate-catalog:
-    image: ghcr.io/kunmoe/infra-migrate-catalog:${INFRA_IMAGE_TAG:-latest}
-    network_mode: host
-    environment: { <<: *dev-env }
-    restart: "no"
-
-  migrate-community:
-    image: ghcr.io/kunmoe/infra-migrate-community:${INFRA_IMAGE_TAG:-latest}
+    image: ghcr.io/kunmoe/infra-migrate:${INFRA_IMAGE_TAG:-latest}
+    command: ["catalog"]
     network_mode: host
     environment: { <<: *dev-env }
     restart: "no"
 
   migrate-trust:
-    image: ghcr.io/kunmoe/infra-migrate-trust:${INFRA_IMAGE_TAG:-latest}
-    network_mode: host
-    environment: { <<: *dev-env }
-    restart: "no"
-
-  migrate-ai:
-    image: ghcr.io/kunmoe/infra-migrate-ai:${INFRA_IMAGE_TAG:-latest}
+    image: ghcr.io/kunmoe/infra-migrate:${INFRA_IMAGE_TAG:-latest}
+    command: ["trust"]
     network_mode: host
     environment: { <<: *dev-env }
     restart: "no"
 
   migrate-news:
-    image: ghcr.io/kunmoe/infra-migrate-news:${INFRA_IMAGE_TAG:-latest}
+    image: ghcr.io/kunmoe/infra-migrate:${INFRA_IMAGE_TAG:-latest}
+    command: ["news"]
+    network_mode: host
+    environment: { <<: *dev-env }
+    restart: "no"
+
+  # community / ai and their schemas are `full`-profile only: nothing a bare
+  # `pnpm dev` runs dials :9282 or :9284 (community's trust forwarding is off,
+  # and trust — itself `full`-only — has empty AI creds so it never dials).
+  # Their consumers are the PRODUCT repos, which is what `pnpm dev:full` is for.
+  migrate-community:
+    image: ghcr.io/kunmoe/infra-migrate:${INFRA_IMAGE_TAG:-latest}
+    command: ["community"]
+    profiles: ["full"]
+    network_mode: host
+    environment: { <<: *dev-env }
+    restart: "no"
+
+  migrate-ai:
+    image: ghcr.io/kunmoe/infra-migrate:${INFRA_IMAGE_TAG:-latest}
+    command: ["ai"]
+    profiles: ["full"]
     network_mode: host
     environment: { <<: *dev-env }
     restart: "no"
@@ -258,8 +281,8 @@ services:
     # sit behind the `full` profile so a bare `up` starts the platform WITHOUT
     # them — leaving their host ports free for `air` to hot-reload from source
     # (see scripts/dev.sh / `pnpm dev`). Product-repo developers who want the
-    # whole platform from prebuilt images run `--profile full`. community/ai
-    # carry no profile: they are always image-served (edited rarely).
+    # whole platform from prebuilt images run `--profile full` — which is also
+    # what carries community/ai, since nothing in a bare `up` consumes them.
     profiles: ["full"]
     network_mode: host
     environment:
@@ -372,6 +395,7 @@ services:
 
   community:
     image: ghcr.io/kunmoe/infra-community:${INFRA_IMAGE_TAG:-latest}
+    profiles: ["full"]
     network_mode: host
     environment:
       <<: *dev-env
@@ -427,6 +451,7 @@ services:
 
   ai:
     image: ghcr.io/kunmoe/infra-ai:${INFRA_IMAGE_TAG:-latest}
+    profiles: ["full"]
     network_mode: host
     environment:
       <<: *dev-env

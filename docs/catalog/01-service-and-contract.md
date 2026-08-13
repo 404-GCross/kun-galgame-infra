@@ -12,7 +12,7 @@ catalog **只管身份、关系、来源锚**:
 
 catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞、收藏、NSFW 过滤——这些是**产品站(body 层)**各自持有的。产品站保留自己的富行,只把「这是**哪一个**作品/人物」的身份问题委托给 catalog。这条分界是硬约束:catalog 加展示字段 = 越界。(**一处经拍板的例外**:媒体聚合波把封面/截图/简介/评分等**来源事实**收进 catalog 后,wave 175 的最佳封面票也落在这里——票只是封面行的**参考数据**,不改排序、不写编辑钉子、也不带任何展示逻辑,展示与否仍是产品站的事。见 §2.13。)
 
-来源注册表(节选):`source` `2=vndb 3=bangumi 4=dlsite 5=erogamespace 1=user`;`medium` `1=galgame 5=asmr`;`content_rating` `0=all_ages 1=sensitive 2=r18`。完整注册表由 `cmd/migrate-catalog` 的 seed 落库。
+来源注册表(节选):`source` `2=vndb 3=bangumi 4=dlsite 5=erogamespace 1=user`;`medium` `1=galgame 5=asmr`;`content_rating` `0=all_ages 1=sensitive 2=r18`。完整注册表由 `cmd/migrate catalog` 的 seed 落库。
 
 ⚠️ **`content_rating` 是年龄轴,不是展示轴**(A2-R5,doc 106 §38 事故)。这一列答的是「**游戏本体**是什么分级」;「我要**渲染的素材**(封面/截图/简介)能不能摆上公开页」是**另一个问题**,由**编辑展示轴**回答——公开面 `claimed_by.content_limit`(词表 `sfw|nsfw`),认领作品读 **`catalog_work.display_nsfw`**(人工编辑判定;**W1-pre 本体化**前是读时桥接 wiki 正文的 `galgame.content_limit`,refs/proj/140 §5b 把该判定物化成 registry 自己的列,wiki 表族退役后由 catalog 编辑面持有),未认领行按年龄轴回落(该列对未认领行恒 false 且从不被读)。生产实测两轴在 5,568 部作品上不一致(r18 游戏 × 编辑判定 sfw),**互不是对方的放宽或收紧**;把年龄轴当展示门正是那次 SEO 塌缩的根因。语义源 = `model.DisplayLimitKey`,契约与闸参见 [developer-platform/02 §3.2.8](../developer-platform/02-public-api.md#328-编辑展示轴-content_limit闸a2-r5)。
 
@@ -270,7 +270,7 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 - **schema 投影不接受任何 actor 查询参数**:已删除的 S2S 版所带的 `user_id` / `roles` / `trust_tier` / `is_entity_owner` / `site` 在本面**从来不存在**——调用方无法询问「换成别人会怎样」。保留的 `entity_id` 描述的是**投影对象**(实体感知的 overlay 对它求值),不是调用者。
 - **审核四件套(amend / merge / decline / revert)请求体 = S2S 版减去 `actor`(revert 再减 `site`)**,响应与 S2S 逐字相同(amend → `EditAmendmentView`,merge → `EditRevisionView`,decline → 关闭后的 `EditProposalView`,revert → `{proposal, revision}`)。审核者 = 令牌本人,`amender_uid` / `decided_by_uid` / 回滚 revision 的 `actor_uid` 都写它。
 - **租户闸(四件套 + 详情读共用)**:先比对提案的 `site` 与令牌 client 的 `catalog_site`,不符 → **403**(先于任何引擎规则,跨租户调用方只知道「不是你的」);revert 无提案可比,租户即令牌 client 绑定值,直接作为 overlay 键与写入租户。
-- **归属(ownership)是 catalog 自己持有的事实了(wave 178)**:`catalog_work.owner_user_id`(可空 bigint,**write-once**)——提交铸造(§2 submit)与**认领诞生**(claim 动作,`from_state IS NULL` 的那一次)各写一次,之后**永不覆盖**;NULL = 未知/历史行(手工回填脚本 `apps/api/cmd/migrate-catalog/backfill/owner-user-id.sql`,由 forum `galgame.creator_user_id` 与诞生事件两路补齐)。引擎经 spec 的 `OwnerUserID` 钩子**推导** `IsEntityOwner`(仅当钩子存在、调用者 uid 非 0、且存储 uid == 调用者 uid),因此 **kungal 的 owner-review 通道在用户面天然成立**,无需任何后端断言,forum 侧的镜像权限闸可以删除。
+- **归属(ownership)是 catalog 自己持有的事实了(wave 178)**:`catalog_work.owner_user_id`(可空 bigint,**write-once**)——提交铸造(§2 submit)与**认领诞生**(claim 动作,`from_state IS NULL` 的那一次)各写一次,之后**永不覆盖**;NULL = 未知/历史行(手工回填脚本 `apps/api/cmd/migrate/backfill/owner-user-id.sql`,由 forum `galgame.creator_user_id` 与诞生事件两路补齐)。引擎经 spec 的 `OwnerUserID` 钩子**推导** `IsEntityOwner`(仅当钩子存在、调用者 uid 非 0、且存储 uid == 调用者 uid),因此 **kungal 的 owner-review 通道在用户面天然成立**,无需任何后端断言,forum 侧的镜像权限闸可以删除。
   - **推导只会把标志置 ON,永不置 OFF**:S2S 面断言的 `is_entity_owner` **照旧被采信**(某些 family 没注册钩子、某些产品有自己的归属定义),两者是并集关系。
   - **`trust_tier` 自 wave 183 起有了 infra 侧的事实来源**:令牌的角色若持有 catalog 权限键 **`catalog.edit.trusted`**,本面即以 `TrustTier = 2`(引擎的 `TrustedTier`,也是引擎唯一比较的层级值)求值策略;否则仍是 0。代码捆只给 admin/ren(等价于 letmoe 旧 S2S 断言给 staff 的标准),**产品站把这把键授给自己的角色(如 letmoe 的 `creator`)走权限矩阵控制台的叠加层,热替换 resolver,无需改代码或部署**。因此 **letmoe 的 ProposeTrusted 通道不再需要 S2S 后端代为担保**。S2S 面断言的 `trust_tier` 照旧被采信——两者是并集,推导只会把能力置 ON。
 - 错误映射沿用 S2S 面的口味:未注册字段键/空 patch/空 delta → **422**,策略拒绝 → **403**,实体/提案/目标 revision 不存在 → **404**,rebase 冲突/提案已关闭 → **409**;令牌缺失或无效 → **401**,缺 `catalog:edit` scope → **403**(message 含 scope 字样)。
@@ -422,7 +422,7 @@ wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留�
 
 ## 7. 运维注记
 
-- **schema 迁移**:`cmd/migrate-catalog` 是 `kun_catalog` 的**唯一** schema 入口,幂等(AutoMigrate + `IF NOT EXISTS` 原始 SQL + 存在性守卫 seed)。生产随部署自动跑(compose `migrate-catalog` gate,catalog 服务 `depends_on: service_completed_successfully`);catalog 服务自身**不跑迁移**,只连接 + 就绪检查。
+- **schema 迁移**:`cmd/migrate catalog` 是 `kun_catalog` 的**唯一** schema 入口,幂等(AutoMigrate + `IF NOT EXISTS` 原始 SQL + 存在性守卫 seed)。生产随部署自动跑(compose `migrate-catalog` gate,catalog 服务 `depends_on: service_completed_successfully`);catalog 服务自身**不跑迁移**,只连接 + 就绪检查。
 - ⚠️ **导入类 cmd 不随部署自动跑**:`reconcile-galgame-works` / `import-*` / `reindex-catalog` 等是手动运维工具(经 `tools` 镜像 + env-file),**部署不会触发**。跑完批量导入后需**手动** `reindex-catalog` 重建搜索索引(批量脚本不走写穿钩子)。
 - **主库变更提醒**:`oauth_clients.catalog_site` 列落在**主库 `kun_galgame_infra`**(经 `cmd/migrate` AutoMigrate)——见工程侧变更时的迁移铁则。
 - **服务拓扑**:catalog 内网端口 9281,产品后端经 `http://catalog:9281` 走 dokploy-network(无公开域名);web(oauth admin 前端)SSR 经 `NUXT_CATALOG_API_BASE_SSR=http://catalog:9281/api/v1`。

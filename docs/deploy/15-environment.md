@@ -271,7 +271,7 @@
 
 | 仓 | Dockerfile | `ARG` | 默认 | 作用 |
 |---|---|---|---|---|
-| infra | `go.Dockerfile` | `GO_VERSION` / `CMD` | `1.25` / `oauth` | Go 版本 / 选哪个 `cmd/`(catalog、migrate、migrate-catalog…) |
+| infra | `go.Dockerfile` | `GO_VERSION` / `CMD` | `1.25` / `oauth` | Go 版本 / 选哪个 `cmd/`(catalog、migrate、artifact…) |
 | infra | `cgo.Dockerfile` | `GO_VERSION` / `CMD` | `1.25` / `image` | cgo(libwebp);`CMD=oauth` 或 `image` |
 | infra | `nuxt.Dockerfile` | `NODE_VERSION` / `APP` / `PUBLIC_*`×6 | `24` / `web` / 空 | Node 版本 / `web`\|`wiki` / 前端 public(见 [§15.5](#155-前端-public-配置infra-烤镜像-vs-下游运行期)) |
 | kungal | `go.Dockerfile` | `GO_VERSION` / `CMD` | `1.26` / `server` | `server` 或 `migrate` |
@@ -304,7 +304,7 @@
 | 镜像 | CI build-args |
 |---|---|
 | `infra-oauth` / `infra-image` | `CMD=oauth` / `CMD=image` |
-| `infra-catalog` / `infra-migrate` / `infra-migrate-catalog` | `CMD=catalog` / `migrate` / `migrate-catalog` |
+| `infra-catalog` / `infra-migrate` | `CMD=catalog` / `migrate`(**唯一迁移镜像**:目标由运行参数给,不再有 `infra-migrate-<域>`) |
 | **`infra-web`** | `APP=web`、`PUBLIC_API_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link` |
 | ~~`infra-wiki`~~ | **已退役(开放 API Phase 2 · W5,2026-07)**:wiki 前端(`apps/wiki`)与 `wiki.kungal.com` 域已退役,`infra-wiki` 镜像不再构建。galgame 富读现由 catalog internal 面(s2s,`nm_` key)承载,无独立 wiki 前端。 |
 | `kungal-api` / `kungal-migrate` / `kungal-web` | `CMD=server` / `CMD=migrate` / (web 无,public 走运行期) |
@@ -380,7 +380,7 @@ docker compose -f docker-compose.prod.yml --profile jobs run --rm tools migrate-
 > 若远端历史里还有这些文件,把里面出现过的密钥(邮箱密码、JWT、S3 等)**视为已泄露并轮换**。
 > (dev 本地仍用 `docker/*.env`;只是 **prod compose 不再读它们**。)
 
-> **完整数据 cutover 需要更多 job 镜像**:`migrate` / `migrate-catalog` 只够「空库起服务」。
+> **完整数据 cutover 需要更多 job 镜像**:`migrate`(及其 `catalog` 等目标)只够「空库起服务」。
 > 带数据上线([03-bootstrap §B](./03-bootstrap.md))还要 `migrate-users`、`migrate-galgame-data`、
 > `migrate-moyu-galgame`、`dedup-galgame-alias`、`reindex-search` 等——这些是**独立的 `cmd/` 二进制**,
 > 而 Dockerfile 一镜像只编一个 `CMD`,**不能**用 `infra-catalog` 镜像 `--entrypoint migrate-users`。

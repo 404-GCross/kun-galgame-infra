@@ -2,8 +2,10 @@
 
 `docker-compose.dev.yml` (infra repo root) brings up the **whole nextmoe platform**
 on your dev box with one command, so any product repo's `pnpm dev` / `air` can
-depend on a single fact: **localhost has a platform**. Seven platform services
+depend on a single fact: **localhost has a platform**. The platform services
 (from prebuilt GHCR images) + all local infrastructure, **zero cloud credentials**.
+A bare `up` pulls only what an *infra* session consumes; everything a *product*
+repo needs on top of that sits behind the `full` profile.
 
 > This is the dev-environment track's step 01. Step 02 (`refresh-dev-db`) fills the
 > databases with desensitised, real-shaped data; step 03 wires each product repo's
@@ -17,9 +19,9 @@ depend on a single fact: **localhost has a platform**. Seven platform services
 | image | 9278 | `ghcr.io/kunmoe/infra-image` | — |
 | artifact | 9279 | `ghcr.io/kunmoe/infra-artifact` | — |
 | catalog (hosts the galgame surface; :9280 retired) | 9281 | `ghcr.io/kunmoe/infra-catalog` | — |
-| community | 9282 | `ghcr.io/kunmoe/infra-community` | — |
+| community *(`full`)* | 9282 | `ghcr.io/kunmoe/infra-community` | — |
 | trust | 9283 | `ghcr.io/kunmoe/infra-trust` | — |
-| ai | 9284 | `ghcr.io/kunmoe/infra-ai` | — |
+| ai *(`full`)* | 9284 | `ghcr.io/kunmoe/infra-ai` | — |
 | image-cdn-proxy (Caddy) | 9290 | `caddy:2-alpine` | — |
 | MinIO (S3) | 9000 / 9001 | `minio/minio` | http://127.0.0.1:9001 (minioadmin/minioadmin) |
 | Mailpit | 1025 / 8025 | `axllent/mailpit` | http://127.0.0.1:8025 |
@@ -33,18 +35,21 @@ frontends run their own `pnpm dev`, jobs run on demand.
 
 ## Two ways to run it — hybrid vs all-from-images
 
-Five of the seven platform services — **oauth / catalog / image / artifact /
-trust** — carry the compose `full` profile. A plain `docker compose … up`
-therefore starts everything **except** those five, leaving their host ports free.
-This gives two modes:
+**oauth / catalog / image / artifact / trust** carry the compose `full` profile
+because `air` rebuilds them from source, and their host ports must stay free.
+**community / ai** carry it for a different reason: nothing the default stack
+runs dials :9282 or :9284 (community's trust forwarding is off, and trust itself
+has empty AI creds), so starting them cost every contributor two image pulls and
+two idle containers. A plain `docker compose … up` therefore starts neither
+group. This gives two modes:
 
 - **Developing infra itself** → from the infra repo, `pnpm dev` (one command).
-  It runs the default compose up (base + community/ai from images) and then
-  `air`, which rebuilds those five hot services from source on every save,
-  plus the Nuxt frontends. `community / ai` stay image-served because they
-  change rarely; to hot-reload one of them too, stop its container and
-  `go run ./cmd/<svc>` in its place (Replace mode, below). Ctrl-C stops the hot
-  stack; the base keeps running. `pnpm dev:down` stops the base.
+  It runs the default compose up (storage + migrations) and then `air`, which
+  rebuilds the five hot services from source on every save, plus the Nuxt
+  frontends. Ctrl-C stops the hot stack; the base keeps running. `pnpm dev:down`
+  stops the base. Need community or ai for what you're working on? Add them:
+  `docker compose -f docker-compose.dev.yml --profile full up -d community ai`
+  (or hot-reload one with `go run ./cmd/<svc>` — Replace mode, below).
 - **Developing a product repo** (letmoe / forum / moyu / …) → you want the WHOLE
   platform from images, no source build. Use `--profile full`:
   `docker compose -f docker-compose.dev.yml --profile full up -d` (or, from the
@@ -61,18 +66,110 @@ Every service uses `network_mode: host`, so:
 - a container's port is bound on the box directly — which is exactly what makes
   **Replace mode** (below) seamless.
 
+### Windows / macOS: run everything inside WSL2 (or a Linux VM)
+
+`network_mode: host` is a **Linux** feature. Under Docker Desktop the containers
+live in a Linux VM, so "host" means *that VM's* network namespace — not your
+Windows or macOS machine. Two consequences, and they are the usual cause of a
+migrate job dying instantly on a fresh Windows checkout:
+
+- a container's `127.0.0.1:5432` reaches the **VM's** loopback, so a Postgres
+  installed on Windows is invisible to it; and
+- the services' ports are bound in the VM, not on your machine.
+
+There is no `extra_hosts` / `host.docker.internal` fallback in the compose file
+— pointing one service at the Windows host would not fix the other direction
+(services reaching *each other* on `127.0.0.1`). So the supported path is
+**everything inside one WSL2 distro**: Postgres, the repo, and the shell you run
+`pnpm dev` from. `pnpm dev` is `bash scripts/dev.sh` and does not run under
+`cmd.exe` / PowerShell anyway.
+
+#### Windows setup, start to finish
+
+```powershell
+wsl --install -d Ubuntu     # PowerShell, once; reboot if it asks
+```
+
+Then, **inside the Ubuntu shell** (everything below is WSL2, never PowerShell):
+
+```sh
+sudo apt update && sudo apt install -y postgresql postgresql-client git curl jq
+sudo service postgresql start
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'pick-your-own';"
+
+# Clone into the LINUX filesystem. Not /mnt/c — cross-OS 9p writes are slow
+# enough that air's rebuild loop becomes unusable.
+cd ~ && git clone <this repo> && cd kun-galgame-infra
+
+printf 'KUN_PG_PASSWORD=pick-your-own\n' > .env   # root .env, gitignored
+./scripts/create-dev-databases.sh                 # creates the 12 databases
+pnpm install && pnpm dev
+```
+
+Docker: either Docker Desktop with the WSL2 integration enabled for this distro,
+or `apt install docker.io` **inside** the distro. Both work — the requirement is
+that the daemon and Postgres agree on what "host" means, which `pnpm dev:doctor`
+verifies for real (it runs a host-networked container and has it dial your
+Postgres port).
+
+Two Windows-specific failure shapes worth naming:
+
+- **`set: pipefail^M: invalid option name`** (or `$'\r': command not found`) —
+  Git for Windows checked the scripts out with CRLF. `.gitattributes` pins `*.sh`
+  to LF, so a fresh clone is fine; an older clone is fixed with
+  `git rm --cached -r . && git reset --hard`.
+- **Windows-side Postgres, WSL2-side stack** — the doctor reports it as "a
+  host-networked container CANNOT reach …". Install Postgres in the distro
+  instead; that is the supported shape.
+
+macOS has the same VM problem with no WSL2 to fall back on: use a Linux VM, or
+run the Go services natively (`go run ./cmd/<svc>`, Replace mode below) against a
+native Postgres and skip the containerised services.
+
+### Preflight: `pnpm dev:doctor`
+
+`pnpm dev` runs this first (`SKIP_DOCTOR=1` bypasses it), and it is worth running
+on its own whenever something is off. It is read-only — starts nothing, creates
+nothing — and checks, in order: the shell is not Git Bash; docker / jq / pnpm and
+a reachable daemon; Postgres answering on the configured coordinates; **a
+host-networked container reaching that same port** (the check that catches the
+Docker Desktop shape); every database present; and GHCR readable. Each failure
+prints the fix.
+
 ## Prerequisites
 
-1. **Host Postgres on `127.0.0.1:5432`, user `postgres`, password `191007`** — the
-   dev source of truth (it is *not* a compose service). If your server is fresh,
-   create the databases the services expect:
+1. **A Postgres server you own** — the dev source of truth, and *not* a compose
+   service. The compose defaults are `127.0.0.1:5432`, user `postgres`, password
+   `191007`; those are just this repo's original dev box, not a convention you
+   have to adopt. Override any of them from a **root `.env`** (gitignored, sits
+   next to `docker-compose.dev.yml`) — the compose file reads
+   `${KUN_PG_HOST:-…}` / `${KUN_PG_PORT:-…}` / `${KUN_PG_USER:-…}` /
+   `${KUN_PG_PASSWORD:-…}`:
 
    ```sh
-   psql -h 127.0.0.1 -U postgres -f docker/initdb.d/01-create-databases.sh   # or run the CREATE DATABASE lines
+   # .env  (repo root)
+   KUN_PG_PASSWORD=whatever-your-local-postgres-uses
    ```
 
-   (`kun_galgame_infra`, `kun_images`, `kun_artifacts`,
-   `kun_catalog`, `kun_community`, `kun_trust`.)
+   Then **create the databases**. `docker/initdb.d/01-create-databases.sh` only
+   runs when Postgres itself initialises an empty data dir — and Postgres is not
+   a compose service here, so on your own server it never runs automatically:
+
+   ```sh
+   ./scripts/create-dev-databases.sh           # or: pnpm dev:db
+   ./scripts/create-dev-databases.sh --check   # report only, create nothing
+   ```
+
+   It reads your coordinates from the rendered compose config (so the `.env`
+   above applies) and the database list from that same initdb hook, and skips
+   the ones that already exist. Twelve in total: `kun_galgame_infra`,
+   `kun_images`, `kun_artifacts`, `kun_catalog`, `kun_community`, `kun_trust`,
+   `kun_ai`, `kun_news`, plus the downstream repos' (`kungalgame`,
+   `kungalgame_patch`, `kungalgame_sticker`, `kun_letmoe`).
+
+   A migrate job that exits 1 seconds after start is almost always one of these
+   two: wrong password, or a database that doesn't exist. `pnpm dev:doctor` says
+   which without reading a single log line.
 
 2. **GHCR access for the platform images** (they are private). The default `gh`
    token does **not** carry `read:packages`, so `docker login` with it fails
@@ -210,7 +307,7 @@ local script only downloads + restores (and deletes the download afterwards).
 | --- | --- | --- |
 | `core` (default) | kun_galgame_infra, kungalgame, kungalgame_patch, kun_community, kun_catalog, kun_images, kun_artifacts | download desensitised `*.dump`, `terminate → drop → create → pg_restore -j4` |
 | `sources` | dlsite, erogamespace | raw `pg_dump -Fc | pg_restore` stream — **zero PII, zero desensitisation**, no artifact |
-| — | **kun_trust** | *not in any group.* Local trust = `go run ./cmd/migrate-trust` (re-seed). |
+| — | **kun_trust** | *not in any group.* Local trust = `go run ./cmd/migrate trust` (re-seed). |
 | — | **letmoe (any `*letmoe*`)** | **hard-refused** by the script — letmoe runs its own seed system. |
 
 After a restore the script runs **PII assertions** (no real emails, empty
@@ -247,7 +344,7 @@ each product repo's `.env.example` (step 03 consumes this).
 `kun_trust` is never in a snapshot. Bring it up locally with the migration:
 
 ```sh
-cd apps/api && go run ./cmd/migrate-trust      # creates + seeds kun_trust
+cd apps/api && go run ./cmd/migrate trust      # creates + seeds kun_trust
 ```
 
 If you need a dev subject-kind registration (a **dev** callback secret, unrelated
@@ -269,7 +366,7 @@ local code has a newer migration than the snapshot, **run that repo's migration*
 ```sh
 cd apps/api
 go run ./cmd/migrate           # kun_galgame_infra (oauth + site models)
-go run ./cmd/migrate-catalog   # galgame models + catalog models — one entry point, two pools, both on kun_catalog (dev split retired 2026-07-29)
+go run ./cmd/migrate catalog   # galgame models + catalog models — one entry point, two pools, both on kun_catalog (dev split retired 2026-07-29)
 # cmd/image, cmd/artifact AutoMigrate on boot
 ```
 

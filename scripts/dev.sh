@@ -2,9 +2,10 @@
 # One-command local dev for this repo. Two halves, one command:
 #
 #   1. PLATFORM BASE (docker-compose.dev.yml, default profile) — redis / minio /
-#      meili / mailpit / the read-through image proxy / all migrations / and the
-#      two rarely-edited platform services (community / ai) from prebuilt GHCR
-#      images. Brought up once, then LEFT RUNNING.
+#      meili / mailpit / the read-through image proxy / and the migrations an
+#      infra session actually needs, from ONE prebuilt GHCR image
+#      (infra-migrate, invoked once per target DB). Brought up once, then LEFT
+#      RUNNING.
 #   2. HOT-RELOAD STACK — `air` rebuilds the five frequently-edited Go services
 #      (oauth / catalog / image / artifact / trust) from source on every save,
 #      plus the Nuxt frontends (web / developer) via their own dev servers.
@@ -13,12 +14,17 @@
 # `full` compose profile, so the default `up` below deliberately does NOT start
 # them — their host ports (9277-9279, 9281, 9283) stay free for air.
 #
+# community / ai are `full`-profile too: nothing a bare `pnpm dev` runs dials
+# them, and starting them cost every contributor two image pulls and two idle
+# containers. Their consumers are the PRODUCT repos → `pnpm dev:full`.
+#
 # Ctrl-C stops ONLY the hot stack; the base keeps running (that's the point —
 # "localhost has a platform"). Tear the base down with `pnpm dev:down`.
 #
 #   --full   bring the WHOLE platform up from images (incl. the five hot
-#            services), do NOT run air/frontends — for developing a PRODUCT repo
-#            (letmoe / forum / …), not infra. `pnpm dev:full`.
+#            services + community / ai), do NOT run air/frontends — for
+#            developing a PRODUCT repo (letmoe / forum / …), not infra.
+#            `pnpm dev:full`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -26,6 +32,13 @@ COMPOSE=(docker compose -f docker-compose.dev.yml)
 PROFILE_ARGS=()
 FULL=0
 [[ "${1:-}" == "--full" ]] && { FULL=1; PROFILE_ARGS=(--profile full); }
+
+# Preflight. ~2s against a several-minute first run, and it is what stands
+# between a contributor and a migrate container that exits 1 with no explanation
+# (missing database / wrong password / Docker Desktop's VM loopback). Run
+# unconditionally rather than only on a fresh checkout: the half-succeeded retry
+# is exactly when it is needed. SKIP_DOCTOR=1 to bypass.
+[[ "${SKIP_DOCTOR:-0}" == 1 ]] || ./scripts/dev-doctor.sh || exit 1
 
 # The box may already provide a backing service on its shared port (a native
 # redis on :6379 is common). The compose copy uses host networking, so it would
@@ -44,12 +57,20 @@ for svc in "${!SHAREABLE[@]}"; do
   fi
 done
 
+# Phase 0 — refresh the migration image. Every migrate-* service runs this ONE
+# image, so this is a single manifest check. It is not optional politeness: a
+# stale infra-migrate predates the subcommand CLI, ignores the target argument
+# (flag.Parse skips positional args) and migrates the PLATFORM database instead
+# of the one the service is named after — a silent no-op on the schema you
+# actually wanted. Offline is fine: keep going on a pull failure.
+"${COMPOSE[@]}" pull --quiet --ignore-pull-failures migrate 2>/dev/null || true
+
 # Phase 1 — start the base. NO --wait here: the run-once jobs (migrate* /
 # minio-setup) exit 0 when done, and `up --wait` treats a top-level service that
 # exits as a failure. So start everything first, then wait only on the
 # long-running services below (there the run-once jobs are depends_on
 # `service_completed_successfully`, which --wait handles correctly).
-echo "▶ platform base: community/ai + storage + migrations…"
+echo "▶ platform base: storage + migrations…"
 "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" up -d "${SCALE_ARGS[@]}"
 
 # Phase 2 — block until every long-running service (restart != "no") is healthy,

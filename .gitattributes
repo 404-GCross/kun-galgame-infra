@@ -1,0 +1,31 @@
+# Line endings. Git for Windows installs with core.autocrlf=true by default, so a
+# fresh Windows clone gets CRLF in every tracked file. Nothing here is consumed by
+# a Windows-native tool, but plenty is consumed by bash and by Linux containers,
+# where a trailing \r is not whitespace — it is part of the word:
+#
+#   scripts/dev.sh: line 28: set: pipefail^M: invalid option name
+#
+# Pinned per-extension rather than with a blanket `* text=auto`: a blanket rule
+# would also renormalize files that are legitimately CRLF in the index today
+# (apps/web/shared/*.ts, docs/external/vndb/api.md), turning the next touch of
+# each into a whole-file diff.
+*.sh          text eol=lf
+*.bash        text eol=lf
+*.go          text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.env         text eol=lf
+*.env.example text eol=lf
+*.Dockerfile  text eol=lf
+Dockerfile    text eol=lf
+Caddyfile     text eol=lf
+
+# Test fixtures are bytes under test, never normalized. The bangumi wiki spec
+# corpus is CRLF on purpose — its cases are about line structure.
+**/testdata/** -text
+
+*.dump binary
+*.webp binary
+*.png  binary
+*.jpg  binary
+*.avif binary
