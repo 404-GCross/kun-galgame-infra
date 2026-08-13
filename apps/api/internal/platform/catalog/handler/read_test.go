@@ -612,15 +612,19 @@ func TestCharacterDetail(t *testing.T) {
 	require.NoError(t, db.Create(&ch).Error)
 	require.NoError(t, db.Create(&model.CatalogCharacterAlias{
 		CharacterID: ch.ID, Name: "しゅじんこう", Lang: "ja", Kind: model.AliasKindSpellingVariant}).Error)
-	var vndbSrc, bangumiSrc, dlsiteSrc int16
+	var vndbSrc, bangumiSrc, dlsiteSrc, derivedSrc int16
 	require.NoError(t, db.Raw(`SELECT id FROM catalog_source WHERE key = 'vndb'`).Scan(&vndbSrc).Error)
 	require.NoError(t, db.Raw(`SELECT id FROM catalog_source WHERE key = 'bangumi'`).Scan(&bangumiSrc).Error)
 	require.NoError(t, db.Raw(`SELECT id FROM catalog_source WHERE key = 'dlsite'`).Scan(&dlsiteSrc).Error)
+	require.NoError(t, db.Raw(`SELECT id FROM catalog_source WHERE key = 'derived'`).Scan(&derivedSrc).Error)
 	require.NotZero(t, vndbSrc)
+	require.NotZero(t, derivedSrc)
 	for _, in := range []model.CatalogCharacterIntro{
 		{CharacterID: ch.ID, Lang: "en", Intro: "An English intro.", SourceID: vndbSrc},
 		{CharacterID: ch.ID, Lang: "ja", Intro: "日本語の紹介。", SourceID: bangumiSrc},
 		{CharacterID: ch.ID, Lang: "ja", Intro: "負けるほうの紹介。", SourceID: dlsiteSrc},
+		{CharacterID: ch.ID, Lang: "zh-Hans", Intro: "机翻的介绍。", SourceID: vndbSrc, Provenance: 1},
+		{CharacterID: ch.ID, Lang: "zh-Hans", Intro: "提取的介绍。", SourceID: derivedSrc, Provenance: 1},
 	} {
 		require.NoError(t, db.Create(&in).Error)
 	}
@@ -644,7 +648,7 @@ func TestCharacterDetail(t *testing.T) {
 	assert.EqualValues(t, model.AliasKindSpellingVariant, aliases[0].(map[string]any)["kind"])
 
 	intros := data["intros"].([]any)
-	require.Len(t, intros, 2, "one element per language after the source merge")
+	require.Len(t, intros, 3, "one element per language after the source merge")
 	i0 := intros[0].(map[string]any)
 	assert.Equal(t, "en", i0["lang"], "sorted by lang")
 	assert.Equal(t, "An English intro.", i0["intro"])
@@ -653,6 +657,11 @@ func TestCharacterDetail(t *testing.T) {
 	assert.Equal(t, "ja", i1["lang"])
 	assert.Equal(t, "日本語の紹介。", i1["intro"], "lowest source_id wins the language")
 	assert.EqualValues(t, bangumiSrc, i1["source_id"])
+	i2 := intros[2].(map[string]any)
+	assert.Equal(t, "zh-Hans", i2["lang"])
+	assert.Equal(t, "提取的介绍。", i2["intro"], "derived extraction outranks translated machine rows")
+	assert.EqualValues(t, derivedSrc, i2["source_id"])
+	assert.Equal(t, true, i2["machine"])
 
 	code, body = getJSON(t, app, "/api/v1/catalog/characters/"+itoa(chBare.ID))
 	require.Equal(t, 200, code)

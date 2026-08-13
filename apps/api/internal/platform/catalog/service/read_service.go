@@ -1082,7 +1082,8 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		Provenance int16  `gorm:"column:provenance"`
 	}
 	if err := db.Raw(`SELECT lang, intro, source_id, provenance FROM catalog_character_intro
-		WHERE character_id = ? ORDER BY lang, provenance, source_id`, characterID).Scan(&introRows).Error; err != nil {
+		WHERE character_id = ? ORDER BY lang, provenance,
+		(provenance = 1 AND source_id = ?) DESC, source_id`, characterID, sourceDerived).Scan(&introRows).Error; err != nil {
 		return nil, err
 	}
 	seenLang := map[string]bool{}
