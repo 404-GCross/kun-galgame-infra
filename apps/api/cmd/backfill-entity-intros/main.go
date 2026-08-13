@@ -63,4 +63,7 @@ func main() {
 		"person_bgm_written", st.PersonBangumi.JaWritten+st.PersonBangumi.ZhWritten,
 		"errors", st.CharBangumi.Errors+st.CharVNDB.Errors+st.CharEG.Errors+st.PersonBangumi.Errors,
 	)
+	if st.CharBangumi.Errors+st.CharVNDB.Errors+st.CharEG.Errors+st.PersonBangumi.Errors > 0 {
+		os.Exit(1)
+	}
 }

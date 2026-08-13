@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"unicode"
 
 	"api/internal/platform/catalog/model"
@@ -118,6 +119,9 @@ func runPassthrough(ctx context.Context, db *gorm.DB, apply bool, limit, samples
 		return fmt.Errorf("touch host works: %w", err)
 	}
 	fmt.Printf("\ninserted=%d conflict=%d errors=%d touched_works=%d\n", inserted, conflict, errs, len(works))
+	if errs > 0 {
+		os.Exit(1)
+	}
 	return nil
 }
 

@@ -53,4 +53,7 @@ func main() {
 		"conflict", st.Conflict,
 		"errors", st.Errors,
 	)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }

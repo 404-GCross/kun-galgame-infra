@@ -68,4 +68,7 @@ func main() {
 		slog.Error("import-hihyou-weekly", "error", err)
 		os.Exit(1)
 	}
+	if sum != nil && sum.ImagesFailed > 0 {
+		os.Exit(1)
+	}
 }

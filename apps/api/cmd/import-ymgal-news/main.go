@@ -60,4 +60,7 @@ func main() {
 		slog.Error("import-ymgal-news", "error", err)
 		os.Exit(1)
 	}
+	if n, _ := summary["images_failed"].(int); n > 0 {
+		os.Exit(1)
+	}
 }

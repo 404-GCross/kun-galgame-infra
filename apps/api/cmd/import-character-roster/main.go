@@ -65,6 +65,9 @@ func main() {
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
+	if stats.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func openEG(cfg *config.Config, dsn string) *gorm.DB {

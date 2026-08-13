@@ -50,4 +50,7 @@ func main() {
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
+	if st.Errors+st.Spine.Errors > 0 {
+		os.Exit(1)
+	}
 }

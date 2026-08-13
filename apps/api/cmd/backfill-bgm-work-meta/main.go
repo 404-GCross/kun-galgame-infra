@@ -58,4 +58,8 @@ func main() {
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
+	// 2026-08-05: the sibling backfill-work-tags run logged errors=120646 and still exited 0 - nothing fired.
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }

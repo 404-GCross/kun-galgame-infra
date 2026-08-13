@@ -163,6 +163,9 @@ feed:
 	wg.Wait()
 
 	fmt.Fprintf(w, "scan complete scored=%d errors=%d out=%s\n", ok, bad, o.Out)
+	if bad > 0 {
+		return fmt.Errorf("%d images failed to score", bad)
+	}
 	return nil
 }
 

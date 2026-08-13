@@ -53,6 +53,9 @@ func main() {
 		fmt.Printf("classes: sexual=%d junk=%d normal=%d\nout=%s\n",
 			st.ClassCounts[tagsafety.ClassSexual], st.ClassCounts[tagsafety.ClassJunk],
 			st.ClassCounts[tagsafety.ClassNormal], *out)
+		if st.Errors > 0 {
+			os.Exit(1)
+		}
 
 	case "report":
 		st, err := tagsafety.Report(*in, *minConfidence)
@@ -79,6 +82,9 @@ func main() {
 				st.WorkTagRows, st.VocabSexualRows, st.VocabHiddenRows, st.Errors)
 		} else {
 			fmt.Printf("DRY RUN — nothing written; re-run with --run\n")
+		}
+		if st.Errors > 0 {
+			os.Exit(1)
 		}
 
 	default:

@@ -46,4 +46,7 @@ func main() {
 		"out_of_range", st.VNDB.OutOfRange+st.Bangumi.OutOfRange,
 		"errors", st.VNDB.Errors+st.Bangumi.Errors,
 	)
+	if st.VNDB.Errors+st.Bangumi.Errors > 0 {
+		os.Exit(1)
+	}
 }

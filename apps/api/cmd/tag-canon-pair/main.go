@@ -55,6 +55,9 @@ func main() {
 		fmt.Printf("blocking: pool_by_source=%v substring=%d edit=%d cooccur=%d capped=%v\n",
 			st.Block.PoolBySource, st.Block.Substring, st.Block.Edit, st.Block.Cooccur, st.Block.Capped)
 		fmt.Printf("relations: %v\n", st.RelationCounts)
+		if st.Errors > 0 {
+			os.Exit(1)
+		}
 
 	case "review":
 		st, err := tagcanon.MakeReview(*in, *md, *decisions, tagcanon.ReviewOpts{
@@ -77,6 +80,9 @@ func main() {
 				st.TagsCreated, st.TagsConflict, st.MapsCreated, st.MapsConflict, st.TierUpdated, st.Errors)
 		} else {
 			fmt.Printf("DRY RUN — nothing written; re-run with --apply\n")
+		}
+		if st.Errors > 0 {
+			os.Exit(1)
 		}
 
 	default:

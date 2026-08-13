@@ -47,8 +47,12 @@ func main() {
 
 	switch {
 	case *receipts != "":
-		if _, err = runReceipts(ctx, db, os.Stdout, *receipts, *actor, *apply); err != nil {
-			slog.Error("receipts apply failed", "error", err)
+		st, rerr := runReceipts(ctx, db, os.Stdout, *receipts, *actor, *apply)
+		if rerr != nil {
+			slog.Error("receipts apply failed", "error", rerr)
+			os.Exit(1)
+		}
+		if st.Errors > 0 {
 			os.Exit(1)
 		}
 	case *export != "":
@@ -57,8 +61,12 @@ func main() {
 			os.Exit(1)
 		}
 	default:
-		if _, err = run(ctx, db, os.Stdout, *actor, *apply, *ruleSet); err != nil {
-			slog.Error("person-link-batch failed", "error", err)
+		st, rerr := run(ctx, db, os.Stdout, *actor, *apply, *ruleSet)
+		if rerr != nil {
+			slog.Error("person-link-batch failed", "error", rerr)
+			os.Exit(1)
+		}
+		if st.Errors > 0 {
 			os.Exit(1)
 		}
 	}

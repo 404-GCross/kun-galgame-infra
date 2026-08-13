@@ -44,4 +44,7 @@ func main() {
 		slog.Error("backfill-character-portraits", "error", err)
 		os.Exit(1)
 	}
+	if n, _ := sum["errors"].(int); n > 0 {
+		os.Exit(1)
+	}
 }

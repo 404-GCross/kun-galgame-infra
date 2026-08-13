@@ -102,10 +102,12 @@ func main() {
 
 	opts := llmsuggest.Options{Model: *model, Concurrency: *conc, Limit: *limit, DryRun: !*apply, GoldSetPath: *goldPath, Batch: *batch}
 
+	failures := 0
 	switch *task {
 	case "goldset":
 		judged, errs, err := llmsuggest.RunGoldset(ctx, catalogDB.DB(), client, opts)
 		fail(err)
+		failures = errs
 		if *apply {
 			slog.Info("goldset done", "batch", *batch, "judged", judged, "errors", errs)
 			metrics, err := llmsuggest.Calibrate(catalogDB.DB(), *model, promptVersion)
@@ -115,6 +117,7 @@ func main() {
 	case "residue":
 		done, errs, err := llmsuggest.RunResidue(ctx, catalogDB.DB(), client, opts)
 		fail(err)
+		failures = errs
 		if *apply {
 			slog.Info("residue done", "extracted", done, "errors", errs)
 		}
@@ -129,6 +132,9 @@ func main() {
 	}
 	if !*apply {
 		fmt.Println("[dry run] nothing written — re-run with --apply")
+	}
+	if failures > 0 {
+		os.Exit(1)
 	}
 }
 

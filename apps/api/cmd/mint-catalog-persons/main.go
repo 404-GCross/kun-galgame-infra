@@ -64,6 +64,9 @@ func main() {
 		"would_set_birth", st.WouldSetBirth, "birth_kept", st.BirthKept, "birth_conflicts", st.BirthConflicts,
 		"persons_created", st.PersonsCreated, "links_written", st.LinksWritten,
 		"anchors_written", st.AnchorsWritten, "persons_updated", st.PersonsUpdated, "errors", st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func dump(dir string, st *personmint.Stats) error {
