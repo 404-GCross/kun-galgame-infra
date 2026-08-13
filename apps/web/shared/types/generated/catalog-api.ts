@@ -2847,6 +2847,8 @@ export interface operations {
                 before?: number;
                 /** @description Page size (default 20, max 100) */
                 limit?: number;
+                /** @description Which events qualify the actor: submitted (works they own) or audited (works they reviewed but do not own). Absent = every work they touched */
+                kind?: string;
             };
             header?: never;
             path?: never;
