@@ -28,6 +28,7 @@ type rosterChar struct {
 	CharacterID int64
 	Name        string // display name — the key the model must answer with
 	ZhName      string // best zh alias, shown as an aid, may equal Name
+	Incumbent   string // panel bucket only: the elected translated machine intro
 }
 
 const candidateWorksSQL = `
