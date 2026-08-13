@@ -44,7 +44,7 @@ func TestCharacterIntroElectionDerivedException(t *testing.T) {
 		t.Fatalf("derived must win among machine rows, got %+v", intros)
 	}
 
-	mk(srcErogamespace, 0, "源文行")
+	mk(srcErogamescape, 0, "源文行")
 	intros, err = svc.characterIntros(t.Context(), ch.ID)
 	if err != nil {
 		t.Fatal(err)
