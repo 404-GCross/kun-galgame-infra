@@ -89,8 +89,8 @@ func resolveIDs(ctx context.Context, db *gorm.DB) (registryIDs, error) {
 	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_medium WHERE key = 'galgame'`).Scan(&r.galgameMedium).Error; err != nil {
 		return r, fmt.Errorf("resolve galgame medium: %w", err)
 	}
-	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'erogamespace'`).Scan(&r.egSource).Error; err != nil {
-		return r, fmt.Errorf("resolve erogamespace source: %w", err)
+	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'erogamescape'`).Scan(&r.egSource).Error; err != nil {
+		return r, fmt.Errorf("resolve erogamescape source: %w", err)
 	}
 	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'vndb'`).Scan(&r.vndbSource).Error; err != nil {
 		return r, fmt.Errorf("resolve vndb source: %w", err)

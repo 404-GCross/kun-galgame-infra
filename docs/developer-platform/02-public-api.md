@@ -224,7 +224,7 @@ catalog 的 release 日期是**部分 ISO**:`YYYY` / `YYYY-MM` / `YYYY-MM-DD`,�
 
 **②d credit 的来源归因 `source`(wave 189 加法,裁定 7 的唯一例外)**
 
-每个 credit 槽新增 `source`,取值是与 refs / intros / screenshots / ratings **完全同一套公开源键拼写**(`erogamespace` 在 wire 上一律作 `erogamescape`)。
+每个 credit 槽新增 `source`,取值是与 refs / intros / screenshots / ratings **完全同一套公开源键拼写**(`erogamescape`;旧误拼 `erogamespace` 仍作入参别名接受)。
 
 - **这是对裁定 7 的定向反转**(2026-08-07 裁定;原文见 `refs/plans/05-open-api/03-catalog-public-face.md` 第 7 条)。理由:该裁定写于 Phase-1,早于「响应携带 attribution 归源」成为本平台的对外卖点;本面每一个多源数组都已指名出处,唯独 credit 沉默,消费端拿两个上游的花名册对账时无法判断哪条是谁说的。
 - **`note` 维持剔除**:自由文本、18.3% 覆盖(101 万行中 185,581 行非空)、未经审校,与本键不是一类。
@@ -403,7 +403,7 @@ A2-1b 给 **taxonomy 浏览道与其详情面**发了 nsfw 感知的 `work_count
 
 - 已发布字段不删不改语义;只做**向后兼容**的新增。
 - 公开 `content_limit` 语义统一(见 [06 §11](./06-security-compliance.md));各端点默认 = `sfw`。
-- catalog 面的实体 ID 全局稳定,合并只产生 redirect,永不复用。~~`w`/`p`/`n`/`b`/`c` 前缀~~(superseded,2026-07-15 步骤 03 裁定 2:公开 id = 纯数字——与 galgame 面已冻结的 `catalog_work_id` 数字形态一致,路径已按实体类型分命名空间)。公开线源键 = 站点真拼写(`erogamescape`;内部注册表键 `erogamespace` 在投影层映射,lookup 双拼容错)。
+- catalog 面的实体 ID 全局稳定,合并只产生 redirect,永不复用。~~`w`/`p`/`n`/`b`/`c` 前缀~~(superseded,2026-07-15 步骤 03 裁定 2:公开 id = 纯数字——与 galgame 面已冻结的 `catalog_work_id` 数字形态一致,路径已按实体类型分命名空间)。公开线源键 = 站点真拼写(`erogamescape`)。内部注册表键早期误拼作 `erogamespace`,曾靠投影层映射到 wire;注册表已改正,投影层随之删除,lookup 仍保留双拼容错。
 
 **演进条款**(step 07 落账,Phase 2「查询灵活性」引入时形式化;五条共同定义"什么样的改动是加性、什么样必须升版本"):
 

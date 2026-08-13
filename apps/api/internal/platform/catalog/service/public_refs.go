@@ -28,7 +28,7 @@ func (s *PublicService) entityRefsFor(ctx context.Context, entityType int16, ids
 	out := make(map[int64][]dto.PublicCatalogRef, len(ids))
 	for _, r := range rows {
 		out[r.EntityID] = append(out[r.EntityID], dto.PublicCatalogRef{
-			Source: publicSourceKey(r.Source), ExternalID: r.ExternalID,
+			Source: r.Source, ExternalID: r.ExternalID,
 		})
 	}
 	return out, nil

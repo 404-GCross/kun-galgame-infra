@@ -3163,7 +3163,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"
+                  "doc": "Upstream source key: vndb | bangumi | dlsite | erogamescape (the legacy misspelling erogamespace is still accepted)"
                 },
                 {
                   "name": "external_id",

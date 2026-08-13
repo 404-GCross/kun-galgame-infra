@@ -51,7 +51,7 @@ func TestRunEmit(t *testing.T) {
 		{A: 10, B: 20, Tier: 1, Works: []int64{1}, AName: "a", BName: "b",
 			ASources: []string{"vndb"}, BSources: []string{"bangumi"}, BRich: richness{Img: true}},
 		{A: 30, B: 40, Tier: 3, Works: []int64{1}, ASources: []string{"vndb"}, BSources: []string{"bangumi"}},
-		{A: 50, B: 60, Tier: 2, Works: []int64{2}, ASources: []string{"vndb"}, BSources: []string{"erogamespace"}},
+		{A: 50, B: 60, Tier: 2, Works: []int64{2}, ASources: []string{"vndb"}, BSources: []string{"erogamescape"}},
 		{A: 70, B: 80, Tier: 1, Works: []int64{3}, ASources: []string{"vndb"}, BSources: []string{"bangumi"}, Instance: true},
 		{A: 90, B: 91, Tier: 3, Works: []int64{4}, ASources: []string{"vndb"}, BSources: []string{"bangumi"}},
 		{A: 100, B: 110, Tier: 1, Works: []int64{5}, ASources: []string{"vndb"}, BSources: []string{"bangumi"}},

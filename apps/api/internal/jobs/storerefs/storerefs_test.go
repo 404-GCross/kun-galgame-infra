@@ -98,7 +98,7 @@ func mkAnchor(t *testing.T, workID int64, externalID string, source int16) {
 func TestImportStoreRefs(t *testing.T) {
 	clean(t)
 	medium := mediumID(t)
-	egSrc := sourceID(t, "erogamespace")
+	egSrc := sourceID(t, "erogamescape")
 	steamSrc := sourceID(t, "steam")
 	dmmSrc := sourceID(t, "dmm")
 

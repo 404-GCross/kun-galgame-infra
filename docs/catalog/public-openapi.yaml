@@ -3480,12 +3480,12 @@ paths:
     get:
       operationId: lookupCatalogPublic
       parameters:
-        - description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"
+        - description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the legacy misspelling erogamespace is still accepted)"
           explode: false
           in: query
           name: source
           schema:
-            description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"
+            description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the legacy misspelling erogamespace is still accepted)"
             type: string
         - description: The id within that source. type=work accepts vndb v19658 or 19658 (and dlsite RJ/VJ numbers); the non-work types match VERBATIM as the registry stores them — vndb character c1234, label p129, staff a bare number
           explode: false

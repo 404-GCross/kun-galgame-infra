@@ -228,7 +228,7 @@ func loadSources(db *gorm.DB) (map[string]int16, error) {
 	for _, r := range rows {
 		out[r.Key] = r.ID
 	}
-	if id, ok := out["erogamespace"]; ok {
+	if id, ok := out["erogamescape"]; ok {
 		out["eg"] = id
 	}
 	if id, ok := out["bangumi"]; ok {

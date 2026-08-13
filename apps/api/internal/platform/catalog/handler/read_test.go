@@ -144,7 +144,7 @@ func TestWorkRefsBlock(t *testing.T) {
 	assert.Len(t, refs, 2, "only the two exact refs; both probable refs excluded")
 	assert.True(t, got[key{source: "vndb", ext: "v100", level: "work"}], "work-level exact ref present")
 	assert.True(t, got[key{source: "dlsite", ext: "RJTEST", level: "release", relID: relID}], "release-level exact ref carries its release id")
-	assert.False(t, got[key{source: "erogamespace", ext: "eg-work", level: "work"}], "probable work ref excluded")
+	assert.False(t, got[key{source: "erogamescape", ext: "eg-work", level: "work"}], "probable work ref excluded")
 }
 
 func TestWorkCredits(t *testing.T) {
@@ -1042,11 +1042,11 @@ func TestWorkRating(t *testing.T) {
 	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
 	db.Raw("SELECT id FROM catalog_source WHERE key='bangumi'").Scan(&srcBangumi)
 	db.Raw("SELECT id FROM catalog_source WHERE key='dlsite'").Scan(&srcDlsite)
-	db.Raw("SELECT id FROM catalog_source WHERE key='erogamespace'").Scan(&srcEG)
+	db.Raw("SELECT id FROM catalog_source WHERE key='erogamescape'").Scan(&srcEG)
 	require.NotZero(t, srcVNDB, "vndb source must be seeded")
 	require.NotZero(t, srcBangumi, "bangumi source must be seeded")
 	require.NotZero(t, srcDlsite, "dlsite source must be seeded")
-	require.NotZero(t, srcEG, "erogamespace source must be seeded")
+	require.NotZero(t, srcEG, "erogamescape source must be seeded")
 
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8001)}

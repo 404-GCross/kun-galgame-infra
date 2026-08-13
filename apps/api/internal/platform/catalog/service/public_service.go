@@ -48,7 +48,7 @@ func NewPublicService(db *gorm.DB, read *ReadService, resolve *ResolveService, c
 	}
 	if err := db.Raw(`SELECT id, key FROM catalog_source`).Scan(&srcRows).Error; err == nil {
 		for _, r := range srcRows {
-			s.sources[r.ID] = publicSourceKey(r.Key)
+			s.sources[r.ID] = r.Key
 		}
 	}
 	return s
@@ -158,7 +158,7 @@ func (s *PublicService) lookupEntityID(ctx context.Context, source, externalID s
 	db := s.db.WithContext(ctx)
 
 	var srcID int16
-	if err := db.Raw(`SELECT id FROM catalog_source WHERE key = ?`, registrySourceKey(source)).Scan(&srcID).Error; err != nil {
+	if err := db.Raw(`SELECT id FROM catalog_source WHERE key = ?`, canonicalSourceKey(source)).Scan(&srcID).Error; err != nil {
 		return 0, err
 	}
 	if srcID == 0 {
@@ -182,7 +182,7 @@ func (s *PublicService) lookupBrief(ctx context.Context, source, externalID stri
 	db := s.db.WithContext(ctx)
 
 	var srcID int16
-	if err := db.Raw(`SELECT id FROM catalog_source WHERE key = ?`, registrySourceKey(source)).Scan(&srcID).Error; err != nil {
+	if err := db.Raw(`SELECT id FROM catalog_source WHERE key = ?`, canonicalSourceKey(source)).Scan(&srcID).Error; err != nil {
 		return nil, err
 	}
 	if srcID == 0 {
@@ -321,7 +321,7 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 			if a.LinkKind != model.LinkKindExact {
 				continue
 			}
-			pr.Refs = append(pr.Refs, dto.PublicCatalogRef{Source: publicSourceKey(a.Source), ExternalID: a.ExternalID})
+			pr.Refs = append(pr.Refs, dto.PublicCatalogRef{Source: a.Source, ExternalID: a.ExternalID})
 		}
 		rec.Releases = append(rec.Releases, pr)
 	}
@@ -456,7 +456,7 @@ func (s *PublicService) resolveSourceIDs(param string) (ids []int16, filter bool
 		if tok == "" {
 			continue
 		}
-		want := publicSourceKey(registrySourceKey(tok))
+		want := canonicalSourceKey(tok)
 		for id, key := range s.sources {
 			if key == want && !seen[id] {
 				seen[id] = true
@@ -578,7 +578,7 @@ func (s *PublicService) workCredits(ctx context.Context, workID int64) ([]dto.Pu
 			item.Label = *r.LabelNM
 		}
 		if r.SourceKey != nil {
-			item.Source = publicSourceKey(*r.SourceKey)
+			item.Source = *r.SourceKey
 		}
 		cur.Credits = append(cur.Credits, item)
 	}
@@ -841,7 +841,7 @@ func (s *PublicService) labelLinks(ctx context.Context, labelID int64) ([]dto.Pu
 	out := make([]dto.PublicLabelLink, 0, len(rows))
 	for _, r := range rows {
 		if url, ok := relatedLinkURL(r.Source, r.ExternalID); ok {
-			out = append(out, dto.PublicLabelLink{Source: publicSourceKey(r.Source), URL: url})
+			out = append(out, dto.PublicLabelLink{Source: r.Source, URL: url})
 		}
 	}
 	return out, nil
@@ -888,7 +888,7 @@ func (s *PublicService) personLinks(ctx context.Context, personID int64) ([]dto.
 	out := make([]dto.PublicPersonLink, 0, len(rows))
 	for _, r := range rows {
 		if url, ok := relatedLinkURL(r.Source, r.ExternalID); ok {
-			out = append(out, dto.PublicPersonLink{Source: publicSourceKey(r.Source), URL: url})
+			out = append(out, dto.PublicPersonLink{Source: r.Source, URL: url})
 		}
 	}
 	return out, nil
@@ -928,7 +928,7 @@ func (s *PublicService) workLinks(ctx context.Context, workID int64) ([]dto.Publ
 	out := make([]dto.PublicWorkLink, 0, len(rows))
 	for _, r := range rows {
 		if url, ok := relatedLinkURL(r.Source, r.ExternalID); ok {
-			out = append(out, dto.PublicWorkLink{Source: publicSourceKey(r.Source), URL: url})
+			out = append(out, dto.PublicWorkLink{Source: r.Source, URL: url})
 		}
 	}
 	return out, nil
@@ -1150,18 +1150,16 @@ func publicTitles(titles []WorkTitleRow) []dto.PublicCatalogTitle {
 	return out
 }
 
-func publicSourceKey(registry string) string {
-	if registry == "erogamespace" {
+// The registry key for ErogameScape was misspelled "erogamespace" until the
+// site's real name was checked; the public wire value has always been
+// "erogamescape". The pre-rename doc string advertised the misspelling as an
+// accepted input, so it stays accepted here — dropping it would 404 any caller
+// that took that doc at its word.
+func canonicalSourceKey(k string) string {
+	if k == "erogamespace" {
 		return "erogamescape"
 	}
-	return registry
-}
-
-func registrySourceKey(public string) string {
-	if public == "erogamescape" {
-		return "erogamespace"
-	}
-	return public
+	return k
 }
 
 func publicRefs(refs []RefDetail) []dto.PublicCatalogRef {
@@ -1173,7 +1171,7 @@ func publicRefs(refs []RefDetail) []dto.PublicCatalogRef {
 			continue
 		}
 		seen[key] = struct{}{}
-		out = append(out, dto.PublicCatalogRef{Source: publicSourceKey(r.Source), ExternalID: r.ExternalID})
+		out = append(out, dto.PublicCatalogRef{Source: r.Source, ExternalID: r.ExternalID})
 	}
 	return out
 }

@@ -11,7 +11,7 @@ import (
 
 const (
 	srcVNDB         int16 = 2
-	srcErogamespace int16 = 5
+	srcErogamescape int16 = 5
 	srcDlsite       int16 = 4
 )
 
@@ -100,7 +100,9 @@ func TestPublicLookupExactOnly(t *testing.T) {
 		t.Fatal("unknown source key must 404")
 	}
 
-	addExternalRef(t, model.EntityTypeWork, w.ID, srcErogamespace, "23956", model.LinkKindExact)
+	addExternalRef(t, model.EntityTypeWork, w.ID, srcErogamescape, "23956", model.LinkKindExact)
+	// "erogamespace" was the registry key until the rename; callers that learned
+	// it from the old doc string must keep resolving.
 	for _, src := range []string{"erogamescape", "erogamespace"} {
 		if _, found, err := svc.Lookup(ctx, src, "23956", false); err != nil || !found {
 			t.Fatalf("lookup via %q: found=%v err=%v", src, found, err)
@@ -112,7 +114,7 @@ func TestPublicLookupExactOnly(t *testing.T) {
 	}
 	for _, r := range detail.Refs {
 		if r.Source == "erogamespace" {
-			t.Fatal("public refs must carry the public spelling erogamescape, never the registry key")
+			t.Fatal("public refs must carry erogamescape, never the legacy misspelling")
 		}
 	}
 }
@@ -453,8 +455,8 @@ func TestPublicWorkCreditsLabelSigner(t *testing.T) {
 	}
 	c := createCredit(t, w.ID, name.ID, seededRoleID(t), nil)
 	var srcID int16
-	if err := testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'erogamespace'`).Scan(&srcID).Error; err != nil || srcID == 0 {
-		t.Fatalf("erogamespace source id=%d err=%v", srcID, err)
+	if err := testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'erogamescape'`).Scan(&srcID).Error; err != nil || srcID == 0 {
+		t.Fatalf("erogamescape source id=%d err=%v", srcID, err)
 	}
 	if err := testDB.Model(c).Updates(map[string]any{"label_id": label.ID, "source_id": srcID}).Error; err != nil {
 		t.Fatalf("set signer: %v", err)

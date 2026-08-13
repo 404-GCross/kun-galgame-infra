@@ -52,7 +52,7 @@ func srcKey(source int16) string {
 	case sourceBangumi:
 		return "bangumi"
 	case sourceEG:
-		return "erogamespace"
+		return "erogamescape"
 	default:
 		return fmt.Sprintf("source-%d", source)
 	}

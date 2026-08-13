@@ -80,8 +80,6 @@ func curatedSourceID(byKey map[string]int16) int16 {
 	return 0
 }
 
-const sourceKeyErogamespace = "erogamespace"
-
 const siteGalgameWiki = "galgame_wiki"
 
 type ReadService struct{ db *gorm.DB }

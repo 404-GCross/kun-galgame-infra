@@ -27,14 +27,14 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'bangumi'`).Scan(&r.bangumiSource).Error; err != nil {
 		return r, fmt.Errorf("resolve bangumi source: %w", err)
 	}
-	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'erogamespace'`).Scan(&r.egSource).Error; err != nil {
-		return r, fmt.Errorf("resolve erogamespace source: %w", err)
+	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'erogamescape'`).Scan(&r.egSource).Error; err != nil {
+		return r, fmt.Errorf("resolve erogamescape source: %w", err)
 	}
 	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'dlsite'`).Scan(&r.dlsiteSource).Error; err != nil {
 		return r, fmt.Errorf("resolve dlsite source: %w", err)
 	}
 	if r.galgameMedium == 0 || r.bangumiSource == 0 || r.egSource == 0 || r.dlsiteSource == 0 {
-		return r, fmt.Errorf("registry not seeded (galgame medium=%d, bangumi source=%d, erogamespace source=%d, dlsite source=%d)",
+		return r, fmt.Errorf("registry not seeded (galgame medium=%d, bangumi source=%d, erogamescape source=%d, dlsite source=%d)",
 			r.galgameMedium, r.bangumiSource, r.egSource, r.dlsiteSource)
 	}
 	return r, nil

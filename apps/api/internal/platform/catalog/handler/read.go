@@ -63,7 +63,7 @@ func (s *S2SServer) registerRead(api huma.API) {
 }
 
 type byAnchorInput struct {
-	Source     string `query:"source" minLength:"1" doc:"Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry"`
+	Source     string `query:"source" minLength:"1" doc:"Source key (dlsite/vndb/bangumi/erogamescape/…), validated against the source registry"`
 	ExternalID string `query:"external_id" minLength:"1" doc:"The id within that source (e.g. a DLsite RJ number, a VNDB v-id)"`
 }
 

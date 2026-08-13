@@ -167,7 +167,7 @@ func (s *PublicService) workListRefs(ctx context.Context, ids []int64) (map[int6
 		}
 		seen[key] = struct{}{}
 		out[r.WorkID] = append(out[r.WorkID], dto.PublicCatalogRef{
-			Source: publicSourceKey(r.Source), ExternalID: r.ExternalID,
+			Source: r.Source, ExternalID: r.ExternalID,
 		})
 	}
 	return out, nil

@@ -2656,7 +2656,7 @@ components:
           format: int64
           type: integer
         source_id:
-          description: "catalog_source id (provenance): vndb = vote-backed median, erogamespace = community median"
+          description: "catalog_source id (provenance): vndb = vote-backed median, erogamescape = community median"
           format: int32
           type: integer
         vote_count:
@@ -2700,7 +2700,7 @@ components:
           format: double
           type: number
         source_id:
-          description: "catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamespace = 0-100 median"
+          description: "catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamescape = 0-100 median"
           format: int32
           type: integer
         vote_count:
@@ -3684,12 +3684,12 @@ paths:
     get:
       operationId: getCatalogWorkByAnchor
       parameters:
-        - description: Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry
+        - description: Source key (dlsite/vndb/bangumi/erogamescape/…), validated against the source registry
           explode: false
           in: query
           name: source
           schema:
-            description: Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry
+            description: Source key (dlsite/vndb/bangumi/erogamescape/…), validated against the source registry
             minLength: 1
             type: string
         - description: The id within that source (e.g. a DLsite RJ number, a VNDB v-id)
