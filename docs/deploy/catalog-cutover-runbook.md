@@ -47,7 +47,7 @@
    git push origin main
    ```
 2. **盯 CI**:GitHub → Actions → `build-and-push` 本次 run 全绿。push 改了 `apps/api/**` → **go 组全建**,新镜像 `ghcr.io/kunmoe/infra-catalog:latest` + `infra-migrate-catalog:latest` 首次出现,连同 `infra-migrate`/`infra-migrate-galgame`/`infra-galgame`/…一并重建。
-3. **手动建 `infra-tools`**(⚠️ **redeploy 不重建它**,ondemand-only):GitHub → Actions → **`build-and-push`** → **Run workflow** → 分支 `main`、`scope=ondemand` → 等其绿。`infra-tools` 由 `docker/tools.Dockerfile` 的 `-o /out/ ./cmd/...` 打包**每个** `cmd/*`,故本轮新增的 `reconcile-galgame-works`/`import-dlsite-works`/`reindex-catalog`/`enrich-bangumi` 等**都随这次重建进镜像**——不建则生产 tools 里没有它们(stale → 静默失败)。
+3. **核 `infra-tools` 已随本次 push 建绿**(它现在与 go 组锁步,`apps/api/**` 或 `docker/tools.Dockerfile` 一变即建;要单独重建走 Actions → **`build-and-push`** → **Run workflow** → `scope=tools`)。`infra-tools` 由 `docker/tools.Dockerfile` 的 `-o /out/ ./cmd/...` 打包**每个** `cmd/*`,故本轮新增的 `reconcile-galgame-works`/`import-dlsite-works`/`reindex-catalog`/`enrich-bangumi` 等**都随这次重建进镜像**——拉到旧镜像则生产 tools 里没有它们(stale → 静默失败)。
 
 ---
 
@@ -247,7 +247,7 @@ sudo docker run --rm --network dokploy-network curlimages/curl:latest -s -o /dev
 ## 9 · 执行证据清单（逐项贴回,供「执行核验记录」)
 
 - [ ] §0 本地测试 40 包绿 / `origin/main..main` = 20 提交
-- [ ] §1 CI `build-and-push` 全绿(含 infra-catalog / infra-migrate-catalog)+ `infra-tools` ondemand 建绿
+- [ ] §1 CI `build-and-push` 全绿(含 infra-catalog / infra-migrate-catalog / `infra-tools`)
 - [ ] §2.0 wiki 备份体积(`ls -lh` 输出)
 - [ ] §2.3 抽验:works 206,710 / credits 629,207 / 名义 59,769 / bgm_subject 648,663
 - [ ] §3 逐服务镜像 sha 为新;`migrate-catalog` exited(0)

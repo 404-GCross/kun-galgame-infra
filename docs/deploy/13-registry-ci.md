@@ -71,7 +71,7 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 
 每仓放一个 `.github/workflows/build.yml`。下面是 **infra(最复杂,cgo + 2×Nuxt + Go)** 的完整示例;kungal/moyu **同构**,仅 `matrix` 列表不同。
 
-> **省额度:infra 的实际 workflow 已改为「路径过滤 + 动态 matrix」**(下面这段是说明结构的简化示例,不是逐字现状)。GitHub 按 job 数×分钟计费且每 job 向上取整到 1 分钟,全量 matrix 即使全缓存每次 push 也要 ~10 分钟。现状:`changes` job 用 `dorny/paths-filter` 算出哪些组变了,只构建变更的镜像 —— `go`(oauth/image/artifact/catalog/community/trust/ai + 单一 `migrate`,与服务同 sha 锁步 ← `apps/api/**`)、`web`(← `apps/web/**`+根 manifest)、`wiki`(← `apps/wiki/**`+根 manifest)、`developer`(← `apps/developer/**`);**只有 `infra-tools` 不随 push 构建,改为按需**(Actions → Run workflow → `scope=ondemand` 或 `all`)。docs-only 的 push 不构建任何镜像(~1 分钟)。**跑 prod 一次性数据 job 前,先 `scope=ondemand` 手动构建刷新 `infra-tools`,否则拉到旧镜像 → 静默失败。**
+> **省额度:infra 的实际 workflow 已改为「路径过滤 + 动态 matrix」**(下面这段是说明结构的简化示例,不是逐字现状)。GitHub 按 job 数×分钟计费且每 job 向上取整到 1 分钟,全量 matrix 即使全缓存每次 push 也要 ~10 分钟。现状:`changes` job 用 `dorny/paths-filter` 算出哪些组变了,只构建变更的镜像 —— `go`(oauth/image/artifact/catalog/community/trust/ai + 单一 `migrate`,与服务同 sha 锁步 ← `apps/api/**`)、`web`(← `apps/web/**`+根 manifest)、`wiki`(← `apps/wiki/**`+根 manifest)、`developer`(← `apps/developer/**`)、`tools`(`infra-tools`,与 go 组同源锁步 ← `apps/api/**` + `docker/tools.Dockerfile`)。docs-only 的 push 不构建任何镜像(~1 分钟)。`tools` 是唯一不触发 Dokploy redeploy 的组;要单独重建它,Actions → Run workflow → `scope=tools`。
 
 ```yaml
 # kun-galgame-infra/.github/workflows/build.yml
