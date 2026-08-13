@@ -19,6 +19,41 @@ func newPublicSvc() *PublicService {
 	return NewPublicService(testDB, NewReadService(testDB), testResolve, "")
 }
 
+func TestCharacterIntroElectionDerivedException(t *testing.T) {
+	cleanTables(t)
+	ch := model.CatalogCharacter{DisplayName: "選挙対象"}
+	if err := testDB.Create(&ch).Error; err != nil {
+		t.Fatal(err)
+	}
+	mk := func(src, prov int16, text string) {
+		if err := testDB.Create(&model.CatalogCharacterIntro{
+			CharacterID: ch.ID, Lang: "zh-Hans", Intro: text, SourceID: src, Provenance: prov,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk(srcVNDB, 1, "翻译机器行")
+	mk(sourceDerived, 1, "提取机器行")
+
+	svc := newPublicSvc()
+	intros, err := svc.characterIntros(t.Context(), ch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(intros) != 1 || intros[0].Intro != "提取机器行" || !intros[0].Machine || intros[0].Source != "derived" {
+		t.Fatalf("derived must win among machine rows, got %+v", intros)
+	}
+
+	mk(srcErogamespace, 0, "源文行")
+	intros, err = svc.characterIntros(t.Context(), ch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(intros) != 1 || intros[0].Intro != "源文行" || intros[0].Machine {
+		t.Fatalf("a source row must still beat the derived extraction, got %+v", intros)
+	}
+}
+
 func createWorkX(t *testing.T, medium, rating, status int16, name string) *model.CatalogWork {
 	t.Helper()
 	w := &model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name, ContentRating: rating, Status: status}
