@@ -136,8 +136,12 @@ func (s *UserClaimServer) mine(ctx context.Context, in *userMineClaimsInput) (*u
 		Items: make([]service.UserClaimItem, 0, len(items)), Total: total,
 	}
 	page.Items = append(page.Items, items...)
-	if n := len(items); n > 0 {
-		page.NextBefore = items[n-1].LastEventID
+	limit := in.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if len(items) >= limit {
+		page.NextBefore = items[len(items)-1].LastEventID
 	}
 	return &userClaimsOutput{Body: okEnvelope(page)}, nil
 }
