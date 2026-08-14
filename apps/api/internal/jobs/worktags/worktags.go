@@ -47,6 +47,7 @@ type Stats struct {
 	Written      int
 	Conflict     int
 	Errors       int
+	FirstError   string
 
 	DistinctNames int
 	TopNames      []NameFreq
