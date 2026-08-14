@@ -57,13 +57,14 @@ for svc in "${!SHAREABLE[@]}"; do
   fi
 done
 
-# Phase 0 — refresh the migration image. Every migrate-* service runs this ONE
-# image, so this is a single manifest check. It is not optional politeness: a
-# stale infra-migrate predates the subcommand CLI, ignores the target argument
-# (flag.Parse skips positional args) and migrates the PLATFORM database instead
-# of the one the service is named after — a silent no-op on the schema you
-# actually wanted. Offline is fine: keep going on a pull failure.
-"${COMPOSE[@]}" pull --quiet --ignore-pull-failures migrate 2>/dev/null || true
+# Phase 0 — refresh every image this profile is about to run (one manifest
+# check each; offline is fine, keep going on a pull failure). Not optional
+# politeness: a stale infra-migrate predates the subcommand CLI, ignores the
+# target argument (flag.Parse skips positional args) and migrates the PLATFORM
+# database instead of the one the service is named after — a silent no-op on
+# the schema you actually wanted. Service images rot the same way (an infra-
+# catalog left over from 07-30 served a two-week-old contract on :9281).
+"${COMPOSE[@]}" "${PROFILE_ARGS[@]}" pull --quiet --ignore-pull-failures 2>/dev/null || true
 
 # Phase 1 — start the base. NO --wait here: the run-once jobs (migrate* /
 # minio-setup) exit 0 when done, and `up --wait` treats a top-level service that
@@ -95,6 +96,22 @@ if ((FULL)); then
   echo "✔ whole platform up from images. Now run your product repo's \`pnpm dev\`."
   exit 0
 fi
+
+# Phase 3 — re-run the migrations FROM THE WORKING TREE. The image above
+# migrates to main-as-of-its-last-CI-build; air serves the working tree, and
+# those clocks differ whenever a branch is ahead of main. 2026-08-14: wave
+# 205's rating columns were in the tree but not yet on main, so the image
+# migrate ran green while every air work-detail request failed on
+# `column "distribution" does not exist`. A newer image cannot close that
+# window — only migrating from the same tree air serves can. Same targets as
+# the bare-profile migrate-* jobs (which stay: they pair with the image
+# services they gate); idempotent, so the double run costs nothing.
+echo "▶ migrations from the working tree…"
+(cd apps/api
+  go run ./cmd/migrate
+  go run ./cmd/migrate catalog
+  go run ./cmd/migrate trust
+  go run ./cmd/migrate news)
 
 echo "▶ hot-reload stack: air (oauth/catalog/image/artifact/trust) + frontends."
 echo "  Ctrl-C stops these; the base above stays up (pnpm dev:down to stop it)."
