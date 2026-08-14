@@ -375,3 +375,59 @@ func TestUserClaims_Mine(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &errBody), string(raw))
 	assert.Equal(t, msgBadClaimState, errBody.Message)
 }
+
+func TestUserClaims_MineSubmittedVsAudited(t *testing.T) {
+	db := openCatalogTestDB(t)
+	resetClaims(t, db)
+	app := userClaimApp(db)
+
+	submit := func(token, name string) int64 {
+		status, raw := userEditReq(t, app, "POST", UserPrefix+"/works/submit", token,
+			fmt.Sprintf(`{"fields":{"catalog.work.display_name":%q}}`, name))
+		require.Equal(t, fiber.StatusOK, status, string(raw))
+		var env struct {
+			Data struct {
+				WorkID int64 `json:"work_id"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &env), string(raw))
+		return env.Data.WorkID
+	}
+
+	submitter := userToken(t, 861, ScopeCatalogEdit, "kungal-client")
+	reviewer := moderatorToken(t, 862)
+
+	workID := submit(submitter, "归属区分测试")
+	status, raw := userEditReq(t, app, "POST", userClaimActionPath(workID, "decline"), reviewer,
+		`{"reason":"区分审核"}`)
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+
+	type minePage struct {
+		Data struct {
+			Items []struct {
+				WorkID int64 `json:"work_id"`
+			} `json:"items"`
+			Total int64 `json:"total"`
+		} `json:"data"`
+	}
+	get := func(query, token string) minePage {
+		status, raw := userEditReq(t, app, "GET", UserPrefix+"/claims/mine"+query, token, "")
+		require.Equal(t, fiber.StatusOK, status, string(raw))
+		var page minePage
+		require.NoError(t, json.Unmarshal(raw, &page), string(raw))
+		return page
+	}
+
+	submitted := get("?kind=submitted", submitter)
+	require.EqualValues(t, 1, submitted.Data.Total, "the submitter owns exactly one work")
+	require.Len(t, submitted.Data.Items, 1)
+	require.Equal(t, workID, submitted.Data.Items[0].WorkID)
+
+	audited := get("?kind=audited", reviewer)
+	require.EqualValues(t, 1, audited.Data.Total, "the reviewer reviewed exactly one work")
+	require.Len(t, audited.Data.Items, 1)
+	require.Equal(t, workID, audited.Data.Items[0].WorkID)
+
+	require.Zero(t, get("?kind=audited", submitter).Data.Total, "the submitter reviewed nothing")
+	require.Zero(t, get("?kind=submitted", reviewer).Data.Total, "the reviewer submitted nothing")
+}

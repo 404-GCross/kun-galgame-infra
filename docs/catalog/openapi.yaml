@@ -3884,6 +3884,13 @@ paths:
             description: Page size (default 20, max 100)
             format: int64
             type: integer
+        - description: "Which events qualify the actor: submitted (works they own) or audited (works they reviewed but do not own). Absent = every work they touched"
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: "Which events qualify the actor: submitted (works they own) or audited (works they reviewed but do not own). Absent = every work they touched"
+            type: string
       responses:
         "200":
           content:
