@@ -335,6 +335,7 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 	for _, r := range detail.Ratings {
 		rec.Ratings = append(rec.Ratings, dto.PublicRating{
 			Source: s.sourceKey(r.SourceID), Score: r.Score, VoteCount: r.VoteCount, Rank: r.Rank,
+			Distribution: r.Distribution, Stats: r.Stats,
 		})
 	}
 	rec.Tags = make([]dto.PublicTag, 0, len(detail.Tags))

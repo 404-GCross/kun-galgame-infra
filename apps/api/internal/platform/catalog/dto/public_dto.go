@@ -293,10 +293,12 @@ type PublicPopularity struct {
 }
 
 type PublicRating struct {
-	Source    string  `json:"source"`
-	Score     float64 `json:"score"`
-	VoteCount int     `json:"vote_count"`
-	Rank      *int    `json:"rank,omitempty"`
+	Source       string         `json:"source"`
+	Score        float64        `json:"score"`
+	VoteCount    int            `json:"vote_count"`
+	Rank         *int           `json:"rank,omitempty"`
+	Distribution []RatingBucket `json:"distribution,omitempty" doc:"vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)"`
+	Stats        *RatingStats   `json:"stats,omitempty" doc:"spread of the same vote population as score, work-detail responses only. Carried by erogamescape alone, which publishes these instead of a histogram"`
 }
 
 type PublicTag struct {

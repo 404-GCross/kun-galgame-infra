@@ -287,6 +287,9 @@ func workLabelKindRank(k int16) int {
 	}
 }
 
+// The list block deliberately drops distribution/stats that the detail face
+// carries: they exist for a per-source modal opened on one work, and a 50-item
+// page with ?include=ratings would pay for 50 of them to render none.
 func (s *PublicService) publicRatings(rows []WorkRatingRow) []dto.PublicRating {
 	if len(rows) == 0 {
 		return nil

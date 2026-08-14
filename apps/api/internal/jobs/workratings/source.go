@@ -2,7 +2,6 @@ package workratings
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -114,19 +113,33 @@ func loadEgCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, off
 type egData struct {
 	median *int
 	votes  int
+	stats  ratingStats
 }
 
+// The mirror generates typed columns for only a handful of `raw` keys, and the
+// spread four are not among them — hence the casts. They are read from the same
+// row as the median on purpose: EG publishes no histogram, and one computed
+// from the mirror's `reviews` table would be a different sync generation than
+// the aggregate shown beside it.
 func loadEGMirror(ctx context.Context, egDB *gorm.DB, ids []int64) (map[int64]egData, error) {
 	out := map[int64]egData{}
 	type row struct {
-		ID     int64 `gorm:"column:id"`
-		Median *int  `gorm:"column:median"`
-		Count2 *int  `gorm:"column:count2"`
+		ID      int64    `gorm:"column:id"`
+		Median  *int     `gorm:"column:median"`
+		Count2  *int     `gorm:"column:count2"`
+		Average *float64 `gorm:"column:average"`
+		Stdev   *float64 `gorm:"column:stdev"`
+		Min     *float64 `gorm:"column:min"`
+		Max     *float64 `gorm:"column:max"`
 	}
 	for start := 0; start < len(ids); start += 1000 {
 		end := min(start+1000, len(ids))
 		var batch []row
-		if err := egDB.WithContext(ctx).Table("games").Select("id, median, count2").
+		if err := egDB.WithContext(ctx).Table("games").Select(`id, median, count2,
+				nullif(raw->>'average2', '')::float8 AS average,
+				nullif(raw->>'stdev', '')::float8    AS stdev,
+				nullif(raw->>'min2', '')::float8     AS min,
+				nullif(raw->>'max2', '')::float8     AS max`).
 			Where("id IN ?", ids[start:end]).Scan(&batch).Error; err != nil {
 			return nil, err
 		}
@@ -135,7 +148,10 @@ func loadEGMirror(ctx context.Context, egDB *gorm.DB, ids []int64) (map[int64]eg
 			if r.Count2 != nil {
 				votes = *r.Count2
 			}
-			out[r.ID] = egData{median: r.Median, votes: votes}
+			out[r.ID] = egData{
+				median: r.Median, votes: votes,
+				stats: ratingStats{Average: r.Average, Stdev: r.Stdev, Min: r.Min, Max: r.Max},
+			}
 		}
 	}
 	return out, nil
@@ -175,21 +191,6 @@ func derefOr(p *int, fallback int) int {
 		return fallback
 	}
 	return *p
-}
-
-func ratingTotal(details []byte) int {
-	if len(details) == 0 {
-		return 0
-	}
-	var buckets map[string]int
-	if err := json.Unmarshal(details, &buckets); err != nil {
-		return 0
-	}
-	total := 0
-	for _, n := range buckets {
-		total += n
-	}
-	return total
 }
 
 func window[T any](in []T, limit, offset int) []T {

@@ -1997,6 +1997,13 @@ components:
     PublicRating:
       additionalProperties: false
       properties:
+        distribution:
+          description: vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)
+          items:
+            $ref: "#/components/schemas/RatingBucket"
+          type:
+            - array
+            - "null"
         rank:
           format: int64
           type: integer
@@ -2005,6 +2012,9 @@ components:
           type: number
         source:
           type: string
+        stats:
+          $ref: "#/components/schemas/RatingStats"
+          description: spread of the same vote population as score, work-detail responses only. Carried by erogamescape alone, which publishes these instead of a histogram
         vote_count:
           format: int64
           type: integer
@@ -2917,6 +2927,38 @@ components:
         - page
         - limit
         - items
+      type: object
+    RatingBucket:
+      additionalProperties: false
+      properties:
+        count:
+          description: votes cast at this value
+          format: int64
+          type: integer
+        score:
+          description: bucket value on the source-native scale
+          format: int64
+          type: integer
+      required:
+        - score
+        - count
+      type: object
+    RatingStats:
+      additionalProperties: false
+      properties:
+        average:
+          description: mean on the source-native scale (score itself is the median for erogamescape)
+          format: double
+          type: number
+        max:
+          format: double
+          type: number
+        min:
+          format: double
+          type: number
+        stdev:
+          format: double
+          type: number
       type: object
 info:
   title: NextMoe Open API — Catalog

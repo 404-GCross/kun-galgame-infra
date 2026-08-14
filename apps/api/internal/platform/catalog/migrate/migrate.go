@@ -64,17 +64,21 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkCover{},      // bodyless cover images (step 53 media-aggregation wave II)
 		&model.CatalogWorkScreenshot{}, // bodyless screenshot images (step 54 media-aggregation wave III)
 		&model.CatalogCoverVote{},      // advisory best-cover votes (wave 175); its cover FK is raw SQL below
-		&model.CatalogWorkRating{},     // bodyless source-native ratings (step 58a media-aggregation facet A)
-		&model.CatalogWorkTag{},        // bodyless verbatim folksonomy tags (step 58b media-aggregation facet B)
-		&model.CatalogWorkPopularity{}, // bodyless per-metric popularity counters (step 62 popularity facet)
-		&model.CatalogWorkPlaytime{},   // per-source playtime estimates (step 91 playtime facet — no claimed bridge)
-		&model.CatalogUserPlaytime{},   // per-user/per-client playtime reports; aggregates INTO the row above as source nextmoe
-		&model.CatalogSeries{},         // work series entity (step 94, dlsite lane first)
-		&model.CatalogSeriesMember{},   // series membership (step 94)
-		&model.CatalogSeriesIntro{},    // multilingual series intros (refs/plans/10 W0 ruling 3)
+		// Bodyless source-native ratings (step 58a media-aggregation facet A).
+		// Wave 205 added the nullable distribution/stats jsonb columns; both land
+		// NULL on every existing row and stay that way until backfill-work-ratings
+		// runs again (it is in the bgm weekly, so untouched trees self-heal there).
+		&model.CatalogWorkRating{},
+		&model.CatalogWorkTag{},            // bodyless verbatim folksonomy tags (step 58b media-aggregation facet B)
+		&model.CatalogWorkPopularity{},     // bodyless per-metric popularity counters (step 62 popularity facet)
+		&model.CatalogWorkPlaytime{},       // per-source playtime estimates (step 91 playtime facet — no claimed bridge)
+		&model.CatalogUserPlaytime{},       // per-user/per-client playtime reports; aggregates INTO the row above as source nextmoe
+		&model.CatalogSeries{},             // work series entity (step 94, dlsite lane first)
+		&model.CatalogSeriesMember{},       // series membership (step 94)
+		&model.CatalogSeriesIntro{},        // multilingual series intros (refs/plans/10 W0 ruling 3)
 		&model.CatalogSeriesNameOverride{}, // reviewed names for machine-owned lanes (wave 185)
-		&model.CatalogPlatform{},       // platform vocabulary registry (step 96)
-		&model.CatalogWorkPlatform{},   // work-level platform facet (step 96, bgm lane)
+		&model.CatalogPlatform{},           // platform vocabulary registry (step 96)
+		&model.CatalogWorkPlatform{},       // work-level platform facet (step 96, bgm lane)
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},

@@ -1515,6 +1515,31 @@ export interface components {
             /** Format: int64 */
             rejections: number;
         };
+        RatingBucket: {
+            /**
+             * Format: int64
+             * @description votes cast at this value
+             */
+            count: number;
+            /**
+             * Format: int64
+             * @description bucket value on the source-native scale
+             */
+            score: number;
+        };
+        RatingStats: {
+            /**
+             * Format: double
+             * @description mean on the source-native scale (score itself is the median for erogamescape)
+             */
+            average?: number;
+            /** Format: double */
+            max?: number;
+            /** Format: double */
+            min?: number;
+            /** Format: double */
+            stdev?: number;
+        };
         RedirectFeedResponse: {
             items: components["schemas"]["RedirectItem"][] | null;
             /** @description Opaque cursor for the next page; empty when this page is not full */
@@ -1928,6 +1953,8 @@ export interface components {
             value: number;
         };
         WorkRating: {
+            /** @description vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes); detail face only. Published by bangumi (1-10) and dlsite (1-5); absent for vndb and erogamescape, which publish no histogram */
+            distribution?: components["schemas"]["RatingBucket"][] | null;
             /**
              * Format: int64
              * @description source-internal rank; absent when the source has no rank or the work is unranked
@@ -1943,6 +1970,8 @@ export interface components {
              * @description catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamescape = 0-100 median
              */
             source_id: number;
+            /** @description spread of the same vote population as score; detail face only. Carried by erogamescape alone, which publishes these instead of a histogram */
+            stats?: components["schemas"]["RatingStats"];
             /**
              * Format: int64
              * @description number of ratings backing the score
