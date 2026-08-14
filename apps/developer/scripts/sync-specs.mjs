@@ -12,8 +12,13 @@
  * change:  pnpm --filter developer sync:specs
  *
  * The galgame face was dropped at wave 146 (2026-07-30): its /v1/galgame
- * projection was delisted and its spec deleted, so catalog is the only public
- * face left to document.
+ * projection was delisted and its spec deleted.
+ *
+ * One spec file now carries TWO faces. The catalog face is API-key
+ * authenticated and read-only; /v1/playtime is a user-token face whose scopes
+ * and credential differ per method. Modelling them as one face published five
+ * operations documented as `catalog:read` with an `nm_live_` key in the curl
+ * sample — a credential that face rejects.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -26,16 +31,45 @@ const OUTPUT = join(__dirname, '..', 'app/generated/docs-model.ts')
 
 const API_HOST = 'https://api.nextmoe.dev'
 
+const PUBLIC_SPEC = join(REPO_ROOT, 'docs/catalog/public-openapi.yaml')
+
+// A face is a path prefix plus the credential that prefix accepts. The spec
+// itself carries neither: OpenAPI security schemes are not emitted by the
+// public gen target, and scope lives in prose. Both are derived here, from the
+// prefix and the method, and they are the only place the reference pages learn
+// which credential to print.
 const FACES = [
   {
     key: 'catalog',
     label: 'Catalog',
-    scope: 'catalog:read',
-    file: join(REPO_ROOT, 'docs/catalog/public-openapi.yaml')
+    file: PUBLIC_SPEC,
+    prefix: '/v1/catalog',
+    title: (spec) => spec.info?.title || 'Catalog',
+    scope: () => 'catalog:read',
+    auth: {
+      kind: 'api_key',
+      curl: 'Authorization: Bearer nm_live_<YOUR_KEY>',
+      display: 'Authorization: Bearer nm_live_…',
+      note: '机器 API 密钥,服务端持有'
+    }
+  },
+  {
+    key: 'playtime',
+    label: 'Playtime',
+    file: PUBLIC_SPEC,
+    prefix: '/v1/playtime',
+    title: () => 'NextMoe Open API — Playtime',
+    scope: (method) => (method === 'get' ? 'playtime:read' : 'playtime:write'),
+    auth: {
+      kind: 'user_token',
+      curl: 'Authorization: Bearer <ACCESS_TOKEN>',
+      display: 'Authorization: Bearer <用户访问令牌>',
+      note: '用户授权后拿到的访问令牌,不是 API 密钥'
+    }
   }
 ]
 
-const EXPECTED_OPERATION_COUNT = 30
+const EXPECTED_OPERATION_COUNTS = { catalog: 25, playtime: 5 }
 
 const refName = (ref) => ref.split('/').pop()
 
@@ -143,14 +177,14 @@ const samplePathValue = (param) => {
   return param.type === 'integer' || param.type === 'number' ? '1' : 'value'
 }
 
-const buildCurl = (method, path, params, bodyExample) => {
+const buildCurl = (method, path, params, bodyExample, authHeader) => {
   let url = API_HOST + path
   for (const p of params) {
     if (p.in === 'path') url = url.replace(`{${p.name}}`, samplePathValue(p))
   }
   const verb = method.toUpperCase()
   const lines = [verb === 'GET' ? `curl "${url}"` : `curl -X ${verb} "${url}"`]
-  lines.push('  -H "Authorization: Bearer nm_live_<YOUR_KEY>"')
+  lines.push(`  -H "${authHeader}"`)
   if (bodyExample !== undefined) {
     lines.push('  -H "Content-Type: application/json"')
     lines.push(`  -d '${JSON.stringify(bodyExample)}'`)
@@ -182,7 +216,7 @@ const buildParams = (rawParams = []) => {
 const jsonContent = (content) =>
   content?.['application/json'] || content?.['application/problem+json']
 
-const buildOperation = (method, path, op, { schemas, scope }) => {
+const buildOperation = (method, path, op, { schemas, scope, authHeader }) => {
   const params = buildParams(op.parameters)
 
   let requestBody
@@ -212,25 +246,30 @@ const buildOperation = (method, path, op, { schemas, scope }) => {
     params,
     ...(requestBody && { requestBody }),
     responses,
-    curl: buildCurl(method, path, params, bodyExample)
+    curl: buildCurl(method, path, params, bodyExample, authHeader)
   }
 }
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete']
 
-const buildFace = (faceDef) => {
-  const spec = parseYaml(readFileSync(faceDef.file, 'utf8'))
+const buildFace = (faceDef, specs) => {
+  const spec = specs.get(faceDef.file)
   const schemas = spec.components?.schemas || {}
 
   const groups = new Map()
   for (const [path, item] of Object.entries(spec.paths || {})) {
+    if (!path.startsWith(faceDef.prefix)) continue
     for (const method of METHODS) {
       const op = item[method]
       if (!op) continue
       const tag = op.tags?.[0] || 'default'
       if (!groups.has(tag)) groups.set(tag, [])
       groups.get(tag).push(
-        buildOperation(method, path, op, { schemas, scope: faceDef.scope })
+        buildOperation(method, path, op, {
+          schemas,
+          scope: faceDef.scope(method),
+          authHeader: faceDef.auth.curl
+        })
       )
     }
   }
@@ -238,8 +277,9 @@ const buildFace = (faceDef) => {
   return {
     key: faceDef.key,
     label: faceDef.label,
-    title: spec.info?.title || faceDef.label,
+    title: faceDef.title(spec),
     baseUrl: API_HOST,
+    auth: faceDef.auth,
     groups: [...groups.entries()].map(([tag, operations]) => ({
       tag,
       title: tag
@@ -252,24 +292,52 @@ const buildFace = (faceDef) => {
   }
 }
 
-const model = { faces: FACES.map(buildFace) }
-
-const opCount = model.faces.reduce(
-  (n, f) => n + f.groups.reduce((m, g) => m + g.operations.length, 0),
-  0
-)
-if (opCount !== EXPECTED_OPERATION_COUNT) {
-  throw new Error(
-    `docs-model coverage guard: expected ${EXPECTED_OPERATION_COUNT} operations, built ${opCount}`
-  )
+const specs = new Map()
+for (const faceDef of FACES) {
+  if (!specs.has(faceDef.file)) {
+    specs.set(faceDef.file, parseYaml(readFileSync(faceDef.file, 'utf8')))
+  }
 }
+
+const model = { faces: FACES.map((f) => buildFace(f, specs)) }
+
+const faceOpCount = (f) =>
+  f.groups.reduce((m, g) => m + g.operations.length, 0)
+
+for (const face of model.faces) {
+  const want = EXPECTED_OPERATION_COUNTS[face.key]
+  const got = faceOpCount(face)
+  if (want !== got) {
+    throw new Error(
+      `docs-model coverage guard: face ${face.key} expected ${want} operations, built ${got}`
+    )
+  }
+}
+
+// A path the prefixes do not claim would vanish from the reference with every
+// other guard still green, which is how five playtime operations shipped
+// documented as catalog ones.
+const claimed = new Set(
+  model.faces.flatMap((f) => f.groups.flatMap((g) => g.operations.map((o) => o.path)))
+)
+for (const spec of specs.values()) {
+  for (const path of Object.keys(spec.paths || {})) {
+    if (!claimed.has(path)) {
+      throw new Error(
+        `docs-model coverage guard: spec path ${path} belongs to no face — add one to FACES`
+      )
+    }
+  }
+}
+
+const opCount = model.faces.reduce((n, f) => n + faceOpCount(f), 0)
 
 const out = `/**
  * Auto-generated by scripts/sync-specs.mjs — do not edit by hand.
  * Run \`pnpm --filter developer sync:specs\` after the public specs change.
  *
- * The Tier-A public OpenAPI spec (catalog face) projected into the
- * render-friendly DocsModel the /docs/** reference pages consume.
+ * The Tier-A public OpenAPI spec projected into the render-friendly DocsModel
+ * the /docs/** reference pages consume, one entry per public face.
  */
 import type { DocsModel } from '~~/shared/types/docs'
 
@@ -278,6 +346,9 @@ export const docsModel: DocsModel = ${JSON.stringify(model, null, 2)}
 
 mkdirSync(dirname(OUTPUT), { recursive: true })
 writeFileSync(OUTPUT, out)
+const breakdown = model.faces
+  .map((f) => `${f.key} ${faceOpCount(f)}`)
+  .join(', ')
 console.log(
-  `Wrote docs model → app/generated/docs-model.ts (${model.faces.length} faces, ${opCount} operations)`
+  `Wrote docs model → app/generated/docs-model.ts (${model.faces.length} faces, ${opCount} operations: ${breakdown})`
 )

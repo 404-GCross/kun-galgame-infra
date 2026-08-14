@@ -2,7 +2,7 @@
 import { API_BASE_URL } from '~/constants/dev'
 import { DOCS_FACE_META } from '~/constants/docs'
 
-const { faces, faceOperationCount } = useDocs()
+const { faces, findFace, faceOperationCount } = useDocs()
 
 useSeoMeta({
   title: 'API 文档',
@@ -14,21 +14,13 @@ const totalOperations = computed(() =>
   faces.reduce((n, f) => n + faceOperationCount(f), 0)
 )
 
-const playtimeOperations = computed(() =>
-  faces.reduce(
-    (n, f) =>
-      n +
-      f.groups.reduce(
-        (m, g) => m + (g.tag === 'playtime' ? g.operations.length : 0),
-        0
-      ),
-    0
-  )
-)
+const countOf = (key: string) => {
+  const face = findFace(key)
+  return face ? faceOperationCount(face) : 0
+}
 
-const catalogOperations = computed(
-  () => totalOperations.value - playtimeOperations.value
-)
+const catalogOperations = computed(() => countOf('catalog'))
+const playtimeOperations = computed(() => countOf('playtime'))
 </script>
 
 <template>

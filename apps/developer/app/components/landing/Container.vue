@@ -61,7 +61,7 @@ const features = [
   {
     icon: 'lucide:shield-check',
     title: '鉴权',
-    body: '服务端以 Authorization: Bearer nm_live_… 发送。密钥是机密,仅服务端使用。'
+    body: '只读面的密钥由服务端以 Authorization: Bearer nm_live_… 发送,是机密、仅服务端持有;playtime 面改带用户授权后的访问令牌。'
   },
   {
     icon: 'lucide:gauge',
