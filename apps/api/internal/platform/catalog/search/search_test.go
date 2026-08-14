@@ -63,6 +63,8 @@ func TestEnsureIndexesMatchesMatrix(t *testing.T) {
 			assert.Equal(t, []string{"cmn"}, locales["*_zh"], uid)
 		}
 
+		assert.ElementsMatch(t, titleDelimiterSeparators, s.SeparatorTokens, uid)
+
 		require.NotNil(t, s.TypoTolerance, uid)
 		assert.Contains(t, s.TypoTolerance.DisableOnAttributes, "name_ja", uid)
 		assert.Contains(t, s.TypoTolerance.DisableOnAttributes, "name_zh", uid)
