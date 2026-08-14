@@ -6,7 +6,6 @@ import (
 	stderrors "errors"
 	"sort"
 	"strings"
-	"time"
 
 	"api/internal/platform/catalog/model"
 
@@ -171,12 +170,6 @@ type AnchorDetail struct {
 	MatchedBy  string
 }
 
-type anchorKey struct {
-	EntityID   int64
-	Source     string
-	ExternalID string
-}
-
 type LabelAttribution struct {
 	LabelID     int64
 	DisplayName string
@@ -247,7 +240,6 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 		return nil, err
 	}
 	anchorsByRelease := map[int64][]AnchorDetail{}
-	deadAnchors := map[anchorKey]struct{}{}
 	if len(releases) > 0 {
 		relIDs := make([]int64, len(releases))
 		for i, r := range releases {
@@ -259,20 +251,21 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 			ExternalID string
 			LinkKind   int16
 			MatchedBy  string
-			DeadAt     *time.Time
 		}
-		if err := db.Raw(`SELECT r.entity_id, s.key AS source, r.external_id, r.link_kind, r.matched_by, r.dead_at
+		// Dead anchors are dropped here rather than downstream: this loader feeds
+		// the release anchor rows of every read face at once, and the previous
+		// shape filtered them only where release anchors fold into work-level
+		// refs[] — so releases[].refs[] on the public face kept rendering an
+		// anchor whose upstream record no longer exists.
+		if err := db.Raw(`SELECT r.entity_id, s.key AS source, r.external_id, r.link_kind, r.matched_by
 			FROM catalog_external_ref r JOIN catalog_source s ON s.id = r.source_id
-			WHERE r.entity_type = ? AND r.entity_id IN ?
+			WHERE r.entity_type = ? AND r.entity_id IN ? AND r.dead_at IS NULL
 			ORDER BY r.link_kind, s.key`, model.EntityTypeRelease, relIDs).Scan(&arows).Error; err != nil {
 			return nil, err
 		}
 		for _, a := range arows {
 			anchorsByRelease[a.EntityID] = append(anchorsByRelease[a.EntityID],
 				AnchorDetail{Source: a.Source, ExternalID: a.ExternalID, LinkKind: a.LinkKind, MatchedBy: a.MatchedBy})
-			if a.DeadAt != nil {
-				deadAnchors[anchorKey{a.EntityID, a.Source, a.ExternalID}] = struct{}{}
-			}
 		}
 	}
 	for _, r := range releases {
@@ -300,9 +293,6 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	}
 	for _, rd := range detail.Releases {
 		for _, a := range rd.Anchors {
-			if _, dead := deadAnchors[anchorKey{rd.Release.ID, a.Source, a.ExternalID}]; dead {
-				continue
-			}
 			if a.LinkKind == model.LinkKindExact {
 				detail.Refs = append(detail.Refs, RefDetail{
 					Source: a.Source, ExternalID: a.ExternalID,
@@ -714,12 +704,12 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 		SELECT x.work_id, x.external_id FROM (
 			SELECT r.entity_id AS work_id, r.external_id, r.link_kind
 			FROM catalog_external_ref r JOIN catalog_source s ON s.id = r.source_id
-			WHERE s.key = ? AND r.entity_type = ? AND r.entity_id IN ?
+			WHERE s.key = ? AND r.entity_type = ? AND r.entity_id IN ? AND r.dead_at IS NULL
 			UNION ALL
 			SELECT rel.work_id, r.external_id, r.link_kind
 			FROM catalog_external_ref r JOIN catalog_source s ON s.id = r.source_id
 			  JOIN catalog_release rel ON rel.id = r.entity_id
-			WHERE s.key = ? AND r.entity_type = ? AND rel.work_id IN ?
+			WHERE s.key = ? AND r.entity_type = ? AND rel.work_id IN ? AND r.dead_at IS NULL
 		) x ORDER BY x.work_id, x.link_kind`,
 		sourceKeyDlsite, model.EntityTypeWork, workIDs,
 		sourceKeyDlsite, model.EntityTypeRelease, workIDs).Scan(&refs).Error; err != nil {
