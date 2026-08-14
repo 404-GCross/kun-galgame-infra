@@ -30,7 +30,7 @@ exec 9>"$BASE/.lock"; flock -n 9 || { echo "another run holds the lock; exit"; e
 # silence. An alert that cannot be delivered must not fail the run itself.
 on_exit() {
   rc=$?
-  rm -rf dump.tar.zst dump
+  rm -rf dump.tar.zst dump votes.gz
   if [ -f env.tmp ]; then shred -u env.tmp; fi
   if [ "$rc" -eq 0 ]; then
     date -u '+%F %T' > "$BASE/state/last-success"
@@ -113,6 +113,21 @@ guard producers 26000
 guard chars 150000
 echo "dump ok: $SIZE bytes"
 
+# 2b. The votes dump is a SEPARATE daily publication, not part of the archive
+#     above: the database dump carries only vn.c_rating / c_average / c_votecount,
+#     and this file is the only public source of a per-vn score histogram. It is
+#     staged by whole-table replacement like everything else, so a truncated
+#     transfer would silently shrink every histogram on the site and a skipped
+#     download would leave last week's bars beside this week's scores — hence
+#     FATAL, never a soft skip. gzip -t verifies the CRC over the whole file,
+#     which is what actually catches a half-finished transfer; the line floor is
+#     ~10% under the 2026-08-14 file (1,988,563 lines).
+curl -sL --retry 3 -o votes.gz https://dl.vndb.org/dump/vndb-votes-latest.gz
+gzip -t votes.gz || { echo "FATAL: votes.gz failed the gzip integrity check"; exit 1; }
+VLINES=$(gzip -dc votes.gz | wc -l)
+[ "$VLINES" -gt 1780000 ] || { echo "FATAL: votes.gz too few lines ($VLINES <= 1780000)"; exit 1; }
+echo "votes ok: $VLINES lines"
+
 # 3. Fresh env snapshot from the catalog container (secrets never on command
 #    lines; the file is shredded by the EXIT trap).
 docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$CATC" > env.tmp
@@ -130,10 +145,10 @@ run() {
 # 64MB docker-default /dev/shm, and parallel hash joins on the big staging
 # tables exhaust it (SQLSTATE 53100). Serial plans spill to disk instead —
 # slower but bounded. Remove once the compose sets shm_size on postgres.
-DSNSH='U="${KUN_CATALOG_PG_USER:-$KUN_PG_USER}"; P="${KUN_CATALOG_PG_PASSWORD:-$KUN_PG_PASSWORD}"; B="host=127.0.0.1 port=5432 user=$U password=$P sslmode=disable options='"'"'-c max_parallel_workers_per_gather=0'"'"'"; CAT="$B dbname=kun_catalog"; EG="$B dbname=erogamescape"'
+DSNSH='U="${KUN_CATALOG_PG_USER:-$KUN_PG_USER}"; P="${KUN_CATALOG_PG_PASSWORD:-$KUN_PG_PASSWORD}"; B="host=127.0.0.1 port=5432 user=$U password=$P sslmode=disable options='"'"'-c max_parallel_workers_per_gather=0'"'"'"; CAT="$B dbname=kun_catalog"; EG="$B dbname=erogamescape"; DL="$B dbname=dlsite"'
 
-# 4. Re-stage the 28 src_vndb tables (env-config tool, no --dsn).
-run ingest-vndb --dump-dir /w/dump/db
+# 4. Re-stage the 28 src_vndb tables plus vn_vote_stats (env-config tool, no --dsn).
+run ingest-vndb --dump-dir /w/dump/db --votes-file /w/votes.gz
 
 # 5. Resurrection tripwire, BEFORE any Gold write.
 #    A merge that folds two VNDB characters into one demotes BOTH exact vndb
@@ -225,6 +240,14 @@ run sh -c "$DSNSH"'; backfill-work-playtime --dsn "$CAT" --eg-dsn "$EG" --source
 #     semantics — an unchanged graph writes nothing; the worklist captures the
 #     components it refused (dlsite/curated overlap, oversized clusters).
 run sh -c "$DSNSH"'; build-derived-series --dsn "$CAT" --apply --receipts /w/state/derived-receipts.jsonl --worklist /w/state/derived-worklist.jsonl'
+
+# 6e. Ratings. Its vndb lane reads the src_vndb tables step 4 just replaced —
+#     score and vote_count from vn, the histogram from vn_vote_stats — so this
+#     is the run that makes those numbers current; nothing else refreshes them.
+#     bgm-refresh issues the identical command on its own clock and that is
+#     fine: every lane is a change-detected upsert, so whichever job runs second
+#     reports `unchanged` and writes nothing.
+run sh -c "$DSNSH"'; backfill-work-ratings --dsn "$CAT" --eg-dsn "$EG" --dlsite-dsn "$DL" --apply'
 
 # DELIBERATELY NOT RUN HERE (each is a manual follow-up, see NOTES.md):
 #   reconcile-org-labels  — mints labels and human-review candidates
