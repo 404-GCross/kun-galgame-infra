@@ -35,7 +35,7 @@ func (w *writer) write(ctx context.Context, p plannedRow, apply bool) {
 		WorkID: p.WorkID, Name: p.Name, Count: p.Count, SourceID: p.SourceID,
 	})
 	if res.Error != nil {
-		w.stats.Errors++
+		w.noteError(res.Error)
 		slog.Warn("write tag", "work", p.WorkID, "name", p.Name, "source", p.SourceID, "err", res.Error)
 		return
 	}
@@ -45,6 +45,13 @@ func (w *writer) write(ctx context.Context, p plannedRow, apply bool) {
 	}
 	w.stats.Written++
 	w.touched = append(w.touched, p.WorkID)
+}
+
+func (w *writer) noteError(err error) {
+	w.stats.Errors++
+	if w.stats.FirstError == "" {
+		w.stats.FirstError = err.Error()
+	}
 }
 
 func (w *writer) touch(ctx context.Context) error {

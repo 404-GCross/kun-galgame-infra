@@ -59,7 +59,10 @@ func main() {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
 	// 2026-08-05: the sibling backfill-work-tags run logged errors=120646 and still exited 0 - nothing fired.
+	// The per-row cause is at WARN under "write meta tag" / "write favorite shelf", neither of which names
+	// this tool, so the weekly log read as a bare errors=N for 15 days. Restate the first one here.
 	if st.Errors > 0 {
+		slog.Error("backfill-bgm-work-meta write failures", "errors", st.Errors, "first_error", st.FirstError)
 		os.Exit(1)
 	}
 }

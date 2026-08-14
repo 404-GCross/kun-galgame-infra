@@ -21,6 +21,13 @@ func (w *writer) touch(ctx context.Context) error {
 	return repository.TouchWorks(ctx, w.db, w.touched)
 }
 
+func (w *writer) noteError(err error) {
+	w.stats.Errors++
+	if w.stats.FirstError == "" {
+		w.stats.FirstError = err.Error()
+	}
+}
+
 type tagRow struct {
 	WorkID   int64
 	SourceID int16
@@ -38,7 +45,7 @@ func (w *writer) writeTag(ctx context.Context, p tagRow, apply bool) {
 		WorkID: p.WorkID, Name: p.Name, Count: 0, SourceID: p.SourceID,
 	})
 	if res.Error != nil {
-		w.stats.Errors++
+		w.noteError(res.Error)
 		slog.Warn("write meta tag", "work", p.WorkID, "name", p.Name, "err", res.Error)
 		return
 	}
@@ -70,7 +77,7 @@ func (w *writer) writeFavorite(ctx context.Context, p favRow, apply bool) {
 		WorkID: p.WorkID, SourceID: p.SourceID, Metric: p.Metric, Value: p.Value,
 	})
 	if res.Error != nil {
-		w.stats.Errors++
+		w.noteError(res.Error)
 		slog.Warn("write favorite shelf", "work", p.WorkID, "metric", p.Metric, "err", res.Error)
 		return
 	}

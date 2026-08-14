@@ -61,7 +61,8 @@ type Stats struct {
 	FavWritten    int
 	FavUnchanged  int
 
-	Errors int
+	Errors     int
+	FirstError string
 
 	MetaTopNames []NameFreq
 	MetaSamples  []TagSample
