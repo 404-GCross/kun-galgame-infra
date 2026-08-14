@@ -354,9 +354,10 @@ func TestUserClaims_Mine(t *testing.T) {
 		assert.Equal(t, "kungal", it.Site)
 		assert.Equal(t, model.ClaimStateKeyPending, it.ClaimState)
 	}
-	assert.Equal(t, page.Data.Items[1].LastEventID, page.Data.NextBefore)
+	assert.EqualValues(t, 0, page.Data.NextBefore,
+		"a short page (fewer than the limit) must not advertise a next page — that is the 'load more clears the list' bug")
 
-	next := get(fmt.Sprintf("?before=%d", page.Data.NextBefore), mine)
+	next := get(fmt.Sprintf("?before=%d", page.Data.Items[1].LastEventID), mine)
 	assert.Empty(t, next.Data.Items)
 	assert.EqualValues(t, 2, next.Data.Total, "the total counts the whole list, not the page")
 
@@ -430,4 +431,52 @@ func TestUserClaims_MineSubmittedVsAudited(t *testing.T) {
 
 	require.Zero(t, get("?kind=audited", submitter).Data.Total, "the submitter reviewed nothing")
 	require.Zero(t, get("?kind=submitted", reviewer).Data.Total, "the reviewer submitted nothing")
+}
+
+func TestUserClaims_MinePaginatesFullPages(t *testing.T) {
+	db := openCatalogTestDB(t)
+	resetClaims(t, db)
+	app := userClaimApp(db)
+
+	submit := func(token, name string) int64 {
+		status, raw := userEditReq(t, app, "POST", UserPrefix+"/works/submit", token,
+			fmt.Sprintf(`{"fields":{"catalog.work.display_name":%q}}`, name))
+		require.Equal(t, fiber.StatusOK, status, string(raw))
+		var env struct {
+			Data struct {
+				WorkID int64 `json:"work_id"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &env), string(raw))
+		return env.Data.WorkID
+	}
+	mine := userToken(t, 851, ScopeCatalogEdit, "kungal-client")
+	for i := 0; i < 22; i++ {
+		submit(mine, fmt.Sprintf("投稿%d", i))
+	}
+
+	type minePage struct {
+		Data struct {
+			Items      []json.RawMessage `json:"items"`
+			NextBefore int64             `json:"next_before"`
+			Total      int64             `json:"total"`
+		} `json:"data"`
+	}
+	get := func(query string) minePage {
+		status, raw := userEditReq(t, app, "GET", UserPrefix+"/claims/mine"+query, mine, "")
+		require.Equal(t, fiber.StatusOK, status, string(raw))
+		var page minePage
+		require.NoError(t, json.Unmarshal(raw, &page), string(raw))
+		return page
+	}
+
+	first := get("")
+	require.EqualValues(t, 22, first.Data.Total)
+	require.Len(t, first.Data.Items, 20, "the first page caps at the limit")
+	require.NotZero(t, first.Data.NextBefore, "a full first page must carry a cursor")
+
+	second := get(fmt.Sprintf("?before=%d", first.Data.NextBefore))
+	require.Len(t, second.Data.Items, 2, "the tail page carries the remainder")
+	require.EqualValues(t, 22, second.Data.Total, "total counts the whole list, not the page")
+	require.Zero(t, second.Data.NextBefore, "the tail page must not advertise a further page")
 }
