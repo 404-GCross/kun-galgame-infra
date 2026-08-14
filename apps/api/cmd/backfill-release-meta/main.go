@@ -17,7 +17,7 @@ func main() {
 	apply := flag.Bool("apply", false, "write changes (default: dry run, counters + samples only)")
 	dsn := flag.String("dsn", "", "catalog DSN (also hosts src_bangumi) — REQUIRED; the rehearsal copy locally, the live catalog only in the acceptance run")
 	dlsiteDSN := flag.String("dlsite-dsn", "", "DLsite mirror DSN (the dlsite database) — REQUIRED")
-	egDSN := flag.String("eg-dsn", "", "EG mirror DSN (the erogamespace database) — REQUIRED")
+	egDSN := flag.String("eg-dsn", "", "EG mirror DSN (the erogamescape database) — REQUIRED")
 	limit := flag.Int("limit", 0, "max candidates per lane (0 = all)")
 	offset := flag.Int("offset", 0, "skip this many candidates per lane (for chunking)")
 	flag.Parse()
@@ -64,5 +64,8 @@ func main() {
 	)
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
+	}
+	if st.Errors > 0 {
+		os.Exit(1)
 	}
 }

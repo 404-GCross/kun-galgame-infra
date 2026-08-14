@@ -36,11 +36,12 @@ func report(st *storeanchors.Stats, apply bool) {
 		mode = "APPLY"
 	}
 	fmt.Printf("\n=== import-store-anchors %s ===\n", mode)
-	var totalPlanned, totalWritten int
+	var totalPlanned, totalWritten, totalErrors int
 	for _, name := range st.Order {
 		ls := st.Lanes[name]
 		totalPlanned += ls.Planned
 		totalWritten += ls.Written
+		totalErrors += ls.Errors
 		fmt.Printf("%-10s candidates=%d planned=%d written=%d conflict=%d errors=%d\n",
 			name, ls.Candidates, ls.Planned, ls.Written, ls.Conflict, ls.Errors)
 		fmt.Printf("%-10s skipped: malformed=%d rejection=%d value_taken=%d ambiguous=%d dedup=%d\n",
@@ -53,5 +54,8 @@ func report(st *storeanchors.Stats, apply bool) {
 			fmt.Printf("%-10s ambiguous e.g. %s\n", "", strings.Join(ls.AmbiguousSamples, ", "))
 		}
 	}
-	fmt.Printf("TOTAL      planned=%d written=%d\n", totalPlanned, totalWritten)
+	fmt.Printf("TOTAL      planned=%d written=%d errors=%d\n", totalPlanned, totalWritten, totalErrors)
+	if totalErrors > 0 {
+		os.Exit(1)
+	}
 }

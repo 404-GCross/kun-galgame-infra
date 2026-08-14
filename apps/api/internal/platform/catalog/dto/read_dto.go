@@ -39,7 +39,7 @@ type WorkPopularity struct {
 }
 
 type WorkPlaytime struct {
-	SourceID  int16 `json:"source_id" doc:"catalog_source id (provenance): vndb = vote-backed median, erogamespace = community median"`
+	SourceID  int16 `json:"source_id" doc:"catalog_source id (provenance): vndb = vote-backed median, erogamescape = community median"`
 	Minutes   int   `json:"minutes" doc:"median playtime in minutes (unit-normalized; estimate semantics stay source-native)"`
 	VoteCount int   `json:"vote_count" doc:"user reports backing the estimate; 0 = the source publishes no per-work count"`
 }
@@ -54,7 +54,7 @@ type WorkTag struct {
 }
 
 type WorkRating struct {
-	SourceID  int16   `json:"source_id" doc:"catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamespace = 0-100 median"`
+	SourceID  int16   `json:"source_id" doc:"catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamescape = 0-100 median"`
 	Score     float64 `json:"score" doc:"rating on the source-native scale (never normalized across sources)"`
 	VoteCount int     `json:"vote_count" doc:"number of ratings backing the score"`
 	Rank      *int    `json:"rank,omitempty" doc:"source-internal rank; absent when the source has no rank or the work is unranked"`

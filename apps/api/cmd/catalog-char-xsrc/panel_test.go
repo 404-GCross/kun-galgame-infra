@@ -15,7 +15,7 @@ func TestClassifyReview(t *testing.T) {
 	pairs := []pairMeta{
 		{A: 1, B: 2, Tier: 1, ASources: src("vndb"), BSources: src("bangumi")},
 		{A: 3, B: 4, Tier: 3, ASources: src("vndb"), BSources: src("bangumi")},
-		{A: 5, B: 6, Tier: 2, ASources: src("vndb"), BSources: src("erogamespace")},
+		{A: 5, B: 6, Tier: 2, ASources: src("vndb"), BSources: src("erogamescape")},
 		{A: 7, B: 8, Tier: 1, Instance: true, ASources: src("vndb"), BSources: src("bangumi")},
 		{A: 9, B: 10, Tier: 1, ASources: src("vndb"), BSources: src("bangumi")},
 		{A: 10, B: 11, Tier: 1, ASources: src("bangumi"), BSources: src("vndb")},

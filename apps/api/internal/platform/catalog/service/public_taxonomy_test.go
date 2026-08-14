@@ -352,7 +352,7 @@ func TestTagDetailIntrosAlwaysPresent(t *testing.T) {
 		lang, body string
 		src        int16
 	}{
-		{"zh-Hans", "低位来源胜出", srcErogamespace},
+		{"zh-Hans", "低位来源胜出", srcErogamescape},
 		{"zh-Hans", "另一来源", srcWiki},
 		{"ja", "日本語", srcVNDB},
 	} {

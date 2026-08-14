@@ -65,7 +65,7 @@ func TestMain(m *testing.M) {
 	}
 	for _, stmt := range egDDL {
 		if err := db.Exec(stmt).Error; err != nil {
-			fmt.Fprintf(os.Stderr, "SKIP: erogamespace stand-in failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "SKIP: erogamescape stand-in failed: %v\n", err)
 			os.Exit(0)
 		}
 	}

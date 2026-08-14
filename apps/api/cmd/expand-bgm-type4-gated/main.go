@@ -18,7 +18,7 @@ import (
 
 func main() {
 	dsn := flag.String("dsn", "", "catalog DSN (REQUIRED; rehearsal locally, live only in the acceptance run)")
-	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: same host as --dsn, dbname=erogamespace)")
+	egDSN := flag.String("eg-dsn", "", "erogamescape staging DSN (default: same host as --dsn, dbname=erogamescape)")
 	dlsiteDSN := flag.String("dlsite-dsn", "", "dlsite staging DSN (default: same host as --dsn, dbname=dlsite)")
 	apply := flag.Bool("apply", false, "write (default: dry-run — survey + samples, nothing written)")
 	limit := flag.Int("limit", 0, "cap works actually minted (0 = all); the survey is always full-pool")
@@ -36,9 +36,9 @@ func main() {
 		slog.Error("catalog db connect", "error", err)
 		os.Exit(1)
 	}
-	egDB, err := openDB(deriveDSN(*egDSN, *dsn, "erogamespace"))
+	egDB, err := openDB(deriveDSN(*egDSN, *dsn, "erogamescape"))
 	if err != nil {
-		slog.Error("erogamespace db connect", "error", err)
+		slog.Error("erogamescape db connect", "error", err)
 		os.Exit(1)
 	}
 	dlsiteDB, err := openDB(deriveDSN(*dlsiteDSN, *dsn, "dlsite"))

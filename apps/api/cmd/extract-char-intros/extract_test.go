@@ -149,7 +149,7 @@ func TestRunExtractsOnlyMissingAndVerbatim(t *testing.T) {
 		"沙耶": "主人公的青梅竹马,性格开朗,总是照顾身边的每一个人。",
 		"玲":  "转校生,沉默寡言。", // not in roster → unmatched, dropped
 	}}
-	require.NoError(t, run(context.Background(), testDB, ex, opts{Apply: true}))
+	require.NoError(t, run(context.Background(), testDB, ex, nil, opts{Apply: true}))
 
 	var rows []struct {
 		Intro      string `gorm:"column:intro"`
@@ -171,13 +171,102 @@ func TestRunExtractsOnlyMissingAndVerbatim(t *testing.T) {
 	assert.Equal(t, "既有介绍", reiIntro, "the existing row is untouched")
 }
 
+func TestPanelVerdictFoldsOnDirection(t *testing.T) {
+	cases := []struct {
+		name  string
+		votes []panelVote
+		want  bool
+	}{
+		{"unanimous challenger", []panelVote{voteChallenger, voteChallenger, voteChallenger}, true},
+		{"two challenger one equal", []panelVote{voteChallenger, voteEqual, voteChallenger}, true},
+		{"a single challenger vote is not enough", []panelVote{voteChallenger, voteEqual, voteEqual}, false},
+		{"any incumbent vote keeps the incumbent", []panelVote{voteChallenger, voteChallenger, voteIncumbent}, false},
+		{"all equal keeps the incumbent", []panelVote{voteEqual, voteEqual, voteEqual}, false},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, panelVerdict(c.votes), c.name)
+	}
+}
+
+type fakeJudge struct {
+	votes []panelVote
+	calls int
+}
+
+func (f *fakeJudge) Compare(_ context.Context, _, _, _ string, _ bool) (panelVote, error) {
+	v := f.votes[f.calls%len(f.votes)]
+	f.calls++
+	return v, nil
+}
+
+func seedPanelFixture(t *testing.T) (workID, saya, rei int64) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`TRUNCATE catalog_work, catalog_character RESTART IDENTITY CASCADE`).Error)
+	workID = seedWorkWithIntro(t, longIntro)
+	saya = seedRosterChar(t, workID, "沙耶")
+	rei = seedRosterChar(t, workID, "玲")
+	// 沙耶 holds a translated machine row → panel target.
+	require.NoError(t, testDB.Exec(`INSERT INTO catalog_character_intro
+		(character_id, lang, intro, source_id, provenance, created_at, updated_at)
+		VALUES (?, 'zh-Hans', '既有机翻介绍。', 3, 1, now(), now())`, saya).Error)
+	// 玲 holds a SOURCE row → machine output never competes, excluded.
+	require.NoError(t, testDB.Exec(`INSERT INTO catalog_character_intro
+		(character_id, lang, intro, source_id, provenance, created_at, updated_at)
+		VALUES (?, 'zh-Hans', '源文介绍。', 3, 0, now(), now())`, rei).Error)
+	return workID, saya, rei
+}
+
+func TestRunPanelAdoptsUnanimousChallenger(t *testing.T) {
+	_, saya, _ := seedPanelFixture(t)
+
+	cands, err := loadPanelCandidateWorks(context.Background(), testDB, 0, 0)
+	require.NoError(t, err)
+	require.Len(t, cands, 1)
+	require.Len(t, cands[0].Roster, 1, "only the translated-machine-row holder is a target")
+	assert.Equal(t, saya, cands[0].Roster[0].CharacterID)
+	assert.Equal(t, "既有机翻介绍。", cands[0].Roster[0].Incumbent)
+
+	ex := fakeExtractor{out: map[string]string{"沙耶": "主人公的青梅竹马,性格开朗,总是照顾身边的每一个人。"}}
+	judge := &fakeJudge{votes: []panelVote{voteChallenger}}
+	require.NoError(t, run(context.Background(), testDB, ex, judge, opts{Apply: true, Panel: true}))
+	assert.Equal(t, panelVotes, judge.calls)
+
+	var rows []struct {
+		Intro    string `gorm:"column:intro"`
+		SourceID int16  `gorm:"column:source_id"`
+	}
+	require.NoError(t, testDB.Raw(`SELECT intro, source_id FROM catalog_character_intro
+		WHERE character_id = ? ORDER BY source_id`, saya).Scan(&rows).Error)
+	require.Len(t, rows, 2, "the incumbent row survives next to the derived row")
+	assert.Equal(t, "既有机翻介绍。", rows[0].Intro)
+	assert.EqualValues(t, sourceDerived, rows[1].SourceID)
+	assert.Equal(t, "主人公的青梅竹马,性格开朗,总是照顾身边的每一个人。", rows[1].Intro)
+
+	cands, err = loadPanelCandidateWorks(context.Background(), testDB, 0, 0)
+	require.NoError(t, err)
+	assert.Empty(t, cands, "a written derived row retires the character from the panel")
+}
+
+func TestRunPanelKeepsIncumbentOnSplit(t *testing.T) {
+	_, saya, _ := seedPanelFixture(t)
+
+	ex := fakeExtractor{out: map[string]string{"沙耶": "主人公的青梅竹马,性格开朗,总是照顾身边的每一个人。"}}
+	judge := &fakeJudge{votes: []panelVote{voteChallenger, voteIncumbent, voteChallenger}}
+	require.NoError(t, run(context.Background(), testDB, ex, judge, opts{Apply: true, Panel: true}))
+
+	var n int64
+	require.NoError(t, testDB.Raw(`SELECT count(*) FROM catalog_character_intro
+		WHERE character_id = ? AND source_id = ?`, saya, sourceDerived).Scan(&n).Error)
+	assert.Zero(t, n, "a split panel must not write the derived row")
+}
+
 func TestRunRefusesInventedPassages(t *testing.T) {
 	require.NoError(t, testDB.Exec(`TRUNCATE catalog_work, catalog_character RESTART IDENTITY CASCADE`).Error)
 	workID := seedWorkWithIntro(t, longIntro)
 	saya := seedRosterChar(t, workID, "沙耶")
 
 	ex := fakeExtractor{out: map[string]string{"沙耶": "其实是来自未来的魔法使,拯救了世界。"}}
-	require.NoError(t, run(context.Background(), testDB, ex, opts{Apply: true}))
+	require.NoError(t, run(context.Background(), testDB, ex, nil, opts{Apply: true}))
 
 	var n int64
 	require.NoError(t, testDB.Raw(`SELECT count(*) FROM catalog_character_intro

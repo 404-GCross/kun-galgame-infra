@@ -167,6 +167,9 @@ func main() {
 		close(jobs)
 		wg.Wait()
 		slog.Info("wiki-zh judge done", "judged", judged, "failed", failed, "file", *out)
+		if failed > 0 {
+			os.Exit(1)
+		}
 
 	case "apply":
 		if *in == "" {
@@ -227,6 +230,9 @@ func main() {
 		}
 		if err != nil {
 			slog.Error("apply", "error", err)
+			os.Exit(1)
+		}
+		if st != nil && st.Errors > 0 {
 			os.Exit(1)
 		}
 

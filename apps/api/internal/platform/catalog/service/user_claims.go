@@ -29,6 +29,11 @@ type UserClaimQuery struct {
 	ClaimStates []string
 	Before      int64
 	Limit       int
+	// Kind narrows which events qualify the actor: "submitted" keeps only the
+	// works the actor owns (their own submissions), "audited" keeps only the
+	// works the actor reviewed but does not own. Empty = every work the actor
+	// touched (the historical behaviour).
+	Kind string
 }
 
 func (s *ClaimLifecycleService) ClaimsByActor(ctx context.Context, q UserClaimQuery) ([]UserClaimItem, int64, error) {
@@ -39,6 +44,16 @@ func (s *ClaimLifecycleService) ClaimsByActor(ctx context.Context, q UserClaimQu
 	stateGate, stateArgs := claimStateWhere(q.ClaimStates)
 	if stateGate != "" {
 		stateGate = " AND " + stateGate
+	}
+	ownerGate := ""
+	var ownerArgs []any
+	switch q.Kind {
+	case "submitted":
+		ownerGate = " AND w.owner_user_id = ?"
+		ownerArgs = []any{q.ActorUID}
+	case "audited":
+		ownerGate = " AND w.owner_user_id IS DISTINCT FROM ?"
+		ownerArgs = []any{q.ActorUID}
 	}
 
 	const from = `
@@ -54,12 +69,13 @@ func (s *ClaimLifecycleService) ClaimsByActor(ctx context.Context, q UserClaimQu
 
 	baseArgs := func() []any {
 		args := []any{q.ActorUID, q.Site, q.Site}
-		return append(args, stateArgs...)
+		args = append(args, stateArgs...)
+		return append(args, ownerArgs...)
 	}
 
 	var total int64
 	if err := s.db.WithContext(ctx).
-		Raw(`SELECT count(*)`+from+` WHERE true`+stateGate, baseArgs()...).
+		Raw(`SELECT count(*)`+from+` WHERE true`+stateGate+ownerGate, baseArgs()...).
 		Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -96,7 +112,7 @@ func (s *ClaimLifecycleService) ClaimsByActor(ctx context.Context, q UserClaimQu
 		    ORDER BY le.id DESC
 		    LIMIT 1
 		) le ON true
-		WHERE true`+stateGate+`
+		WHERE true`+stateGate+ownerGate+`
 		  AND (? <= 0 OR le.id < ?)
 		ORDER BY le.id DESC
 		LIMIT ?`, args...).Scan(&rows).Error; err != nil {

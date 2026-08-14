@@ -178,6 +178,9 @@ feed:
 	if cause := context.Cause(ctx); cause != nil && cause != context.Canceled {
 		return cause
 	}
+	if bad > 0 {
+		return fmt.Errorf("%d images failed to grade", bad)
+	}
 	return nil
 }
 

@@ -146,6 +146,9 @@ func runApplyCSV(ctx context.Context, db *gorm.DB, path string, samples int) err
 	}
 	fmt.Printf("\ninserted=%d conflict=%d same_as_display=%d missing_character=%d errors=%d touched_works=%d\n",
 		inserted, conflict, sameAsDisplay, missing, errs, len(works))
+	if errs > 0 {
+		os.Exit(1)
+	}
 	return nil
 }
 

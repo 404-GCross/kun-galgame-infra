@@ -19,7 +19,7 @@ func loadSource(catalog, eg *gorm.DB, src string, limit int) ([]orgRec, ruleSet,
 		return o, ruleSetFor(sourceBangumi), sourceBangumi, err
 	case "eg":
 		if eg == nil {
-			return nil, ruleSet{}, 0, fmt.Errorf("eg source requested but no erogamespace connection")
+			return nil, ruleSet{}, 0, fmt.Errorf("eg source requested but no erogamescape connection")
 		}
 		o, err := loadEGOrgs(catalog, eg, limit)
 		return o, ruleSetFor(sourceEG), sourceEG, err

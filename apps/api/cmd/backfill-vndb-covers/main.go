@@ -56,4 +56,7 @@ func main() {
 		slog.Error("backfill-vndb-covers", "error", err)
 		os.Exit(1)
 	}
+	if stats != nil && stats.Errors > 0 {
+		os.Exit(1)
+	}
 }

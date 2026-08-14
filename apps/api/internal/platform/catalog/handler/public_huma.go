@@ -23,7 +23,7 @@ type publicWorkOutput struct {
 }
 
 type publicLookupInput struct {
-	Source     string `query:"source" doc:"Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"`
+	Source     string `query:"source" doc:"Upstream source key: vndb | bangumi | dlsite | erogamescape (the legacy misspelling erogamespace is still accepted)"`
 	ExternalID string `query:"external_id" doc:"The id within that source. type=work accepts vndb v19658 or 19658 (and dlsite RJ/VJ numbers); the non-work types match VERBATIM as the registry stores them — vndb character c1234, label p129, staff a bare number"`
 	Type       string `query:"type" enum:"work,name,character,label" default:"work" doc:"Which entity family the external id is resolved against (default work); an unknown token is a 400, whereas an unknown SOURCE is a miss"`
 	NSFW       bool   `query:"nsfw" doc:"true/1 = resolve r18 works too (default false = 404 on an r18 hit); on type=character it also keeps sexual traits"`

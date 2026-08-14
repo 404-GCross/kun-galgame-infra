@@ -164,7 +164,7 @@ type registryIDs struct {
 func resolveIDs(ctx context.Context, db *gorm.DB) (registryIDs, error) {
 	var r registryIDs
 	for key, dst := range map[string]*int16{
-		"erogamespace": &r.egSource, "steam": &r.steamSource, "dmm": &r.dmmSource,
+		"erogamescape": &r.egSource, "steam": &r.steamSource, "dmm": &r.dmmSource,
 	} {
 		if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = ?`, key).Scan(dst).Error; err != nil {
 			return r, fmt.Errorf("resolve source %q: %w", key, err)

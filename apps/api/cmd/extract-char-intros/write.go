@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"api/internal/platform/catalog/model"
@@ -31,6 +32,9 @@ type stats struct {
 	UnmatchedName      int
 	CallErrors         int
 	Touched            int
+	PanelAdopted       int
+	PanelKept          int
+	PanelErrors        int
 }
 
 type writer struct {
@@ -40,6 +44,8 @@ type writer struct {
 	samples int
 	shown   int
 	touched []int64
+	judge   panelJudge
+	delay   time.Duration
 }
 
 // write files one work's extraction results. Every passage passes the verbatim
@@ -75,6 +81,20 @@ func (w *writer) write(ctx context.Context, cand candidateWork, found map[string
 				"character", target.CharacterID, "name", name)
 			continue
 		}
+		if target.Incumbent != "" && w.judge != nil {
+			adopted, err := w.runPanel(ctx, cand.WorkID, target, passage)
+			if err != nil {
+				w.st.PanelErrors++
+				slog.Warn("panel failed — incumbent stays, retryable", "work", cand.WorkID,
+					"character", target.CharacterID, "err", err)
+				continue
+			}
+			if !adopted {
+				w.st.PanelKept++
+				continue
+			}
+			w.st.PanelAdopted++
+		}
 		if w.shown < w.samples {
 			fmt.Printf("  sample: work=%d %s → %s\n", cand.WorkID, name, truncate(passage, 80))
 			w.shown++
@@ -109,6 +129,31 @@ func (w *writer) write(ctx context.Context, cand candidateWork, found map[string
 	if wrote {
 		w.touched = append(w.touched, cand.WorkID)
 	}
+}
+
+// runPanel takes one gated extraction through three judge votes, alternating
+// which passage is shown first so a position bias cannot decide the verdict.
+func (w *writer) runPanel(ctx context.Context, workID int64, target rosterChar, challenger string) (bool, error) {
+	votes := make([]panelVote, 0, panelVotes)
+	for i := range panelVotes {
+		if i > 0 && w.delay > 0 {
+			time.Sleep(w.delay)
+		}
+		v, err := w.judge.Compare(ctx, target.Name, target.Incumbent, challenger, i%2 == 1)
+		if err != nil {
+			return false, err
+		}
+		votes = append(votes, v)
+	}
+	adopted := panelVerdict(votes)
+	slog.Info("panel verdict", "work", workID, "character", target.CharacterID,
+		"name", target.Name, "adopted", adopted, "votes", fmt.Sprintf("%v", votes))
+	if w.shown < w.samples {
+		fmt.Printf("  panel: work=%d %s adopted=%v\n    A(现有): %s\n    B(提取): %s\n",
+			workID, target.Name, adopted, truncate(target.Incumbent, 70), truncate(challenger, 70))
+		w.shown++
+	}
+	return adopted, nil
 }
 
 func (w *writer) flushTouch(ctx context.Context) error {

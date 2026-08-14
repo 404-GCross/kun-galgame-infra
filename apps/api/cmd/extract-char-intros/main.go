@@ -6,9 +6,12 @@
 // source=derived, provenance=machine rows (adjudication refs/proj/178 §3:
 // a character without an intro adopts the extracted passage directly).
 //
-// The panel-compare bucket (a character that already has a machine intro) is
-// deliberately NOT here — its read-face mechanics (source-order election vs
-// "keep the better") still need adjudication; see the ledger.
+// The panel bucket (--panel; adjudicated 2026-08-13, narrow (c)): a character
+// whose zh-Hans face is a TRANSLATED machine row gets the extracted passage
+// only after a three-vote judge panel prefers it with a unanimous direction.
+// The row lands as source=derived, which the read faces elect above translated
+// machine rows — never above source rows. When the incumbent is judged better
+// nothing is written, so the verdict is re-checkable on any later run.
 //
 // Anti-hallucination gate: an extracted passage must reappear verbatim
 // (modulo whitespace and leading list markers) inside the work intro, or it
@@ -32,6 +35,7 @@ import (
 func main() {
 	dsn := flag.String("dsn", "", "catalog DSN (REQUIRED)")
 	apply := flag.Bool("apply", false, "write the extracted rows (default: dry — extraction runs, nothing written)")
+	panel := flag.Bool("panel", false, "panel bucket: characters whose zh-Hans face is a translated machine row — extract, 3-vote compare, adopt only on a unanimous direction")
 	limit := flag.Int("limit", 0, "max WORKS this run (0 = all) — ramp through a small limit first (the rehearsal rule)")
 	offset := flag.Int("offset", 0, "skip the first N candidate works (stable id order)")
 	model := flag.String("model", envOr("KUN_INTRO_MT_LLM_MODEL", envOr("KUN_AI_UPSTREAM_MODEL", "glm-5.2")), "served model id")
@@ -58,8 +62,12 @@ func main() {
 		fmt.Println("BLOCKED: LLM gateway not configured (need --llm-base + --llm-token, or KUN_INTRO_MT_LLM_* / KUN_AI_UPSTREAM_*).")
 		os.Exit(3)
 	}
-	if err := run(context.Background(), db, ex, opts{
-		Apply: *apply, Limit: *limit, Offset: *offset,
+	var judge panelJudge
+	if *panel {
+		judge = ex
+	}
+	if err := run(context.Background(), db, ex, judge, opts{
+		Apply: *apply, Panel: *panel, Limit: *limit, Offset: *offset,
 		Delay: time.Duration(*delayMS) * time.Millisecond, Samples: *samples,
 	}); err != nil {
 		slog.Error("run failed", "error", err)
@@ -69,20 +77,29 @@ func main() {
 
 type opts struct {
 	Apply   bool
+	Panel   bool
 	Limit   int
 	Offset  int
 	Delay   time.Duration
 	Samples int
 }
 
-func run(ctx context.Context, db *gorm.DB, ex extractor, o opts) error {
-	works, err := loadCandidateWorks(ctx, db, o.Limit, o.Offset)
+func run(ctx context.Context, db *gorm.DB, ex extractor, judge panelJudge, o opts) error {
+	load := loadCandidateWorks
+	if o.Panel {
+		load = loadPanelCandidateWorks
+	}
+	works, err := load(ctx, db, o.Limit, o.Offset)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\n=== extract-char-intros (%s) candidate_works=%d ===\n", mode(o.Apply), len(works))
+	modeStr := mode(o.Apply)
+	if o.Panel {
+		modeStr = "PANEL " + modeStr
+	}
+	fmt.Printf("\n=== extract-char-intros (%s) candidate_works=%d ===\n", modeStr, len(works))
 	st := &stats{}
-	w := &writer{db: db, apply: o.Apply, st: st, samples: o.Samples}
+	w := &writer{db: db, apply: o.Apply, st: st, samples: o.Samples, judge: judge, delay: o.Delay}
 	for i, cand := range works {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -109,8 +126,14 @@ func run(ctx context.Context, db *gorm.DB, ex extractor, o opts) error {
 	}
 	fmt.Printf("\nworks=%d extracted=%d inserted=%d conflict=%d refused_not_verbatim=%d refused_short=%d refused_name_absent=%d unmatched_name=%d call_errors=%d touched_works=%d\n",
 		len(works), st.Extracted, st.Inserted, st.Conflict, st.RefusedNotVerbatim, st.RefusedShort, st.RefusedNameAbsent, st.UnmatchedName, st.CallErrors, st.Touched)
+	if o.Panel {
+		fmt.Printf("panel: adopted=%d kept_incumbent=%d panel_errors=%d\n", st.PanelAdopted, st.PanelKept, st.PanelErrors)
+	}
 	if !o.Apply {
 		fmt.Println("[dry run] nothing written — re-run with --apply")
+	}
+	if st.CallErrors+st.PanelErrors > 0 {
+		os.Exit(1)
 	}
 	return nil
 }

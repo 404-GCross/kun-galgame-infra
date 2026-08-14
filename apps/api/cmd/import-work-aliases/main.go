@@ -32,6 +32,9 @@ func main() {
 	fmt.Printf("kana: works=%d no_kana=%d planned=%d written=%d\n",
 		st.KanaWorks, st.KanaNoKana, st.KanaPlanned, st.KanaWritten)
 	fmt.Printf("errors=%d\n", st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func mode(apply bool) string {

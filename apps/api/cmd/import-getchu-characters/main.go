@@ -35,4 +35,7 @@ func main() {
 		slog.Error("import-getchu-characters", "error", err)
 		os.Exit(1)
 	}
+	if st != nil && st.Errors > 0 {
+		os.Exit(1)
+	}
 }

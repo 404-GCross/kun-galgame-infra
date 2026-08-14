@@ -52,4 +52,8 @@ func main() {
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
+	// 2026-08-05: 120,646 failed writes exited 0, so neither the cron failure trap nor the watchdog fired.
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }

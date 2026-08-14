@@ -18,7 +18,7 @@ func main() {
 	source := flag.String("source", "all", "bangumi | eg | eg-music | vndb | all")
 	apply := flag.Bool("apply", false, "write (default: dry run — plan counts only)")
 	limit := flag.Int("limit", 0, "cap works processed per wave (0 = all)")
-	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: erogamespace on the catalog server)")
+	egDSN := flag.String("eg-dsn", "", "erogamescape staging DSN (default: erogamescape on the catalog server)")
 	flag.Parse()
 
 	_ = godotenv.Load("apps/api/.env")
@@ -76,17 +76,20 @@ func main() {
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
+	if stats.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func openEG(cfg *config.Config, dsn string) *gorm.DB {
 	if dsn == "" {
 		egCfg := cfg.CatalogDatabase
-		egCfg.DBName = "erogamespace"
+		egCfg.DBName = "erogamescape"
 		dsn = egCfg.DSN()
 	}
 	db, err := database.OpenJob(dsn)
 	if err != nil {
-		slog.Error("erogamespace connect", "error", err)
+		slog.Error("erogamescape connect", "error", err)
 		os.Exit(1)
 	}
 	return db

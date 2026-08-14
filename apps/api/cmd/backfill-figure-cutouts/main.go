@@ -49,4 +49,7 @@ func main() {
 		slog.Error("backfill-figure-cutouts", "error", err)
 		os.Exit(1)
 	}
+	if st != nil && st.Errors > 0 {
+		os.Exit(1)
+	}
 }

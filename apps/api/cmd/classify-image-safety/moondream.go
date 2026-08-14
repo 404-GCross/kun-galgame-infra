@@ -20,7 +20,8 @@ type moondreamClient struct {
 	model     string
 	http      *http.Client
 	// neurons are fractional; keep them as micro-units so the counter can be atomic.
-	microNeurons atomic.Int64
+	microNeurons  atomic.Int64
+	succeededOnce atomic.Bool
 }
 
 func newMoondreamClient(accountID, token, model string) *moondreamClient {
@@ -86,6 +87,14 @@ func (c *moondreamClient) ask(ctx context.Context, dataURI, question string) (st
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", retryable{fmt.Errorf("workers-ai http %d: %s", resp.StatusCode, truncate(string(body), 200))}
 	}
+	// Under sustained concurrency the gateway sheds load as 401 code 10000
+	// "Authentication error" on a token that is working — the first full-corpus run
+	// lost 2,734 images to it. Retry it only once the token has proven itself, so a
+	// genuinely wrong token still fails on the first request instead of grinding.
+	if resp.StatusCode == http.StatusUnauthorized && c.succeededOnce.Load() {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", retryable{fmt.Errorf("workers-ai http 401: %s", truncate(string(body), 200))}
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", fmt.Errorf("workers-ai http %d: %s", resp.StatusCode, truncate(string(body), 200))
@@ -133,6 +142,7 @@ func (c *moondreamClient) ask(ctx context.Context, dataURI, question string) (st
 	if answer == "" {
 		return "", retryable{fmt.Errorf("workers-ai returned no answer")}
 	}
+	c.succeededOnce.Store(true)
 	return answer, nil
 }
 
@@ -140,18 +150,21 @@ func (c *moondreamClient) askYesNo(ctx context.Context, dataURI, question string
 	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
 		answer, err := c.ask(ctx, dataURI, question)
-		if err == nil {
+		if err != nil {
+			if _, retry := err.(retryable); !retry {
+				return false, err
+			}
+			lastErr = err
+		} else {
 			switch normalizeYesNo(answer) {
 			case "yes":
 				return true, nil
 			case "no":
 				return false, nil
 			}
-			return false, fmt.Errorf("unparsable answer %q", truncate(answer, 60))
-		}
-		lastErr = err
-		if _, retry := err.(retryable); !retry {
-			return false, err
+			// moondream is not deterministic: an answer that is neither yes nor no
+			// ("partially nude") parses on a later attempt rather than never.
+			lastErr = fmt.Errorf("unparsable answer %q", truncate(answer, 60))
 		}
 		select {
 		case <-ctx.Done():

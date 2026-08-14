@@ -7,15 +7,15 @@
 #
 # Groups (裁定 4):
 #   core     (default) download desensitised artifacts + restore.
-#   sources  raw streaming (dlsite/erogamespace): zero PII, zero desensitisation,
+#   sources  raw streaming (dlsite/erogamescape): zero PII, zero desensitisation,
 #            no artifact — a direct `pg_dump -Fc | pg_restore` pipe.
 #
 # Usage:
 #   ./scripts/refresh-dev-db.sh                       # all core DBs, latest artifact
 #   ./scripts/refresh-dev-db.sh --fresh               # rebuild the artifact first
 #   ./scripts/refresh-dev-db.sh --db kun_community    # one core DB
-#   ./scripts/refresh-dev-db.sh --group sources       # stream dlsite + erogamespace
-#   ./scripts/refresh-dev-db.sh --group sources --db erogamespace
+#   ./scripts/refresh-dev-db.sh --group sources       # stream dlsite + erogamescape
+#   ./scripts/refresh-dev-db.sh --group sources --db erogamescape
 #   ./scripts/refresh-dev-db.sh --assert-only --db kun_galgame_infra  # re-check PII
 #
 # Restore into throwaway DBs without touching the live ones (used by the

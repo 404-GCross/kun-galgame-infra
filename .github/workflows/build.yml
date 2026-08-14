@@ -7,16 +7,18 @@
 # dynamic matrix):
 #   - go images (oauth/image/artifact/catalog/community/trust/ai + migrate)  ← apps/api/** + Dockerfiles
 #   - web                                          ← apps/web/** + root manifests + nuxt.Dockerfile
-#   - tools                                        ← on-demand only (Run workflow → scope)
+#   - tools (infra-tools)                          ← apps/api/** + docker/tools.Dockerfile
 # A docs-only push therefore builds nothing and costs ~1 min (the `changes` job).
 #
-# `infra-migrate` builds in LOCKSTEP with the go services (same apps/api source
-# + sha) — REQUIRED because prod now auto-applies migrations on deploy (compose
-# `depends_on: migrate`), so the migrate image must never lag the code. It is ONE
-# image for every database: the compose migrate-* services all run it and pass
-# the target as an argument (`command: ["catalog"]`), so there is no per-domain
-# image to keep in sync. Only `tools` (data-cutover one-offs) is on-demand:
-# Actions → Run workflow → scope.
+# `infra-migrate` and `infra-tools` build in LOCKSTEP with the go services (same
+# apps/api source + sha). migrate is REQUIRED because prod auto-applies migrations
+# on deploy (compose `depends_on: migrate`), so the migrate image must never lag
+# the code. It is ONE image for every database: the compose migrate-* services all
+# run it and pass the target as an argument (`command: ["catalog"]`), so there is
+# no per-domain image to keep in sync. `infra-tools` packs every `cmd/*` binary,
+# so a push that changes a job must rebuild it or prod keeps running the old one.
+# `tools` is the only group Dokploy does not deploy, so a `tools`-only build does
+# not trigger a redeploy; Actions → Run workflow → scope=tools rebuilds it alone.
 #
 # web BAKEs its browser-facing public config from build-args here.
 name: build-and-push
@@ -27,9 +29,9 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: 'What to build (all = every image incl. migrate/tools; ondemand = only tools)'
+        description: 'What to build (all = every image incl. migrate/tools; tools = only infra-tools)'
         type: choice
-        options: [all, ondemand]
+        options: [all, tools]
         default: all
 
 permissions:
@@ -74,6 +76,10 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'package.json'
               - '.github/workflows/build.yml'
+            tools:
+              - 'apps/api/**'
+              - 'docker/tools.Dockerfile'
+              - '.github/workflows/build.yml'
       - id: set
         env:
           EVENT: ${{ github.event_name }}
@@ -81,6 +87,7 @@ jobs:
           GO: ${{ steps.filter.outputs.go }}
           WEB: ${{ steps.filter.outputs.web }}
           DEV: ${{ steps.filter.outputs.developer }}
+          TOOLS: ${{ steps.filter.outputs.tools }}
         run: |
           set -euo pipefail
           # Auto-built on push (path-filtered). web args are baked at build.
@@ -95,26 +102,23 @@ jobs:
             {"name":"infra-ai","file":"docker/go.Dockerfile","args":"CMD=ai","group":"go"},
             {"name":"infra-mcp","file":"docker/go.Dockerfile","args":"CMD=mcp","group":"go"},
             {"name":"infra-web","file":"docker/nuxt.Dockerfile","args":"APP=web\nPUBLIC_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"web"},
-            {"name":"infra-developer","file":"apps/developer/Dockerfile","args":"","group":"developer"}
-          ]'
-          # On-demand only (workflow_dispatch). Run before a prod migration.
-          ondemand_catalog='[
-            {"name":"infra-tools","file":"docker/tools.Dockerfile","args":"","group":"ondemand"}
+            {"name":"infra-developer","file":"apps/developer/Dockerfile","args":"","group":"developer"},
+            {"name":"infra-tools","file":"docker/tools.Dockerfile","args":"","group":"tools"}
           ]'
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            if [ "$SCOPE" = "ondemand" ]; then
-              sel=$(jq -cn --argjson b "$ondemand_catalog" '$b')
+            if [ "$SCOPE" = "tools" ]; then
+              sel=$(jq -cn --argjson c "$push_catalog" '$c | map(select(.group == "tools"))')
             else
-              sel=$(jq -cn --argjson a "$push_catalog" --argjson b "$ondemand_catalog" '$a + $b')
+              sel=$(jq -cn --argjson c "$push_catalog" '$c')
             fi
           else
-            sel=$(jq -cn --argjson c "$push_catalog" --arg go "$GO" --arg web "$WEB" --arg dev "$DEV" \
-              '([{g:"go",v:$go},{g:"web",v:$web},{g:"developer",v:$dev}] | map(select(.v=="true") | .g)) as $grp
+            sel=$(jq -cn --argjson c "$push_catalog" --arg go "$GO" --arg web "$WEB" --arg dev "$DEV" --arg tools "$TOOLS" \
+              '([{g:"go",v:$go},{g:"web",v:$web},{g:"developer",v:$dev},{g:"tools",v:$tools}] | map(select(.v=="true") | .g)) as $grp
                | $c | map(select(.group as $x | $grp | index($x)))')
           fi
           n=$(jq -n --argjson s "$sel" '$s | length')
           echo "any=$([ "$n" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "deploy=$(jq -n --argjson s "$sel" '$s | any(.[]; .group != "ondemand")')" >> "$GITHUB_OUTPUT"
+          echo "deploy=$(jq -n --argjson s "$sel" '$s | any(.[]; .group != "tools")')" >> "$GITHUB_OUTPUT"
           printf 'matrix={"include":%s}\n' "$sel" >> "$GITHUB_OUTPUT"
           echo "Selected $n image(s) to build:"
           jq -rn --argjson s "$sel" '$s[].name' | sed 's/^/  - /'

@@ -126,7 +126,7 @@ func sources() []model.CatalogSource {
 		{ID: 2, Key: "vndb", TrustTier: 1},
 		{ID: 3, Key: "bangumi", TrustTier: 1},
 		{ID: 4, Key: "dlsite", TrustTier: 0},
-		{ID: 5, Key: "erogamespace", TrustTier: 1},
+		{ID: 5, Key: "erogamescape", TrustTier: 1},
 		{ID: 6, Key: "anilist", TrustTier: 1},
 		{ID: 7, Key: "mal", TrustTier: 1},
 		{ID: 8, Key: "steam", TrustTier: 2},

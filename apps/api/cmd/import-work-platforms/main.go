@@ -36,6 +36,9 @@ func main() {
 		fmt.Printf("unmapped 平台 values (top 20): %s\n", strings.Join(st.TopUnmapped(20), " "))
 	}
 	fmt.Printf("errors=%d\n", st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func mode(apply bool) string {

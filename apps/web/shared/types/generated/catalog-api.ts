@@ -1901,7 +1901,7 @@ export interface components {
             minutes: number;
             /**
              * Format: int32
-             * @description catalog_source id (provenance): vndb = vote-backed median, erogamespace = community median
+             * @description catalog_source id (provenance): vndb = vote-backed median, erogamescape = community median
              */
             source_id: number;
             /**
@@ -1940,7 +1940,7 @@ export interface components {
             score: number;
             /**
              * Format: int32
-             * @description catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamespace = 0-100 median
+             * @description catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamescape = 0-100 median
              */
             source_id: number;
             /**
@@ -2670,7 +2670,7 @@ export interface operations {
     getCatalogWorkByAnchor: {
         parameters: {
             query?: {
-                /** @description Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry */
+                /** @description Source key (dlsite/vndb/bangumi/erogamescape/…), validated against the source registry */
                 source?: string;
                 /** @description The id within that source (e.g. a DLsite RJ number, a VNDB v-id) */
                 external_id?: string;
@@ -2847,6 +2847,8 @@ export interface operations {
                 before?: number;
                 /** @description Page size (default 20, max 100) */
                 limit?: number;
+                /** @description Which events qualify the actor: submitted (works they own) or audited (works they reviewed but do not own). Absent = every work they touched */
+                kind?: string;
             };
             header?: never;
             path?: never;

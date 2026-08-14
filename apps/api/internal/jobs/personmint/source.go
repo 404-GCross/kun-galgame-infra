@@ -89,7 +89,7 @@ func loadEnvironment(ctx context.Context, db *gorm.DB, memberIDs []int64) (*envi
 	if env.srcDLsite, err = resolveSource(ctx, db, "dlsite"); err != nil {
 		return nil, err
 	}
-	if env.srcEG, err = resolveSource(ctx, db, "erogamespace"); err != nil {
+	if env.srcEG, err = resolveSource(ctx, db, "erogamescape"); err != nil {
 		return nil, err
 	}
 	if err := env.loadMembers(ctx, memberIDs); err != nil {
