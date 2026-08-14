@@ -109,6 +109,18 @@ type CatalogWorkRating struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
+	// Sources split between these two, and no source fills both. Bangumi and
+	// DLsite publish a bucket histogram alongside the aggregate (score_details /
+	// rate_count_detail), so Distribution holds it keyed by the source's own
+	// scale. ErogameScape publishes none — its histogram could only be computed
+	// from the mirror's `reviews` table, which syncs on a different cursor than
+	// `games`, so the buckets would not sum to the vote_count sitting next to
+	// them; Stats instead carries the spread columns from the same `games` row
+	// the median comes from. VNDB gives us neither: the dump has only c_average
+	// / c_rating / c_votecount, no per-vote table.
+	Distribution datatypes.JSON `gorm:"type:jsonb" json:"distribution,omitempty"`
+	Stats        datatypes.JSON `gorm:"type:jsonb" json:"stats,omitempty"`
+
 	Work   *CatalogWork   `gorm:"foreignKey:WorkID" json:"work,omitempty"`
 	Source *CatalogSource `gorm:"foreignKey:SourceID" json:"source,omitempty"`
 }

@@ -435,6 +435,31 @@ export const docsModel: DocsModel = {
                                     "type": "object",
                                     "children": [
                                       {
+                                        "name": "distribution",
+                                        "nullable": true,
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "count",
+                                              "required": true,
+                                              "doc": "votes cast at this value",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            },
+                                            {
+                                              "name": "score",
+                                              "required": true,
+                                              "doc": "bucket value on the source-native scale",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "rank",
                                         "format": "int64",
                                         "type": "integer"
@@ -449,6 +474,33 @@ export const docsModel: DocsModel = {
                                         "name": "source",
                                         "required": true,
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "stats",
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "average",
+                                            "doc": "mean on the source-native scale (score itself is the median for erogamescape)",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "max",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "min",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "stdev",
+                                            "format": "double",
+                                            "type": "number"
+                                          }
+                                        ]
                                       },
                                       {
                                         "name": "vote_count",
@@ -1007,6 +1059,31 @@ export const docsModel: DocsModel = {
                                     "type": "object",
                                     "children": [
                                       {
+                                        "name": "distribution",
+                                        "nullable": true,
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "count",
+                                              "required": true,
+                                              "doc": "votes cast at this value",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            },
+                                            {
+                                              "name": "score",
+                                              "required": true,
+                                              "doc": "bucket value on the source-native scale",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "rank",
                                         "format": "int64",
                                         "type": "integer"
@@ -1021,6 +1098,33 @@ export const docsModel: DocsModel = {
                                         "name": "source",
                                         "required": true,
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "stats",
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "average",
+                                            "doc": "mean on the source-native scale (score itself is the median for erogamescape)",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "max",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "min",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "stdev",
+                                            "format": "double",
+                                            "type": "number"
+                                          }
+                                        ]
                                       },
                                       {
                                         "name": "vote_count",
@@ -1572,6 +1676,31 @@ export const docsModel: DocsModel = {
                                     "type": "object",
                                     "children": [
                                       {
+                                        "name": "distribution",
+                                        "nullable": true,
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "count",
+                                              "required": true,
+                                              "doc": "votes cast at this value",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            },
+                                            {
+                                              "name": "score",
+                                              "required": true,
+                                              "doc": "bucket value on the source-native scale",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "rank",
                                         "format": "int64",
                                         "type": "integer"
@@ -1586,6 +1715,33 @@ export const docsModel: DocsModel = {
                                         "name": "source",
                                         "required": true,
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "stats",
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "average",
+                                            "doc": "mean on the source-native scale (score itself is the median for erogamescape)",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "max",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "min",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "stdev",
+                                            "format": "double",
+                                            "type": "number"
+                                          }
+                                        ]
                                       },
                                       {
                                         "name": "vote_count",
@@ -6301,6 +6457,31 @@ export const docsModel: DocsModel = {
                                         "type": "object",
                                         "children": [
                                           {
+                                            "name": "distribution",
+                                            "nullable": true,
+                                            "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                            "type": "array",
+                                            "itemsOf": {
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "count",
+                                                  "required": true,
+                                                  "doc": "votes cast at this value",
+                                                  "format": "int64",
+                                                  "type": "integer"
+                                                },
+                                                {
+                                                  "name": "score",
+                                                  "required": true,
+                                                  "doc": "bucket value on the source-native scale",
+                                                  "format": "int64",
+                                                  "type": "integer"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
                                             "name": "rank",
                                             "format": "int64",
                                             "type": "integer"
@@ -6315,6 +6496,33 @@ export const docsModel: DocsModel = {
                                             "name": "source",
                                             "required": true,
                                             "type": "string"
+                                          },
+                                          {
+                                            "name": "stats",
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "average",
+                                                "doc": "mean on the source-native scale (score itself is the median for erogamescape)",
+                                                "format": "double",
+                                                "type": "number"
+                                              },
+                                              {
+                                                "name": "max",
+                                                "format": "double",
+                                                "type": "number"
+                                              },
+                                              {
+                                                "name": "min",
+                                                "format": "double",
+                                                "type": "number"
+                                              },
+                                              {
+                                                "name": "stdev",
+                                                "format": "double",
+                                                "type": "number"
+                                              }
+                                            ]
                                           },
                                           {
                                             "name": "vote_count",
@@ -8146,6 +8354,31 @@ export const docsModel: DocsModel = {
                                     "type": "object",
                                     "children": [
                                       {
+                                        "name": "distribution",
+                                        "nullable": true,
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "count",
+                                              "required": true,
+                                              "doc": "votes cast at this value",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            },
+                                            {
+                                              "name": "score",
+                                              "required": true,
+                                              "doc": "bucket value on the source-native scale",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "rank",
                                         "format": "int64",
                                         "type": "integer"
@@ -8160,6 +8393,33 @@ export const docsModel: DocsModel = {
                                         "name": "source",
                                         "required": true,
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "stats",
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "average",
+                                            "doc": "mean on the source-native scale (score itself is the median for erogamescape)",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "max",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "min",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "stdev",
+                                            "format": "double",
+                                            "type": "number"
+                                          }
+                                        ]
                                       },
                                       {
                                         "name": "vote_count",
@@ -8895,6 +9155,31 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "distribution",
+                                  "nullable": true,
+                                  "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "count",
+                                        "required": true,
+                                        "doc": "votes cast at this value",
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "score",
+                                        "required": true,
+                                        "doc": "bucket value on the source-native scale",
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "rank",
                                   "format": "int64",
                                   "type": "integer"
@@ -8909,6 +9194,33 @@ export const docsModel: DocsModel = {
                                   "name": "source",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "stats",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "average",
+                                      "doc": "mean on the source-native scale (score itself is the median for erogamescape)",
+                                      "format": "double",
+                                      "type": "number"
+                                    },
+                                    {
+                                      "name": "max",
+                                      "format": "double",
+                                      "type": "number"
+                                    },
+                                    {
+                                      "name": "min",
+                                      "format": "double",
+                                      "type": "number"
+                                    },
+                                    {
+                                      "name": "stdev",
+                                      "format": "double",
+                                      "type": "number"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "vote_count",
@@ -9954,6 +10266,31 @@ export const docsModel: DocsModel = {
                                     "type": "object",
                                     "children": [
                                       {
+                                        "name": "distribution",
+                                        "nullable": true,
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "count",
+                                              "required": true,
+                                              "doc": "votes cast at this value",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            },
+                                            {
+                                              "name": "score",
+                                              "required": true,
+                                              "doc": "bucket value on the source-native scale",
+                                              "format": "int64",
+                                              "type": "integer"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "rank",
                                         "format": "int64",
                                         "type": "integer"
@@ -9968,6 +10305,33 @@ export const docsModel: DocsModel = {
                                         "name": "source",
                                         "required": true,
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "stats",
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "average",
+                                            "doc": "mean on the source-native scale (score itself is the median for erogamescape)",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "max",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "min",
+                                            "format": "double",
+                                            "type": "number"
+                                          },
+                                          {
+                                            "name": "stdev",
+                                            "format": "double",
+                                            "type": "number"
+                                          }
+                                        ]
                                       },
                                       {
                                         "name": "vote_count",

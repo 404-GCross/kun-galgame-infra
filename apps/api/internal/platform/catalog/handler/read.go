@@ -210,6 +210,7 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 	for _, rt := range detail.Ratings {
 		resp.Ratings = append(resp.Ratings, dto.WorkRating{
 			SourceID: rt.SourceID, Score: rt.Score, VoteCount: rt.VoteCount, Rank: rt.Rank,
+			Distribution: rt.Distribution, Stats: rt.Stats,
 		})
 	}
 	for _, tg := range detail.Tags {

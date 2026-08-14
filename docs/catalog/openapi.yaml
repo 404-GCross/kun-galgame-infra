@@ -1878,6 +1878,38 @@ components:
         - probable_refs
         - rejections
       type: object
+    RatingBucket:
+      additionalProperties: false
+      properties:
+        count:
+          description: votes cast at this value
+          format: int64
+          type: integer
+        score:
+          description: bucket value on the source-native scale
+          format: int64
+          type: integer
+      required:
+        - score
+        - count
+      type: object
+    RatingStats:
+      additionalProperties: false
+      properties:
+        average:
+          description: mean on the source-native scale (score itself is the median for erogamescape)
+          format: double
+          type: number
+        max:
+          format: double
+          type: number
+        min:
+          format: double
+          type: number
+        stdev:
+          format: double
+          type: number
+      type: object
     RedirectFeedResponse:
       additionalProperties: false
       properties:
@@ -2691,6 +2723,13 @@ components:
     WorkRating:
       additionalProperties: false
       properties:
+        distribution:
+          description: vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes); detail face only. Published by bangumi (1-10) and dlsite (1-5); absent for vndb and erogamescape, which publish no histogram
+          items:
+            $ref: "#/components/schemas/RatingBucket"
+          type:
+            - array
+            - "null"
         rank:
           description: source-internal rank; absent when the source has no rank or the work is unranked
           format: int64
@@ -2703,6 +2742,9 @@ components:
           description: "catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamescape = 0-100 median"
           format: int32
           type: integer
+        stats:
+          $ref: "#/components/schemas/RatingStats"
+          description: spread of the same vote population as score; detail face only. Carried by erogamescape alone, which publishes these instead of a histogram
         vote_count:
           description: number of ratings backing the score
           format: int64
