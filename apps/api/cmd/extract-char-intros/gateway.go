@@ -1,0 +1,58 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+var retryBackoff = []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second}
+
+// postChat retries throttled and transient gateway failures with backoff. Without
+// this a 429 turns the pacing from inference latency (~20s) into delay-only fast
+// failures, and parallel shards then hammer the gateway at thousands of requests
+// per minute exactly when it asked to slow down (08-14: 16 shards burned 7.7k
+// 429s in two minutes).
+func (t *httpExtractor) postChat(ctx context.Context, raw []byte) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		data, status, err := t.postOnce(ctx, raw)
+		if err == nil {
+			return data, nil
+		}
+		retryable := status == 0 || status == http.StatusTooManyRequests ||
+			status == http.StatusRequestTimeout || status >= http.StatusInternalServerError
+		if !retryable || attempt >= len(retryBackoff) {
+			return nil, err
+		}
+		select {
+		case <-time.After(retryBackoff[attempt]):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (t *httpExtractor) postOnce(ctx context.Context, raw []byte) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+"/chat/completions", bytes.NewReader(raw))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	resp, err := t.http.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, resp.StatusCode, fmt.Errorf("gateway http %d: %s", resp.StatusCode, truncate(string(data), 300))
+	}
+	return data, resp.StatusCode, nil
+}

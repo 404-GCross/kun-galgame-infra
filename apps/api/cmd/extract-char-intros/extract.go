@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -153,23 +151,9 @@ func (t *httpExtractor) Extract(ctx context.Context, c candidateWork) (map[strin
 	if err != nil {
 		return nil, "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+"/chat/completions", bytes.NewReader(raw))
+	data, err := t.postChat(ctx, raw)
 	if err != nil {
 		return nil, "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+t.token)
-	resp, err := t.http.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("gateway http %d: %s", resp.StatusCode, truncate(string(data), 300))
 	}
 	var cr struct {
 		Model   string `json:"model"`
