@@ -437,7 +437,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "distribution",
                                         "nullable": true,
-                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count",
                                         "type": "array",
                                         "itemsOf": {
                                           "type": "object",
@@ -1061,7 +1061,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "distribution",
                                         "nullable": true,
-                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count",
                                         "type": "array",
                                         "itemsOf": {
                                           "type": "object",
@@ -1678,7 +1678,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "distribution",
                                         "nullable": true,
-                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count",
                                         "type": "array",
                                         "itemsOf": {
                                           "type": "object",
@@ -6459,7 +6459,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "distribution",
                                             "nullable": true,
-                                            "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                            "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count",
                                             "type": "array",
                                             "itemsOf": {
                                               "type": "object",
@@ -8356,7 +8356,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "distribution",
                                         "nullable": true,
-                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count",
                                         "type": "array",
                                         "itemsOf": {
                                           "type": "object",
@@ -9157,7 +9157,7 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "distribution",
                                   "nullable": true,
-                                  "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                  "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count",
                                   "type": "array",
                                   "itemsOf": {
                                     "type": "object",
@@ -10268,7 +10268,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "distribution",
                                         "nullable": true,
-                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. Published by bangumi (1-10) and dlsite (1-5)",
+                                        "doc": "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count",
                                         "type": "array",
                                         "itemsOf": {
                                           "type": "object",
