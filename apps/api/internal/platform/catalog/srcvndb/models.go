@@ -1,6 +1,10 @@
 package srcvndb
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/datatypes"
+)
 
 type Char struct {
 	ID          string    `gorm:"primaryKey" json:"id"`
@@ -66,6 +70,18 @@ type VN struct {
 }
 
 func (VN) TableName() string { return "src_vndb.vn" }
+
+// Staged from the separate votes dump, not from the database dump. That dump
+// omits every vote cast by a user whose list is private, so Total is at most
+// VN.CVotecount and typically a few percent under it — the two are different
+// populations and must never be reconciled into each other.
+type VNVoteStats struct {
+	ID           string         `gorm:"primaryKey" json:"id"`
+	Distribution datatypes.JSON `gorm:"type:jsonb;not null" json:"distribution"`
+	Total        int            `gorm:"not null" json:"total"`
+}
+
+func (VNVoteStats) TableName() string { return "src_vndb.vn_vote_stats" }
 
 type VNRelation struct {
 	ID       string `gorm:"primaryKey;column:id" json:"id"`

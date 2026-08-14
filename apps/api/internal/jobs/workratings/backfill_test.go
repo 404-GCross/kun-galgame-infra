@@ -11,6 +11,7 @@ import (
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/seed"
 	srcb "api/internal/platform/catalog/srcbangumi"
+	srcv "api/internal/platform/catalog/srcvndb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,12 +49,22 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: src_bangumi schema failed: %v\n", err)
 		os.Exit(0)
 	}
+	if err := srcv.EnsureSchema(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: src_vndb schema failed: %v\n", err)
+		os.Exit(0)
+	}
 	for _, ddl := range []string{
 		`CREATE SCHEMA IF NOT EXISTS workratings_eg`,
 		// `raw` mirrors the EG mirror's own shape: it generates typed columns for
 		// a handful of keys and leaves the rest — the spread four included — in
 		// the jsonb, which is where the EG lane reads them from.
 		`CREATE TABLE IF NOT EXISTS workratings_eg.games (id int PRIMARY KEY, median int, count2 int, raw jsonb)`,
+		// CREATE TABLE IF NOT EXISTS adds no columns to a table that already
+		// exists, so a test database created before wave 205 kept a `raw`-less
+		// games fixture and every EG assertion failed with `column "raw" does not
+		// exist`. Widen the fixture explicitly whenever a column is added.
+		`ALTER TABLE workratings_eg.games ADD COLUMN IF NOT EXISTS raw jsonb`,
+		`CREATE TABLE IF NOT EXISTS workratings_eg.reviews (game int, tokuten int)`,
 		`CREATE SCHEMA IF NOT EXISTS workratings_dl`,
 		`CREATE TABLE IF NOT EXISTS workratings_dl.works (workno text PRIMARY KEY, info_json jsonb)`,
 	} {
@@ -72,7 +83,8 @@ func clean(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
 		"catalog_work_rating", "catalog_work_popularity", "catalog_external_ref", "catalog_release",
-		"catalog_work", "src_bangumi.subject", "workratings_eg.games", "workratings_dl.works",
+		"catalog_work", "src_bangumi.subject", "workratings_eg.games", "workratings_eg.reviews",
+		"workratings_dl.works", "src_vndb.vn", "src_vndb.vn_vote_stats",
 	} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -196,6 +208,9 @@ func TestBackfillWorkRatings(t *testing.T) {
 	wEgClaimed := mkWork(t, reg.galgameMedium, "eg-claimed", &claimed)
 	mkEGGame(t, 1001, p(78), 40)
 	setEGSpread(t, 1001, `{"average2":"63","stdev":"14","min2":"0","max2":"90"}`)
+	for _, tk := range []*int{p(0), p(78), p(100), nil} {
+		mkEGReview(t, 1001, tk)
+	}
 	mkEGGame(t, 1002, nil, 5)
 	mkEGGame(t, 1004, p(50), 10)
 	mkEGGame(t, 1014, p(90), 99)
@@ -248,6 +263,8 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.Equal(t, 3, st.BgmDistribution, "every scored bangumi subject carries score_details")
 	assert.Equal(t, 1, st.DlDistribution, "only RJ100001 was given a rate_count_detail")
 	assert.Equal(t, 1, st.EgStats, "only game 1001 was given the spread keys")
+	assert.Equal(t, 1, st.EgDistribution, "only game 1001 was given scored reviews")
+	assert.Equal(t, 3, st.EgNoReviews, "the other three planned EG works have no scored review")
 	assert.Equal(t, 8, st.PopPlanned, "wDl 3 + wDlNoRating 2 + wDlClaimed 3")
 	assert.Zero(t, st.BgmWritten+st.EgWritten+st.DlRatingWritten+st.PopWritten+
 		st.BgmUnchanged+st.EgUnchanged+st.DlRatingUnchanged+st.PopUnchanged+st.Errors)
@@ -288,9 +305,12 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.InDelta(t, 78, rEg.Score, 1e-9)
 	assert.Equal(t, 40, rEg.VoteCount)
 	assert.Nil(t, rEg.Rank)
-	assert.Nil(t, rEg.Distribution, "EG publishes no histogram")
+	assert.JSONEq(t, `{"0":1,"70":1,"100":1}`, string(rEg.Distribution),
+		"the histogram is folded from `reviews`; the NULL-tokuten row is comment-only and never counted")
 	assert.JSONEq(t, `{"average":63,"stdev":14,"min":0,"max":90}`, string(rEg.Stats),
 		"the spread comes from the same games row as the median")
+	assert.Equal(t, 40, rEg.VoteCount,
+		"vote_count stays the games row's count2 — the two mirrors sync independently and the bars need not sum to it")
 
 	var rEgNoSpread model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wEgMulti, reg.egSource).First(&rEgNoSpread).Error)

@@ -16,6 +16,7 @@ type registry struct {
 	bangumiSource int16
 	egSource      int16
 	dlsiteSource  int16
+	vndbSource    int16
 }
 
 func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
@@ -32,9 +33,12 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'dlsite'`).Scan(&r.dlsiteSource).Error; err != nil {
 		return r, fmt.Errorf("resolve dlsite source: %w", err)
 	}
-	if r.galgameMedium == 0 || r.bangumiSource == 0 || r.egSource == 0 || r.dlsiteSource == 0 {
-		return r, fmt.Errorf("registry not seeded (galgame medium=%d, bangumi source=%d, erogamescape source=%d, dlsite source=%d)",
-			r.galgameMedium, r.bangumiSource, r.egSource, r.dlsiteSource)
+	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'vndb'`).Scan(&r.vndbSource).Error; err != nil {
+		return r, fmt.Errorf("resolve vndb source: %w", err)
+	}
+	if r.galgameMedium == 0 || r.bangumiSource == 0 || r.egSource == 0 || r.dlsiteSource == 0 || r.vndbSource == 0 {
+		return r, fmt.Errorf("registry not seeded (galgame medium=%d, bangumi source=%d, erogamescape source=%d, dlsite source=%d, vndb source=%d)",
+			r.galgameMedium, r.bangumiSource, r.egSource, r.dlsiteSource, r.vndbSource)
 	}
 	return r, nil
 }
@@ -121,6 +125,13 @@ type egData struct {
 // row as the median on purpose: EG publishes no histogram, and one computed
 // from the mirror's `reviews` table would be a different sync generation than
 // the aggregate shown beside it.
+//
+// loadEGReviewBuckets computes that histogram anyway, as a deliberate
+// exception: a shape of the vote spread is worth more to a reader than the
+// guarantee that its bars add up to the vote_count printed next to them. The
+// two bases stay separate — the score, vote_count and spread still come from
+// this `games` row, only the bars come from `reviews` — and the basis mismatch
+// is documented in the catalog contract rather than papered over here.
 func loadEGMirror(ctx context.Context, egDB *gorm.DB, ids []int64) (map[int64]egData, error) {
 	out := map[int64]egData{}
 	type row struct {
@@ -153,6 +164,30 @@ func loadEGMirror(ctx context.Context, egDB *gorm.DB, ids []int64) (map[int64]eg
 				stats: ratingStats{Average: r.Average, Stdev: r.Stdev, Min: r.Min, Max: r.Max},
 			}
 		}
+	}
+	return out, nil
+}
+
+func loadEGReviewBuckets(ctx context.Context, egDB *gorm.DB) (map[int64]map[string]int, error) {
+	var rows []struct {
+		Game   int64 `gorm:"column:game"`
+		Bucket int   `gorm:"column:bucket"`
+		N      int   `gorm:"column:n"`
+	}
+	if err := egDB.WithContext(ctx).Raw(
+		`SELECT game, (tokuten / 10) * 10 AS bucket, count(*) AS n
+		 FROM reviews WHERE tokuten IS NOT NULL AND game IS NOT NULL
+		 GROUP BY 1, 2`).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[int64]map[string]int, len(rows)/8+1)
+	for _, r := range rows {
+		b := out[r.Game]
+		if b == nil {
+			b = map[string]int{}
+			out[r.Game] = b
+		}
+		b[strconv.Itoa(r.Bucket)] += r.N
 	}
 	return out, nil
 }

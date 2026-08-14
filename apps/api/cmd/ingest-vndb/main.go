@@ -18,7 +18,12 @@ import (
 func main() {
 	dumpDir := flag.String("dump-dir", "refs/vndb-dump/db", "directory containing the extracted VNDB dump db/ files (data files + *.header)")
 	only := flag.String("only", "", "ingest a single file (any name in srcvndb.Files, e.g. vn | chars | staff | releases | tags_vn)")
+	votesFile := flag.String("votes-file", "", "also stage src_vndb.vn_vote_stats from the separate votes dump (vndb-votes-latest.gz); alone it restages votes only")
 	flag.Parse()
+
+	explicit := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	ingestDump := *votesFile == "" || explicit["dump-dir"] || explicit["only"]
 
 	_ = godotenv.Load("apps/api/.env")
 
@@ -29,10 +34,13 @@ func main() {
 	}
 	logger.Init(cfg.Server.Env)
 
-	dir, err := resolveDumpDir(*dumpDir)
-	if err != nil {
-		slog.Error("resolve dump dir", "error", err)
-		os.Exit(1)
+	dir := ""
+	if ingestDump {
+		dir, err = resolveDumpDir(*dumpDir)
+		if err != nil {
+			slog.Error("resolve dump dir", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	db, err := database.NewPostgresDB(cfg.CatalogDatabase)
@@ -47,18 +55,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	slog.Info("ingesting vndb dump", "dir", dir, "only", *only)
-	report, err := srcvndb.Run(db.DB(), dir, *only)
-	if err != nil {
-		slog.Error("ingest failed", "error", err)
-		os.Exit(1)
-	}
-	for _, name := range srcvndb.Files {
-		if fr, ok := report.PerFile[name]; ok {
-			slog.Info("ingested", "file", name, "rows", fr.Rows, "skipped", fr.Skipped)
+	if ingestDump {
+		slog.Info("ingesting vndb dump", "dir", dir, "only", *only)
+		report, err := srcvndb.Run(db.DB(), dir, *only)
+		if err != nil {
+			slog.Error("ingest failed", "error", err)
+			os.Exit(1)
 		}
+		for _, name := range srcvndb.Files {
+			if fr, ok := report.PerFile[name]; ok {
+				slog.Info("ingested", "file", name, "rows", fr.Rows, "skipped", fr.Skipped)
+			}
+		}
+		slog.Info("vndb ingest completed", "total", report.Duration.String())
 	}
-	slog.Info("vndb ingest completed", "total", report.Duration.String())
+
+	if *votesFile != "" {
+		slog.Info("ingesting vndb votes dump", "file", *votesFile)
+		vr, err := srcvndb.RunVotes(db.DB(), *votesFile)
+		if err != nil {
+			slog.Error("votes ingest failed", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("vndb votes ingest completed", "vns", vr.VNs, "votes", vr.Votes, "unparsed", vr.Skipped)
+	}
 }
 
 func resolveDumpDir(dir string) (string, error) {
