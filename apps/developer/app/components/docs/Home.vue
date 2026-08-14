@@ -7,11 +7,27 @@ const { faces, faceOperationCount } = useDocs()
 useSeoMeta({
   title: 'API 文档',
   description:
-    'NextMoe 开放 API 参考文档：catalog 身份图谱面的全部公开只读端点。鉴权、限流与每个端点的参数 / 响应 / curl 示例。'
+    'NextMoe 开放 API 参考文档：catalog 身份图谱面的公开只读端点，以及用户令牌认证的 playtime 面。鉴权、限流与每个端点的参数 / 响应 / curl 示例。'
 })
 
 const totalOperations = computed(() =>
   faces.reduce((n, f) => n + faceOperationCount(f), 0)
+)
+
+const playtimeOperations = computed(() =>
+  faces.reduce(
+    (n, f) =>
+      n +
+      f.groups.reduce(
+        (m, g) => m + (g.tag === 'playtime' ? g.operations.length : 0),
+        0
+      ),
+    0
+  )
+)
+
+const catalogOperations = computed(
+  () => totalOperations.value - playtimeOperations.value
 )
 </script>
 
@@ -24,7 +40,9 @@ const totalOperations = computed(() =>
       </h1>
       <p class="mt-3 max-w-2xl text-default-500">
         当 VNDB / Bangumi / DLsite / ErogameScape 各执一词，以 NextMoe 为准。
-        一个 base URL、一份凭证，覆盖 {{ totalOperations }} 个公开只读端点。
+        一个 base URL、{{ totalOperations }} 个公开端点：catalog 面
+        {{ catalogOperations }} 条只读端点凭 API 密钥调用，playtime 面
+        {{ playtimeOperations }} 条用用户自己的访问令牌读写他本人的游玩记录。
       </p>
     </header>
 
@@ -48,13 +66,26 @@ const totalOperations = computed(() =>
           鉴权
         </h2>
         <p class="mt-3 text-sm text-default-500">
-          每个请求携带
+          catalog 面每个请求携带
           <code
             class="rounded bg-default-100 px-1 py-0.5 font-mono text-xs text-foreground"
           >
             Authorization: Bearer nm_live_…
           </code>
-          。密钥是机密，仅服务端持有。
+          。密钥是机密，仅服务端持有。playtime 面不用密钥，带用户授权后拿到的访问令牌，
+          需要
+          <code
+            class="rounded bg-default-100 px-1 py-0.5 font-mono text-xs text-foreground"
+          >
+            playtime:read
+          </code>
+          /
+          <code
+            class="rounded bg-default-100 px-1 py-0.5 font-mono text-xs text-foreground"
+          >
+            playtime:write
+          </code>
+          scope。
         </p>
       </div>
 
@@ -76,7 +107,8 @@ const totalOperations = computed(() =>
     <section>
       <h2 class="text-lg font-semibold text-foreground">公开数据面</h2>
       <p class="mt-1 text-sm text-default-500">
-        一份凭证覆盖全部；权限范围（scope）按面表达。
+        权限范围（scope）按面表达：catalog 面凭一把 API 密钥覆盖全部只读端点，
+        playtime 面另走用户令牌，一个用户只读写得到他自己的记录。
       </p>
       <div class="mt-4 grid gap-4 md:grid-cols-2">
         <NuxtLink
@@ -151,7 +183,8 @@ const totalOperations = computed(() =>
     <section>
       <h2 class="text-lg font-semibold text-foreground">给 AI 用</h2>
       <p class="mt-1 text-sm text-default-500">
-        同一套面也以 MCP（Model Context Protocol）server 暴露，AI 助手可直接调用。
+        catalog 面也以 MCP（Model Context Protocol）server 暴露，AI 助手可直接调用；
+        playtime 面按裁定不进 MCP。
       </p>
       <NuxtLink
         to="/docs/mcp"
@@ -165,7 +198,7 @@ const totalOperations = computed(() =>
         <div class="min-w-0 flex-1">
           <h3 class="text-base font-semibold text-foreground">AI / MCP 接入</h3>
           <p class="mt-1 text-sm leading-relaxed text-default-500">
-            纯透传适配层：一个端点、同一把密钥、七个只读工具。含 Claude Code /
+            纯透传适配层：一个端点、同一把密钥、一整套 catalog 只读工具。含 Claude Code /
             Claude Desktop / 通用客户端配置示例。
           </p>
         </div>

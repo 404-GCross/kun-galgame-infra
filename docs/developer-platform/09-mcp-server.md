@@ -42,6 +42,8 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 
 ## 4. 工具面(22 个 = M1 五个幸存 + `catalog_name_get` + canonical-W1 三件 + A2 八件 + wave-189 三件 + wave-196 两件;2026-08-08 与 canonical 轨 spec 同步)
 
+> **wave 207 口径澄清**:本节所有覆盖率分数(22 个工具、下文的 22/25)的分母**始终是 catalog 面**。平台的公开 spec 现共 **30 op = catalog 面 25 + playtime 面 5**,后者**刻意不在 MCP 范围内**,理由见本节末尾那条。
+
 > **wave 146(2026-07-30)**:`galgame_search` / `galgame_get` **随其上游 `/v1/galgame` 面一同退役**——该面现返回 `410 Gone`,继续注册这两个工具只会稳定地喂给调用方一个错误。后继:`catalog_search`(`type=works`)接自然语言搜索,`catalog_work_get` 接按 id 取详情。
 
 | tool | 上游端点 | 说明 |
@@ -69,7 +71,8 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 | `catalog_label_relation_graph` | `GET /v1/catalog/labels/{id}/relation-graph` | 会社家族整图(nodes[]+edges[];服务端封顶 depth 4 / 60 节点,广度优先,无分页;`catalog_label_get.relations[]` 只有一跳) |
 | `catalog_releases` | `GET /v1/catalog/releases` | 发售动态 release 粒度(date keyset;`date_from`/`date_to`/`platform`/`lang`/`olang`/`kind`/`official`/`content_limit`;`is_first` 分辨首发与再版) |
 
-- **catalog 覆盖面(22/25:三条「有意留白」,待裁定已清零)**:公开 catalog 面
+- **catalog 覆盖面(22/25:三条「有意留白」,待裁定已清零;分母是 catalog 面,平台另
+  5 op 属 playtime 面,见下条)**:公开 catalog 面
   现共 25 op,上表覆盖 22。上一波记为「待裁定」的 `stats` 与 `series` 已由 owner
   裁定收进工具面(wave 189,2026-08-07),且 `series` 实收**两条**而非一条——
   系列不进任何搜索索引,只有 `series/{id}` 详情道的话调用方**永远拿不到 id**,
@@ -93,6 +96,16 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
   外部 id 由 `catalog_lookup_external` 覆盖;且 `lookup/batch` 与 `resolve` 是
   POST,而 mcpface 传输是 GET 纯透传。
 
+- **playtime 面:已裁定不进 MCP(wave 207,非「还没做」)**。平台的第二个公开面
+  `/v1/playtime`(5 op,见 [02 §3.8](./02-public-api.md))**整族出界**,理由是它与
+  §1 的红线正面冲突:MCP 层是**纯透传**适配器,把调用方那把 `X-API-Key` 原样转发给
+  上游、自己零 authz 零计量**连数据库都不碰**;而 playtime 是**用户 Bearer 令牌**认证的
+  **写**面,写的是某个具体人的个人记录。把一枚用户令牌穿过 LLM 的 tool 循环去写他的
+  个人数据,不在 MCP 的授权范围内——这需要的是 MCP 规范的 OAuth 2.1 流(§3 里的
+  M2),而不是把 `Authorization` 头换一种内容继续透传。触发条件与 M2 同期:真出现
+  「让 agent 帮我同步游玩库」的外部需求时,连同写面工具一起评估,而不是先把面开了。
+  在那之前,**覆盖率分数不把这 5 条算进分母**。
+
 - **r18 姿态(104 波,调用方自控)**:catalog 系工具 `nsfw=true` 显式开。
   默认全部隐藏——LLM 消费者不显式要就永远看不到 r18。(旧 galgame 系工具的
   `content_limit`+`galgame:nsfw` scope 姿态已随 /v1/galgame 摘牌一并退役;
@@ -102,8 +115,8 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
   的分工是重点:有外部 id 用 lookup,自然语言用 search)。
 - 输入 schema 逐参对齐上游 query 参数(分页参数透传,默认页量保守)。
 - **不做**的(明确出界):redirects/resolve/lookup/batch(镜像维护面,理由见
-  上面的覆盖说明)、resources/prompts(M2)、任何写面(Phase 3 submit 开放后随
-  OAuth 一起评估)。`changes`(canonical-W1)与 calendar 三桶(wave 7,收的是
+  上面的覆盖说明)、**playtime 面整族**(wave 207,理由见上)、resources/prompts(M2)、
+  任何写面(Phase 3 submit 开放后随 OAuth 一起评估)。`changes`(canonical-W1)与 calendar 三桶(wave 7,收的是
   **catalog 面**的月历;当年出界的是已退役的 galgame 面月历)原属此列,现均已
   进面(见上表)。
 
@@ -113,7 +126,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
   Deploy 姿态,`docker-compose.mcp.yml`);镜像走现有 CI 矩阵。
 - healthz 照平台惯例;结构化日志记 tool 名 + 上游状态码 + 时延,
   **永不记 key 明文**(fingerprint 前 8 hex)。
-- 冒烟:MCP `initialize` + `tools/list` + 一次 `catalog_search` 真调用。(wave 196 / 2026-08-08 同步后 `tools/list` 应回 22 工具;冒烟调用早先写的是 `galgame_search`,该工具已随 `/v1/galgame` 面于 wave 146 退役。)
+- 冒烟:MCP `initialize` + `tools/list` + 一次 `catalog_search` 真调用。(wave 196 / 2026-08-08 同步后 `tools/list` 应回 22 工具——**全部是 catalog 面工具**,playtime 面按 §4 裁定不进面,故这个数不随它变;冒烟调用早先写的是 `galgame_search`,该工具已随 `/v1/galgame` 面于 wave 146 退役。)
 
 ## 6. 阶段
 
