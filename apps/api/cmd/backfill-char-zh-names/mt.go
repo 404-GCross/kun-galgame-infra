@@ -172,36 +172,83 @@ func newHTTPTranslator(baseURL, token, model string, maxTokens int) *httpTransla
 func (t *httpTranslator) Configured() bool { return t.baseURL != "" && t.token != "" }
 
 func (t *httpTranslator) Translate(ctx context.Context, c mtResidueCandidate) (string, string, error) {
+	content, model, err := t.chatModel(ctx, translateSystemPrompt, userMessage(c), 0)
+	if err != nil {
+		return "", "", err
+	}
+	return cleanProposal(content), model, nil
+}
+
+func (t *httpTranslator) chat(ctx context.Context, system, user string, temperature float64) (string, error) {
+	content, _, err := t.chatModel(ctx, system, user, temperature)
+	return content, err
+}
+
+var retryBackoff = []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second}
+
+// postChat retries throttled and transient gateway failures with backoff.
+// Without it a 429 turns the pacing from inference latency into delay-only fast
+// failures, and parallel shards then hammer the gateway at thousands of
+// requests per minute exactly when it asked to slow down (the 08-14 intro-panel
+// incident; this tool was itself starved twice by a concurrent big chain).
+func (t *httpTranslator) postChat(ctx context.Context, raw []byte) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		data, status, err := t.postOnce(ctx, raw)
+		if err == nil {
+			return data, nil
+		}
+		retryable := status == 0 || status == http.StatusTooManyRequests ||
+			status == http.StatusRequestTimeout || status >= http.StatusInternalServerError
+		if !retryable || attempt >= len(retryBackoff) {
+			return nil, err
+		}
+		select {
+		case <-time.After(retryBackoff[attempt]):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (t *httpTranslator) postOnce(ctx context.Context, raw []byte) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+"/chat/completions", bytes.NewReader(raw))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	resp, err := t.http.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, resp.StatusCode, fmt.Errorf("gateway http %d: %s", resp.StatusCode, truncateRunes(string(data), 300))
+	}
+	return data, resp.StatusCode, nil
+}
+
+func (t *httpTranslator) chatModel(ctx context.Context, system, user string, temperature float64) (string, string, error) {
 	body := map[string]any{
 		"model":       t.model,
 		"max_tokens":  t.maxTokens,
-		"temperature": 0,
+		"temperature": temperature,
 		"messages": []map[string]string{
-			{"role": "system", "content": translateSystemPrompt},
-			{"role": "user", "content": userMessage(c)},
+			{"role": "system", "content": system},
+			{"role": "user", "content": user},
 		},
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return "", "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+"/chat/completions", bytes.NewReader(raw))
+	data, err := t.postChat(ctx, raw)
 	if err != nil {
 		return "", "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+t.token)
-	resp, err := t.http.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("gateway http %d: %s", resp.StatusCode, truncateRunes(string(data), 300))
 	}
 	var cr struct {
 		Model   string `json:"model"`
@@ -231,7 +278,7 @@ func (t *httpTranslator) Translate(ctx context.Context, c mtResidueCandidate) (s
 	if model == "" {
 		model = t.model
 	}
-	return cleanProposal(cr.Choices[0].Message.Content), model, nil
+	return cr.Choices[0].Message.Content, model, nil
 }
 
 func cleanProposal(s string) string {
