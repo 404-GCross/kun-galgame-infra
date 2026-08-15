@@ -28,6 +28,15 @@ type pairRec struct {
 	Usage  int    `json:"usage,omitempty"`
 	Tier   *int16 `json:"tier,omitempty"`
 	Kind_  *int16 `json:"tier_kind,omitempty"`
+	Sexual bool   `json:"sexual,omitempty"`
+
+	// kind:"map" — (Source, Name) → an existing canonical (MapToID) or a
+	// canonical named MapTo, created on demand with Tier/Kind_/Sexual. The
+	// map row keeps the SOURCE name; a "single" cannot say source ≠ canonical.
+	// kind:"reject" — (Source, Name) is negative knowledge → catalog_tag_rejection.
+	MapToID int64  `json:"map_to_id,omitempty"`
+	MapTo   string `json:"map_to,omitempty"`
+	By      string `json:"by,omitempty"`
 
 	Confidence float64 `json:"confidence"`
 	Reason     string  `json:"reason,omitempty"`

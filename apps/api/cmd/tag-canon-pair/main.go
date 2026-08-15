@@ -73,11 +73,11 @@ func main() {
 			DSN: *dsn, Decisions: *decisions, Apply: *apply,
 		})
 		must(err)
-		fmt.Printf("\n=== apply-reviewed %s ===\napproved_pairs=%d groups=%d single_rows=%d\n",
-			modeLabel(*apply), st.ApprovedPairs, st.Groups, st.SingleRows)
+		fmt.Printf("\n=== apply-reviewed %s ===\napproved_pairs=%d groups=%d single_rows=%d map_rows=%d reject_rows=%d\n",
+			modeLabel(*apply), st.ApprovedPairs, st.Groups, st.SingleRows, st.MapRows, st.RejectRows)
 		if *apply {
-			fmt.Printf("tags_created=%d tags_conflict=%d maps_created=%d maps_conflict=%d tier_updated=%d errors=%d\n",
-				st.TagsCreated, st.TagsConflict, st.MapsCreated, st.MapsConflict, st.TierUpdated, st.Errors)
+			fmt.Printf("tags_created=%d tags_conflict=%d maps_created=%d maps_conflict=%d rejects_created=%d rejects_conflict=%d tier_updated=%d errors=%d\n",
+				st.TagsCreated, st.TagsConflict, st.MapsCreated, st.MapsConflict, st.RejectsCreated, st.RejectsConflict, st.TierUpdated, st.Errors)
 		} else {
 			fmt.Printf("DRY RUN — nothing written; re-run with --apply\n")
 		}
