@@ -23,15 +23,19 @@ type ProposeOpts struct {
 	MaxPairs        int
 	MaxEdit         int
 	Prior           string
+	SkipOriginals   bool
 }
 
+func identityOrig(s string) string { return s }
+
 type ProposeStats struct {
-	Block          blockStats
-	Pairs          int
-	SingleProposed int
-	RelationCounts map[Relation]int
-	Errors         int
-	SkippedPrior   int
+	Block             blockStats
+	Pairs             int
+	SingleProposed    int
+	RelationCounts    map[Relation]int
+	Errors            int
+	SkippedPrior      int
+	SkippedPriorNames int
 }
 
 func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, error) {
@@ -72,11 +76,13 @@ func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, 
 
 	st := &ProposeStats{Block: bst, RelationCounts: map[Relation]int{}}
 
+	priorNames := map[string]struct{}{}
 	if opts.Prior != "" {
-		priorKeys, err := loadPriorPairKeys(opts.Prior)
+		priorKeys, names, err := loadPriorKeys(opts.Prior)
 		if err != nil {
 			return nil, fmt.Errorf("load prior verdicts: %w", err)
 		}
+		priorNames = names
 		kept := pairs[:0]
 		for _, p := range pairs {
 			if _, judged := priorKeys[pairKey(p.A.SourceKey, p.A.Name, p.B.SourceKey, p.B.Name)]; judged {
@@ -86,7 +92,8 @@ func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, 
 			kept = append(kept, p)
 		}
 		pairs = kept
-		slog.Info("tag-pair prior skip", "prior", opts.Prior, "skipped", st.SkippedPrior, "remaining", len(pairs))
+		slog.Info("tag-pair prior skip", "prior", opts.Prior, "skipped", st.SkippedPrior,
+			"prior_names", len(priorNames), "remaining", len(pairs))
 	}
 
 	var mu sync.Mutex
@@ -123,6 +130,10 @@ func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, 
 	singles := make([]candName, 0)
 	for _, c := range pool {
 		if c.Usage < opts.SingleThreshold {
+			continue
+		}
+		if _, judged := priorNames[nameKey(c.SourceKey, c.Name)]; judged {
+			st.SkippedPriorNames++
 			continue
 		}
 		singles = append(singles, c)
@@ -175,7 +186,7 @@ func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, 
 	if err != nil {
 		return nil, err
 	}
-	labelNorms, err := loadLabelNorms(ctx, db)
+	junkIdx, err := loadJunkIndex(ctx, db)
 	if err != nil {
 		return nil, err
 	}
@@ -183,11 +194,17 @@ func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, 
 	if err != nil {
 		return nil, err
 	}
-
-	vndbOrig := loadVndbOrig(opts.TagMapPath)
-	dlOrig, err := loadDlsiteOrig(ctx, opts.DlsiteDSN)
+	rejected, err := loadRejectedNames(ctx, db)
 	if err != nil {
 		return nil, err
+	}
+
+	vndbOrig, dlOrig := identityOrig, identityOrig
+	if !opts.SkipOriginals {
+		vndbOrig = loadVndbOrig(opts.TagMapPath)
+		if dlOrig, err = loadDlsiteOrig(ctx, opts.DlsiteDSN); err != nil {
+			return nil, err
+		}
 	}
 	bgmWorks, err := loadNameWorkIDs(ctx, db, src.bangumi)
 	if err != nil {
@@ -201,6 +218,9 @@ func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, 
 	pool := make([]candName, 0, len(vndb)+len(bgm)+len(dl))
 	add := func(e vocabEntry, orig func(string) string, works map[string]map[int64]struct{}) {
 		if _, already := mapped[mapKey(e.SourceID, e.Name)]; already {
+			return
+		}
+		if _, no := rejected[mapKey(e.SourceID, e.Name)]; no {
 			return
 		}
 		c := candName{
@@ -222,7 +242,7 @@ func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, 
 		add(e, vndbOrig, nil)
 	}
 	for i := range bgm {
-		if bgm[i].Junk || bgmJunk(bgm[i].Norm, labelNorms) != "" {
+		if bgm[i].Junk || bgmJunk(bgm[i].Norm, junkIdx) != "" {
 			continue
 		}
 		add(bgm[i], nil, bgmWorks)
@@ -415,17 +435,26 @@ func pairKey(aSource, aName, bSource, bName string) string {
 	return ka + "\x00" + kb
 }
 
-func loadPriorPairKeys(path string) (map[string]struct{}, error) {
+func nameKey(source, name string) string { return source + ":" + name }
+
+// The pair keys AND the name keys: a single/map/reject verdict is a judgment on
+// that name, so re-classifying it next month is paid-for work done twice.
+func loadPriorKeys(path string) (pairs, names map[string]struct{}, err error) {
 	recs, err := readRecords(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := make(map[string]struct{}, len(recs))
+	pairs = make(map[string]struct{}, len(recs))
+	names = make(map[string]struct{}, len(recs))
 	for _, r := range recs {
-		if r.Kind != "pair" {
-			continue
+		switch r.Kind {
+		case "pair":
+			pairs[pairKey(r.ASource, r.AName, r.BSource, r.BName)] = struct{}{}
+		case "single", "map", "reject":
+			if r.Source != "" && r.Name != "" {
+				names[nameKey(r.Source, r.Name)] = struct{}{}
+			}
 		}
-		out[pairKey(r.ASource, r.AName, r.BSource, r.BName)] = struct{}{}
 	}
-	return out, nil
+	return pairs, names, nil
 }

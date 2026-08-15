@@ -27,7 +27,7 @@ func TestLoadPriorPairKeys(t *testing.T) {
 	if err := writeRecords(path, recs); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	keys, err := loadPriorPairKeys(path)
+	keys, names, err := loadPriorKeys(path)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -40,8 +40,14 @@ func TestLoadPriorPairKeys(t *testing.T) {
 	if _, ok := keys[pairKey("bangumi", "幼驯染", "bangumi", "幼驯染")]; ok {
 		t.Fatalf("single leaked into the pair skip set")
 	}
+	if len(names) != 1 {
+		t.Fatalf("want the judged single name, got %d", len(names))
+	}
+	if _, ok := names[nameKey("bangumi", "幼驯染")]; !ok {
+		t.Fatalf("a judged single must not be classified again")
+	}
 
-	if _, err := loadPriorPairKeys(filepath.Join(t.TempDir(), "nope.jsonl")); err == nil {
+	if _, _, err := loadPriorKeys(filepath.Join(t.TempDir(), "nope.jsonl")); err == nil {
 		t.Fatalf("missing prior file must be a hard error")
 	}
 }

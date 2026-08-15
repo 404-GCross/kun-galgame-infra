@@ -84,22 +84,41 @@ func applyTagIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 		return nil
 	}
 	rows := make([]catmodel.CatalogWorkTag, 0, len(tags))
+	maps := make([]catmodel.CatalogTagSourceMap, 0, len(tags))
 	for _, t := range tags {
 		rows = append(rows, catmodel.CatalogWorkTag{
 			WorkID: entityID, Name: t.Name, SourceID: curatedSourceID,
 			Sexual: t.Sexual,
 		})
+		maps = append(maps, catmodel.CatalogTagSourceMap{
+			SourceID: curatedSourceID, SourceName: t.Name, TagID: t.ID,
+		})
+	}
+	// Every tag edge reaches its canonical through catalog_tag_source_map, so a
+	// canonical whose name never was a curated SOURCE name has no map row: wave
+	// 208 found 534 of them, and a tag the editor assigned from that set landed
+	// in catalog_work_tag invisible to the tag page, the facets and the snapshot
+	// below. The identity row is what keeps the map the single truth.
+	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "source_id"}, {Name: "source_name"}},
+		DoNothing: true,
+	}).Create(&maps).Error; err != nil {
+		return err
 	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
 
+// Resolving by name instead of through the map dropped every curated row whose
+// source name the canonicalization renamed (wave 208: 38 names, 1,205 rows) —
+// invisible in the editor, and deleted by the full-replace write above on the
+// next save.
 func loadTagIDs(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
 	var ids []int64
 	if err := db.WithContext(ctx).Raw(`
-		SELECT t.id FROM catalog_work_tag wt
-		JOIN catalog_tag t ON t.name = wt.name
+		SELECT DISTINCT m.tag_id FROM catalog_work_tag wt
+		JOIN catalog_tag_source_map m ON m.source_id = wt.source_id AND m.source_name = wt.name
 		WHERE wt.work_id = ? AND wt.source_id = ?
-		ORDER BY t.id`, workID, curatedSourceID).Scan(&ids).Error; err != nil {
+		ORDER BY m.tag_id`, workID, curatedSourceID).Scan(&ids).Error; err != nil {
 		return nil, err
 	}
 	return int64sToAny(ids), nil
