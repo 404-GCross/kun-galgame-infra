@@ -30,6 +30,7 @@ the image is the fix, not a preference.
 | vndb-refresh | Sun 17:30 | 192h |
 | reindex-catalog | daily 06:10 | 48h |
 | intromt-nightly | daily 13:00 | 48h |
+| image-grade-nightly | daily 15:00 | 48h |
 | playtime-aggregate | daily 05:20 | 48h |
 | refresh-tag-counts | hourly :40 | 6h |
 | tag-vocab-backlog | 1st 12:30 | 768h |
@@ -42,7 +43,9 @@ no in-script trap can see. Registry: `lib/watchdog.conf`.
 
 Each job owns `/root/<job>/` with `run.sh`, `logs/`, `state/` (last-success
 stamp + job-specific state), and job-local env files where needed
-(intromt-nightly keeps `app.env` + `llm.env`). Secrets never live in these
+(intromt-nightly keeps `app.env` + `llm.env`; image-grade-nightly reads
+`/root/imgsafety/env.img` + `env.cf`, left in place by the full-corpus grading
+run). Secrets never live in these
 scripts: DB env is snapshotted from the live catalog container per run and
 shredded on exit; DSNs are assembled inside the tool container, never on a
 host command line.

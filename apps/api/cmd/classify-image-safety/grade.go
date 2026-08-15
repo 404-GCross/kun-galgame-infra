@@ -132,10 +132,12 @@ func runGrade(ctx context.Context, o gradeOptions, w io.Writer) error {
 
 	cursor := ""
 	processed := 0
+	budgetHit := false
 feed:
 	for {
 		if o.MaxNeurons > 0 && o.Client.neurons() >= o.MaxNeurons {
 			fmt.Fprintf(w, "neuron budget reached (%.0f) — stopping feed\n", o.Client.neurons())
+			budgetHit = true
 			break
 		}
 		var rows []imageRow
@@ -160,6 +162,7 @@ feed:
 				break feed
 			}
 			if o.MaxNeurons > 0 && o.Client.neurons() >= o.MaxNeurons {
+				budgetHit = true
 				break feed
 			}
 			select {
@@ -177,6 +180,22 @@ feed:
 		ok, bad, o.Client.neurons(), o.Client.neurons()*0.011/1000, time.Since(started).Truncate(time.Second))
 	if cause := context.Cause(ctx); cause != nil && cause != context.Canceled {
 		return cause
+	}
+	// A budget stop used to exit 0, which made a capped night in the
+	// image-grade-nightly cron look clean while an unknown number of images
+	// stayed ungraded (the runner had to grep this function's output to notice).
+	// Failed rows also stay NULL, so only a pending count above `bad` proves
+	// unfed work remains.
+	if budgetHit {
+		var remaining int64
+		if err := db.WithContext(ctx).
+			Raw(`SELECT count(*) FROM images WHERE review_labels -> 'grade' IS NULL`).
+			Scan(&remaining).Error; err != nil {
+			return fmt.Errorf("neuron budget reached; count remaining: %w", err)
+		}
+		if remaining > int64(bad) {
+			return fmt.Errorf("neuron budget reached with %d images left ungraded", remaining-int64(bad))
+		}
 	}
 	if bad > 0 {
 		return fmt.Errorf("%d images failed to grade", bad)
