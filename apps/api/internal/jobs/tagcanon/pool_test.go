@@ -21,11 +21,13 @@ func TestProposePoolDropsEntityNamesAndRejections(t *testing.T) {
 	require.NoError(t, testDB.Create(&label).Error)
 	credit := model.CatalogCreditName{Name: "御苑生メイ"}
 	require.NoError(t, testDB.Create(&credit).Error)
+	spaced := model.CatalogCreditName{Name: "鈴木 達央"}
+	require.NoError(t, testDB.Create(&spaced).Error)
 	elf := model.CatalogLabel{DisplayName: "ELF", Kind: model.LabelKindGameBrand}
 	require.NoError(t, testDB.Create(&elf).Error)
 	t.Cleanup(func() {
 		testDB.Unscoped().Delete(&model.CatalogLabel{}, []int64{label.ID, elf.ID})
-		testDB.Delete(&model.CatalogCreditName{}, credit.ID)
+		testDB.Delete(&model.CatalogCreditName{}, []int64{credit.ID, spaced.ID})
 	})
 
 	// ELF is a brand AND a tag the catalog already answers with: the blocklist
@@ -40,7 +42,7 @@ func TestProposePoolDropsEntityNamesAndRejections(t *testing.T) {
 	mkMap(t, bgm, "百合", mapped.ID)
 
 	w := mkBodylessWork(t, medium)
-	for _, name := range []string{"御苑生メイ", "オトメイト", "ELF", "破鞋", "百合", "银发"} {
+	for _, name := range []string{"御苑生メイ", "オトメイト", "ELF", "破鞋", "百合", "银发", "鈴木達央"} {
 		mkWorkTag(t, w, name, 3, bgm)
 	}
 
