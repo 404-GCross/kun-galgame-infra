@@ -140,6 +140,15 @@ func TestContainsKana(t *testing.T) {
 	assert.False(t, containsKana("Alice·2号"))
 }
 
+func TestCleanProposalNormalizesKatakanaDots(t *testing.T) {
+	// Rehearsal incident: a fully translated "双叶・莉莉・拉姆塞斯" was rejected by
+	// the kana-left pre-gate because ・(U+30FB) is inside the katakana block.
+	got := cleanProposal("双叶・莉莉・拉姆塞斯")
+	assert.Equal(t, "双叶·莉莉·拉姆塞斯", got)
+	assert.False(t, containsKana(got))
+	assert.Equal(t, "白菊·A", cleanProposal("白菊･A"))
+}
+
 func TestParseShard(t *testing.T) {
 	i, n, err := parseShard("3/8")
 	require.NoError(t, err)

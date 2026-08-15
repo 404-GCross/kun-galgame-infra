@@ -288,6 +288,11 @@ func cleanProposal(s string) string {
 	}
 	s = strings.TrimSpace(strings.TrimPrefix(s, "译名:"))
 	s = strings.TrimSpace(strings.TrimPrefix(s, "译名："))
+	// The katakana middle dots ・(U+30FB) / ･(U+FF65) sit inside the kana code
+	// blocks, so a fully translated name that reuses the source's separator
+	// ("双叶・莉莉・拉姆塞斯") was killed by the kana-left pre-gate in rehearsal.
+	// Normalize to the zh alias convention · before any gate sees the string.
+	s = strings.NewReplacer("・", "·", "･", "·").Replace(s)
 	return strings.Trim(s, " \t\"'“”「」。.")
 }
 
