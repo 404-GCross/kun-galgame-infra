@@ -32,7 +32,6 @@ exec 9>"$BASE/.lock"; flock -n 9 || { echo "another run holds the lock; exit"; e
 FAIL=0
 on_exit() {
   rc=$?
-  rm -f "$BASE/grade.out"
   [ "$rc" -eq 0 ] && [ "$FAIL" -ne 0 ] && rc=1
   if [ "$rc" -eq 0 ]; then
     date -u '+%F %T' > "$BASE/state/last-success"
@@ -58,22 +57,14 @@ DSNSH='B="host='"$PGHOST_C"' port=5432 user=$KUN_PG_USER password=$KUN_PG_PASSWO
 # Step A — grade only the ungraded. -guard-dsn watches the LIVE ai_usage failure
 # share: Workers AI limits are account-scoped, and in 2026-08 a batch on this
 # shared token drove the production text gate to 58% fail-open. The 10M neuron
-# cap (~$110) bounds a surprise image wave.
+# cap (~$110) bounds a surprise image wave; the tool exits non-zero when the
+# cap left images ungraded, so a capped night alerts on its own.
 echo "--- step A: grade new images ---"
 docker run --rm --network dokploy-network \
   --env-file "$ENVDIR/env.img" --env-file "$ENVDIR/env.cf" \
   "$IMG" sh -c "$DSNSH"'; exec classify-image-safety -mode grade -dsn "$IMGDSN" -guard-dsn "$AIDSN" \
     -base-url "$KUN_IMAGE_PUBLIC_BASE_URL" -limit 0 -concurrency 16 -max-neurons 10000000 --apply' \
-  > "$BASE/grade.out" 2>&1 \
   || { echo "WARN: grading exited $?"; FAIL=1; }
-cat "$BASE/grade.out"
-# Hitting the neuron cap stops the feed and returns nil — the tool exits 0 and
-# the night looks clean while an unknown number of images stayed ungraded. The
-# cap is a budget alarm, so turn it back into one.
-if grep -q 'neuron budget reached' "$BASE/grade.out"; then
-  echo "FATAL: neuron budget cap hit — images remain ungraded, investigate the upload wave"
-  FAIL=1
-fi
 
 # Step B — propagate per-image grades into the catalog media rows. Ungraded and
 # dangling hashes are counted, not errors; the run fails only on write errors.
