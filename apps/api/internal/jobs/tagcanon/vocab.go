@@ -95,8 +95,16 @@ func loadJunkIndex(ctx context.Context, db *gorm.DB) (*junkIndex, error) {
 			return nil, fmt.Errorf("load %s norms: %w", q.reason, err)
 		}
 		for _, n := range names {
-			if k := normalize(n); k != "" {
-				idx.blocked[k] = q.reason
+			k := normalize(n)
+			if k == "" {
+				continue
+			}
+			idx.blocked[k] = q.reason
+			// The catalog stores Japanese personal names with a space
+			// ("鈴木 達央"); a bangumi tagger types them without one. That single
+			// character hid 315 person and company names from this gate.
+			if s := spaceless(k); s != "" && s != k {
+				idx.blocked[s] = q.reason
 			}
 		}
 	}
@@ -127,8 +135,13 @@ func (j *junkIndex) reason(norm string) string {
 	if _, known := j.vocab[norm]; known {
 		return ""
 	}
-	return j.blocked[norm]
+	if r, hit := j.blocked[norm]; hit {
+		return r
+	}
+	return j.blocked[spaceless(norm)]
 }
+
+func spaceless(s string) string { return strings.ReplaceAll(s, " ", "") }
 
 func loadRejectedNames(ctx context.Context, db *gorm.DB) (map[string]struct{}, error) {
 	var rows []struct {

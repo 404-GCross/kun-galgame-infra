@@ -21,7 +21,8 @@ func TestBgmJunk(t *testing.T) {
 		blocked: map[string]string{
 			"avantgarde": "label", "ディーゼルマイン": "label",
 			"御苑生メイ": "person", "竹子社": "label_alias",
-			"sim": "label", "巨乳": "person_alias",
+			"鈴木達央": "person",
+			"sim":  "label", "巨乳": "person_alias",
 		},
 		vocab: map[string]struct{}{"巨乳": {}},
 	}
@@ -39,6 +40,7 @@ func TestBgmJunk(t *testing.T) {
 		{"ディーゼルマイン", "label"},
 		{"御苑生メイ", "person"},
 		{"竹子社", "label_alias"},
+		{"鈴木 達央", "person"},
 		{"sim", ""},
 		{"百合", ""},
 		{"r18", ""},
