@@ -29,6 +29,9 @@ func main() {
 	fmt.Printf("steam: planned=%d written=%d exists=%d\n", st.SteamPlanned, st.SteamWritten, st.SteamExists)
 	fmt.Printf("dmm: planned=%d written=%d exists=%d\n", st.DmmPlanned, st.DmmWritten, st.DmmExists)
 	fmt.Printf("rejected=%d errors=%d\n", st.Rejected, st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func mode(apply bool) string {

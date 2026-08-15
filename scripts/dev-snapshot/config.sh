@@ -54,7 +54,7 @@ SCRUB_DBS=(
 # Streamed directly `pg_dump -Fc | pg_restore`. Charter 裁定 4.
 SOURCE_DBS=(
   dlsite
-  erogamespace
+  erogamescape
 )
 
 # Hard-refused everywhere: letmoe runs its own seed system, never the snapshot

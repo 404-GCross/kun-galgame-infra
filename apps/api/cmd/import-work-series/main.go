@@ -30,6 +30,9 @@ func main() {
 	fmt.Printf("series: created=%d renamed=%d deleted=%d\n", st.SeriesCreated, st.SeriesRenamed, st.SeriesDeleted)
 	fmt.Printf("members: added=%d stale=%d\n", st.MembersAdded, st.MembersStale)
 	fmt.Printf("errors=%d\n", st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func mode(apply bool) string {

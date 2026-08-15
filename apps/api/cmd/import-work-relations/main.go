@@ -45,10 +45,10 @@ func main() {
 	var egPool *gorm.DB
 	if *source == "eg" || *source == "all" {
 		egCfg := cfg.CatalogDatabase
-		egCfg.DBName = "erogamespace"
+		egCfg.DBName = "erogamescape"
 		egConn, err := database.NewPostgresDB(egCfg)
 		if err != nil {
-			slog.Error("erogamespace db connect", "error", err)
+			slog.Error("erogamescape db connect", "error", err)
 			os.Exit(1)
 		}
 		defer egConn.Close()

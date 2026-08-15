@@ -1515,6 +1515,31 @@ export interface components {
             /** Format: int64 */
             rejections: number;
         };
+        RatingBucket: {
+            /**
+             * Format: int64
+             * @description votes cast at this value
+             */
+            count: number;
+            /**
+             * Format: int64
+             * @description bucket value on the source-native scale
+             */
+            score: number;
+        };
+        RatingStats: {
+            /**
+             * Format: double
+             * @description mean on the source-native scale (score itself is the median for erogamescape)
+             */
+            average?: number;
+            /** Format: double */
+            max?: number;
+            /** Format: double */
+            min?: number;
+            /** Format: double */
+            stdev?: number;
+        };
         RedirectFeedResponse: {
             items: components["schemas"]["RedirectItem"][] | null;
             /** @description Opaque cursor for the next page; empty when this page is not full */
@@ -1901,7 +1926,7 @@ export interface components {
             minutes: number;
             /**
              * Format: int32
-             * @description catalog_source id (provenance): vndb = vote-backed median, erogamespace = community median
+             * @description catalog_source id (provenance): vndb = vote-backed median, erogamescape = community median
              */
             source_id: number;
             /**
@@ -1928,6 +1953,8 @@ export interface components {
             value: number;
         };
         WorkRating: {
+            /** @description vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes); detail face only. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count */
+            distribution?: components["schemas"]["RatingBucket"][] | null;
             /**
              * Format: int64
              * @description source-internal rank; absent when the source has no rank or the work is unranked
@@ -1940,9 +1967,11 @@ export interface components {
             score: number;
             /**
              * Format: int32
-             * @description catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamespace = 0-100 median
+             * @description catalog_source id (provenance + scale selector): vndb = 1-10 bayesian-smoothed rating, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamescape = 0-100 median
              */
             source_id: number;
+            /** @description spread of the same vote population as score; detail face only. Carried by erogamescape (average, stdev, min and max, on its 0-100 scale) and by vndb (average only — the plain mean beside the bayesian-smoothed rating that score holds). bangumi and dlsite carry no stats */
+            stats?: components["schemas"]["RatingStats"];
             /**
              * Format: int64
              * @description number of ratings backing the score
@@ -2670,7 +2699,7 @@ export interface operations {
     getCatalogWorkByAnchor: {
         parameters: {
             query?: {
-                /** @description Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry */
+                /** @description Source key (dlsite/vndb/bangumi/erogamescape/…), validated against the source registry */
                 source?: string;
                 /** @description The id within that source (e.g. a DLsite RJ number, a VNDB v-id) */
                 external_id?: string;
@@ -2847,6 +2876,8 @@ export interface operations {
                 before?: number;
                 /** @description Page size (default 20, max 100) */
                 limit?: number;
+                /** @description Which events qualify the actor: submitted (works they own) or audited (works they reviewed but do not own). Absent = every work they touched */
+                kind?: string;
             };
             header?: never;
             path?: never;

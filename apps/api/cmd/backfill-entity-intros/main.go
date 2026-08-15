@@ -19,7 +19,7 @@ func main() {
 	limit := flag.Int("limit", 0, "max candidate entities per lane (0 = all)")
 	offset := flag.Int("offset", 0, "skip this many candidate entities per lane (for chunking)")
 	only := flag.String("only", "", "restrict to one lane: char-bgm | char-vndb | char-eg | person-bgm (default: all)")
-	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: erogamespace db on the catalog server)")
+	egDSN := flag.String("eg-dsn", "", "erogamescape staging DSN (default: erogamescape db on the catalog server)")
 	flag.Parse()
 
 	_ = godotenv.Load("apps/api/.env")
@@ -31,7 +31,7 @@ func main() {
 	eg := *egDSN
 	if eg == "" && cfgErr == nil {
 		egCfg := cfg.CatalogDatabase
-		egCfg.DBName = "erogamespace"
+		egCfg.DBName = "erogamescape"
 		eg = egCfg.DSN()
 	}
 
@@ -63,4 +63,7 @@ func main() {
 		"person_bgm_written", st.PersonBangumi.JaWritten+st.PersonBangumi.ZhWritten,
 		"errors", st.CharBangumi.Errors+st.CharVNDB.Errors+st.CharEG.Errors+st.PersonBangumi.Errors,
 	)
+	if st.CharBangumi.Errors+st.CharVNDB.Errors+st.CharEG.Errors+st.PersonBangumi.Errors > 0 {
+		os.Exit(1)
+	}
 }

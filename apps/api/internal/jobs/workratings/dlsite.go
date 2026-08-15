@@ -32,22 +32,24 @@ func loadDlsiteCandidates(ctx context.Context, db *gorm.DB, reg registry, limit,
 }
 
 type dlsiteData struct {
-	rateStar  *float64
-	rateCount *int
-	dlCount   *int64
-	wishlist  *int64
-	reviews   *int
+	rateStar   *float64
+	rateCount  *int
+	rateDetail []byte
+	dlCount    *int64
+	wishlist   *int64
+	reviews    *int
 }
 
 func loadDlsiteMirror(ctx context.Context, dlsiteDB *gorm.DB, worknos []string) (map[string]dlsiteData, error) {
 	out := map[string]dlsiteData{}
 	type row struct {
-		Workno    string   `gorm:"column:workno"`
-		RateStar  *float64 `gorm:"column:rate_star"`
-		RateCount *int     `gorm:"column:rate_count"`
-		DlCount   *int64   `gorm:"column:dl_count"`
-		Wishlist  *int64   `gorm:"column:wishlist_count"`
-		Reviews   *int     `gorm:"column:review_count"`
+		Workno     string   `gorm:"column:workno"`
+		RateStar   *float64 `gorm:"column:rate_star"`
+		RateCount  *int     `gorm:"column:rate_count"`
+		RateDetail []byte   `gorm:"column:rate_detail"`
+		DlCount    *int64   `gorm:"column:dl_count"`
+		Wishlist   *int64   `gorm:"column:wishlist_count"`
+		Reviews    *int     `gorm:"column:review_count"`
 	}
 	for start := 0; start < len(worknos); start += 1000 {
 		end := min(start+1000, len(worknos))
@@ -56,6 +58,7 @@ func loadDlsiteMirror(ctx context.Context, dlsiteDB *gorm.DB, worknos []string) 
 			Select(`workno,
 				(info_json->>'rate_average_2dp')::float8 AS rate_star,
 				(info_json->>'rate_count')::int          AS rate_count,
+				info_json->'rate_count_detail'           AS rate_detail,
 				(info_json->>'dl_count')::bigint         AS dl_count,
 				(info_json->>'wishlist_count')::bigint   AS wishlist_count,
 				(info_json->>'review_count')::int        AS review_count`).
@@ -64,14 +67,15 @@ func loadDlsiteMirror(ctx context.Context, dlsiteDB *gorm.DB, worknos []string) 
 		}
 		for _, r := range batch {
 			d := dlsiteData{
-				rateStar:  r.RateStar,
-				rateCount: dropNeg(r.RateCount),
-				dlCount:   dropNeg(r.DlCount),
-				wishlist:  dropNeg(r.Wishlist),
-				reviews:   dropNeg(r.Reviews),
+				rateStar:   r.RateStar,
+				rateCount:  dropNeg(r.RateCount),
+				rateDetail: r.RateDetail,
+				dlCount:    dropNeg(r.DlCount),
+				wishlist:   dropNeg(r.Wishlist),
+				reviews:    dropNeg(r.Reviews),
 			}
 			if d.rateCount == nil || *d.rateCount <= 0 {
-				d.rateStar, d.rateCount = nil, nil
+				d.rateStar, d.rateCount, d.rateDetail = nil, nil, nil
 			}
 			out[r.Workno] = d
 		}
@@ -115,10 +119,14 @@ func runDlsiteLane(ctx context.Context, db, dlsiteDB *gorm.DB, w *writer, reg re
 
 		if dl.rateStar != nil {
 			st.DlRatingPlanned++
+			dist := marshalBuckets(dlsiteBuckets(dl.rateDetail))
+			if dist != nil {
+				st.DlDistribution++
+			}
 			collect(&st.DlSamples, Sample{WorkID: c.WorkID, Workno: c.Workno, Score: *dl.rateStar, VoteCount: *dl.rateCount})
 			w.write(ctx, plannedRow{
 				WorkID: c.WorkID, SourceID: reg.dlsiteSource,
-				Score: *dl.rateStar, VoteCount: *dl.rateCount,
+				Score: *dl.rateStar, VoteCount: *dl.rateCount, Distribution: dist,
 			}, opts.Apply, &st.DlRatingWritten, &st.DlRatingUnchanged)
 		} else {
 			st.DlNoRating++

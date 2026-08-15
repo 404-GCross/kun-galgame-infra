@@ -35,7 +35,7 @@ func EnsureSchema(db *gorm.DB) error {
 		&Release{}, &ReleaseVN{}, &ReleaseProducer{}, &ReleasePlatform{}, &ReleaseTitle{}, &Producer{},
 		&Extlink{}, &ReleaseExtlink{},
 		&VNExtlink{}, &ProducerExtlink{}, &StaffExtlink{}, &ProducerRelation{},
-		&PortraitBackfill{}, &IngestRun{},
+		&PortraitBackfill{}, &IngestRun{}, &VNVoteStats{},
 	); err != nil {
 		return fmt.Errorf("automigrate src_vndb: %w", err)
 	}

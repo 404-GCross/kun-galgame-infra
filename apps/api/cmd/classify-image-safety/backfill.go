@@ -134,6 +134,9 @@ feed:
 	wg.Wait()
 
 	fmt.Fprintf(w, "backfill complete done=%d errors=%d elapsed=%s\n", ok, bad, time.Since(started).Truncate(time.Second))
+	if bad > 0 {
+		return fmt.Errorf("%d images failed", bad)
+	}
 	return nil
 }
 

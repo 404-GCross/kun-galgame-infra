@@ -16,5 +16,10 @@ export const DOCS_FACE_META: Record<
     icon: 'lucide:network',
     tagline:
       '跨媒介身份正典：作品 / 人物名义 / 角色 / 厂牌 / credits / 关系，外部 id 反查四源锚。'
+  },
+  playtime: {
+    icon: 'lucide:timer',
+    tagline:
+      '用户自己的游玩时长：上报（单条 / 外部 id 寻址 / 批量）与回拉。走用户访问令牌，不是 API 密钥。'
   }
 }

@@ -25,14 +25,14 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	}{
 		{"bangumi", &r.bangumiSource},
 		{"dlsite", &r.dlsiteSource},
-		{"erogamespace", &r.egSource},
+		{"erogamescape", &r.egSource},
 	} {
 		if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = ?`, s.key).Scan(s.dst).Error; err != nil {
 			return r, fmt.Errorf("resolve %s source: %w", s.key, err)
 		}
 	}
 	if r.bangumiSource == 0 || r.dlsiteSource == 0 || r.egSource == 0 {
-		return r, fmt.Errorf("registry not seeded (bangumi=%d, dlsite=%d, erogamespace=%d)",
+		return r, fmt.Errorf("registry not seeded (bangumi=%d, dlsite=%d, erogamescape=%d)",
 			r.bangumiSource, r.dlsiteSource, r.egSource)
 	}
 	return r, nil

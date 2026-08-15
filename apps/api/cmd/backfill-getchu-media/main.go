@@ -48,4 +48,7 @@ func main() {
 		os.Exit(1)
 	}
 	_ = time.Now
+	if st != nil && st.Errors > 0 {
+		os.Exit(1)
+	}
 }

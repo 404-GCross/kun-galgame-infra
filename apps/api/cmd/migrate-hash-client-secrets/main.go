@@ -55,4 +55,7 @@ func main() {
 		hashed++
 	}
 	fmt.Printf("✅ 完成：哈希 %d / %d 行 client secret\n", hashed, len(rows))
+	if hashed < len(rows) {
+		os.Exit(1)
+	}
 }

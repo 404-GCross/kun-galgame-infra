@@ -26,7 +26,7 @@ func main() {
 	llmBase := flag.String("llm-base", "http://127.0.0.1:8002/v1", "vLLM OpenAI base URL")
 	model := flag.String("model", "qwen3-14b", "served model id")
 	goldPath := flag.String("goldset", defaultGoldSet, "gold set JSONL path")
-	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (build-goldset; default: erogamespace on the catalog server)")
+	egDSN := flag.String("eg-dsn", "", "erogamescape staging DSN (build-goldset; default: erogamescape on the catalog server)")
 	buildGold := flag.Bool("build-goldset", false, "regenerate the gold set JSONL from local dumps, then exit")
 	calibrate := flag.Bool("calibrate", false, "print calibration metrics from persisted goldset verdicts, then exit")
 	batch := flag.Bool("batch", false, "goldset: judge in batches (throughput comparison; prompt_version v1-batch)")
@@ -102,10 +102,12 @@ func main() {
 
 	opts := llmsuggest.Options{Model: *model, Concurrency: *conc, Limit: *limit, DryRun: !*apply, GoldSetPath: *goldPath, Batch: *batch}
 
+	failures := 0
 	switch *task {
 	case "goldset":
 		judged, errs, err := llmsuggest.RunGoldset(ctx, catalogDB.DB(), client, opts)
 		fail(err)
+		failures = errs
 		if *apply {
 			slog.Info("goldset done", "batch", *batch, "judged", judged, "errors", errs)
 			metrics, err := llmsuggest.Calibrate(catalogDB.DB(), *model, promptVersion)
@@ -115,6 +117,7 @@ func main() {
 	case "residue":
 		done, errs, err := llmsuggest.RunResidue(ctx, catalogDB.DB(), client, opts)
 		fail(err)
+		failures = errs
 		if *apply {
 			slog.Info("residue done", "extracted", done, "errors", errs)
 		}
@@ -130,17 +133,20 @@ func main() {
 	if !*apply {
 		fmt.Println("[dry run] nothing written — re-run with --apply")
 	}
+	if failures > 0 {
+		os.Exit(1)
+	}
 }
 
 func openEG(cfg *config.Config, dsn string) *gorm.DB {
 	if dsn == "" {
 		egCfg := cfg.CatalogDatabase
-		egCfg.DBName = "erogamespace"
+		egCfg.DBName = "erogamescape"
 		dsn = egCfg.DSN()
 	}
 	db, err := database.OpenJob(dsn)
 	if err != nil {
-		slog.Error("erogamespace connect", "error", err)
+		slog.Error("erogamescape connect", "error", err)
 		os.Exit(1)
 	}
 	return db

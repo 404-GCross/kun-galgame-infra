@@ -52,8 +52,12 @@ func main() {
 	}
 	client := upstream.NewClient(cfg.baseURL, cfg.token, cfg.model)
 
-	if _, err := run(context.Background(), cfg, client, inFile, os.Stdout); err != nil {
+	res, err := run(context.Background(), cfg, client, inFile, os.Stdout)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "scan failed: %v\n", err)
+		os.Exit(1)
+	}
+	if res.failed > 0 {
 		os.Exit(1)
 	}
 }

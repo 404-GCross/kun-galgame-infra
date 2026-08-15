@@ -169,7 +169,7 @@ func TestRun(t *testing.T) {
 	clean(t)
 	ctx := t.Context()
 	vndb, bgm := sourceID(t, "vndb"), sourceID(t, "bangumi")
-	dlsite, eg := sourceID(t, "dlsite"), sourceID(t, "erogamespace")
+	dlsite, eg := sourceID(t, "dlsite"), sourceID(t, "erogamescape")
 
 	caPen := mkCreditName(t, "ひと美", nil)
 	caMain := mkCreditName(t, "北都南", nil)

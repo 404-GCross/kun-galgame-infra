@@ -294,7 +294,7 @@ them with **desensitised, real-shaped production data**, use one command:
 ./scripts/refresh-dev-db.sh                    # all core DBs, latest artifact
 ./scripts/refresh-dev-db.sh --fresh            # rebuild the artifact on the server first
 ./scripts/refresh-dev-db.sh --db kun_community # just one core DB
-./scripts/refresh-dev-db.sh --group sources    # stream the raw scrape DBs (dlsite/erogamespace)
+./scripts/refresh-dev-db.sh --group sources    # stream the raw scrape DBs (dlsite/erogamescape)
 ```
 
 Desensitisation happens **at the source** (裁定 1a): the prod host produces
@@ -306,7 +306,7 @@ local script only downloads + restores (and deletes the download afterwards).
 | Group | Databases | How |
 | --- | --- | --- |
 | `core` (default) | kun_galgame_infra, kungalgame, kungalgame_patch, kun_community, kun_catalog, kun_images, kun_artifacts | download desensitised `*.dump`, `terminate → drop → create → pg_restore -j4` |
-| `sources` | dlsite, erogamespace | raw `pg_dump -Fc | pg_restore` stream — **zero PII, zero desensitisation**, no artifact |
+| `sources` | dlsite, erogamescape | raw `pg_dump -Fc | pg_restore` stream — **zero PII, zero desensitisation**, no artifact |
 | — | **kun_trust** | *not in any group.* Local trust = `go run ./cmd/migrate trust` (re-seed). |
 | — | **letmoe (any `*letmoe*`)** | **hard-refused** by the script — letmoe runs its own seed system. |
 

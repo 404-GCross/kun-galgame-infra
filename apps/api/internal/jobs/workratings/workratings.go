@@ -27,17 +27,19 @@ type Sample struct {
 	WorkID     int64
 	ExternalID int64
 	Workno     string
+	VndbID     string
 	Score      float64
 	VoteCount  int
 	Rank       *int
 }
 
 type Stats struct {
-	BgmCandidates int
-	BgmNoScore    int
-	BgmPlanned    int
-	BgmWritten    int
-	BgmUnchanged  int
+	BgmCandidates   int
+	BgmNoScore      int
+	BgmPlanned      int
+	BgmWritten      int
+	BgmUnchanged    int
+	BgmDistribution int
 
 	EgCandidates    int
 	EgMultiAnchor   int
@@ -46,6 +48,20 @@ type Stats struct {
 	EgPlanned       int
 	EgWritten       int
 	EgUnchanged     int
+	EgStats         int
+	EgDistribution  int
+	EgNoReviews     int
+
+	VndbCandidates    int
+	VndbMultiAnchor   int
+	VndbMissingMirror int
+	VndbNoScore       int
+	VndbPlanned       int
+	VndbWritten       int
+	VndbUnchanged     int
+	VndbStats         int
+	VndbDistribution  int
+	VndbNoVotes       int
 
 	DlCandidates      int
 	DlMissingMirror   int
@@ -53,15 +69,17 @@ type Stats struct {
 	DlRatingPlanned   int
 	DlRatingWritten   int
 	DlRatingUnchanged int
+	DlDistribution    int
 	PopPlanned        int
 	PopWritten        int
 	PopUnchanged      int
 
 	Errors int
 
-	BgmSamples []Sample
-	EgSamples  []Sample
-	DlSamples  []Sample
+	BgmSamples  []Sample
+	EgSamples   []Sample
+	DlSamples   []Sample
+	VndbSamples []Sample
 }
 
 func Run(ctx context.Context, opts Opts) (*Stats, error) {
@@ -112,6 +130,9 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if err := runDlsiteLane(ctx, db, dlsiteDB, w, reg, opts); err != nil {
 		return nil, err
 	}
+	if err := runVndbLane(ctx, db, w, reg, opts); err != nil {
+		return nil, err
+	}
 	if err := w.touch(ctx); err != nil {
 		return nil, fmt.Errorf("touch works: %w", err)
 	}
@@ -119,17 +140,25 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	slog.Info("backfill-work-ratings done", "apply", opts.Apply,
 		"bgm_candidates", st.BgmCandidates, "bgm_no_score", st.BgmNoScore,
 		"bgm_planned", st.BgmPlanned, "bgm_written", st.BgmWritten, "bgm_unchanged", st.BgmUnchanged,
+		"bgm_distribution", st.BgmDistribution,
 		"eg_candidates", st.EgCandidates, "eg_multi_anchor", st.EgMultiAnchor,
 		"eg_missing_mirror", st.EgMissingMirror, "eg_no_median", st.EgNoMedian,
 		"eg_planned", st.EgPlanned, "eg_written", st.EgWritten, "eg_unchanged", st.EgUnchanged,
+		"eg_stats", st.EgStats, "eg_distribution", st.EgDistribution, "eg_no_reviews", st.EgNoReviews,
 		"dl_candidates", st.DlCandidates, "dl_missing_mirror", st.DlMissingMirror,
 		"dl_no_rating", st.DlNoRating, "dl_rating_planned", st.DlRatingPlanned,
 		"dl_rating_written", st.DlRatingWritten, "dl_rating_unchanged", st.DlRatingUnchanged,
+		"dl_distribution", st.DlDistribution,
+		"vndb_candidates", st.VndbCandidates, "vndb_multi_anchor", st.VndbMultiAnchor,
+		"vndb_missing_mirror", st.VndbMissingMirror, "vndb_no_score", st.VndbNoScore,
+		"vndb_planned", st.VndbPlanned, "vndb_written", st.VndbWritten, "vndb_unchanged", st.VndbUnchanged,
+		"vndb_stats", st.VndbStats, "vndb_distribution", st.VndbDistribution, "vndb_no_votes", st.VndbNoVotes,
 		"pop_planned", st.PopPlanned, "pop_written", st.PopWritten, "pop_unchanged", st.PopUnchanged,
 		"errors", st.Errors)
 	logSamples("bgm", st.BgmSamples)
 	logSamples("eg", st.EgSamples)
 	logSamples("dlsite", st.DlSamples)
+	logSamples("vndb", st.VndbSamples)
 	return st, nil
 }
 
@@ -148,7 +177,12 @@ func runBgmLane(ctx context.Context, db *gorm.DB, w *writer, reg registry, opts 
 			st.BgmNoScore++
 			continue
 		}
-		votes := ratingTotal(c.ScoreDetails)
+		buckets := bgmBuckets(c.ScoreDetails)
+		votes := bucketsTotal(buckets)
+		dist := marshalBuckets(buckets)
+		if dist != nil {
+			st.BgmDistribution++
+		}
 		var rank *int
 		if c.Rank > 0 {
 			r := c.Rank
@@ -158,7 +192,7 @@ func runBgmLane(ctx context.Context, db *gorm.DB, w *writer, reg registry, opts 
 		collect(&st.BgmSamples, Sample{WorkID: c.WorkID, ExternalID: c.SubjectID, Score: c.Score, VoteCount: votes, Rank: rank})
 		w.write(ctx, plannedRow{
 			WorkID: c.WorkID, SourceID: reg.bangumiSource,
-			Score: c.Score, VoteCount: votes, Rank: rank,
+			Score: c.Score, VoteCount: votes, Rank: rank, Distribution: dist,
 		}, opts.Apply, &st.BgmWritten, &st.BgmUnchanged)
 	}
 	return nil
@@ -184,6 +218,10 @@ func runEgLane(ctx context.Context, db, egDB *gorm.DB, w *writer, reg registry, 
 	if err != nil {
 		return fmt.Errorf("load EG mirror games: %w", err)
 	}
+	buckets, err := loadEGReviewBuckets(ctx, egDB)
+	if err != nil {
+		return fmt.Errorf("load EG mirror review buckets: %w", err)
+	}
 
 	for _, c := range cands {
 		if ctx.Err() != nil {
@@ -202,11 +240,21 @@ func runEgLane(ctx context.Context, db, egDB *gorm.DB, w *writer, reg registry, 
 			st.EgNoMedian++
 			continue
 		}
+		stats := marshalStats(eg.stats)
+		if stats != nil {
+			st.EgStats++
+		}
+		dist := marshalBuckets(buckets[chosen])
+		if dist != nil {
+			st.EgDistribution++
+		} else {
+			st.EgNoReviews++
+		}
 		st.EgPlanned++
 		collect(&st.EgSamples, Sample{WorkID: c.WorkID, ExternalID: chosen, Score: float64(*eg.median), VoteCount: eg.votes})
 		w.write(ctx, plannedRow{
 			WorkID: c.WorkID, SourceID: reg.egSource,
-			Score: float64(*eg.median), VoteCount: eg.votes,
+			Score: float64(*eg.median), VoteCount: eg.votes, Stats: stats, Distribution: dist,
 		}, opts.Apply, &st.EgWritten, &st.EgUnchanged)
 	}
 	return nil
@@ -223,9 +271,12 @@ func logSamples(lane string, samples []Sample) {
 	for _, s := range samples {
 		args := []any{"lane", lane, "work_id", s.WorkID,
 			"score", s.Score, "vote_count", s.VoteCount}
-		if s.Workno != "" {
+		switch {
+		case s.Workno != "":
 			args = append(args, "workno", s.Workno)
-		} else {
+		case s.VndbID != "":
+			args = append(args, "vndb_id", s.VndbID)
+		default:
 			args = append(args, "external_id", s.ExternalID)
 		}
 		if s.Rank != nil {

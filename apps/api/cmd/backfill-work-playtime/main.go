@@ -32,6 +32,9 @@ func main() {
 	fmt.Printf("vndb: planned=%d rejected=%d written=%d unchanged=%d\n",
 		st.VndbPlanned, st.VndbRejected, st.VndbWritten, st.VndbUnchanged)
 	fmt.Printf("errors=%d\n", st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func mode(apply bool) string {

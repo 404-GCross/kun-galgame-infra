@@ -83,10 +83,10 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	var egDB *gorm.DB
 	if opts.Only == "" || opts.Only == LaneCharEG {
 		if opts.EGDSN == "" {
-			return nil, fmt.Errorf("the %s lane needs the erogamespace DSN (--eg-dsn); refusing to guess", LaneCharEG)
+			return nil, fmt.Errorf("the %s lane needs the erogamescape DSN (--eg-dsn); refusing to guess", LaneCharEG)
 		}
 		if egDB, err = openGorm(opts.EGDSN); err != nil {
-			return nil, fmt.Errorf("connect erogamespace db: %w", err)
+			return nil, fmt.Errorf("connect erogamescape db: %w", err)
 		}
 		if sqlDB, e := egDB.DB(); e == nil {
 			defer sqlDB.Close()

@@ -33,7 +33,7 @@ const quickstart = [
   {
     icon: 'lucide:key-round',
     title: '领取 API Key',
-    body: '生成密钥并妥善保存（仅显示一次）。带上它请求任意公开面，一把 key 走遍全生态。'
+    body: '生成密钥并妥善保存（仅显示一次）。带上它请求公开只读面，一把 key 走遍全生态；要读写用户自己的游玩记录则改走用户授权的访问令牌。'
   }
 ]
 
@@ -42,7 +42,13 @@ const faces = [
     icon: 'lucide:network',
     name: 'Catalog 面',
     path: '/v1/catalog',
-    body: '跨媒介身份正典:作品 / 人物名义 / 角色 / 厂牌 / credits / 关系,外部 id 反查四源锚,含变更流增量同步。'
+    body: '跨媒介身份正典:作品 / 人物名义 / 角色 / 厂牌 / credits / 关系,外部 id 反查四源锚,含变更流增量同步。凭 API 密钥调用。'
+  },
+  {
+    icon: 'lucide:timer',
+    name: 'Playtime 面',
+    path: '/v1/playtime',
+    body: '用户自己的游玩时长:上报(单条 / 外部 id 寻址 / 最多 200 条批量)与回拉(增量续拉 / 单作品跨客户端折叠)。不用 API 密钥,凭用户授权后的访问令牌 + playtime:read / playtime:write scope,一个用户只读写得到他自己的记录。'
   }
 ]
 
@@ -55,7 +61,7 @@ const features = [
   {
     icon: 'lucide:shield-check',
     title: '鉴权',
-    body: '服务端以 Authorization: Bearer nm_live_… 发送。密钥是机密,仅服务端使用。'
+    body: '只读面的密钥由服务端以 Authorization: Bearer nm_live_… 发送,是机密、仅服务端持有;playtime 面改带用户授权后的访问令牌。'
   },
   {
     icon: 'lucide:gauge',
@@ -233,10 +239,10 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
           公开数据面
         </h2>
         <p class="mt-2 text-default-500">
-          一份凭证覆盖全部;权限范围(scope)按面表达。
+          权限范围(scope)按面表达:只读面一把密钥覆盖全部,playtime 面另走用户令牌。
         </p>
       </div>
-      <div class="grid gap-4">
+      <div class="grid gap-4 md:grid-cols-2">
         <NuxtLink
           v-for="face in faces"
           :key="face.path"

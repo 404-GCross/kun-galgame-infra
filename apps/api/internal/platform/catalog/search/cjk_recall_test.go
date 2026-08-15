@@ -1,6 +1,7 @@
 package search
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -78,6 +79,59 @@ func TestWorksCJKTitleRecall(t *testing.T) {
 			id, ok := WorkDocIDToWorkID(tc.want)
 			require.True(t, ok)
 			assert.Contains(t, res.IDs, id, "%q must recall %s", tc.q, tc.want)
+		})
+	}
+}
+
+func TestWorksTitleDelimiterRecall(t *testing.T) {
+	require.NoError(t, EnsureIndexes(testClient))
+	t.Cleanup(func() { _, _ = testClient.Svc().DeleteIndex(testClient.IndexUID(IndexWorks)) })
+
+	// Dropping SeparatorTokens from worksSettings turns the same 7 of 14
+	// (=☆★✕♪♭♯) red on dev Meili v1.45 — but each lane loses a different half:
+	// ja loses the LEFT one (`ココロネ`, the PR #12 symptom) while latin loses the
+	// RIGHT one (`Kokorone` still matches the merged token as a prefix). One lane,
+	// or one half, would have looked green while the bug was live.
+	lanes := []struct {
+		name, left, right, suffix string
+		base                      int64
+		ja                        bool
+	}{
+		{name: "ja", left: "ココロネ", right: "ペンデュラム", suffix: "！", base: 1, ja: true},
+		{name: "latin", left: "Kokorone", right: "Pendulum", base: 101},
+	}
+
+	docs := make([]EntityDoc, 0, len(lanes)*len(titleDelimiterSeparators))
+	for _, lane := range lanes {
+		for i, sep := range titleDelimiterSeparators {
+			d := EntityDoc{ID: WorkDocID(lane.base + int64(i)), EntityType: "work"}
+			if lane.ja {
+				d.NameJa = lane.left + sep + lane.right + lane.suffix
+			} else {
+				d.Latin = lane.left + sep + lane.right + lane.suffix
+			}
+			docs = append(docs, d)
+		}
+	}
+	task, err := testClient.Index(IndexWorks).AddDocuments(docs, nil)
+	require.NoError(t, err)
+	_, err = testClient.Svc().WaitForTask(task.TaskUID, 0)
+	require.NoError(t, err)
+
+	idx := NewIndexer(testClient)
+	for _, lane := range lanes {
+		t.Run(lane.name, func(t *testing.T) {
+			for i, sep := range titleDelimiterSeparators {
+				want := lane.base + int64(i)
+				t.Run(fmt.Sprintf("%s_U+%04X", sep, []rune(sep)[0]), func(t *testing.T) {
+					for _, half := range []string{lane.left, lane.right} {
+						res, err := idx.SearchWorks(t.Context(), WorksQuery{Q: half, Limit: 50})
+						require.NoError(t, err)
+						assert.Contains(t, res.IDs, want, "%q must recall %s",
+							half, lane.left+sep+lane.right+lane.suffix)
+					}
+				})
+			}
 		})
 	}
 }

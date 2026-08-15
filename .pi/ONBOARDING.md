@@ -31,10 +31,10 @@
 - **本仓服务**(Go,`apps/api/cmd/*`):oauth(9277)/ catalog(9281,**同时托管全部 galgame 面**,
   独立 galgame 服务已退役)/ image / artifact / trust / community / ai。前端 `apps/web`(管理控制台,Nuxt4+KunUI)。
 - **兄弟仓**(`../`):kungal 论坛、moyu(patch)、letmoe(同人 wiki,catalog 首个消费者)、
-  kungal-docs(文档门户+镜像同步)、kun-dlsite-api / kun-erogamespace-api(上游 staging 爬虫,独立项目)。
+  kungal-docs(文档门户+镜像同步)、kun-dlsite-api / kun-erogamescape-api(上游 staging 爬虫,独立项目)。
   仓名以 `ls ../` + nextmoe-draft doc 16 为准,勿凭记忆猜。
 - **数据库**:宿主 PG18 @5432 = 共享 dev 真源,**但 refresh-dev-db 管辖的库名会被周期刷成 prod 断面**
-  (core 8 + dlsite/erogamespace)——**本地独有成果严禁写这些库名**。dlsite 镜像+cien 爬取的权威持久库 =
+  (core 8 + dlsite/erogamescape)——**本地独有成果严禁写这些库名**。dlsite 镜像+cien 爬取的权威持久库 =
   容器 `:55432`(user=dlsite)。`kun_catalog_rehearsal` = 生产演练副本(写演练在这);
   **本地 `kun_catalog` 对你只读**。密码取法:`PW=$(awk -F: '$1=="localhost" && $4=="postgres" {print $5}' ~/.pgpass)`,
   **绝不把密码/key/DSN 回显进会话输出**。

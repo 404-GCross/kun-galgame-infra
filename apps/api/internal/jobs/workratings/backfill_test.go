@@ -11,6 +11,7 @@ import (
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/seed"
 	srcb "api/internal/platform/catalog/srcbangumi"
+	srcv "api/internal/platform/catalog/srcvndb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,9 +49,22 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: src_bangumi schema failed: %v\n", err)
 		os.Exit(0)
 	}
+	if err := srcv.EnsureSchema(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: src_vndb schema failed: %v\n", err)
+		os.Exit(0)
+	}
 	for _, ddl := range []string{
 		`CREATE SCHEMA IF NOT EXISTS workratings_eg`,
-		`CREATE TABLE IF NOT EXISTS workratings_eg.games (id int PRIMARY KEY, median int, count2 int)`,
+		// `raw` mirrors the EG mirror's own shape: it generates typed columns for
+		// a handful of keys and leaves the rest — the spread four included — in
+		// the jsonb, which is where the EG lane reads them from.
+		`CREATE TABLE IF NOT EXISTS workratings_eg.games (id int PRIMARY KEY, median int, count2 int, raw jsonb)`,
+		// CREATE TABLE IF NOT EXISTS adds no columns to a table that already
+		// exists, so a test database created before wave 205 kept a `raw`-less
+		// games fixture and every EG assertion failed with `column "raw" does not
+		// exist`. Widen the fixture explicitly whenever a column is added.
+		`ALTER TABLE workratings_eg.games ADD COLUMN IF NOT EXISTS raw jsonb`,
+		`CREATE TABLE IF NOT EXISTS workratings_eg.reviews (game int, tokuten int)`,
 		`CREATE SCHEMA IF NOT EXISTS workratings_dl`,
 		`CREATE TABLE IF NOT EXISTS workratings_dl.works (workno text PRIMARY KEY, info_json jsonb)`,
 	} {
@@ -69,7 +83,8 @@ func clean(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
 		"catalog_work_rating", "catalog_work_popularity", "catalog_external_ref", "catalog_release",
-		"catalog_work", "src_bangumi.subject", "workratings_eg.games", "workratings_dl.works",
+		"catalog_work", "src_bangumi.subject", "workratings_eg.games", "workratings_eg.reviews",
+		"workratings_dl.works", "src_vndb.vn", "src_vndb.vn_vote_stats",
 	} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -117,6 +132,18 @@ func mkSubject(t *testing.T, id int64, score float64, rank int, details string) 
 func mkEGGame(t *testing.T, id int, median *int, count2 int) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`INSERT INTO workratings_eg.games (id, median, count2) VALUES (?, ?, ?)`, id, median, count2).Error)
+}
+
+func setEGSpread(t *testing.T, id int, raw string) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`UPDATE workratings_eg.games SET raw = ?::jsonb WHERE id = ?`, raw, id).Error)
+}
+
+func setDlsiteRateDetail(t *testing.T, workno, detail string) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(
+		`UPDATE workratings_dl.works SET info_json = info_json || jsonb_build_object('rate_count_detail', ?::jsonb)
+		 WHERE workno = ?`, detail, workno).Error)
 }
 
 func mkDlsiteWork(t *testing.T, workno string, star *float64, rc *int, dl, wl *int64, rv *int) {
@@ -180,6 +207,10 @@ func TestBackfillWorkRatings(t *testing.T) {
 	wEgMulti := mkWork(t, reg.galgameMedium, "eg-multianchor", nil)
 	wEgClaimed := mkWork(t, reg.galgameMedium, "eg-claimed", &claimed)
 	mkEGGame(t, 1001, p(78), 40)
+	setEGSpread(t, 1001, `{"average2":"63","stdev":"14","min2":"0","max2":"90"}`)
+	for _, tk := range []*int{p(0), p(78), p(100), nil} {
+		mkEGReview(t, 1001, tk)
+	}
 	mkEGGame(t, 1002, nil, 5)
 	mkEGGame(t, 1004, p(50), 10)
 	mkEGGame(t, 1014, p(90), 99)
@@ -197,6 +228,9 @@ func TestBackfillWorkRatings(t *testing.T) {
 	wDl := mkWork(t, reg.galgameMedium, "dl-full", nil)
 	mkReleaseAnchor(t, wDl, "RJ100001", reg.dlsiteSource, model.LinkKindExact)
 	mkDlsiteWork(t, "RJ100001", pf(4.36), p(120), pl(2000), pl(300), p(12))
+	setDlsiteRateDetail(t, "RJ100001", `[{"count":2,"ratio":2,"review_point":1},{"count":0,"ratio":0,"review_point":2},
+		{"count":8,"ratio":7,"review_point":3},{"count":30,"ratio":25,"review_point":4},
+		{"count":80,"ratio":66,"review_point":5}]`)
 	wDlNoRating := mkWork(t, reg.galgameMedium, "dl-norating", nil)
 	mkReleaseAnchor(t, wDlNoRating, "RJ100002", reg.dlsiteSource, model.LinkKindExact)
 	mkDlsiteWork(t, "RJ100002", nil, nil, nil, pl(7), p(0))
@@ -226,6 +260,11 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.Equal(t, 1, st.DlMissingMirror)
 	assert.Equal(t, 1, st.DlNoRating, "wDlNoRating publishes no rating")
 	assert.Equal(t, 2, st.DlRatingPlanned, "wDl + wDlClaimed")
+	assert.Equal(t, 3, st.BgmDistribution, "every scored bangumi subject carries score_details")
+	assert.Equal(t, 1, st.DlDistribution, "only RJ100001 was given a rate_count_detail")
+	assert.Equal(t, 1, st.EgStats, "only game 1001 was given the spread keys")
+	assert.Equal(t, 1, st.EgDistribution, "only game 1001 was given scored reviews")
+	assert.Equal(t, 3, st.EgNoReviews, "the other three planned EG works have no scored review")
 	assert.Equal(t, 8, st.PopPlanned, "wDl 3 + wDlNoRating 2 + wDlClaimed 3")
 	assert.Zero(t, st.BgmWritten+st.EgWritten+st.DlRatingWritten+st.PopWritten+
 		st.BgmUnchanged+st.EgUnchanged+st.DlRatingUnchanged+st.PopUnchanged+st.Errors)
@@ -253,6 +292,9 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.Equal(t, 42, rBgm.VoteCount)
 	require.NotNil(t, rBgm.Rank)
 	assert.Equal(t, 321, *rBgm.Rank)
+	assert.JSONEq(t, `{"5":10,"7":20,"10":12}`, string(rBgm.Distribution),
+		"the histogram vote_count was summed from, minus its empty buckets")
+	assert.Nil(t, rBgm.Stats, "bangumi publishes a histogram, not a spread")
 
 	var rNoRank model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ?", wBgmNoRank).First(&rNoRank).Error)
@@ -263,6 +305,16 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.InDelta(t, 78, rEg.Score, 1e-9)
 	assert.Equal(t, 40, rEg.VoteCount)
 	assert.Nil(t, rEg.Rank)
+	assert.JSONEq(t, `{"0":1,"70":1,"100":1}`, string(rEg.Distribution),
+		"the histogram is folded from `reviews`; the NULL-tokuten row is comment-only and never counted")
+	assert.JSONEq(t, `{"average":63,"stdev":14,"min":0,"max":90}`, string(rEg.Stats),
+		"the spread comes from the same games row as the median")
+	assert.Equal(t, 40, rEg.VoteCount,
+		"vote_count stays the games row's count2 — the two mirrors sync independently and the bars need not sum to it")
+
+	var rEgNoSpread model.CatalogWorkRating
+	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wEgMulti, reg.egSource).First(&rEgNoSpread).Error)
+	assert.Nil(t, rEgNoSpread.Stats, "a game with no spread keys stores NULL, not an empty object")
 
 	var rMulti model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ?", wEgMulti).First(&rMulti).Error)
@@ -274,6 +326,12 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.InDelta(t, 4.36, rDl.Score, 1e-9)
 	assert.Equal(t, 120, rDl.VoteCount)
 	assert.Nil(t, rDl.Rank)
+	assert.JSONEq(t, `{"1":2,"3":8,"4":30,"5":80}`, string(rDl.Distribution),
+		"rate_count_detail folded onto the 1-5 star scale, empty buckets dropped")
+
+	var rDlNoDetail model.CatalogWorkRating
+	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wDlClaimed, reg.dlsiteSource).First(&rDlNoDetail).Error)
+	assert.Nil(t, rDlNoDetail.Distribution, "a work whose payload omits rate_count_detail stores NULL")
 
 	var pops []model.CatalogWorkPopularity
 	require.NoError(t, testDB.Where("work_id = ?", wDl).Order("metric").Find(&pops).Error)
@@ -352,6 +410,22 @@ func TestClaimPeerWritesAndDSNRequired(t *testing.T) {
 	assert.Equal(t, 1, unchanged, "unchanged values → no-op")
 	w.write(ctx, plannedRow{WorkID: wBody, SourceID: reg.bangumiSource, Score: 7.2, VoteCount: 4}, true, &written, &unchanged)
 	assert.Equal(t, 3, written, "changed values → in-place update")
+
+	// The conflict guard has to see the detail columns too. If it compared only
+	// (score, vote_count, rank), the first run after wave 205 would have reported
+	// `unchanged` for every work whose score had not moved and left the new
+	// columns NULL — a backfill that silently backfills nothing.
+	same := plannedRow{WorkID: wBody, SourceID: reg.bangumiSource, Score: 7.2, VoteCount: 4}
+	withDist := same
+	withDist.Distribution = []byte(`{"7":4}`)
+	w.write(ctx, withDist, true, &written, &unchanged)
+	assert.Equal(t, 4, written, "a new histogram alone is a change")
+	w.write(ctx, withDist, true, &written, &unchanged)
+	assert.Equal(t, 2, unchanged, "and re-writing the identical histogram is not")
+	withStats := withDist
+	withStats.Stats = []byte(`{"average":63}`)
+	w.write(ctx, withStats, true, &written, &unchanged)
+	assert.Equal(t, 5, written, "so is a new stats blob alone")
 	assert.EqualValues(t, 2, ratingCount(t, ""), "the claimed row plus this one")
 	var r model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ?", wBody).First(&r).Error)

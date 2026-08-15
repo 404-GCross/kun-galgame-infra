@@ -141,6 +141,9 @@ func runMT(ctx context.Context, db *gorm.DB, tr translator, out string, limit in
 	}
 	fmt.Printf("proposed=%d skipped_by_model=%d errors=%d → %s\nreview it, then: --apply-csv %s\n",
 		len(rows)-errs-skips, skips, errs, out, out)
+	if errs > 0 {
+		os.Exit(1)
+	}
 	return nil
 }
 

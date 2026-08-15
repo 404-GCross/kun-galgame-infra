@@ -1,7 +1,14 @@
 
 export type DocsMethod = 'get' | 'post' | 'put' | 'patch' | 'delete'
 
-export type DocsFaceKey = 'catalog'
+export type DocsFaceKey = 'catalog' | 'playtime'
+
+export interface DocsAuth {
+  kind: 'api_key' | 'user_token'
+  curl: string
+  display: string
+  note: string
+}
 
 export interface DocsSchemaNode {
   name?: string
@@ -55,6 +62,7 @@ export interface DocsFace {
   label: string
   title: string
   baseUrl: string
+  auth: DocsAuth
   groups: DocsGroup[]
 }
 

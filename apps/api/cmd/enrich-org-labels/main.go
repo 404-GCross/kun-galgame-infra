@@ -17,7 +17,7 @@ func main() {
 	facet := flag.String("facet", "all", "intro | alias | link | all | cien")
 	apply := flag.Bool("apply", false, "write (default: dry run — plan counts only)")
 	dsn := flag.String("dsn", "", "catalog DSN — REQUIRED (also hosts src_vndb / src_bangumi)")
-	egDSN := flag.String("eg-dsn", "", "erogamespace DSN (default: catalog DSN with dbname=erogamespace)")
+	egDSN := flag.String("eg-dsn", "", "erogamescape DSN (default: catalog DSN with dbname=erogamescape)")
 	dlsiteDSN := flag.String("dlsite-dsn", "", "dlsite DSN (cien facet only — hosts cien_profiles)")
 	flag.Parse()
 
@@ -47,6 +47,9 @@ func main() {
 		if !*apply {
 			slog.Info("DRY RUN — nothing written; re-run with --apply")
 		}
+		if st.Errors > 0 {
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -66,5 +69,8 @@ func main() {
 		"errors", st.Errors)
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
+	}
+	if st.Errors > 0 {
+		os.Exit(1)
 	}
 }

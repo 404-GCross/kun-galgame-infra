@@ -43,4 +43,7 @@ func main() {
 	slog.Info("import-getchu-refs done",
 		"apply", *apply, "candidates", st.Candidates, "planned", st.Planned,
 		"written", st.Written, "conflict", st.Conflict, "errors", st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }

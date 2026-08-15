@@ -54,4 +54,7 @@ func main() {
 		slog.Error("backfill-label-logos", "error", err)
 		os.Exit(1)
 	}
+	if st != nil && st.Errors > 0 {
+		os.Exit(1)
+	}
 }

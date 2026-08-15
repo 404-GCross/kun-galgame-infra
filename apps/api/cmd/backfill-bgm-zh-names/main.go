@@ -50,4 +50,7 @@ func main() {
 		"would_insert", st.WouldInsert, "skipped_dup", st.SkippedDup,
 		"inserted", st.Inserted, "primary_set", st.PrimarySet, "conflict", st.Conflict,
 		"touched_works", st.Touched, "errors", st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }

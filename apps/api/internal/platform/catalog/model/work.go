@@ -109,6 +109,23 @@ type CatalogWorkRating struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
+	// Distribution holds a bucket histogram keyed by the source's own scale;
+	// Stats holds the spread of the same population. Every source now fills
+	// Distribution, but from three different bases, and only two of them add up
+	// to the vote_count sitting next to them. Bangumi and DLsite publish the
+	// histogram with the aggregate (score_details / rate_count_detail), so those
+	// agree by construction. ErogameScape publishes none: its bars are computed
+	// from the mirror's `reviews` table, which syncs on a different cursor than
+	// the `games` row the median, vote_count and Stats spread all come from —
+	// deliberately mismatched, documented in the contract, never reconciled.
+	// VNDB publishes no histogram in the database dump either, but does publish
+	// a separate votes dump (staged as src_vndb.vn_vote_stats); it omits votes
+	// from private lists, so those bars sum to at most c_votecount. VNDB's Stats
+	// carries only `average` — c_average, the plain mean beside the smoothed
+	// c_rating that Score holds.
+	Distribution datatypes.JSON `gorm:"type:jsonb" json:"distribution,omitempty"`
+	Stats        datatypes.JSON `gorm:"type:jsonb" json:"stats,omitempty"`
+
 	Work   *CatalogWork   `gorm:"foreignKey:WorkID" json:"work,omitempty"`
 	Source *CatalogSource `gorm:"foreignKey:SourceID" json:"source,omitempty"`
 }

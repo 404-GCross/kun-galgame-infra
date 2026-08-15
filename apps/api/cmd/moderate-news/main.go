@@ -39,4 +39,7 @@ func main() {
 		slog.Error("moderate-news", "error", err)
 		os.Exit(1)
 	}
+	if stats.Failed > 0 {
+		os.Exit(1)
+	}
 }

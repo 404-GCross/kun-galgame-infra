@@ -39,7 +39,7 @@ type WorkPopularity struct {
 }
 
 type WorkPlaytime struct {
-	SourceID  int16 `json:"source_id" doc:"catalog_source id (provenance): vndb = vote-backed median, erogamespace = community median"`
+	SourceID  int16 `json:"source_id" doc:"catalog_source id (provenance): vndb = vote-backed median, erogamescape = community median"`
 	Minutes   int   `json:"minutes" doc:"median playtime in minutes (unit-normalized; estimate semantics stay source-native)"`
 	VoteCount int   `json:"vote_count" doc:"user reports backing the estimate; 0 = the source publishes no per-work count"`
 }
@@ -54,10 +54,24 @@ type WorkTag struct {
 }
 
 type WorkRating struct {
-	SourceID  int16   `json:"source_id" doc:"catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamespace = 0-100 median"`
-	Score     float64 `json:"score" doc:"rating on the source-native scale (never normalized across sources)"`
-	VoteCount int     `json:"vote_count" doc:"number of ratings backing the score"`
-	Rank      *int    `json:"rank,omitempty" doc:"source-internal rank; absent when the source has no rank or the work is unranked"`
+	SourceID     int16          `json:"source_id" doc:"catalog_source id (provenance + scale selector): vndb = 1-10 bayesian-smoothed rating, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamescape = 0-100 median"`
+	Score        float64        `json:"score" doc:"rating on the source-native scale (never normalized across sources)"`
+	VoteCount    int            `json:"vote_count" doc:"number of ratings backing the score"`
+	Rank         *int           `json:"rank,omitempty" doc:"source-internal rank; absent when the source has no rank or the work is unranked"`
+	Distribution []RatingBucket `json:"distribution,omitempty" doc:"vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes); detail face only. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count"`
+	Stats        *RatingStats   `json:"stats,omitempty" doc:"spread of the same vote population as score; detail face only. Carried by erogamescape (average, stdev, min and max, on its 0-100 scale) and by vndb (average only — the plain mean beside the bayesian-smoothed rating that score holds). bangumi and dlsite carry no stats"`
+}
+
+type RatingBucket struct {
+	Score int `json:"score" doc:"bucket value on the source-native scale"`
+	Count int `json:"count" doc:"votes cast at this value"`
+}
+
+type RatingStats struct {
+	Average *float64 `json:"average,omitempty" doc:"mean on the source-native scale (score itself is the median for erogamescape)"`
+	Stdev   *float64 `json:"stdev,omitempty"`
+	Min     *float64 `json:"min,omitempty"`
+	Max     *float64 `json:"max,omitempty"`
 }
 
 type WorkScreenshot struct {

@@ -65,4 +65,7 @@ func main() {
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }

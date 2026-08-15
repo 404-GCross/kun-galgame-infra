@@ -221,6 +221,9 @@ func main() {
 		fmt.Printf("  probe ok:          %d\n", okCount)
 	}
 	fmt.Printf("  skipped/errors:    %d  (see manifest for reasons)\n", skipped)
+	if skipped > 0 {
+		os.Exit(1)
+	}
 }
 
 func sourceURL(avatar string) string {

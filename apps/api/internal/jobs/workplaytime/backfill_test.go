@@ -126,7 +126,7 @@ func strPtr(s string) *string { return &s }
 func TestBackfillWorkPlaytime(t *testing.T) {
 	clean(t)
 	medium := mediumID(t)
-	egSrc := sourceID(t, "erogamespace")
+	egSrc := sourceID(t, "erogamescape")
 	vndbSrc := sourceID(t, "vndb")
 
 	wA := mkWork(t, medium, "eg-bodyless", nil)

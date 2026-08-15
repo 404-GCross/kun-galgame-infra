@@ -52,4 +52,12 @@ func main() {
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
+	// 2026-08-05: 120,646 failed writes exited 0, so neither the cron failure trap nor the watchdog fired.
+	// The cause is also logged per row, but at WARN and under a message that does not name this tool
+	// ("write tag"), so grepping the weekly log for "backfill-work-tags" found 15 days of errors=N and
+	// not one line saying why — it was a NOT NULL column the staged binary predated. Restate it here.
+	if st.Errors > 0 {
+		slog.Error("backfill-work-tags write failures", "errors", st.Errors, "first_error", st.FirstError)
+		os.Exit(1)
+	}
 }

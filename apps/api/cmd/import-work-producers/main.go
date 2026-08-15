@@ -26,6 +26,9 @@ func main() {
 	fmt.Printf("planned: dev=%d pub=%d\n", st.DevPlanned, st.PubPlanned)
 	fmt.Printf("written=%d skipped_dup=%d unresolved_pairs=%d errors=%d\n",
 		st.Written, st.SkippedDup, st.Unresolved, st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func mode(apply bool) string {

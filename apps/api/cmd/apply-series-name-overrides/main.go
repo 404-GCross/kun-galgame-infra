@@ -142,4 +142,7 @@ func main() {
 	if !*apply {
 		fmt.Println("DRY RUN — nothing written; re-run with --apply (names take effect on the next build-derived-series --apply)")
 	}
+	if malformed > 0 {
+		os.Exit(1)
+	}
 }

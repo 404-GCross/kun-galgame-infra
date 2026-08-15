@@ -27,7 +27,7 @@ func openStaging(base config.DatabaseConfig, override, dbName string) (*gorm.DB,
 func main() {
 	apply := flag.Bool("run", false, "write (default: dry run — plan counts only)")
 	limit := flag.Int("limit", 0, "cap works processed (0 = all)")
-	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: erogamespace db on the catalog server)")
+	egDSN := flag.String("eg-dsn", "", "erogamescape staging DSN (default: erogamescape db on the catalog server)")
 	dlsiteDSN := flag.String("dlsite-dsn", "", "DLsite staging DSN (default: dlsite db on the catalog server)")
 	resolveAmbiguous := flag.Bool("resolve-ambiguous", false, "step-29 three-layer handling of dlsite_ids claimed by several EG games (default: skip them)")
 	conflicts := flag.String("export-conflicts", "", "write the B3 conflict worklist (SKU → several wiki works) to this TSV path")
@@ -48,9 +48,9 @@ func main() {
 	}
 	defer catalogDB.Close()
 
-	egDB, err := openStaging(cfg.CatalogDatabase, *egDSN, "erogamespace")
+	egDB, err := openStaging(cfg.CatalogDatabase, *egDSN, "erogamescape")
 	if err != nil {
-		slog.Error("erogamespace db connect", "error", err)
+		slog.Error("erogamescape db connect", "error", err)
 		os.Exit(1)
 	}
 	if s, err := egDB.DB(); err == nil {
@@ -84,5 +84,8 @@ func main() {
 	)
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --run")
+	}
+	if st.Errors > 0 {
+		os.Exit(1)
 	}
 }

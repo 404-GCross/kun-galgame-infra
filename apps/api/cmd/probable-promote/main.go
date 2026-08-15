@@ -56,11 +56,15 @@ func main() {
 	}
 	defer catalogDB.Close()
 
-	if _, err := runPromote(context.Background(), catalogDB.DB(), os.Stdout, rules, *actor, *apply, *limit); err != nil {
+	st, err := runPromote(context.Background(), catalogDB.DB(), os.Stdout, rules, *actor, *apply, *limit)
+	if err != nil {
 		slog.Error("probable-promote failed", "error", err)
 		os.Exit(1)
 	}
 	if *apply {
 		fmt.Fprintln(os.Stdout, "note: run reconcile-galgame-works, enrich-bangumi, then reindex-catalog to propagate the new exact anchors.")
+	}
+	if st.Errors > 0 {
+		os.Exit(1)
 	}
 }

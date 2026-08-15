@@ -88,7 +88,8 @@ const statusMeta = (status: string): { label: string; class: string } => {
         </span>
         <span class="flex items-center gap-1.5">
           <KunIcon name="lucide:key-round" class="size-3.5" />
-          <code class="font-mono">Authorization: Bearer nm_live_…</code>
+          <code class="font-mono">{{ face.auth.display }}</code>
+          <span>（{{ face.auth.note }}）</span>
         </span>
       </div>
     </header>

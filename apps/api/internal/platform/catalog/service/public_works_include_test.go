@@ -192,7 +192,7 @@ func TestWorksListIncludeLabelsAndRatings(t *testing.T) {
 	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Flat")
 	labelID := addWorkLabel(t, w.ID, "Brand X", model.LabelKindGameBrand, model.WorkLabelKindBrand)
 	addWorkRating(t, w.ID, srcVNDB, 8.4, 900)
-	addWorkRating(t, w.ID, srcErogamespace, 78, 51)
+	addWorkRating(t, w.ID, srcErogamescape, 78, 51)
 	bare := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Bare")
 
 	page, err := svc.WorksList(t.Context(),

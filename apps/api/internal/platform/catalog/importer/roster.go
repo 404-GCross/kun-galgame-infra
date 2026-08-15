@@ -55,7 +55,7 @@ func (im *Importer) RunRoster(source string) (RosterStats, error) {
 	}
 	if source == "eg" || source == "all" {
 		if im.eg == nil {
-			return total, fmt.Errorf("eg roster wave requested but no erogamespace connection")
+			return total, fmt.Errorf("eg roster wave requested but no erogamescape connection")
 		}
 		s, err := im.runRosterEG()
 		if err != nil {

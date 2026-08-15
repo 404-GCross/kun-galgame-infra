@@ -1997,6 +1997,13 @@ components:
     PublicRating:
       additionalProperties: false
       properties:
+        distribution:
+          description: "vote histogram on the source-native scale, ascending, sparse (an absent bucket has no votes). Work-detail responses only — the works-list ratings block never carries it. All four sources publish it: bangumi 1-10, dlsite 1-5, vndb 1-10, erogamescape 0-100 in decile steps (0, 10, ... 100). The bars do not share one denominator: bangumi and dlsite publish the histogram together with the aggregate, so their bars sum to vote_count; erogamescape bars are computed from the reviews mirror, which syncs on a cursor independent of the row score and vote_count come from, so sum-of-bars is the histogram's own denominator and need not equal vote_count; vndb bars come from the public votes dump, which omits votes on private lists, so they sum to at most vote_count"
+          items:
+            $ref: "#/components/schemas/RatingBucket"
+          type:
+            - array
+            - "null"
         rank:
           format: int64
           type: integer
@@ -2005,6 +2012,9 @@ components:
           type: number
         source:
           type: string
+        stats:
+          $ref: "#/components/schemas/RatingStats"
+          description: spread of the same vote population as score, work-detail responses only. Carried by erogamescape (average, stdev, min and max, on its 0-100 scale) and by vndb (average only — the plain mean beside the bayesian-smoothed rating that score holds). bangumi and dlsite carry no stats
         vote_count:
           format: int64
           type: integer
@@ -2918,6 +2928,38 @@ components:
         - limit
         - items
       type: object
+    RatingBucket:
+      additionalProperties: false
+      properties:
+        count:
+          description: votes cast at this value
+          format: int64
+          type: integer
+        score:
+          description: bucket value on the source-native scale
+          format: int64
+          type: integer
+      required:
+        - score
+        - count
+      type: object
+    RatingStats:
+      additionalProperties: false
+      properties:
+        average:
+          description: mean on the source-native scale (score itself is the median for erogamescape)
+          format: double
+          type: number
+        max:
+          format: double
+          type: number
+        min:
+          format: double
+          type: number
+        stdev:
+          format: double
+          type: number
+      type: object
 info:
   title: NextMoe Open API — Catalog
   version: 1.0.0
@@ -3480,12 +3522,12 @@ paths:
     get:
       operationId: lookupCatalogPublic
       parameters:
-        - description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"
+        - description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the legacy misspelling erogamespace is still accepted)"
           explode: false
           in: query
           name: source
           schema:
-            description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"
+            description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the legacy misspelling erogamespace is still accepted)"
             type: string
         - description: The id within that source. type=work accepts vndb v19658 or 19658 (and dlsite RJ/VJ numbers); the non-work types match VERBATIM as the registry stores them — vndb character c1234, label p129, staff a bare number
           explode: false

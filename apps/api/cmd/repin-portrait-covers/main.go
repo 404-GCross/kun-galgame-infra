@@ -62,6 +62,9 @@ func main() {
 		slog.Error("repin-portrait-covers", "error", err)
 		os.Exit(1)
 	}
+	if stats != nil && stats.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func parseIDs(s string) ([]int64, error) {

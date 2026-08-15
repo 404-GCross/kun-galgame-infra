@@ -135,6 +135,9 @@ outer:
 		"failed", failed.Load(),
 		"elapsed", time.Since(start).String(),
 	)
+	if failed.Load() > 0 {
+		os.Exit(1)
+	}
 }
 
 func computeThumbhash(ctx context.Context, s3 *storage.Client, key string) (string, error) {

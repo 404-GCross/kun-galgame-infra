@@ -106,7 +106,7 @@ func TestSplitDryThenApplyThenSecondPassIsZeroWrite(t *testing.T) {
 	assert.Zero(t, dry.AnchorsDropped, "a dry run must write nothing")
 	assert.Len(t, anchors(t, cnID), 2)
 	require.Len(t, dry.Receipts, 1)
-	assert.Equal(t, "erogamespace", dry.Receipts[0].DroppedAnchors[0].SourceKey)
+	assert.Equal(t, "erogamescape", dry.Receipts[0].DroppedAnchors[0].SourceKey)
 
 	opts.Apply = true
 	got, err := Run(context.Background(), opts)

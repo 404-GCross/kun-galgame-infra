@@ -132,6 +132,9 @@ func run(ctx context.Context, db *gorm.DB, ex extractor, judge panelJudge, o opt
 	if !o.Apply {
 		fmt.Println("[dry run] nothing written — re-run with --apply")
 	}
+	if st.CallErrors+st.PanelErrors > 0 {
+		os.Exit(1)
+	}
 	return nil
 }
 

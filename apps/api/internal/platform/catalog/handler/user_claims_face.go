@@ -113,6 +113,7 @@ type userMineClaimsInput struct {
 	ClaimState string `query:"claim_state" doc:"Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state"`
 	Before     int64  `query:"before" doc:"Exclusive cursor: return works whose last_event_id is smaller (0 = first page)"`
 	Limit      int    `query:"limit" doc:"Page size (default 20, max 100)"`
+	Kind       string `query:"kind" doc:"Which events qualify the actor: submitted (works they own) or audited (works they reviewed but do not own). Absent = every work they touched"`
 }
 
 func (s *UserClaimServer) mine(ctx context.Context, in *userMineClaimsInput) (*userClaimsOutput, error) {
@@ -126,7 +127,7 @@ func (s *UserClaimServer) mine(ctx context.Context, in *userMineClaimsInput) (*u
 	}
 	items, total, err := s.claims.ClaimsByActor(ctx, service.UserClaimQuery{
 		ActorUID: uid, Site: site, ClaimStates: claimStates,
-		Before: in.Before, Limit: in.Limit,
+		Before: in.Before, Limit: in.Limit, Kind: in.Kind,
 	})
 	if err != nil {
 		slog.Error("catalog claims mine", "err", err)
@@ -136,8 +137,12 @@ func (s *UserClaimServer) mine(ctx context.Context, in *userMineClaimsInput) (*u
 		Items: make([]service.UserClaimItem, 0, len(items)), Total: total,
 	}
 	page.Items = append(page.Items, items...)
-	if n := len(items); n > 0 {
-		page.NextBefore = items[n-1].LastEventID
+	limit := in.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if len(items) >= limit {
+		page.NextBefore = items[len(items)-1].LastEventID
 	}
 	return &userClaimsOutput{Body: okEnvelope(page)}, nil
 }

@@ -141,6 +141,9 @@ func propose(ctx context.Context, db *gorm.DB, merge *service.MergeService, tsvs
 		fmt.Printf("OK gid=%s: proposal #%d approved (cooling 48h)\n", r.gid, p.ID)
 	}
 	fmt.Printf("\n=== propose %s ===\nproposed=%d skipped=%d failed=%d\n", modeLabel(run), proposed, skipped, failed)
+	if failed > 0 {
+		os.Exit(1)
+	}
 }
 
 func sanity(ctx context.Context, db *gorm.DB, r tsvRow) error {
@@ -217,6 +220,9 @@ func execute(ctx context.Context, db *gorm.DB, merge *service.MergeService, acto
 	}
 	fmt.Printf("\n=== execute %s ===\napproved=%d due=%d cooling=%d executed=%d failed=%d\n",
 		modeLabel(run), len(props), due, cooling, executed, failed)
+	if failed > 0 {
+		os.Exit(1)
+	}
 }
 
 func readTSV(path string) []tsvRow {

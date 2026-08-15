@@ -65,6 +65,12 @@ func main() {
 	}
 
 	printReport(st, *apply)
+	// Healthy nightly runs carry transient LLM errors every single night
+	// (fill-missing retries them); errors>0 alone would be red daily. Dead
+	// upstream looks like: attempts made, nothing translated.
+	if st.Errors > 0 && st.Inserted+st.Retranslated == 0 {
+		os.Exit(1)
+	}
 }
 
 func printReport(st *intromt.Stats, apply bool) {

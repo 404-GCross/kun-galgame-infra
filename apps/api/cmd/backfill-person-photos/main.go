@@ -46,4 +46,7 @@ func main() {
 		slog.Error("backfill-person-photos", "error", err)
 		os.Exit(1)
 	}
+	if st != nil && st.Errors > 0 {
+		os.Exit(1)
+	}
 }

@@ -31,6 +31,9 @@ func main() {
 	fmt.Printf("\n=== aggregate-user-playtime %s ===\n", mode(*apply))
 	fmt.Printf("eligible=%d written=%d unchanged=%d deleted=%d errors=%d\n",
 		st.Eligible, st.Written, st.Unchanged, st.Deleted, st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func splitCSV(s string) []string {

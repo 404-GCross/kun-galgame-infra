@@ -27,6 +27,9 @@ func main() {
 	fmt.Printf("edges: total=%d added=%d deleted=%d\n", st.EdgesTotal, st.EdgesAdded, st.EdgesDeleted)
 	fmt.Printf("links: seen=%d written=%d unchanged=%d\n", st.LinksSeen, st.LinksWritten, st.LinksUnchanged)
 	fmt.Printf("errors=%d\n", st.Errors)
+	if st.Errors > 0 {
+		os.Exit(1)
+	}
 }
 
 func mode(apply bool) string {
