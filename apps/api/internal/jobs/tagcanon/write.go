@@ -42,7 +42,7 @@ func (w *writer) writeGroup(ctx context.Context, g group, apply bool) {
 }
 
 func (w *writer) ensureTag(ctx context.Context, g group) (int64, bool) {
-	tag := model.CatalogTag{Name: g.CanonicalName, Tier: g.Tier, Kind: g.Kind}
+	tag := model.CatalogTag{Name: g.CanonicalName, Tier: g.Tier, Kind: g.Kind, Sexual: g.Sexual}
 	res := w.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "name"}},
 		DoNothing: true,

@@ -119,6 +119,73 @@ func TestApplyReviewedOnlyExactAndTierUpdate(t *testing.T) {
 	assert.Zero(t, ast.TierUpdated+ast.TagsCreated+ast.MapsCreated, "idempotent second identical apply")
 }
 
+func TestApplyReviewedMapAndRejectRecords(t *testing.T) {
+	cleanTagcanon(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	dec := filepath.Join(dir, "decisions.jsonl")
+
+	require.NoError(t, testDB.Create(&model.CatalogTag{Name: "长袜", Tier: model.TagTierLongtail}).Error)
+	var target model.CatalogTag
+	require.NoError(t, testDB.Where("name = ?", "长袜").First(&target).Error)
+
+	recs := []pairRec{
+		{Kind: "map", Source: "bangumi", Name: "過膝襪", MapToID: target.ID, Approve: true},
+		{Kind: "map", Source: "bangumi", Name: "榨汁姬", MapTo: "榨精",
+			Tier: i16p(model.TagTierLongtail), Kind_: i16p(model.TagKindContent), Sexual: true, Approve: true},
+		{Kind: "map", Source: "curated", Name: "果汁姬", MapTo: "榨精", Approve: true},
+		{Kind: "single", Source: "curated", Name: "血缘姐妹", Usage: 2,
+			Tier: i16p(model.TagTierLongtail), Kind_: i16p(model.TagKindContent), Approve: true},
+		{Kind: "reject", Source: "bangumi", Name: "竹子社", Reason: "会社别名", By: "wave-208", Approve: true},
+		{Kind: "map", Source: "bangumi", Name: "悬空", MapToID: 99999999, Approve: true},
+	}
+	require.NoError(t, writeRecords(dec, recs))
+
+	dst, err := ApplyReviewed(ctx, ApplyReviewedOpts{DSN: testDSN, Decisions: dec})
+	require.NoError(t, err)
+	assert.Equal(t, 4, dst.MapRows)
+	assert.Equal(t, 1, dst.RejectRows)
+	assert.Equal(t, 1, dst.SingleRows)
+
+	ast, err := ApplyReviewed(ctx, ApplyReviewedOpts{DSN: testDSN, Decisions: dec, Apply: true})
+	require.NoError(t, err)
+	assert.Equal(t, 1, ast.Errors, "the dangling map_to_id is a counted error")
+	assert.Equal(t, 4, ast.MapsCreated, "過膝襪 + 榨汁姬 + 果汁姬 + the single's own map")
+	assert.Equal(t, 2, ast.TagsCreated, "榨精 + 血缘姐妹")
+	assert.Equal(t, 1, ast.TagsConflict, "果汁姬 resolves the already-created 榨精")
+	assert.Equal(t, 1, ast.RejectsCreated)
+
+	var mapped int64
+	require.NoError(t, testDB.Raw(`SELECT tag_id FROM catalog_tag_source_map WHERE source_name = ?`, "過膝襪").Scan(&mapped).Error)
+	assert.Equal(t, target.ID, mapped, "map row keeps the SOURCE name and points at the existing canonical")
+
+	var juice model.CatalogTag
+	require.NoError(t, testDB.Where("name = ?", "榨精").First(&juice).Error)
+	assert.True(t, juice.Sexual, "canonical created by a map record carries the reviewed sexual flag")
+	var juiceMaps int64
+	require.NoError(t, testDB.Raw(`SELECT count(*) FROM catalog_tag_source_map WHERE tag_id = ?`, juice.ID).Scan(&juiceMaps).Error)
+	assert.EqualValues(t, 2, juiceMaps, "bangumi 榨汁姬 + curated 果汁姬 both land on 榨精")
+
+	var single model.CatalogTag
+	require.NoError(t, testDB.Where("name = ?", "血缘姐妹").First(&single).Error)
+	assert.False(t, single.Sexual)
+	var curatedMapped int64
+	require.NoError(t, testDB.Raw(`SELECT count(*) FROM catalog_tag_source_map m
+		JOIN catalog_source s ON s.id = m.source_id AND s.key = 'curated'
+		WHERE m.source_name IN (?, ?)`, "血缘姐妹", "果汁姬").Scan(&curatedMapped).Error)
+	assert.EqualValues(t, 2, curatedMapped, "curated source resolves and writes")
+
+	var rej int64
+	require.NoError(t, testDB.Raw(`SELECT count(*) FROM catalog_tag_rejection WHERE source_name = ? AND rejected_by = ?`,
+		"竹子社", "wave-208").Scan(&rej).Error)
+	assert.EqualValues(t, 1, rej)
+
+	ast2, err := ApplyReviewed(ctx, ApplyReviewedOpts{DSN: testDSN, Decisions: dec, Apply: true})
+	require.NoError(t, err)
+	assert.Zero(t, ast2.TagsCreated+ast2.MapsCreated+ast2.RejectsCreated, "second pass writes zero")
+	assert.Equal(t, 1, ast2.RejectsConflict)
+}
+
 func TestHTTPMatcher(t *testing.T) {
 	var gotAuth, gotSystem string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

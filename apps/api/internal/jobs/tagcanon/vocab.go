@@ -15,25 +15,28 @@ const (
 	sourceKeyVNDB    = "vndb"
 	sourceKeyBangumi = "bangumi"
 	sourceKeyDlsite  = "dlsite"
+	sourceKeyCurated = "curated"
 )
 
 type sourceIDs struct {
 	vndb    int16
 	bangumi int16
 	dlsite  int16
+	curated int16
 }
 
 func resolveSources(ctx context.Context, db *gorm.DB) (sourceIDs, error) {
 	var s sourceIDs
 	for key, dst := range map[string]*int16{
 		sourceKeyVNDB: &s.vndb, sourceKeyBangumi: &s.bangumi, sourceKeyDlsite: &s.dlsite,
+		sourceKeyCurated: &s.curated,
 	} {
 		if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = ?`, key).Scan(dst).Error; err != nil {
 			return s, fmt.Errorf("resolve source %q: %w", key, err)
 		}
 	}
-	if s.vndb == 0 || s.bangumi == 0 || s.dlsite == 0 {
-		return s, fmt.Errorf("registry not seeded (vndb=%d bangumi=%d dlsite=%d)", s.vndb, s.bangumi, s.dlsite)
+	if s.vndb == 0 || s.bangumi == 0 || s.dlsite == 0 || s.curated == 0 {
+		return s, fmt.Errorf("registry not seeded (vndb=%d bangumi=%d dlsite=%d curated=%d)", s.vndb, s.bangumi, s.dlsite, s.curated)
 	}
 	return s, nil
 }

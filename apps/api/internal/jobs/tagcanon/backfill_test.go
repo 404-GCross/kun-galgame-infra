@@ -60,7 +60,7 @@ func cleanTagcanon(t *testing.T) {
 		dbtest.Skip(t)
 	}
 	for _, table := range []string{
-		"catalog_tag_source_map", "catalog_tag", "catalog_work_tag",
+		"catalog_tag_source_map", "catalog_tag", "catalog_work_tag", "catalog_tag_rejection",
 	} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
 	}

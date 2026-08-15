@@ -21,15 +21,19 @@ type ApplyReviewedOpts struct {
 }
 
 type ApplyReviewedStats struct {
-	ApprovedPairs int
-	Groups        int
-	SingleRows    int
-	TagsCreated   int
-	TagsConflict  int
-	MapsCreated   int
-	MapsConflict  int
-	TierUpdated   int
-	Errors        int
+	ApprovedPairs   int
+	Groups          int
+	SingleRows      int
+	MapRows         int
+	RejectRows      int
+	TagsCreated     int
+	TagsConflict    int
+	MapsCreated     int
+	MapsConflict    int
+	RejectsCreated  int
+	RejectsConflict int
+	TierUpdated     int
+	Errors          int
 }
 
 func ApplyReviewed(ctx context.Context, opts ApplyReviewedOpts) (*ApplyReviewedStats, error) {
@@ -54,18 +58,24 @@ func ApplyReviewed(ctx context.Context, opts ApplyReviewedOpts) (*ApplyReviewedS
 	if err != nil {
 		return nil, err
 	}
-	keyToID := map[string]int16{sourceKeyVNDB: src.vndb, sourceKeyBangumi: src.bangumi, sourceKeyDlsite: src.dlsite}
+	keyToID := map[string]int16{sourceKeyVNDB: src.vndb, sourceKeyBangumi: src.bangumi,
+		sourceKeyDlsite: src.dlsite, sourceKeyCurated: src.curated}
 
 	st := &ApplyReviewedStats{}
 
 	groups, absorbed := groupsFromPairs(recs, keyToID, st)
 	singles := singlesFromRecords(recs, keyToID, absorbed)
+	maps := mapsFromRecords(recs, keyToID, st)
+	rejects := rejectsFromRecords(recs, keyToID, st)
 	st.Groups = len(groups)
 	st.SingleRows = len(singles)
+	st.MapRows = len(maps)
+	st.RejectRows = len(rejects)
 
 	if !opts.Apply {
 		slog.Info("apply-reviewed (dry)", "approved_pairs", st.ApprovedPairs,
-			"groups", st.Groups, "single_rows", st.SingleRows)
+			"groups", st.Groups, "single_rows", st.SingleRows,
+			"map_rows", st.MapRows, "reject_rows", st.RejectRows, "errors", st.Errors)
 		return st, nil
 	}
 
@@ -85,15 +95,35 @@ func ApplyReviewed(ctx context.Context, opts ApplyReviewedOpts) (*ApplyReviewedS
 			st.TierUpdated += n
 		}
 	}
+	for _, m := range maps {
+		id := m.targetID
+		if id == 0 {
+			created, ok := w.ensureTag(ctx, m.create)
+			if !ok {
+				continue
+			}
+			id = created
+		} else if !tagIDExists(ctx, db, id) {
+			inner.Errors++
+			slog.Warn("map target canonical does not exist", "source", m.member.SourceID, "name", m.member.Name, "target", id)
+			continue
+		}
+		writeMemberMap(ctx, db, m.member, id, inner)
+	}
+	for _, r := range rejects {
+		writeRejection(ctx, db, r, st, inner)
+	}
 
 	st.TagsCreated = inner.TagsCreated
 	st.TagsConflict = inner.TagsConflict
 	st.MapsCreated = inner.MapsCreated
 	st.MapsConflict = inner.MapsConflict
-	st.Errors = inner.Errors
+	st.Errors += inner.Errors
 	slog.Info("apply-reviewed done", "groups", st.Groups, "single_rows", st.SingleRows,
+		"map_rows", st.MapRows, "reject_rows", st.RejectRows,
 		"tags_created", st.TagsCreated, "tags_conflict", st.TagsConflict,
 		"maps_created", st.MapsCreated, "maps_conflict", st.MapsConflict,
+		"rejects_created", st.RejectsCreated, "rejects_conflict", st.RejectsConflict,
 		"tier_updated", st.TierUpdated, "errors", st.Errors)
 	return st, nil
 }
@@ -188,6 +218,7 @@ func singlesFromRecords(recs []pairRec, keyToID map[string]int16, absorbed map[s
 				CanonicalName: r.Name,
 				Tier:          tier,
 				Kind:          *r.Kind_,
+				Sexual:        r.Sexual,
 				Members:       []vocabEntry{{SourceID: id, Name: r.Name, Norm: normalize(r.Name), Usage: r.Usage}},
 				sourceCount:   1,
 			},
@@ -195,6 +226,90 @@ func singlesFromRecords(recs []pairRec, keyToID map[string]int16, absorbed map[s
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].group.CanonicalName < out[j].group.CanonicalName })
 	return out
+}
+
+type mapRow struct {
+	member   vocabEntry
+	targetID int64
+	create   group
+}
+
+func mapsFromRecords(recs []pairRec, keyToID map[string]int16, st *ApplyReviewedStats) []mapRow {
+	var out []mapRow
+	for _, r := range recs {
+		if r.Kind != "map" || !r.Approve {
+			continue
+		}
+		id, ok := keyToID[r.Source]
+		if !ok || r.Name == "" || (r.MapToID == 0 && r.MapTo == "") {
+			st.Errors++
+			slog.Warn("malformed map record", "source", r.Source, "name", r.Name, "map_to_id", r.MapToID, "map_to", r.MapTo)
+			continue
+		}
+		m := mapRow{member: vocabEntry{SourceID: id, Name: r.Name, Norm: normalize(r.Name), Usage: r.Usage}, targetID: r.MapToID}
+		if m.targetID == 0 {
+			tier, kind := model.TagTierLongtail, model.TagKindContent
+			if r.Tier != nil {
+				tier = *r.Tier
+			}
+			if r.Kind_ != nil {
+				kind = *r.Kind_
+			}
+			m.create = group{CanonicalName: r.MapTo, Tier: tier, Kind: kind, Sexual: r.Sexual,
+				Members: []vocabEntry{m.member}, sourceCount: 1}
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+type rejectRow struct {
+	sourceID int16
+	name     string
+	reason   string
+	by       string
+}
+
+func rejectsFromRecords(recs []pairRec, keyToID map[string]int16, st *ApplyReviewedStats) []rejectRow {
+	var out []rejectRow
+	for _, r := range recs {
+		if r.Kind != "reject" || !r.Approve {
+			continue
+		}
+		id, ok := keyToID[r.Source]
+		if !ok || r.Name == "" {
+			st.Errors++
+			slog.Warn("malformed reject record", "source", r.Source, "name", r.Name)
+			continue
+		}
+		out = append(out, rejectRow{sourceID: id, name: r.Name, reason: r.Reason, by: r.By})
+	}
+	return out
+}
+
+func tagIDExists(ctx context.Context, db *gorm.DB, id int64) bool {
+	var n int64
+	if err := db.WithContext(ctx).Raw(`SELECT count(*) FROM catalog_tag WHERE id = ?`, id).Scan(&n).Error; err != nil {
+		return false
+	}
+	return n > 0
+}
+
+func writeRejection(ctx context.Context, db *gorm.DB, r rejectRow, st *ApplyReviewedStats, inner *Stats) {
+	res := db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "source_id"}, {Name: "source_name"}},
+		DoNothing: true,
+	}).Create(&model.CatalogTagRejection{SourceID: r.sourceID, SourceName: r.name, Reason: r.reason, RejectedBy: r.by})
+	if res.Error != nil {
+		inner.Errors++
+		slog.Warn("write tag rejection", "source", r.sourceID, "name", r.name, "err", res.Error)
+		return
+	}
+	if res.RowsAffected == 0 {
+		st.RejectsConflict++
+		return
+	}
+	st.RejectsCreated++
 }
 
 func writeMemberMap(ctx context.Context, db *gorm.DB, m vocabEntry, tagID int64, st *Stats) {

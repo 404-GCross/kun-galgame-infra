@@ -11,6 +11,7 @@ type group struct {
 	CanonicalName string
 	Tier          int16
 	Kind          int16
+	Sexual        bool
 	Members       []vocabEntry
 	sourceCount   int
 }
