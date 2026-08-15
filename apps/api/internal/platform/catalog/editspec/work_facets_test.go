@@ -145,6 +145,48 @@ func TestTagEdgesCarryCatalogIDs(t *testing.T) {
 	}
 }
 
+func TestCuratedTagEdgeResolvesThroughTheSourceMap(t *testing.T) {
+	e := newEngine(t)
+	work := createWork(t, "作品")
+
+	renamed := model.CatalogTag{Name: "非处女", Tier: model.TagTierLongtail, Kind: model.TagKindContent, Sexual: true}
+	if err := testDB.Create(&renamed).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := testDB.Create(&model.CatalogTagSourceMap{
+		SourceID: curatedSource, SourceName: "破鞋", TagID: renamed.ID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := testDB.Create(&model.CatalogWorkTag{
+		WorkID: work.ID, Name: "破鞋", SourceID: curatedSource, Sexual: true,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	snap, err := e.CurrentSnapshot(testCtx, editspec.TypeWork, work.ID)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	sameJSON(t, "tag_ids", snap[editspec.FieldWorkTagIDs], []any{renamed.ID})
+
+	unmapped := model.CatalogTag{Name: "甜作", Tier: model.TagTierLongtail, Kind: model.TagKindContent}
+	if err := testDB.Create(&unmapped).Error; err != nil {
+		t.Fatal(err)
+	}
+	want := []any{renamed.ID, unmapped.ID}
+	snap = mergeField(t, e, work.ID, editspec.FieldWorkTagIDs, want)
+	sameJSON(t, "tag_ids", snap[editspec.FieldWorkTagIDs], want)
+
+	var mapped int64
+	testDB.Model(&model.CatalogTagSourceMap{}).
+		Where("source_id = ? AND source_name = ? AND tag_id = ?", curatedSource, "甜作", unmapped.ID).
+		Count(&mapped)
+	if mapped != 1 {
+		t.Fatal("assigning a canonical must register its curated identity map row")
+	}
+}
+
 func TestLabelEngineSeriesEdges(t *testing.T) {
 	e := newEngine(t)
 	work := createWork(t, "作品")

@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "", "propose | review | apply")
+	mode := flag.String("mode", "", "backlog | propose | review | apply | merge")
 	dsn := flag.String("dsn", "", "catalog DSN (REQUIRED for propose/apply; rehearsal locally, live only in the acceptance run)")
 	dlsiteDSN := flag.String("dlsite-dsn", os.Getenv("KUN_DLSITE_STAGING_DSN"), "OPTIONAL dlsite staging DSN (genre_taxonomy) — enriches dlsite names with ja originals")
 
@@ -20,6 +20,9 @@ func main() {
 	in := flag.String("in", "", "review: verdict JSONL input path (propose --out)")
 	md := flag.String("md", "", "review: human markdown review file output path")
 	decisions := flag.String("decisions", "", "review: machine decisions JSONL output; apply: decisions JSONL input")
+	merges := flag.String("merges", "", "merge: canonical merge JSONL ({from_id,from,into_id,into,reason})")
+	backlogFloor := flag.Int("backlog-floor", 20, "backlog: usage floor a name must reach to count as worth a wave")
+	backlogTop := flag.Int("backlog-top", 40, "backlog: how many of the busiest unjudged names to print")
 
 	apply := flag.Bool("apply", false, "apply: write changes (default dry)")
 	singleThreshold := flag.Int("single-threshold", 100, "propose: single-source usage admission gate (ruling 4)")
@@ -43,6 +46,15 @@ func main() {
 	ctx := context.Background()
 
 	switch *mode {
+	case "backlog":
+		st, err := tagcanon.Backlog(ctx, tagcanon.BacklogOpts{DSN: *dsn, Threshold: *backlogFloor, Top: *backlogTop})
+		must(err)
+		fmt.Printf("\n=== backlog ===\nunjudged=%d above_floor(%d)=%d\n", st.Total, st.Threshold, st.AboveThreshold)
+		fmt.Printf("by_source=%v above_by_source=%v\n", st.BySource, st.AboveBySource)
+		for _, e := range st.Top {
+			fmt.Printf("  %-6s %-24s %d\n", e.Source, e.Name, e.Usage)
+		}
+
 	case "propose":
 		mt := selectMatcher(*apply, *mock, *llmBase, *llmToken, *model, *maxTokens)
 		st, err := tagcanon.Propose(ctx, mt, tagcanon.ProposeOpts{
@@ -51,7 +63,8 @@ func main() {
 			Workers: *workers, MaxPairs: *maxPairs, MaxEdit: *maxEdit, Prior: *prior,
 		})
 		must(err)
-		fmt.Printf("\n=== propose ===\npairs=%d singles=%d skipped_prior=%d errors=%d\n", st.Pairs, st.SingleProposed, st.SkippedPrior, st.Errors)
+		fmt.Printf("\n=== propose ===\npairs=%d singles=%d skipped_prior=%d skipped_prior_names=%d errors=%d\n",
+			st.Pairs, st.SingleProposed, st.SkippedPrior, st.SkippedPriorNames, st.Errors)
 		fmt.Printf("blocking: pool_by_source=%v substring=%d edit=%d cooccur=%d capped=%v\n",
 			st.Block.PoolBySource, st.Block.Substring, st.Block.Edit, st.Block.Cooccur, st.Block.Capped)
 		fmt.Printf("relations: %v\n", st.RelationCounts)
@@ -85,8 +98,23 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "merge":
+		st, err := tagcanon.Merge(ctx, tagcanon.MergeOpts{DSN: *dsn, Merges: *merges, Apply: *apply})
+		must(err)
+		fmt.Printf("\n=== merge %s ===\nrecords=%d planned=%d already_merged=%d open_proposals=%d errors=%d\n",
+			modeLabel(*apply), st.Records, st.Planned, st.AlreadyMerged, st.OpenProposals, st.Errors)
+		if *apply {
+			fmt.Printf("maps_repointed=%d curated_aliases=%d intros_moved=%d intros_dropped=%d counts_dropped=%d tags_deleted=%d\n",
+				st.MapsRepointed, st.CuratedAliases, st.IntrosMoved, st.IntrosDropped, st.CountsDropped, st.TagsDeleted)
+		} else {
+			fmt.Printf("DRY RUN — nothing written; re-run with --apply\n")
+		}
+		if st.Errors > 0 {
+			os.Exit(1)
+		}
+
 	default:
-		fmt.Fprintf(os.Stderr, "usage: -mode propose|review|apply (see cmd/tag-canon-pair doc)\n")
+		fmt.Fprintf(os.Stderr, "usage: -mode backlog|propose|review|apply|merge (see cmd/tag-canon-pair doc)\n")
 		os.Exit(2)
 	}
 }

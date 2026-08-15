@@ -32,6 +32,7 @@ the image is the fix, not a preference.
 | intromt-nightly | daily 13:00 | 48h |
 | playtime-aggregate | daily 05:20 | 48h |
 | refresh-tag-counts | hourly :40 | 6h |
+| tag-vocab-backlog | 1st 12:30 | 768h |
 
 Crontab (root) also runs `/root/lib/watchdog.sh` daily at 09:00 — the deadman
 that alerts when a job has not *succeeded* within its limit, the failure mode

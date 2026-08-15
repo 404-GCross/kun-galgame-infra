@@ -72,18 +72,77 @@ func loadWorkTagVocab(ctx context.Context, db *gorm.DB, sourceID int16) ([]vocab
 	return out, nil
 }
 
-func loadLabelNorms(ctx context.Context, db *gorm.DB) (map[string]struct{}, error) {
-	var names []string
-	if err := db.WithContext(ctx).Raw(`SELECT display_name FROM catalog_label`).Scan(&names).Error; err != nil {
-		return nil, fmt.Errorf("load label norms: %w", err)
-	}
-	set := make(map[string]struct{}, len(names))
-	for _, n := range names {
-		if k := normalize(n); k != "" {
-			set[k] = struct{}{}
+// junkIndex is the entity-name blocklist for bangumi's free-text tag lane, plus
+// the vocabulary that overrides it. Wave 208 hand-rejected 419 person names and
+// 129 company nicknames out of one review batch — a name the catalog already
+// knows as a company or a credit is the dominant noise class there.
+type junkIndex struct {
+	blocked map[string]string
+	vocab   map[string]struct{}
+}
+
+func loadJunkIndex(ctx context.Context, db *gorm.DB) (*junkIndex, error) {
+	idx := &junkIndex{blocked: map[string]string{}, vocab: map[string]struct{}{}}
+	for _, q := range []struct{ reason, sql string }{
+		// Order matters only for the reason label a name ends up reported under.
+		{"person_alias", `SELECT name FROM catalog_name_alias`},
+		{"person", `SELECT name FROM catalog_credit_name`},
+		{"label_alias", `SELECT name FROM catalog_label_alias`},
+		{"label", `SELECT display_name FROM catalog_label`},
+	} {
+		var names []string
+		if err := db.WithContext(ctx).Raw(q.sql).Scan(&names).Error; err != nil {
+			return nil, fmt.Errorf("load %s norms: %w", q.reason, err)
+		}
+		for _, n := range names {
+			if k := normalize(n); k != "" {
+				idx.blocked[k] = q.reason
+			}
 		}
 	}
-	return set, nil
+	for _, q := range []string{
+		`SELECT name FROM catalog_tag`,
+		`SELECT source_name FROM catalog_tag_source_map`,
+	} {
+		var names []string
+		if err := db.WithContext(ctx).Raw(q).Scan(&names).Error; err != nil {
+			return nil, fmt.Errorf("load vocabulary norms: %w", err)
+		}
+		for _, n := range names {
+			if k := normalize(n); k != "" {
+				idx.vocab[k] = struct{}{}
+			}
+		}
+	}
+	return idx, nil
+}
+
+// A name the vocabulary already carries is never junk: a company sharing its
+// spelling ("SIM" is a studio AND the simulation genre) must not retire a tag
+// the catalog is already answering with.
+func (j *junkIndex) reason(norm string) string {
+	if j == nil {
+		return ""
+	}
+	if _, known := j.vocab[norm]; known {
+		return ""
+	}
+	return j.blocked[norm]
+}
+
+func loadRejectedNames(ctx context.Context, db *gorm.DB) (map[string]struct{}, error) {
+	var rows []struct {
+		SourceID   int16  `gorm:"column:source_id"`
+		SourceName string `gorm:"column:source_name"`
+	}
+	if err := db.WithContext(ctx).Raw(`SELECT source_id, source_name FROM catalog_tag_rejection`).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("load tag rejections: %w", err)
+	}
+	out := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		out[mapKey(r.SourceID, r.SourceName)] = struct{}{}
+	}
+	return out, nil
 }
 
 func normalize(s string) string {
@@ -97,7 +156,7 @@ var (
 	reDisc   = regexp.MustCompile(`^(s|ss|season|disc|cd|dvd|vol\.?|ep\.?|盘|碟)\s?\d{1,3}$`)
 )
 
-func bgmJunk(norm string, labelNorms map[string]struct{}) string {
+func bgmJunk(norm string, idx *junkIndex) string {
 	switch {
 	case reNumber.MatchString(norm):
 		return "number"
@@ -108,10 +167,10 @@ func bgmJunk(norm string, labelNorms map[string]struct{}) string {
 	case reDisc.MatchString(norm):
 		return "disc"
 	}
-	if _, hit := labelNorms[norm]; hit {
-		return "label"
+	if isMeta(norm) {
+		return ""
 	}
-	return ""
+	return idx.reason(norm)
 }
 
 var metaNorms = map[string]struct{}{}
