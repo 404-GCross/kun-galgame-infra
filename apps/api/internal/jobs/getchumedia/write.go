@@ -108,6 +108,8 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, present map[
 			out.dedup++
 			continue
 		}
+		// Sexual: work-level provisional stamp for brand-new rows only (OnConflict
+		// DoNothing); sync-image-grades refines it to per-image grades nightly.
 		tx := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "work_id"}, {Name: "image_hash"}},
 			DoNothing: true,
