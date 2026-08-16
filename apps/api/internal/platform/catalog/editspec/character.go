@@ -94,6 +94,9 @@ func RegisterCharacter(reg *editing.Registry, db *gorm.DB) error {
 func characterFieldSpecs() []editing.FieldSpec {
 	aliases := editing.FieldSpec{
 		Key: FieldCharacterAliases, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+		Identity: &editing.IdentitySpec{
+			Segments: 4, TrailingText: true, KeyCheck: kindLangTextKeyCheck("alias"),
+		},
 		Validate: validateCharacterAliases,
 		Apply:    applyCharacterAliases,
 	}

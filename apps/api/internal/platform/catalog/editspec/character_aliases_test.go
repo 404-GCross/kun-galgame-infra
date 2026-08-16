@@ -122,6 +122,38 @@ func TestCharacterAliasIdentityIsContentDerived(t *testing.T) {
 	}
 }
 
+func TestCharacterAliasIdentityIsCleanStable(t *testing.T) {
+	newCharacterEngine(t)
+	ch := createCharacter(t, "正規化")
+	for _, c := range dirtyTexts {
+		dirty, clean := editspec.CharacterAliasIdentity(model.AliasKindTranslation, "ja", c.dirty),
+			editspec.CharacterAliasIdentity(model.AliasKindTranslation, "ja", c.clean)
+		if dirty != clean {
+			t.Fatalf("%s: key(%q) = %q, key(%q) = %q", c.name, c.dirty, dirty, c.clean, clean)
+		}
+	}
+
+	for i, c := range dirtyTexts {
+		row := model.CatalogCharacterAlias{
+			CharacterID: ch.ID, Name: c.dirty, Lang: "ja", Kind: model.AliasKindTranslation,
+		}
+		if err := testDB.Create(&row).Error; err != nil {
+			t.Fatalf("case %d: insert %q: %v", i, c.dirty, err)
+		}
+		var key string
+		if err := testDB.Raw(`SELECT `+editspec.CharacterAliasIdentitySQL("a")+
+			` FROM catalog_character_alias a WHERE a.id = ?`, row.ID).Scan(&key).Error; err != nil {
+			t.Fatalf("case %d: compute key in SQL: %v", i, err)
+		}
+		if want := editspec.CharacterAliasIdentity(model.AliasKindTranslation, "ja", c.clean); key != want {
+			t.Fatalf("%s: SQL key %q, Go key %q", c.name, key, want)
+		}
+		if err := testDB.Exec(`DELETE FROM catalog_character_alias WHERE id = ?`, row.ID).Error; err != nil {
+			t.Fatalf("case %d: cleanup: %v", i, err)
+		}
+	}
+}
+
 func TestCharacterAliasIdentitySQLMatchesGo(t *testing.T) {
 	newCharacterEngine(t)
 	ch := createCharacter(t, "SQL 対 Go")

@@ -3,6 +3,7 @@ package editing_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"api/internal/platform/editing"
@@ -11,11 +12,11 @@ import (
 )
 
 func TestParseSuppressedKeys(t *testing.T) {
-	ok, err := editing.ParseSuppressedKeys([]any{"a", "b", "c"})
+	ok, err := editing.ParseSuppressedKeys([]any{"a", "b", "c"}, 0)
 	if err != nil || len(ok) != 3 || ok[0] != "a" || ok[2] != "c" {
 		t.Fatalf("parse: %v %v", ok, err)
 	}
-	if got, err := editing.ParseSuppressedKeys([]any{}); err != nil || len(got) != 0 {
+	if got, err := editing.ParseSuppressedKeys([]any{}, 0); err != nil || len(got) != 0 {
 		t.Fatalf("empty list: %v %v", got, err)
 	}
 	bad := []any{
@@ -27,16 +28,22 @@ func TestParseSuppressedKeys(t *testing.T) {
 		map[string]any{"a": true},
 	}
 	for i, v := range bad {
-		if _, err := editing.ParseSuppressedKeys(v); err == nil {
+		if _, err := editing.ParseSuppressedKeys(v, 0); err == nil {
 			t.Fatalf("case %d (%#v) was accepted", i, v)
 		}
 	}
 	long := make([]any, 0, 201)
 	for i := 0; i < 201; i++ {
-		long = append(long, string(rune('a'+i%26))+string(rune('a'+i/26)))
+		long = append(long, fmt.Sprintf("k%04d", i))
 	}
-	if _, err := editing.ParseSuppressedKeys(long); err == nil {
+	if _, err := editing.ParseSuppressedKeys(long, 0); err == nil {
 		t.Fatal("201 keys were accepted")
+	}
+	if _, err := editing.ParseSuppressedKeys(long, 500); err != nil {
+		t.Fatalf("201 keys under a declared cap of 500: %v", err)
+	}
+	if _, err := editing.ParseSuppressedKeys([]any{"a", "b"}, 1); err == nil {
+		t.Fatal("2 keys were accepted under a declared cap of 1")
 	}
 }
 
@@ -46,8 +53,18 @@ func TestSuppressedFieldSpecShape(t *testing.T) {
 		Review:    editing.ReviewPerm("edit.test.widget.review"),
 		Automerge: editing.AutomergeOwner,
 	}
-	parent := editing.FieldSpec{Key: "test.widget.rows", Kind: editing.KindList, Policy: &parentPolicy}
+	parent := editing.FieldSpec{
+		Key: "test.widget.rows", Kind: editing.KindList, Policy: &parentPolicy,
+		Identity: &editing.IdentitySpec{Segments: 2, KeyCheck: numericKeyCheck("row", 2)},
+	}
 	spec := editing.SuppressedFieldSpec("test.widget", parent)
+	if spec.MaxSuppressed != 200 {
+		t.Fatalf("default cap = %d, want 200", spec.MaxSuppressed)
+	}
+	parent.MaxSuppressed = 500
+	if capped := editing.SuppressedFieldSpec("test.widget", parent); capped.MaxSuppressed != 500 {
+		t.Fatalf("declared cap = %d, want 500", capped.MaxSuppressed)
+	}
 	if spec.Key != "test.widget.rows.suppressed" {
 		t.Fatalf("key = %q", spec.Key)
 	}
@@ -135,6 +152,7 @@ func widgetSuppressionEngine(t *testing.T) *editing.Engine {
 	spec := widgetSpec(testDB)
 	parent := editing.FieldSpec{
 		Key: fRows, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+		Identity: &editing.IdentitySpec{Segments: 2, KeyCheck: numericKeyCheck("row", 2)},
 		Validate: func(any) error { return nil },
 		Apply:    func(context.Context, *gorm.DB, int64, any) error { return nil },
 	}

@@ -5,46 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"api/internal/infrastructure/database"
+	"api/internal/platform/textnorm"
 )
-
-// stripRunes are removed everywhere in a value: zero-width formatters, all bidi
-// controls, the word joiner and the BOM/ZWNBSP. U+FE0F (emoji variation
-// selector) is deliberately NOT here — it is part of legitimate emoji like ⚠️.
-var stripRunes = []rune{
-	0x200B, 0x200C, 0x200D, 0x200E, 0x200F,
-	0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
-	0x2060, 0x2066, 0x2067, 0x2068, 0x2069,
-	0xFEFF,
-}
-
-var trimRunes = []rune{' ', '\t', '\n', '\r', '　'}
-
-var stripSet = func() map[rune]bool {
-	m := make(map[rune]bool, len(stripRunes))
-	for _, r := range stripRunes {
-		m[r] = true
-	}
-	return m
-}()
-
-func clean(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if !stripSet[r] {
-			b.WriteRune(r)
-		}
-	}
-	return strings.TrimFunc(b.String(), func(r rune) bool {
-		return slices.Contains(trimRunes, r)
-	})
-}
 
 type target struct{ table, idCol, textCol string }
 
@@ -58,17 +25,6 @@ var targets = []target{
 	{"catalog_label", "id", "display_name"},
 	{"catalog_label_alias", "id", "name"},
 	{"catalog_release", "id", "title"},
-}
-
-func dirtyWhere(col string) string {
-	chrs := make([]string, len(stripRunes))
-	for i, r := range stripRunes {
-		chrs[i] = fmt.Sprintf("chr(%d)", r)
-	}
-	class := "('[' || " + strings.Join(chrs, "||") + " || ']')"
-	return fmt.Sprintf(
-		"%[1]s IS NOT NULL AND (%[1]s ~ %[2]s OR %[1]s <> btrim(%[1]s, E' \\t\\n\\r' || chr(12288)))",
-		col, class)
 }
 
 func main() {
@@ -100,7 +56,7 @@ func main() {
 
 	var totalCand, totalWritten int
 	for _, t := range targets {
-		q := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s ORDER BY %s", t.idCol, t.textCol, t.table, dirtyWhere(t.textCol), t.idCol)
+		q := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s ORDER BY %s", t.idCol, t.textCol, t.table, textnorm.DirtyWhereSQL(t.textCol), t.idCol)
 		if *limit > 0 {
 			q += fmt.Sprintf(" LIMIT %d", *limit)
 		}
@@ -117,7 +73,7 @@ func main() {
 				slog.Error("scan", "table", t.table, "error", err)
 				os.Exit(1)
 			}
-			nv := clean(val)
+			nv := textnorm.Clean(val)
 			if nv == val || nv == "" {
 				continue
 			}

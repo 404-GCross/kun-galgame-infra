@@ -154,6 +154,9 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 func workFieldSpecs() []editing.FieldSpec {
 	titles := editing.FieldSpec{
 		Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+		Identity: &editing.IdentitySpec{
+			Segments: 4, TrailingText: true, KeyCheck: kindLangTextKeyCheck("title"),
+		},
 		Validate: validateTitles,
 		Apply:    applyTitles,
 	}

@@ -55,7 +55,11 @@ func (s *MergeService) ExecuteMerge(ctx context.Context, proposalID int64, execu
 			return fmt.Errorf("survivorship: %w", err)
 		}
 
-		touched, err := rehangEntity(tx, et, src, dst)
+		reg, err := s.editReg()
+		if err != nil {
+			return fmt.Errorf("edit registry: %w", err)
+		}
+		touched, err := rehangEntity(tx, reg, et, src, dst)
 		if err != nil {
 			return fmt.Errorf("rehang: %w", err)
 		}
