@@ -20,6 +20,7 @@ func SchemaFieldViews(fields []editing.FieldProjection) []dto.EditSchemaFieldVie
 			Key: f.Key, Kind: string(f.Kind), DiffHint: f.DiffHint, Deprecated: f.Deprecated,
 			Locked: f.Locked, CanPropose: f.CanPropose, CanReview: f.CanReview,
 			WouldAutomerge: f.WouldAutomerge,
+			MaxSuppressed:  f.MaxSuppressed, MaxElements: f.MaxElements,
 		})
 	}
 	return out

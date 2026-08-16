@@ -30,6 +30,8 @@ const (
 	FieldWorkLinks         = "catalog.work.links"
 	FieldWorkCovers        = "catalog.work.covers"
 	FieldWorkScreenshots   = "catalog.work.screenshots"
+	FieldWorkCredits       = "catalog.work.credits"
+	FieldWorkCreditsSuppr  = FieldWorkCredits + editing.SuppressedFieldSuffix
 )
 
 var letmoeSites = []string{"letmoe", "letmoe-staging", "letmoe-dev"}
@@ -96,16 +98,18 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 				FieldWorkDisplayNSFW:   w.DisplayNSFW,
 			}
 			for key, load := range map[string]func(context.Context, *gorm.DB, int64) ([]any, error){
-				FieldWorkTitles:      loadTitles,
-				FieldWorkTitlesSuppr: loadSuppressedTitles,
-				FieldWorkIntros:      loadIntros,
-				FieldWorkTagIDs:      loadTagIDs,
-				FieldWorkLabels:      loadLabels,
-				FieldWorkEngineIDs:   loadEngineIDs,
-				FieldWorkSeriesIDs:   loadSeriesIDs,
-				FieldWorkLinks:       loadLinks,
-				FieldWorkCovers:      loadCovers,
-				FieldWorkScreenshots: loadScreenshots,
+				FieldWorkTitles:       loadTitles,
+				FieldWorkTitlesSuppr:  loadSuppressedTitles,
+				FieldWorkIntros:       loadIntros,
+				FieldWorkTagIDs:       loadTagIDs,
+				FieldWorkLabels:       loadLabels,
+				FieldWorkEngineIDs:    loadEngineIDs,
+				FieldWorkSeriesIDs:    loadSeriesIDs,
+				FieldWorkLinks:        loadLinks,
+				FieldWorkCovers:       loadCovers,
+				FieldWorkScreenshots:  loadScreenshots,
+				FieldWorkCredits:      loadCredits,
+				FieldWorkCreditsSuppr: loadSuppressedCredits,
 			} {
 				value, err := load(ctx, db, entityID)
 				if err != nil {
@@ -157,8 +161,23 @@ func workFieldSpecs() []editing.FieldSpec {
 		Identity: &editing.IdentitySpec{
 			Segments: 4, TrailingText: true, KeyCheck: kindLangTextKeyCheck("title"),
 		},
-		Validate: validateTitles,
-		Apply:    applyTitles,
+		MaxElements: maxTitleElements,
+		Validate:    validateTitles,
+		Apply:       applyTitles,
+	}
+	credits := editing.FieldSpec{
+		Key: FieldWorkCredits, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+		Identity: &editing.IdentitySpec{
+			Segments: 4, KeyCheck: creditKeyCheck,
+			Refs: []editing.IdentityRef{
+				{Segment: 3, EntityTag: TagCreditName},
+				{Segment: 4, EntityTag: TagCharacter, ZeroAbsent: true},
+			},
+		},
+		MaxSuppressed: maxCreditSuppress,
+		MaxElements:   maxCreditElements,
+		Validate:      validateCredits,
+		Apply:         applyCredits,
 	}
 	return []editing.FieldSpec{
 		{
@@ -227,6 +246,8 @@ func workFieldSpecs() []editing.FieldSpec {
 			Validate: validateScreenshots,
 			Apply:    applyScreenshots,
 		},
+		credits,
+		editing.SuppressedFieldSpec(TypeWork, credits),
 	}
 }
 

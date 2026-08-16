@@ -815,6 +815,8 @@ export interface components {
             character_id?: number;
             /** Format: int64 */
             credit_name_id: number;
+            /** @description Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it */
+            identity: string;
             lang: string;
             latin?: string;
             name: string;
@@ -984,6 +986,16 @@ export interface components {
             key: string;
             kind: string;
             locked: boolean;
+            /**
+             * Format: int64
+             * @description Cap on this list field's element count; absent for scalar fields
+             */
+            max_elements?: number;
+            /**
+             * Format: int64
+             * @description Cap on this field's suppression set; absent when the field has none
+             */
+            max_suppressed?: number;
             /** @description A proposal by this caller would merge instantly */
             would_automerge: boolean;
         };
@@ -1492,6 +1504,8 @@ export interface components {
             character?: string;
             /** Format: int64 */
             character_id?: number;
+            /** @description Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it */
+            identity: string;
             /** Format: int64 */
             role_id: number;
             role_key: string;

@@ -548,7 +548,8 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		FROM catalog_credit c
 		JOIN catalog_character ch ON ch.id = c.character_id
 		JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
-		WHERE c.work_id = ? AND c.character_id IS NOT NULL AND ch.deleted_at IS NULL`, workID).Scan(&creds).Error; err != nil {
+		WHERE c.work_id = ? AND c.character_id IS NOT NULL AND ch.deleted_at IS NULL
+		  AND `+editspec.NotSuppressedCreditSQL("c"), workID).Scan(&creds).Error; err != nil {
 		return nil, err
 	}
 
@@ -774,6 +775,11 @@ type SiblingNameRow struct {
 	Latin *string
 }
 
+// nameWorkScope is shared by NameWorks' total and its page: a total of 40 that
+// pages out 38 is a defect on its own.
+var nameWorkScope = `FROM catalog_credit c WHERE c.credit_name_id = ? AND ` +
+	editspec.NotSuppressedCreditSQL("c")
+
 type NameWorkRoleRow struct {
 	WorkID      int64   `gorm:"column:work_id"`
 	RoleID      int64   `gorm:"column:role_id"`
@@ -782,6 +788,7 @@ type NameWorkRoleRow struct {
 	RoleNameJA  string  `gorm:"column:role_name_ja"`
 	CharacterID *int64  `gorm:"column:character_id"`
 	CharacterNM *string `gorm:"column:character_nm"`
+	Identity    string  `gorm:"column:identity"`
 }
 
 type NameWorkDetail struct {
@@ -824,13 +831,13 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 		}
 	}
 
-	if err := db.Raw(`SELECT count(DISTINCT work_id) FROM catalog_credit WHERE credit_name_id = ?`,
+	if err := db.Raw(`SELECT count(DISTINCT c.work_id) `+nameWorkScope,
 		nameID).Scan(&res.Total).Error; err != nil {
 		return nil, err
 	}
 	var workIDs []int64
-	if err := db.Raw(`SELECT DISTINCT work_id FROM catalog_credit WHERE credit_name_id = ?
-		ORDER BY work_id LIMIT ? OFFSET ?`, nameID, limit, offset).Scan(&workIDs).Error; err != nil {
+	if err := db.Raw(`SELECT DISTINCT c.work_id `+nameWorkScope+`
+		ORDER BY c.work_id LIMIT ? OFFSET ?`, nameID, limit, offset).Scan(&workIDs).Error; err != nil {
 		return nil, err
 	}
 	if len(workIDs) == 0 {
@@ -843,11 +850,13 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 	var roleRows []NameWorkRoleRow
 	if err := db.Raw(`SELECT c.work_id, c.role_id, ro.key AS role_key,
 		ro.name_cn AS role_name_cn, ro.name_ja AS role_name_ja,
-		c.character_id, ch.display_name AS character_nm
+		c.character_id, ch.display_name AS character_nm,
+		`+editspec.CreditIdentitySQL("c")+` AS identity
 		FROM catalog_credit c
 		JOIN catalog_role ro ON ro.id = c.role_id
 		LEFT JOIN catalog_character ch ON ch.id = c.character_id
 		WHERE c.credit_name_id = ? AND c.work_id IN ?
+		  AND `+editspec.NotSuppressedCreditSQL("c")+`
 		ORDER BY c.work_id, c.role_id, character_nm NULLS FIRST`, nameID, workIDs).Scan(&roleRows).Error; err != nil {
 		return nil, err
 	}
@@ -864,6 +873,14 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 	}
 	return res, nil
 }
+
+// unionWorks is shared by CharacterWorks' total and its page. Suppressing a VA
+// credit therefore removes the work from this union too when no roster edge
+// carries the character: charter ruling 2 (read paths exclude suppressed rows
+// uniformly) is not given an exemption for the union's existence half.
+var unionWorks = `SELECT work_id FROM catalog_work_character WHERE character_id = ?
+	UNION SELECT c.work_id FROM catalog_credit c WHERE c.character_id = ? AND ` +
+	editspec.NotSuppressedCreditSQL("c")
 
 type CharacterHeadRow struct {
 	ID          int64  `gorm:"column:id"`
@@ -906,8 +923,6 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 	}
 	res := &CharacterWorksResult{Head: &head}
 
-	const unionWorks = `SELECT work_id FROM catalog_work_character WHERE character_id = ?
-		UNION SELECT work_id FROM catalog_credit WHERE character_id = ?`
 	if err := db.Raw(`SELECT count(*) FROM (`+unionWorks+`) u`,
 		characterID, characterID).Scan(&res.Total).Error; err != nil {
 		return nil, err
@@ -951,6 +966,7 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 	if err := db.Raw(`SELECT DISTINCT c.work_id, cn.id AS credit_name_id, cn.name, cn.lang, cn.latin
 		FROM catalog_credit c JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
 		WHERE c.character_id = ? AND c.work_id IN ?
+		  AND `+editspec.NotSuppressedCreditSQL("c")+`
 		ORDER BY c.work_id, cn.id`, characterID, workIDs).Scan(&voiceRows).Error; err != nil {
 		return nil, err
 	}
@@ -1120,6 +1136,7 @@ type CreditRow struct {
 	LabelNM      *string
 	Note         string
 	SourceKey    *string
+	Identity     string
 }
 
 func (s *ReadService) WorkCredits(ctx context.Context, workID int64) ([]CreditRow, error) {
@@ -1128,14 +1145,16 @@ func (s *ReadService) WorkCredits(ctx context.Context, workID int64) ([]CreditRo
 		c.role_id, ro.key AS role_key, ro.name_cn AS role_name_cn, ro.name_ja AS role_name_ja,
 		cn.id AS credit_name_id, cn.name, cn.lang, cn.latin,
 		c.character_id, ch.display_name AS character_nm,
-		c.label_id, la.display_name AS label_nm, c.note, src.key AS source_key
+		c.label_id, la.display_name AS label_nm, c.note, src.key AS source_key,
+		`+editspec.CreditIdentitySQL("c")+` AS identity
 		FROM catalog_credit c
 		JOIN catalog_role ro ON ro.id = c.role_id
 		JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
 		LEFT JOIN catalog_character ch ON ch.id = c.character_id
 		LEFT JOIN catalog_label la ON la.id = c.label_id
 		LEFT JOIN catalog_source src ON src.id = c.source_id
-		WHERE c.work_id = ?
-		ORDER BY c.role_id ASC, src.key ASC NULLS LAST, cn.id ASC`, workID).Scan(&rows).Error
+		WHERE c.work_id = ? AND `+editspec.NotSuppressedCreditSQL("c")+`
+		ORDER BY c.role_id ASC, `+editspec.HumanLaneFirstNoProvenanceSQL("c.source_id")+
+		`, src.key ASC NULLS LAST, cn.id ASC`, workID).Scan(&rows).Error
 	return rows, err
 }

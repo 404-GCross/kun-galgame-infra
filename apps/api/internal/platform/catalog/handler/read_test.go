@@ -523,7 +523,8 @@ func TestWorkCharacters(t *testing.T) {
 	db := openCatalogTestDB(t)
 	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
 	for _, tbl := range []string{
-		"catalog_credit", "catalog_work_character", "catalog_work", "catalog_credit_name", "catalog_character",
+		"catalog_credit", "catalog_work_character", "edit_suppressed_row",
+		"catalog_work", "catalog_credit_name", "catalog_character",
 	} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}

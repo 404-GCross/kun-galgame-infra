@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"testing"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -183,4 +185,42 @@ func TestLoadMigrateWorklistValidates(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
+}
+
+func TestCreditSplitFollowsIdentityWithScope(t *testing.T) {
+	cnID, roleID, workA, workB := migrateFixture(t)
+	require.NoError(t, testDB.Exec(`TRUNCATE edit_suppressed_row RESTART IDENTITY CASCADE`).Error)
+
+	untouched := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "work C",
+		ContentRating: model.ContentRatingAllAges, Status: model.WorkStatusLive}
+	require.NoError(t, testDB.Create(&untouched).Error)
+
+	oldKey := editspec.CreditIdentity(roleID, cnID, 0)
+	for _, workID := range []int64{workA, workB, untouched.ID} {
+		require.NoError(t, testDB.Create(&editing.SuppressedRow{
+			EntityType: editspec.TypeWork, EntityID: workID,
+			FieldKey: editspec.FieldWorkCredits, IdentityKey: oldKey,
+		}).Error)
+	}
+
+	st, err := RunMigrate(context.Background(), Opts{DSN: testDSN, WorklistPath: migrateWL(t, cnID), Apply: true})
+	require.NoError(t, err)
+	require.Equal(t, 2, st.CreditsMoved)
+	target := st.Receipts[0].ToCreditNameID
+	require.NotZero(t, target)
+
+	newKey := editspec.CreditIdentity(roleID, target, 0)
+	keyOf := func(workID int64) string {
+		var keys []string
+		require.NoError(t, testDB.Model(&editing.SuppressedRow{}).
+			Where("entity_type = ? AND entity_id = ? AND field_key = ?",
+				editspec.TypeWork, workID, editspec.FieldWorkCredits).
+			Pluck("identity_key", &keys).Error)
+		require.Len(t, keys, 1)
+		return keys[0]
+	}
+	assert.Equal(t, newKey, keyOf(workA), "a work whose rows moved must follow")
+	assert.Equal(t, newKey, keyOf(workB), "a work whose rows moved must follow")
+	assert.Equal(t, oldKey, keyOf(untouched.ID),
+		"scopeEntityIDs must keep a work whose rows did not move out of the rewrite")
 }

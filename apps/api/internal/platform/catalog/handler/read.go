@@ -302,7 +302,7 @@ func (s *S2SServer) workCredits(ctx context.Context, in *creditsInput) (*credits
 			})
 			cur = &resp.Groups[len(resp.Groups)-1]
 		}
-		item := dto.CreditItem{CreditNameID: r.CreditNameID, Name: r.Name, Lang: r.Lang, Note: r.Note}
+		item := dto.CreditItem{CreditNameID: r.CreditNameID, Name: r.Name, Lang: r.Lang, Note: r.Note, Identity: r.Identity}
 		if r.Latin != nil {
 			item.Latin = *r.Latin
 		}
@@ -558,6 +558,7 @@ func (s *S2SServer) nameWorks(ctx context.Context, in *nameWorksInput) (*nameWor
 			nr := dto.NameWorkRole{
 				RoleID: r.RoleID, RoleKey: r.RoleKey,
 				RoleName: firstNonEmpty(r.RoleNameCN, r.RoleNameJA, r.RoleKey),
+				Identity: r.Identity,
 			}
 			if r.CharacterID != nil {
 				nr.CharacterID = *r.CharacterID

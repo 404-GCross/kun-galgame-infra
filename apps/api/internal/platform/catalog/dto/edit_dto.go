@@ -134,6 +134,8 @@ type EditSchemaFieldView struct {
 	CanPropose     bool   `json:"can_propose"`
 	CanReview      bool   `json:"can_review"`
 	WouldAutomerge bool   `json:"would_automerge" doc:"A proposal by this caller would merge instantly"`
+	MaxSuppressed  int    `json:"max_suppressed,omitempty" doc:"Cap on this field's suppression set; absent when the field has none"`
+	MaxElements    int    `json:"max_elements,omitempty" doc:"Cap on this list field's element count; absent for scalar fields"`
 }
 
 type EditSchemaResponse struct {

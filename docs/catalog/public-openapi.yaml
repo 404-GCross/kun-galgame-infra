@@ -1302,6 +1302,9 @@ components:
         id:
           format: int64
           type: integer
+        identity:
+          description: Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it
+          type: string
         label:
           type: string
         label_id:
@@ -1319,6 +1322,7 @@ components:
         - id
         - name
         - lang
+        - identity
       type: object
     PublicEngine:
       additionalProperties: false
@@ -1932,6 +1936,9 @@ components:
         character_id:
           format: int64
           type: integer
+        identity:
+          description: Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it
+          type: string
         role_key:
           type: string
         role_name:
@@ -1939,6 +1946,7 @@ components:
       required:
         - role_key
         - role_name
+        - identity
       type: object
     PublicPersonLink:
       additionalProperties: false
