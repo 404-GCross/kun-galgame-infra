@@ -404,7 +404,7 @@ func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out
 	}
 	if err := db.Raw(`SELECT work_id, lang, intro, source_id, provenance FROM catalog_work_intro
 		WHERE work_id IN ? ORDER BY work_id, lang, provenance, `+
-		editspec.HumanLaneFirstSQL("source_id")+`, source_id`, workIDs).Scan(&rows).Error; err != nil {
+		editspec.HumanLaneFirstSQL("source_id", "provenance")+`, source_id`, workIDs).Scan(&rows).Error; err != nil {
 		return err
 	}
 	seen := make(map[int64]map[string]bool)
@@ -1078,7 +1078,7 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 	}
 	if err := db.Raw(`SELECT lang, intro, source_id, provenance FROM catalog_character_intro
 		WHERE character_id = ? ORDER BY lang, provenance, `+
-		editspec.HumanLaneFirstSQL("source_id")+`,
+		editspec.HumanLaneFirstSQL("source_id", "provenance")+`,
 		(provenance = 1 AND source_id = ?) DESC, source_id`, characterID, sourceDerived).Scan(&introRows).Error; err != nil {
 		return nil, err
 	}

@@ -3,6 +3,8 @@ package editspec
 import (
 	"fmt"
 	"strings"
+
+	catmodel "api/internal/platform/catalog/model"
 )
 
 const curatedSourceID int16 = 12
@@ -22,22 +24,34 @@ func HumanSourceIDs() []int16 { return []int16{userSourceID, curatedSourceID} }
 // editor saved it, read it back, and it never rendered (6 live work rows in
 // 2026-08).
 //
-// It goes AFTER `provenance`, never before it. Every intro the editing engine
-// writes is provenance=0 (IntroProvenanceSource, no exception), so ranking
-// provenance first costs the human lane nothing — it still wins its own tier.
-// Putting this term first instead makes a MACHINE-TRANSLATED curated row beat an
-// upstream ORIGINAL one, which inverts the separate and correct "source outranks
-// machine" axis. The bug was human text hidden by upstream human text; it was
-// never "curated wins everything".
+// The `provenance = 0` gate is the whole point, and it was nearly shipped
+// without: the term applies ONLY inside the source tier, so it can never elect a
+// machine row. Two mistakes were made here in a row.
 //
-// Inside the machine tier the term still applies, and that is deliberate: a
-// curated provenance=1 row is the translation OF the curated original this same
-// fold just picked for its own language, so preferring it keeps the languages
-// telling one story instead of pairing our ja original with a translation of the
-// ja text we rejected. That is also why it precedes the character fold's
-// derived-extraction exception, which ranks machine rows among themselves.
-func HumanLaneFirstSQL(sourceColumn string) string {
-	return fmt.Sprintf("(%s IN (%d, %d)) DESC", sourceColumn, userSourceID, curatedSourceID)
+//  1. Placing the term before `provenance` let a MACHINE-TRANSLATED curated row
+//     beat an upstream ORIGINAL, inverting the separate and correct "source
+//     outranks machine" axis. The bug was human text hidden by upstream human
+//     text; it was never "curated wins everything".
+//  2. Moving it after `provenance` fixed that but still let it decide INSIDE the
+//     machine tier, on the argument that a curated translation belongs with the
+//     curated original it was made from. Production said otherwise. Across the
+//     5,806 works it would have moved, the curated lane holds en/prov0 5,805,
+//     zh-Hans/prov1 5,806, ja/prov0 2 — the zh-Hans machine row is translated
+//     from our `en` row, while 5,804 of those works render bangumi's Japanese
+//     ORIGINAL on the ja face either way. Preferring ours would have paired a
+//     Japanese original with a translation of a different English text: EN→ZH
+//     instead of JA→ZH, and usually a translation of a translation. THE LOCAL
+//     SNAPSHOT SHOWS 4 OF THE 5,806 — this one cannot be judged on a dev copy.
+//
+// The gate also hands the machine tier back to its own rule: `derived` (source
+// 18) is again the only preference among machine rows, per the wave-178 panel.
+//
+// Kept syntactically after `provenance` so the ordering reads tier-then-lane;
+// with the gate the two positions are equivalent.
+func HumanLaneFirstSQL(sourceColumn, provenanceColumn string) string {
+	return fmt.Sprintf("(%s IN (%d, %d) AND %s = %d) DESC",
+		sourceColumn, userSourceID, curatedSourceID,
+		provenanceColumn, catmodel.IntroProvenanceSource)
 }
 
 const (
