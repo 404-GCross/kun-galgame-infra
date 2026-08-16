@@ -347,13 +347,17 @@ func TestTagDetailIntrosAlwaysPresent(t *testing.T) {
 		t.Fatalf("intros must be an empty slice (serialized []), got %#v", rec.Intros)
 	}
 
-	const srcWiki int16 = 12
+	// Both contenders must be UPSTREAM ids. This used to seed source 12 as
+	// "another source" — it is the curated lane, and the day the human lane
+	// started winning its language the case stopped being about source_id order
+	// at all. TestTagIntroHumanLaneWinsTheLangFold owns that direction now.
+	const srcGetchu int16 = 17
 	for _, in := range []struct {
 		lang, body string
 		src        int16
 	}{
 		{"zh-Hans", "低位来源胜出", srcErogamescape},
-		{"zh-Hans", "另一来源", srcWiki},
+		{"zh-Hans", "另一来源", srcGetchu},
 		{"ja", "日本語", srcVNDB},
 	} {
 		if err := testDB.Create(&model.CatalogTagIntro{

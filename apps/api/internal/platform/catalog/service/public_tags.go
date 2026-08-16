@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 )
 
@@ -80,7 +81,9 @@ func (s *PublicService) tagIntros(ctx context.Context, tagID int64) ([]dto.Publi
 	}
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT lang, intro, source_id FROM catalog_tag_intro
-		WHERE tag_id = ? ORDER BY lang, source_id`, tagID).Scan(&rows).Error; err != nil {
+		WHERE tag_id = ? ORDER BY lang, `+
+		editspec.HumanLaneFirstNoProvenanceSQL("source_id")+
+		`, source_id`, tagID).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]dto.PublicTagIntro, 0, len(rows))

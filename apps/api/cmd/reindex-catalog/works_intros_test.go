@@ -94,3 +94,55 @@ func TestLoadWorkIntrosUsesCatalogRowsForEveryWork(t *testing.T) {
 		t.Fatalf("a non-LIVE work contributed intros: %v", got)
 	}
 }
+
+// The search index folds one row per language with its own copy of the ordering,
+// so the human lane has to be spelled out here too. It was not, and for one wave
+// the detail face rendered the curated ja intro while the index still held
+// bangumi's — one field, two consumers, two answers (6 live works).
+func TestLoadWorkIntrosGivesTheSearchIndexTheHumanLane(t *testing.T) {
+	truncateFacetTables(t)
+
+	const (
+		bangumiSource = 3
+		curatedSource = 12
+	)
+
+	contested := mkWork(t, "contested-intro", model.WorkStatusLive, galgameMedium)
+	for _, r := range []struct {
+		lang, intro string
+		source      int16
+		provenance  int16
+	}{
+		{"ja", "上流の紹介", bangumiSource, 0},
+		{"ja", "人手の紹介", curatedSource, 0},
+	} {
+		if err := facetTestDB.Exec(`INSERT INTO catalog_work_intro (work_id, lang, intro, source_id, provenance)
+			VALUES (?, ?, ?, ?, ?)`, contested, r.lang, r.intro, r.source, r.provenance).Error; err != nil {
+			t.Fatalf("seed contested intro: %v", err)
+		}
+	}
+	if got := introsOf(t, contested)["ja"]; got != "人手の紹介" {
+		t.Fatalf("indexed ja intro = %q, want the curated row — the index must agree with the detail face", got)
+	}
+
+	// And no further: inside the machine tier the human lane decides nothing,
+	// or 5,806 works would be indexed under a translation of our `en` row while
+	// their ja face keeps rendering bangumi's Japanese original.
+	machine := mkWork(t, "machine-tier-intro", model.WorkStatusLive, galgameMedium)
+	for _, r := range []struct {
+		lang, intro string
+		source      int16
+		provenance  int16
+	}{
+		{"zh-Hans", "上流の機械翻訳", bangumiSource, 1},
+		{"zh-Hans", "curated 車道の機械翻訳", curatedSource, 1},
+	} {
+		if err := facetTestDB.Exec(`INSERT INTO catalog_work_intro (work_id, lang, intro, source_id, provenance)
+			VALUES (?, ?, ?, ?, ?)`, machine, r.lang, r.intro, r.source, r.provenance).Error; err != nil {
+			t.Fatalf("seed machine-tier intro: %v", err)
+		}
+	}
+	if got := introsOf(t, machine)["zh-Hans"]; got != "上流の機械翻訳" {
+		t.Fatalf("indexed zh-Hans intro = %q, want the upstream machine row", got)
+	}
+}

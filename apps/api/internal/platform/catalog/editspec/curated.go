@@ -54,6 +54,18 @@ func HumanLaneFirstSQL(sourceColumn, provenanceColumn string) string {
 		provenanceColumn, catmodel.IntroProvenanceSource)
 }
 
+// HumanLaneFirstNoProvenanceSQL is HumanLaneFirstSQL for the two intro tables
+// that never grew the 0/1 provenance axis (catalog_tag_intro,
+// catalog_series_intro): every row there is a source row, so the gate has
+// nothing to gate. Using it on a table that HAS the column would resurrect the
+// 5,806-row mistake documented above.
+//
+// The missing column is not an oversight to backfill: neither table has a
+// machine writer today, and R1b's rule is that the axis follows the first one.
+func HumanLaneFirstNoProvenanceSQL(sourceColumn string) string {
+	return fmt.Sprintf("(%s IN (%d, %d)) DESC", sourceColumn, userSourceID, curatedSourceID)
+}
+
 const (
 	maxListElements = 200
 	maxHashRunes    = 128

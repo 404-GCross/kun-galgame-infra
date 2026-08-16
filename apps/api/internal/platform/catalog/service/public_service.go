@@ -796,7 +796,9 @@ func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.P
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT i.lang, i.intro, src.key AS source, i.provenance
 		FROM catalog_label_intro i JOIN catalog_source src ON src.id = i.source_id
-		WHERE i.label_id = ? ORDER BY i.lang, i.provenance, i.source_id`, labelID).Scan(&rows).Error; err != nil {
+		WHERE i.label_id = ? ORDER BY i.lang, i.provenance, `+
+		editspec.HumanLaneFirstSQL("i.source_id", "i.provenance")+
+		`, i.source_id`, labelID).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]dto.PublicLabelIntro, 0, len(rows))
