@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
@@ -48,6 +49,11 @@ type mergeStmt struct {
 //     compared.
 //   - catalog_work.product_work_id — a PRODUCT-side id (the claim), not a
 //     catalog entity id; retireSource frees the source's claim slot.
+//   - edit_proposal, edit_proposal_amendment, edit_revision — the editing
+//     engine's history and its open queue, addressed to the id that was
+//     actually edited; same rationale as catalog_revision. edit_suppressed_row
+//     is NOT history — it is live negative knowledge the read paths consult on
+//     every request, so it rehangs with the title rows below.
 func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error) {
 	switch entityType {
 	case model.EntityTypePerson:
@@ -156,6 +162,14 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			    AND NOT EXISTS (SELECT 1 FROM catalog_work_title u
 			                     WHERE u.work_id = ? AND u.lang = t.lang AND u.title = t.title AND u.kind = t.kind)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_work_title WHERE work_id = ?`, []any{src}, false},
+			{`UPDATE edit_suppressed_row s SET entity_id = ?
+			    WHERE s.entity_type = ? AND s.entity_id = ?
+			    AND NOT EXISTS (SELECT 1 FROM edit_suppressed_row x
+			                     WHERE x.entity_type = s.entity_type AND x.entity_id = ?
+			                       AND x.field_key = s.field_key AND x.identity_key = s.identity_key)`,
+				[]any{dst, editspec.TypeWork, src, dst}, false},
+			{`DELETE FROM edit_suppressed_row WHERE entity_type = ? AND entity_id = ?`,
+				[]any{editspec.TypeWork, src}, false},
 			{`UPDATE catalog_release SET work_id = ? WHERE work_id = ?`, []any{dst, src}, false},
 			{`UPDATE catalog_credit c SET work_id = ? WHERE c.work_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d

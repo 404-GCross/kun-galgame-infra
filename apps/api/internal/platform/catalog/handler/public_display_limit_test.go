@@ -75,7 +75,7 @@ func TestClaimedByContentLimitOnTheWire(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
 	ensureGalgameRatingStub(t, db)
-	for _, tbl := range []string{"catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 

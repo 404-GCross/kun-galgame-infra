@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/datatypes"
@@ -683,6 +684,7 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 		      SELECT 1 FROM catalog_work_title t
 		      WHERE t.work_id = w.id
 		        AND t.title_norm LIKE '%' || lower(normalize(?, NFKC)) || '%'
+		        AND `+editspec.NotSuppressedWorkTitleSQL("t")+`
 		  )
 		ORDER BY w.id
 		LIMIT ?`, args...).Scan(&hits).Error; err != nil {

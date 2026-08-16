@@ -38,7 +38,7 @@ func seedReleases(t *testing.T, db *gorm.DB) map[string]int64 {
 	t.Helper()
 	for _, tbl := range []string{
 		"catalog_credit", "catalog_work_character", "catalog_work_label", "catalog_external_ref",
-		"catalog_work_title", "catalog_release", "catalog_work",
+		"edit_suppressed_row", "catalog_work_title", "catalog_release", "catalog_work",
 	} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}

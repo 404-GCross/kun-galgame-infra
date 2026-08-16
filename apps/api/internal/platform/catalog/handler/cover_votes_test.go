@@ -40,7 +40,7 @@ type coverVoteFixture struct {
 
 func seedCoverVoteFixture(t *testing.T, db *gorm.DB) coverVoteFixture {
 	t.Helper()
-	for _, tbl := range []string{"catalog_cover_vote", "catalog_work_cover", "catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"catalog_cover_vote", "catalog_work_cover", "edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	newWork := func(name string, status int16) int64 {

@@ -41,7 +41,7 @@ const fixturePhotoHash = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5
 func seedReadFixture(t *testing.T, db *gorm.DB) int64 {
 	t.Helper()
 	for _, tbl := range []string{
-		"catalog_credit", "catalog_work_character", "catalog_work_label", "catalog_external_ref", "catalog_work_title",
+		"catalog_credit", "catalog_work_character", "catalog_work_label", "catalog_external_ref", "edit_suppressed_row", "catalog_work_title",
 		"catalog_release", "catalog_work", "catalog_label", "catalog_credit_name", "catalog_character",
 	} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -352,7 +352,7 @@ type reverseFixture struct {
 func seedReverseFixture(t *testing.T, db *gorm.DB) reverseFixture {
 	t.Helper()
 	for _, tbl := range []string{
-		"catalog_credit", "catalog_work_character", "catalog_work_label", "catalog_external_ref", "catalog_work_title",
+		"catalog_credit", "catalog_work_character", "catalog_work_label", "catalog_external_ref", "edit_suppressed_row", "catalog_work_title",
 		"catalog_release", "catalog_work", "catalog_label", "catalog_credit_name",
 		"catalog_character", "catalog_person",
 	} {
