@@ -1303,7 +1303,7 @@ func (s *PublicService) characterIntros(ctx context.Context, characterID int64) 
 	}
 	if err := s.db.WithContext(ctx).Raw(`SELECT lang, intro, source_id, provenance
 		FROM catalog_character_intro WHERE character_id = ?
-		ORDER BY lang, provenance, `+editspec.HumanLaneFirstSQL("source_id")+
+		ORDER BY lang, provenance, `+editspec.HumanLaneFirstSQL("source_id", "provenance")+
 		`, (provenance = 1 AND source_id = ?) DESC, source_id`,
 		characterID, sourceDerived).Scan(&rows).Error; err != nil {
 		return nil, err

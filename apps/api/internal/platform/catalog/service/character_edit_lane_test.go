@@ -222,3 +222,69 @@ func TestCuratedMachineTranslationDoesNotBeatAnUpstreamOriginal(t *testing.T) {
 	assert.Equal(t, "上流の原文", pub.Intros[0].Intro)
 	assert.Equal(t, "bangumi", pub.Intros[0].Source)
 }
+
+// The machine tier is not the human lane's to decide. This shipped-by-a-hair
+// case is two translations of the same language: preferring ours moved 5,806
+// production works onto a machine translation of our `en` row while their ja
+// face kept rendering bangumi's Japanese original — two languages, two different
+// source materials. The dev snapshot shows 4 such works, so only production
+// could tell.
+func TestCuratedMachineTranslationDoesNotBeatAnUpstreamMachineTranslation(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+	read := NewReadService(testDB)
+	public := NewPublicService(testDB, read, testResolve, "")
+
+	const bangumiSourceID, curatedSourceID = 3, 12
+
+	w := createWork(t, "作品")
+	require.NoError(t, testDB.Create(&[]model.CatalogWorkIntro{
+		{WorkID: w.ID, Lang: "zh-Hans", Intro: "上流の機械翻訳", SourceID: bangumiSourceID, Provenance: model.IntroProvenanceMachine},
+		{WorkID: w.ID, Lang: "zh-Hans", Intro: "curated 車道の機械翻訳", SourceID: curatedSourceID, Provenance: model.IntroProvenanceMachine},
+	}).Error)
+
+	intros := map[int64][]WorkIntroRow{}
+	require.NoError(t, read.nativeWorkIntros(ctx, []int64{w.ID}, intros))
+	require.Len(t, intros[w.ID], 1)
+	assert.Equal(t, "上流の機械翻訳", intros[w.ID][0].Intro)
+	assert.EqualValues(t, bangumiSourceID, intros[w.ID][0].SourceID)
+
+	ch := createCharacter(t, "キャラ")
+	require.NoError(t, testDB.Create(&[]model.CatalogCharacterIntro{
+		{CharacterID: ch.ID, Lang: "zh-Hans", Intro: "上流の機械翻訳", SourceID: bangumiSourceID, Provenance: model.IntroProvenanceMachine},
+		{CharacterID: ch.ID, Lang: "zh-Hans", Intro: "curated 車道の機械翻訳", SourceID: curatedSourceID, Provenance: model.IntroProvenanceMachine},
+	}).Error)
+
+	detail, err := read.CharacterByID(ctx, ch.ID, model.SpoilerSevere)
+	require.NoError(t, err)
+	require.Len(t, detail.Intros, 1)
+	assert.Equal(t, "上流の機械翻訳", detail.Intros[0].Intro)
+
+	pub, ok, err := public.Character(ctx, ch.ID, false, true, model.SpoilerSevere, 10, 0)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Len(t, pub.Intros, 1)
+	assert.Equal(t, "bangumi", pub.Intros[0].Source)
+}
+
+// With the human lane gated to provenance=0 the machine tier is ranked by the
+// wave-178 rule alone: a derived extraction (source 18) outranks a translation,
+// including one in the curated lane.
+func TestDerivedStillWinsTheMachineTierOverTheCuratedLane(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+	read := NewReadService(testDB)
+
+	const curatedSourceID = 12
+
+	ch := createCharacter(t, "キャラ")
+	require.NoError(t, testDB.Create(&[]model.CatalogCharacterIntro{
+		{CharacterID: ch.ID, Lang: "zh-Hans", Intro: "curated 車道の機械翻訳", SourceID: curatedSourceID, Provenance: model.IntroProvenanceMachine},
+		{CharacterID: ch.ID, Lang: "zh-Hans", Intro: "derived 抽出", SourceID: sourceDerived, Provenance: model.IntroProvenanceMachine},
+	}).Error)
+
+	detail, err := read.CharacterByID(ctx, ch.ID, model.SpoilerSevere)
+	require.NoError(t, err)
+	require.Len(t, detail.Intros, 1)
+	assert.Equal(t, "derived 抽出", detail.Intros[0].Intro)
+}
