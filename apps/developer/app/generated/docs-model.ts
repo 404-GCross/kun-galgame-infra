@@ -2256,6 +2256,24 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "identity",
+                                  "doc": "Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "roster appearance strength on this work: main|secondary|appears|unknown (unknown also when reached only through a voice credit)",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "spoiler",
+                                  "required": true,
+                                  "doc": "roster appearance spoiler level on this work: 0=none 1=minor 2=major (0 also when reached only through a voice credit)",
+                                  "format": "int32",
+                                  "type": "integer"
+                                },
+                                {
                                   "name": "voices",
                                   "required": true,
                                   "nullable": true,
@@ -3551,6 +3569,24 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "identity",
+                                      "doc": "Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "doc": "roster appearance strength on this work: main|secondary|appears|unknown (unknown also when reached only through a voice credit)",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "spoiler",
+                                      "required": true,
+                                      "doc": "roster appearance spoiler level on this work: 0=none 1=minor 2=major (0 also when reached only through a voice credit)",
+                                      "format": "int32",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "voices",
                                       "required": true,
                                       "nullable": true,
@@ -4568,6 +4604,24 @@ export const docsModel: DocsModel = {
                                       "itemsOf": {
                                         "type": "object",
                                         "children": [
+                                          {
+                                            "name": "identity",
+                                            "doc": "Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "roster appearance strength on this work: main|secondary|appears|unknown (unknown also when reached only through a voice credit)",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "spoiler",
+                                            "required": true,
+                                            "doc": "roster appearance spoiler level on this work: 0=none 1=minor 2=major (0 also when reached only through a voice credit)",
+                                            "format": "int32",
+                                            "type": "integer"
+                                          },
                                           {
                                             "name": "voices",
                                             "required": true,
@@ -8620,6 +8674,11 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "identity",
+                                  "doc": "Opaque row identity for catalog.work.roster.suppressed; echo it back, never rebuild it. Present when the character is on the roster; ABSENT when it appears only through a voice credit, in which case kind is unknown and spoiler is 0",
+                                  "type": "string"
                                 },
                                 {
                                   "name": "image",

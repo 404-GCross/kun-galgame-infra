@@ -63,6 +63,7 @@ func loadMTResidue(ctx context.Context, db *gorm.DB, limit int) ([]mtResidueCand
 			FROM catalog_work_character wc
 			JOIN catalog_work_title wt ON wt.work_id = wc.work_id AND wt.kind IN (0,1)
 			WHERE wc.character_id = cand.id AND ` + editspec.NotSuppressedWorkTitleSQL("wt") + `
+			  AND ` + editspec.NotSuppressedRosterSQL("wc") + `
 			ORDER BY wc.work_id, wt.kind, wt.id
 			LIMIT 3
 		) t), '') AS works

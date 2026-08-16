@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
+
 	"gorm.io/gorm"
 )
 
@@ -13,7 +15,7 @@ import (
 // character whose elected zh-Hans intro is a TRANSLATED machine row. A source
 // row (provenance 0) excludes the character — machine output never competes
 // with source text. An existing derived row means the panel already ran.
-const candidatePanelWorksSQL = `
+var candidatePanelWorksSQL = `
 	WITH zhi AS (
 		SELECT DISTINCT ON (work_id) work_id, intro
 		FROM catalog_work_intro
@@ -39,6 +41,7 @@ const candidatePanelWorksSQL = `
 	JOIN catalog_character c ON c.id = wc.character_id AND c.deleted_at IS NULL
 	JOIN inc ON inc.character_id = wc.character_id
 	WHERE w.deleted_at IS NULL
+	  AND ` + editspec.NotSuppressedRosterSQL("wc") + `
 	  AND NOT EXISTS (
 	    SELECT 1 FROM catalog_character_intro s
 	    WHERE s.character_id = wc.character_id AND s.lang = 'zh-Hans' AND s.provenance = 0)

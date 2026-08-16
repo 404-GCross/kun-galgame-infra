@@ -6,6 +6,7 @@ import (
 
 	catmodel "api/internal/platform/catalog/model"
 	"api/internal/platform/editing"
+	"api/internal/platform/provenance"
 )
 
 const curatedSourceID int16 = 12
@@ -76,6 +77,21 @@ func HumanLaneFirstSQL(sourceColumn, provenanceColumn string) string {
 // the first one. catalog_credit has no MT axis at all.
 func HumanLaneFirstNoProvenanceSQL(sourceColumn string) string {
 	return fmt.Sprintf("(%s IN (%d, %d)) DESC", sourceColumn, userSourceID, curatedSourceID)
+}
+
+// HumanFieldProvenanceSQL is provenance.IsHuman in SQL, read off a
+// field_provenance column for one stamped column: the head of that column's
+// array is whoever last wrote it. The source list comes from the provenance
+// package rather than a literal so the merge machine and the editor cannot
+// disagree about what counts as a person.
+func HumanFieldProvenanceSQL(provenanceColumn, column string) string {
+	sources := provenance.HumanSources()
+	quoted := make([]string, 0, len(sources))
+	for _, s := range sources {
+		quoted = append(quoted, "'"+s+"'")
+	}
+	return fmt.Sprintf("(%s -> '%s' -> 0 ->> 'source') IN (%s)",
+		provenanceColumn, column, strings.Join(quoted, ", "))
 }
 
 const (

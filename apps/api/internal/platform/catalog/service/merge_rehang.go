@@ -152,9 +152,7 @@ func rehangEntity(tx *gorm.DB, reg *editing.Registry, entityType int16, src, dst
 			                     WHERE b.character_id = ? AND b.name = a.name AND b.lang = a.lang)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_character_alias WHERE character_id = ?`, []any{src}, false},
 			{`UPDATE catalog_work_character d
-			    SET kind = CASE WHEN d.kind = 0 THEN s.kind ELSE d.kind END,
-			        spoiler = GREATEST(d.spoiler, s.spoiler),
-			        updated_at = now()
+			    ` + rosterSurvivorshipSet + `
 			    FROM catalog_work_character s
 			    WHERE d.character_id = ? AND s.character_id = ? AND s.work_id = d.work_id`, []any{dst, src}, false},
 			{`UPDATE catalog_work_character e SET character_id = ?, updated_at = now() WHERE e.character_id = ?
@@ -233,6 +231,21 @@ func rehangEntity(tx *gorm.DB, reg *editing.Registry, entityType int16, src, dst
 var (
 	curatedCreditC    = editspec.CuratedLaneSQL("c.source_id")
 	notCuratedCreditD = editspec.NotCuratedLaneSQL("d.source_id")
+
+	// catalog_work_character has no source column: one (work, character) pair is
+	// a single consensus row every importer and every merge writes into, and the
+	// only record of who set a column is its field_provenance stamp. The two
+	// machine rules stay as they were; a stamped column simply keeps what the
+	// person put there. Both axes of the merge share this clause because they
+	// were copy-pasted from each other.
+	rosterSurvivorshipSet = `SET kind = CASE
+		        WHEN ` + editspec.HumanFieldProvenanceSQL("d.field_provenance", "kind") + ` THEN d.kind
+		        WHEN d.kind = 0 THEN s.kind
+		        ELSE d.kind END,
+		    spoiler = CASE
+		        WHEN ` + editspec.HumanFieldProvenanceSQL("d.field_provenance", "spoiler") + ` THEN d.spoiler
+		        ELSE GREATEST(d.spoiler, s.spoiler) END,
+		    updated_at = now()`
 )
 
 func identityFollowStmts(reg *editing.Registry, entityTag string, src, dst int64) []mergeStmt {
@@ -260,9 +273,7 @@ func suppressedRowStmts(entityType string, src, dst int64) []mergeStmt {
 func workFacetStmts(src, dst int64) []mergeStmt {
 	stmts := []mergeStmt{
 		{`UPDATE catalog_work_character d
-		    SET kind = CASE WHEN d.kind = 0 THEN s.kind ELSE d.kind END,
-		        spoiler = GREATEST(d.spoiler, s.spoiler),
-		        updated_at = now()
+		    ` + rosterSurvivorshipSet + `
 		    FROM catalog_work_character s
 		    WHERE d.work_id = ? AND s.work_id = ? AND s.character_id = d.character_id`, []any{dst, src}, false},
 		{`UPDATE catalog_user_playtime d

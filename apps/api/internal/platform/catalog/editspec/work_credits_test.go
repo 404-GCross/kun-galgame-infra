@@ -376,22 +376,36 @@ func TestIdentityFollowStmtsCoverEveryDeclaredRef(t *testing.T) {
 	if err := editspec.RegisterAll(reg, testDB); err != nil {
 		t.Fatalf("RegisterAll: %v", err)
 	}
-	for _, tag := range []string{editspec.TagCreditName, editspec.TagCharacter} {
-		stmts := reg.IdentityFollowStmts(tag, 7, 8, nil)
-		if len(stmts) != 2 {
-			t.Fatalf("tag %q produced %d statements, want 2 (one move + one drop for catalog.work.credits)",
-				tag, len(stmts))
+	// A tag is followed once per field that names it, so registering a second
+	// field with the same tag adds a move/drop pair with nobody editing the
+	// merge machine: catalog.work.roster (R2c-2) is TagCharacter's second user.
+	for _, c := range []struct {
+		tag    string
+		fields []string
+	}{
+		{editspec.TagCreditName, []string{editspec.FieldWorkCredits}},
+		{editspec.TagCharacter, []string{editspec.FieldWorkCredits, editspec.FieldWorkRoster}},
+	} {
+		stmts := reg.IdentityFollowStmts(c.tag, 7, 8, nil)
+		if len(stmts) != 2*len(c.fields) {
+			t.Fatalf("tag %q produced %d statements, want %d (one move + one drop per field in %v)",
+				c.tag, len(stmts), 2*len(c.fields), c.fields)
 		}
 		for _, s := range stmts {
-			var hasType, hasField bool
+			var hasType bool
+			var field string
 			for _, a := range s.Args {
 				str, _ := a.(string)
 				hasType = hasType || str == editspec.TypeWork
-				hasField = hasField || str == editspec.FieldWorkCredits
+				for _, f := range c.fields {
+					if str == f {
+						field = f
+					}
+				}
 			}
-			if !hasType || !hasField {
-				t.Fatalf("tag %q produced a statement that is not addressed to %s.%s: %s",
-					tag, editspec.TypeWork, editspec.FieldWorkCredits, s.SQL)
+			if !hasType || field == "" {
+				t.Fatalf("tag %q produced a statement addressed to none of %s.%v: %s",
+					c.tag, editspec.TypeWork, c.fields, s.SQL)
 			}
 		}
 	}

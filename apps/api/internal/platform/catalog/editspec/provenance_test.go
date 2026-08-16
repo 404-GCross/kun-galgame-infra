@@ -91,10 +91,12 @@ func TestProvenanceStampGoesToTheArrayHead(t *testing.T) {
 	}
 }
 
-// The list is the contract: a field that stamps a head-table column must not be
-// one of doc 21 §8.2's machine-owned fields (anchors, external rating snapshots,
-// derived/rollup columns, machine image-grade rows). Adding a target here is a
-// deliberate act, so the test names every one of them.
+// The list is the contract: a field that stamps a field_provenance column must
+// not be one of doc 21 §8.2's machine-owned fields (anchors, external rating
+// snapshots, derived/rollup columns, machine image-grade rows). Adding a target
+// here is a deliberate act, so the test names every one of them. Since R2c-2 a
+// target may name a CHILD table (catalog_work_character), in which case it also
+// carries a Rows resolver — the entity id is not that table's primary key.
 func TestOnlyDeclaredFieldsStampProvenance(t *testing.T) {
 	reg := editing.NewRegistry()
 	if err := editspec.RegisterWork(reg, testDB); err != nil {
@@ -118,10 +120,9 @@ func TestOnlyDeclaredFieldsStampProvenance(t *testing.T) {
 		}
 		for i := range spec.Fields {
 			f := &spec.Fields[i]
-			if f.Provenance == nil {
-				continue
+			for _, target := range f.Provenance {
+				got = append(got, f.Key+" -> "+target.Table+"."+target.Column)
 			}
-			got = append(got, f.Key+" -> "+f.Provenance.Table+"."+f.Provenance.Column)
 		}
 	}
 	sort.Strings(got)
@@ -146,6 +147,8 @@ func TestOnlyDeclaredFieldsStampProvenance(t *testing.T) {
 		"catalog.work.display_name -> catalog_work.display_name",
 		"catalog.work.display_nsfw -> catalog_work.display_nsfw",
 		"catalog.work.olang -> catalog_work.olang",
+		"catalog.work.roster -> catalog_work_character.kind",
+		"catalog.work.roster -> catalog_work_character.spoiler",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("stamping fields = %v, want %v", got, want)

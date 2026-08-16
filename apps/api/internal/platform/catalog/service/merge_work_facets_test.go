@@ -233,3 +233,27 @@ func seededEntityRelationTypeID(t *testing.T) int64 {
 	require.NotZero(t, id, "the seeds must provide at least one relation type")
 	return id
 }
+
+// TestMergeWorkAxisKeepsHumanRoster is TestMergeKeepsHumanRosterKind on the
+// other axis. The two survivorship statements are copies of each other and the
+// work axis has only run 28 times in production, but catalog_work_cover's 12
+// stranded rows came from exactly that reasoning.
+func TestMergeWorkAxisKeepsHumanRoster(t *testing.T) {
+	cleanTables(t)
+	target, source := createWork(t, "同じ作品"), createWork(t, "同じ 作品")
+	ch := createCharacter(t, "主人公")
+	createWorkCharacter(t, target.ID, ch.ID, model.WorkCharacterKindUnknown, model.SpoilerNone)
+	createWorkCharacter(t, source.ID, ch.ID, model.WorkCharacterKindMain, model.SpoilerSevere)
+	require.NoError(t, testDB.Exec(
+		`UPDATE catalog_work_character SET field_provenance =
+		   '{"kind":[{"source":"curated","at":"2026-08-16T00:00:00Z"}],
+		     "spoiler":[{"source":"user","at":"2026-08-16T00:00:00Z"}]}'::jsonb
+		 WHERE work_id = ? AND character_id = ?`, target.ID, ch.ID).Error)
+
+	executeMerge(t, model.EntityTypeWork, source.ID, target.ID, "same work")
+
+	var edge model.CatalogWorkCharacter
+	require.NoError(t, testDB.Where("work_id = ? AND character_id = ?", target.ID, ch.ID).First(&edge).Error)
+	assert.Equal(t, model.WorkCharacterKindUnknown, edge.Kind, "a human 0 survives the kind upgrade")
+	assert.EqualValues(t, model.SpoilerNone, edge.Spoiler, "a human 0 survives GREATEST")
+}

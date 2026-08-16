@@ -689,6 +689,8 @@ export interface components {
             spoiler_level: number;
         };
         CharacterWorkRow: {
+            /** @description Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit */
+            identity?: string;
             /**
              * Format: int32
              * @description roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)
@@ -1816,6 +1818,8 @@ export interface components {
             figure_hash?: string;
             /** Format: int32 */
             gender?: number;
+            /** @description Opaque row identity for catalog.work.roster.suppressed; echo it back, never rebuild it. Present when the character is on the roster; ABSENT when it appears only through a voice credit, in which case kind and spoiler are 0 and the row is edited via /works/{id}/credits */
+            identity?: string;
             image_hash?: string;
             /**
              * Format: int32

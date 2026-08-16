@@ -82,9 +82,16 @@ func Run(db *gorm.DB) error {
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},
-		&model.CatalogWorkLabel{},     // work↔label attribution edge (step 18)
-		&model.CatalogReleaseLabel{},  // release↔label attribution edge (wave 200)
-		&model.CatalogWorkCharacter{}, // work↔character roster edge (step 45)
+		&model.CatalogWorkLabel{},    // work↔label attribution edge (step 18)
+		&model.CatalogReleaseLabel{}, // release↔label attribution edge (wave 200)
+		// work↔character roster edge (step 45). Wave R2c-2 (2026-08-16) adds
+		// field_provenance jsonb NOT NULL DEFAULT '{}' — the first row-level
+		// provenance column on a CHILD table, needed because kind/spoiler became
+		// editable and merge survivorship would otherwise overwrite what a person
+		// set. AutoMigrate is enough: the column has a default, so PG 11+ adds it
+		// as metadata without rewriting the 218,846 existing rows, all of which
+		// take '{}' — "nobody has claimed any column on this row".
+		&model.CatalogWorkCharacter{},
 		&model.CatalogLabelRelation{}, // label↔label corporate-structure edge (wave 186)
 
 		// Engine facet (refs/plans/10 W0 ruling 4): the wiki family's engine

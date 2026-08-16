@@ -5,8 +5,12 @@ import (
 	"testing"
 
 	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	srcb "api/internal/platform/catalog/srcbangumi"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -1214,4 +1218,40 @@ func TestPublicCharacterLocalizedNames(t *testing.T) {
 	if rec.Localized == nil || len(rec.Localized) != 0 {
 		t.Fatalf("an alias-less character must serialize {}: %#v", rec.Localized)
 	}
+}
+
+// TestPublicCharacterWorksCarryKindAndSpoiler guards the wave-10 addition: the
+// S2S face has always rendered the roster strength on this list while the public
+// one dropped it, so a person editing kind/spoiler was editing a value the
+// public site (and the MCP tool that proxies it) could not show.
+func TestPublicCharacterWorksCarryKindAndSpoiler(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+	pub := newPublicSvc()
+
+	rostered := createWork(t, "出演あり")
+	creditOnly := createWork(t, "配音のみ")
+	ch := createCharacter(t, "主人公")
+	createWorkCharacter(t, rostered.ID, ch.ID, model.WorkCharacterKindSecondary, model.SpoilerSevere)
+	cn := createCreditName(t, nil, "声優")
+	createCredit(t, creditOnly.ID, cn.ID, roleByKey(t, "voice-actor"), &ch.ID)
+
+	got, ok, err := pub.Character(ctx, ch.ID, true, true, 0, 50, 0)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Len(t, got.Works, 2)
+
+	byWork := map[int64]dto.PublicCharacterWork{}
+	for _, w := range got.Works {
+		byWork[w.Work.ID] = w
+	}
+	r := byWork[rostered.ID]
+	assert.Equal(t, "secondary", r.Kind, "the public face names the kind, it does not number it")
+	assert.EqualValues(t, model.SpoilerSevere, r.Spoiler)
+	assert.Equal(t, editspec.RosterIdentity(ch.ID), r.Identity)
+
+	c := byWork[creditOnly.ID]
+	assert.Equal(t, "unknown", c.Kind, "no roster edge renders as unknown, never as an empty string")
+	assert.EqualValues(t, model.SpoilerNone, c.Spoiler)
+	assert.Empty(t, c.Identity)
 }
