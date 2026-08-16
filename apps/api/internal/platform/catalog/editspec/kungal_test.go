@@ -154,3 +154,59 @@ func TestKungalOwnerReview(t *testing.T) {
 		t.Fatalf("owner on default tenant: %v, want PermissionError", err)
 	}
 }
+
+func TestKungalTaxonomyOverlay(t *testing.T) {
+	e := newTaxonomyEngine(t)
+	tag := model.CatalogTag{Name: "泣きゲー", Tier: model.TagTierCore, Kind: model.TagKindContent}
+	if err := testDB.Create(&tag).Error; err != nil {
+		t.Fatal(err)
+	}
+	patch := map[string]any{editspec.FieldTagIntros: []any{
+		map[string]any{"lang": "zh-Hans", "intro": "以催泪剧情为核心"},
+	}}
+
+	var permErr *editing.PermissionError
+	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeTag, EntityID: tag.ID,
+		Patch: patch, Actor: realActor(101, "user"),
+	}); !errors.As(err, &permErr) {
+		t.Fatalf("plain user on default tenant: %v, want PermissionError", err)
+	}
+
+	prop, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeTag, EntityID: tag.ID,
+		Patch: patch, Note: "add intro", Actor: kungalActor(101),
+	})
+	if err != nil {
+		t.Fatalf("plain kungal user propose: %v", err)
+	}
+	if rev != nil {
+		t.Fatal("a plain user's kungal taxonomy proposal must never automerge")
+	}
+
+	_, rev, err = e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeTag, EntityID: tag.ID,
+		Patch: map[string]any{editspec.FieldTagIntros: []any{
+			map[string]any{"lang": "ja", "intro": "泣ける"},
+		}},
+		Actor: kungalActor(102, "admin"),
+	})
+	if err != nil {
+		t.Fatalf("admin propose: %v", err)
+	}
+	if rev != nil {
+		t.Fatal("kungal taxonomy is automerge=never even for a review-perm holder")
+	}
+
+	if _, err := e.MergeProposal(testCtx, prop.ID, kungalActor(103, "moderator"), ""); !errors.As(err, &permErr) {
+		t.Fatalf("moderator merge: %v, want PermissionError", err)
+	}
+	if _, err := e.MergeProposal(testCtx, prop.ID, kungalActor(102, "admin"), "ok"); err != nil {
+		t.Fatalf("admin merge: %v", err)
+	}
+	snap, err := e.CurrentSnapshot(testCtx, editspec.TypeTag, tag.ID)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	sameJSON(t, "tag intros", snap[editspec.FieldTagIntros], patch[editspec.FieldTagIntros])
+}
