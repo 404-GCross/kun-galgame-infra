@@ -94,6 +94,7 @@ var (
 			FROM catalog_character_alias a
 			WHERE a.character_id IN (SELECT character_id FROM ros)
 			  AND a.lang IN ('zh-Hans','zh','zh-Hant') AND a.kind IN (0,1)
+			  AND ` + editspec.NotSuppressedCharacterAliasSQL("a") + `
 			ORDER BY a.character_id, (NOT a.is_primary_for_locale), (a.lang <> 'zh-Hans'), a.id
 		)
 		SELECT ros.work_id AS owner_id, ros.display_name AS src, al.name AS zh

@@ -403,7 +403,8 @@ func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out
 		Provenance int16  `gorm:"column:provenance"`
 	}
 	if err := db.Raw(`SELECT work_id, lang, intro, source_id, provenance FROM catalog_work_intro
-		WHERE work_id IN ? ORDER BY work_id, lang, provenance, source_id`, workIDs).Scan(&rows).Error; err != nil {
+		WHERE work_id IN ? ORDER BY work_id, lang, provenance, `+
+		editspec.HumanLaneFirstSQL("source_id")+`, source_id`, workIDs).Scan(&rows).Error; err != nil {
 		return err
 	}
 	seen := make(map[int64]map[string]bool)
@@ -1063,8 +1064,10 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		Extra:       decodeCharExtra(head.Extra),
 		AttrSources: attrSources(head.FieldProvenance),
 	}
-	if err := db.Raw(`SELECT id, name, latin, lang, kind, is_primary_for_locale
-		FROM catalog_character_alias WHERE character_id = ? ORDER BY id`, characterID).Scan(&detail.Aliases).Error; err != nil {
+	if err := db.Raw(`SELECT a.id, a.name, a.latin, a.lang, a.kind, a.is_primary_for_locale
+		FROM catalog_character_alias a WHERE a.character_id = ? AND `+
+		editspec.NotSuppressedCharacterAliasSQL("a")+` ORDER BY a.id`,
+		characterID).Scan(&detail.Aliases).Error; err != nil {
 		return nil, err
 	}
 	var introRows []struct {
@@ -1074,7 +1077,8 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		Provenance int16  `gorm:"column:provenance"`
 	}
 	if err := db.Raw(`SELECT lang, intro, source_id, provenance FROM catalog_character_intro
-		WHERE character_id = ? ORDER BY lang, provenance,
+		WHERE character_id = ? ORDER BY lang, provenance, `+
+		editspec.HumanLaneFirstSQL("source_id")+`,
 		(provenance = 1 AND source_id = ?) DESC, source_id`, characterID, sourceDerived).Scan(&introRows).Error; err != nil {
 		return nil, err
 	}

@@ -8,16 +8,45 @@ import (
 )
 
 var goldenGrants = map[authz.Permission][]string{
-	perm.Review:             {"ren"},
-	perm.ClaimReview:        {"moderator", "admin", "ren"},
-	perm.EditWork:           {"admin", "ren"},
-	perm.EditWorkReview:     {"admin", "ren"},
-	perm.EditTaxonomy:       {"admin", "ren"},
-	perm.EditTaxonomyReview: {"admin", "ren"},
-	perm.EditTrusted:        {"admin", "ren"},
+	perm.Review:              {"ren"},
+	perm.ClaimReview:         {"moderator", "admin", "ren"},
+	perm.EditWork:            {"admin", "ren"},
+	perm.EditWorkReview:      {"admin", "ren"},
+	perm.EditTaxonomy:        {"admin", "ren"},
+	perm.EditTaxonomyReview:  {"admin", "ren"},
+	perm.EditCharacter:       {"admin", "ren"},
+	perm.EditCharacterReview: {"admin", "ren"},
+	perm.EditTrusted:         {"admin", "ren"},
 }
 
 var allRoles = []string{"user", "creator", "moderator", "admin", "ren"}
+
+// goldenGrants is the contract, and every other test here only asserts over the
+// keys it already lists — so a key added to a bundle but forgotten here is
+// granted to roles nobody ever checked, silently. This is the assertion that
+// looks at the list itself.
+func TestGoldenCoversEveryBundledPermission(t *testing.T) {
+	for bundle, perms := range perm.Bundles {
+		for _, p := range perms {
+			if _, listed := goldenGrants[p]; !listed {
+				t.Errorf("bundle %q grants %q, which no golden row covers", bundle, p)
+			}
+		}
+	}
+	for p := range goldenGrants {
+		granted := false
+		for _, perms := range perm.Bundles {
+			for _, bundled := range perms {
+				if bundled == p {
+					granted = true
+				}
+			}
+		}
+		if !granted {
+			t.Errorf("golden row %q is in no bundle", p)
+		}
+	}
+}
 
 func TestGoldenBundles(t *testing.T) {
 	for p, granted := range goldenGrants {

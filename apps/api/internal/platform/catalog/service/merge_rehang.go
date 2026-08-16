@@ -53,7 +53,12 @@ type mergeStmt struct {
 //     engine's history and its open queue, addressed to the id that was
 //     actually edited; same rationale as catalog_revision. edit_suppressed_row
 //     is NOT history — it is live negative knowledge the read paths consult on
-//     every request, so it rehangs with the title rows below.
+//     every request, so it rehangs with the title and alias rows below. One
+//     branch per REGISTERED entity type, not per merge-able type: work
+//     (catalog.work.titles) and character (catalog.character.aliases) each move
+//     their own rows. credit_name registers no field yet, so it has no branch —
+//     R2c must add one the day credits become editable, or every suppression a
+//     reviewer records is silently undone by the next name merge.
 func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error) {
 	switch entityType {
 	case model.EntityTypePerson:
@@ -140,6 +145,7 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			{`DELETE FROM catalog_character_trait_link WHERE character_id = ?`, []any{src}, false},
 			{`UPDATE catalog_character SET instance_of = ? WHERE instance_of = ?`, []any{dst, src}, false},
 		}
+		stmts = append(stmts, suppressedRowStmts(editspec.TypeCharacter, src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeWork:
@@ -162,14 +168,6 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			    AND NOT EXISTS (SELECT 1 FROM catalog_work_title u
 			                     WHERE u.work_id = ? AND u.lang = t.lang AND u.title = t.title AND u.kind = t.kind)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_work_title WHERE work_id = ?`, []any{src}, false},
-			{`UPDATE edit_suppressed_row s SET entity_id = ?
-			    WHERE s.entity_type = ? AND s.entity_id = ?
-			    AND NOT EXISTS (SELECT 1 FROM edit_suppressed_row x
-			                     WHERE x.entity_type = s.entity_type AND x.entity_id = ?
-			                       AND x.field_key = s.field_key AND x.identity_key = s.identity_key)`,
-				[]any{dst, editspec.TypeWork, src, dst}, false},
-			{`DELETE FROM edit_suppressed_row WHERE entity_type = ? AND entity_id = ?`,
-				[]any{editspec.TypeWork, src}, false},
 			{`UPDATE catalog_release SET work_id = ? WHERE work_id = ?`, []any{dst, src}, false},
 			{`UPDATE catalog_credit c SET work_id = ? WHERE c.work_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
@@ -178,9 +176,23 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			                       AND COALESCE(d.character_id, 0) = COALESCE(c.character_id, 0))`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_credit WHERE work_id = ?`, []any{src}, false},
 		}
+		stmts = append(stmts, suppressedRowStmts(editspec.TypeWork, src, dst)...)
 		return execAll(tx, append(stmts, workFacetStmts(src, dst)...))
 	}
 	return nil, fmt.Errorf("catalog merge: unsupported entity type %d", entityType)
+}
+
+func suppressedRowStmts(entityType string, src, dst int64) []mergeStmt {
+	return []mergeStmt{
+		{`UPDATE edit_suppressed_row s SET entity_id = ?
+		    WHERE s.entity_type = ? AND s.entity_id = ?
+		    AND NOT EXISTS (SELECT 1 FROM edit_suppressed_row x
+		                     WHERE x.entity_type = s.entity_type AND x.entity_id = ?
+		                       AND x.field_key = s.field_key AND x.identity_key = s.identity_key)`,
+			[]any{dst, entityType, src, dst}, false},
+		{`DELETE FROM edit_suppressed_row WHERE entity_type = ? AND entity_id = ?`,
+			[]any{entityType, src}, false},
+	}
 }
 
 func workFacetStmts(src, dst int64) []mergeStmt {

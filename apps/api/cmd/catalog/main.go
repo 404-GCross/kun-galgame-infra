@@ -128,6 +128,10 @@ func main() {
 		slog.Error("editing: register catalog taxonomy families", "error", err)
 		os.Exit(1)
 	}
+	if err := editspec.RegisterCharacter(editRegistry, catalogDB.DB()); err != nil {
+		slog.Error("editing: register catalog.character", "error", err)
+		os.Exit(1)
+	}
 	editEngine := editing.NewEngine(catalogDB.DB(), editRegistry)
 	catHandler.SetupEdit(s2sAPI, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,

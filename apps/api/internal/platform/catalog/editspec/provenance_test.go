@@ -103,10 +103,14 @@ func TestOnlyDeclaredFieldsStampProvenance(t *testing.T) {
 	if err := editspec.RegisterTaxonomy(reg, testDB); err != nil {
 		t.Fatalf("register taxonomy: %v", err)
 	}
+	if err := editspec.RegisterCharacter(reg, testDB); err != nil {
+		t.Fatalf("register catalog.character: %v", err)
+	}
 
 	var got []string
 	for _, entityType := range []string{
 		editspec.TypeWork, editspec.TypeLabel, editspec.TypeTag, editspec.TypeEngine, editspec.TypeSeries,
+		editspec.TypeCharacter,
 	} {
 		spec, ok := reg.Type(entityType)
 		if !ok {
@@ -123,6 +127,20 @@ func TestOnlyDeclaredFieldsStampProvenance(t *testing.T) {
 	sort.Strings(got)
 
 	want := []string{
+		"catalog.character.birthday_day -> catalog_character.birthday_day",
+		"catalog.character.birthday_month -> catalog_character.birthday_month",
+		"catalog.character.blood_type -> catalog_character.blood_type",
+		"catalog.character.bust_cm -> catalog_character.bust_cm",
+		"catalog.character.cup -> catalog_character.cup",
+		"catalog.character.description -> catalog_character.description",
+		"catalog.character.display_name -> catalog_character.display_name",
+		"catalog.character.gender -> catalog_character.gender",
+		"catalog.character.height_cm -> catalog_character.height_cm",
+		"catalog.character.hip_cm -> catalog_character.hip_cm",
+		"catalog.character.lang -> catalog_character.lang",
+		"catalog.character.latin -> catalog_character.latin",
+		"catalog.character.waist_cm -> catalog_character.waist_cm",
+		"catalog.character.weight_kg -> catalog_character.weight_kg",
 		"catalog.label.name -> catalog_label.display_name",
 		"catalog.work.content_rating -> catalog_work.content_rating",
 		"catalog.work.display_name -> catalog_work.display_name",
