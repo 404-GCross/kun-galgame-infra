@@ -297,6 +297,15 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 - ⚠️ **明知的缺口(已在测试里钉住)**:平台自家控制台经 `/auth/login` 登录,其令牌**根本不带 `client_id` claim**(见 `utils.TokenClaims.ClientID`),因此 `AdminGate` 对**空** client id 放行。空 claim 只可能出自本 OP 自己的第一方会话流(即正被放行的那个面),缺口窄;但它只在这一点为真时才窄。待第一方会话流也有自己的注册 client(OIDC 标准化,docs/auth/03)后,应删掉该放行分支,改为像用户面 `UserGate` 一样 fail-closed。
 - **线上形状零变化**:三个 spec(`openapi.yaml` / `admin-openapi.yaml` / `public-openapi.yaml`)逐字节不变——封顶只改谁被拒,不改请求/响应形状。
 
+**行级压制字段 `<field>.suppressed`(wave R1a,2026-08-16 起在产)**:上游 importer 拥有的行不属于编辑面(编辑面只看 curated 车道),但人有时需要让某一行**不再出现在任何读面**。办法不是删它——下一轮导入会把它重新推回来——而是给它记一条负知识。
+
+- **形状**:凡支持此能力的字段 `F`,`getEditSchemaUser` 的 `fields[]` 里**多一个** key `F.suppressed`(`kind=list`、`diff_hint=items`),策略与 `F` 逐字相同(继承父字段的站点 overlay)。首个上线的是 `catalog.work.titles.suppressed`。
+- **值 = 严格升序、去重的字符串数组**(不是集合语义的任意顺序数组)。乱序或重复 → **422**。元素是**内容派生**的行身份键,标题的形状是 `title:<kind>:<lang>:<title>`(`kind` 是数字:0 official / 1 alias / 2 abbreviation)。之所以不用行 id:importer 删了重插同一行会换 id,压制会正好在它该生效的时候失效。
+- **悬空键合法**:只校格式,不校该行此刻是否存在——上游今天没推、明天推回来的行,压制照旧等在那里。
+- **被压制的行仍物理留在表里**(importer 仍拥有它),只是**不出任何读面**,标题搜索与 Meili 索引同规排除。父字段 `F` 的编辑快照**照旧包含**这些行(它是全量替换语义,过滤掉会导致下一次保存把它们物理删掉)。
+- 压制与解除各产一条 `entity_revision`,可 diff、可回滚、有归属,与普通编辑同一条审计通道。
+- ⚠️ **通用渲染的 UI 注意**:如果编辑器是「遍历 `fields[]` 逐个渲染」,`F.suppressed` 会作为一个裸字符串数组出现。它要么按压制 UI 渲染(在 `F` 的行旁边给一个「隐藏此行」),要么显式跳过 `.suppressed` 后缀——**不要**当普通文本数组交给用户手打。
+
 ### 4.3 认领生命周期(投稿 + 八动作 + 我的认领,wave 179)
 
 > ⚠️ **S2S 的两条认领写端点已在 wave 185 删除**:`submitCatalogWork`(`POST /api/v1/catalog/works/submit`)与 `actOnCatalogClaim`(`POST /api/v1/catalog/works/{id}/claim-actions/{action}`)不复存在(404/405,不是 410)。理由同 §4.2——断言式 actor 意味着「后端说是谁就是谁」,一个 BFF 的 bug 或凭据泄漏即可代任意用户投稿、撤回,乃至**裁决**别人的投稿。它们当初留着只为 **kun-galgame-patch(moyu)仍在实调**;moyu 迁 Bearer 之后,跨仓普查与 48 小时生产访问日志确认零调用方,故按 wave 181 的同一套办法删除。孪生即本节的 `submitCatalogWorkUser` / `actOnCatalogClaimUser`——两面**曾共用同一 service、同一状态机、同一 `catalog_claim_event` 账本**,只有身份的来路不同,故删除的是门,不是任何语义。
