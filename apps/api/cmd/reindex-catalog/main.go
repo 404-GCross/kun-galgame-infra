@@ -64,7 +64,8 @@ func main() {
 			err = reindexCreditNames(ctx, db.DB(), idx, *batch)
 		case catalogSearch.IndexCharacters:
 			err = reindexEntity(ctx, db.DB(), idx, *batch, catalogSearch.IndexCharacters, "catalog_character", "c",
-				model.EntityTypeCharacter, "character_id", "character", "catalog_character_alias", "character_id")
+				model.EntityTypeCharacter, "character_id", "character", "catalog_character_alias", "character_id",
+				editspec.NotSuppressedCharacterAliasSQL("a"))
 		case catalogSearch.IndexLabels:
 			err = reindexLabels(ctx, db.DB(), idx, *batch)
 		case catalogSearch.IndexWorks:
@@ -190,7 +191,7 @@ func reindexLabels(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 	if err != nil {
 		return err
 	}
-	aliases, err := loadAliasTable(db, "catalog_label_alias", "label_id")
+	aliases, err := loadAliasTable(db, "catalog_label_alias", "label_id", "")
 	if err != nil {
 		return err
 	}
@@ -237,7 +238,7 @@ func reindexLabels(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 	return nil
 }
 
-func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int, uid, table, prefix string, entityType int16, popCol, etype, aliasTable, aliasCol string) error {
+func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int, uid, table, prefix string, entityType int16, popCol, etype, aliasTable, aliasCol, aliasLive string) error {
 	pop, err := loadPopularity(db, popCol)
 	if err != nil {
 		return err
@@ -246,7 +247,7 @@ func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 	if err != nil {
 		return err
 	}
-	aliases, err := loadAliasTable(db, aliasTable, aliasCol)
+	aliases, err := loadAliasTable(db, aliasTable, aliasCol, aliasLive)
 	if err != nil {
 		return err
 	}
@@ -293,16 +294,19 @@ func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 type alias struct{ lang, name string }
 
 func loadAliases(db *gorm.DB) (map[int64][]alias, error) {
-	return loadAliasTable(db, "catalog_name_alias", "credit_name_id")
+	return loadAliasTable(db, "catalog_name_alias", "credit_name_id", "")
 }
 
-func loadAliasTable(db *gorm.DB, table, ownerCol string) (map[int64][]alias, error) {
+func loadAliasTable(db *gorm.DB, table, ownerCol, live string) (map[int64][]alias, error) {
 	var rows []struct {
 		OwnerID int64  `gorm:"column:owner_id"`
 		Name    string `gorm:"column:name"`
 		Lang    string `gorm:"column:lang"`
 	}
-	q := fmt.Sprintf(`SELECT %s AS owner_id, name, lang FROM %s`, ownerCol, table)
+	q := fmt.Sprintf(`SELECT a.%s AS owner_id, a.name, a.lang FROM %s a`, ownerCol, table)
+	if live != "" {
+		q += " WHERE " + live
+	}
 	if err := db.Raw(q).Scan(&rows).Error; err != nil {
 		return nil, err
 	}

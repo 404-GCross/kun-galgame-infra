@@ -256,6 +256,11 @@ func (im *Importer) loadCharRefsByKind(source, linkKind int16) (map[string]int64
 	return m, nil
 }
 
+// loadVNDBAttachTargets deliberately reads catalog_character_alias WITHOUT the
+// catalog.character.aliases suppression predicate. Suppressing a row means "do
+// not render it", not "this name does not exist": the attach test asks whether
+// this vndb character is already in the roster under any spelling, and hiding a
+// name from it would mint a second character row for the same person.
 func (im *Importer) loadVNDBAttachTargets() (map[string]int64, error) {
 	var rows []struct {
 		CharID     string `gorm:"column:char_id"`

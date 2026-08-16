@@ -63,13 +63,14 @@ type glossRow struct {
 	Zh      string `gorm:"column:zh"`
 }
 
-const (
+var (
 	characterOwnQuery = `
 		SELECT a.character_id AS owner_id, c.display_name AS src, a.name AS zh
 		FROM catalog_character_alias a
 		JOIN catalog_character c ON c.id = a.character_id
 		WHERE a.character_id IN (?)
 		  AND a.lang IN ('zh-Hans','zh','zh-Hant') AND a.kind IN (0,1)
+		  AND ` + editspec.NotSuppressedCharacterAliasSQL("a") + `
 		ORDER BY a.character_id, (NOT a.is_primary_for_locale), (a.lang <> 'zh-Hans'), a.id`
 
 	personOwnQuery = `
