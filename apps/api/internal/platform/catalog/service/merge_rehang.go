@@ -6,6 +6,7 @@ import (
 
 	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"gorm.io/gorm"
 )
@@ -56,10 +57,16 @@ type mergeStmt struct {
 //     every request, so it rehangs with the title and alias rows below. One
 //     branch per REGISTERED entity type, not per merge-able type: work
 //     (catalog.work.titles) and character (catalog.character.aliases) each move
-//     their own rows. credit_name registers no field yet, so it has no branch —
-//     R2c must add one the day credits become editable, or every suppression a
-//     reviewer records is silently undone by the next name merge.
-func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error) {
+//     their own rows.
+//
+// THE LIST ABOVE IS ONLY ABOUT TABLES (wave 09/D13). A suppression's identity
+// key can itself contain the id of a merge-able entity, and that drift is not a
+// table this list could name — a credit_name merge rewrites keys hanging off
+// works that are not in the merge at all. Those rewrites therefore come from the
+// registry, not from here: every field declares its IdentitySpec and
+// IdentityFollowStmts derives the statements, so registering a new field with an
+// id segment needs nobody to remember this file.
+func rehangEntity(tx *gorm.DB, reg *editing.Registry, entityType int16, src, dst int64) ([]int64, error) {
 	switch entityType {
 	case model.EntityTypePerson:
 		stmts := []mergeStmt{
@@ -70,6 +77,7 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 				[]any{dst, src, dst}, false},
 			{`DELETE FROM catalog_person_intro WHERE person_id = ?`, []any{src}, false},
 		}
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagPerson, src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeCreditName:
@@ -87,6 +95,7 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			{`DELETE FROM catalog_name_alias WHERE credit_name_id = ?`, []any{src}, false},
 			{`UPDATE catalog_person SET primary_credit_name_id = ? WHERE primary_credit_name_id = ?`, []any{dst, src}, false},
 		}
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagCreditName, src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeLabel:
@@ -108,6 +117,7 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			{`DELETE FROM catalog_work_label WHERE label_id = ? RETURNING work_id`, []any{src}, true},
 		}
 		stmts = append(stmts, labelRelationStmts(src, dst)...)
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagLabel, src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeCharacter:
@@ -146,6 +156,7 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			{`UPDATE catalog_character SET instance_of = ? WHERE instance_of = ?`, []any{dst, src}, false},
 		}
 		stmts = append(stmts, suppressedRowStmts(editspec.TypeCharacter, src, dst)...)
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagCharacter, src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeWork:
@@ -177,9 +188,19 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			{`DELETE FROM catalog_credit WHERE work_id = ?`, []any{src}, false},
 		}
 		stmts = append(stmts, suppressedRowStmts(editspec.TypeWork, src, dst)...)
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagWork, src, dst)...)
 		return execAll(tx, append(stmts, workFacetStmts(src, dst)...))
 	}
 	return nil, fmt.Errorf("catalog merge: unsupported entity type %d", entityType)
+}
+
+func identityFollowStmts(reg *editing.Registry, entityTag string, src, dst int64) []mergeStmt {
+	follow := reg.IdentityFollowStmts(entityTag, src, dst, nil)
+	out := make([]mergeStmt, 0, len(follow))
+	for _, s := range follow {
+		out = append(out, mergeStmt{sql: s.SQL, args: s.Args})
+	}
+	return out
 }
 
 func suppressedRowStmts(entityType string, src, dst int64) []mergeStmt {

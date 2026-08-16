@@ -9,6 +9,7 @@ import (
 	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/editing"
+	"api/internal/platform/textnorm"
 )
 
 // importAlias reproduces cmd/import-work-aliases' bgm lane verbatim: the row is
@@ -224,6 +225,52 @@ func TestWorkTitleIdentityIsContentDerived(t *testing.T) {
 		if got := editspec.WorkTitleIdentity(c.kind, c.lang, c.title); got != c.want {
 			t.Fatalf("WorkTitleIdentity(%d, %q, %q) = %q, want %q", c.kind, c.lang, c.title, got, c.want)
 		}
+	}
+}
+
+var dirtyTexts = []struct {
+	name, dirty, clean string
+}{
+	{"zero width space", "\u200bサクラノ詩", "サクラノ詩"},
+	{"leading BOM", "\ufeffサクラノ詩", "サクラノ詩"},
+	{"bidi override", "\u202eSakura\u202c", "Sakura"},
+	{"word joiner", "Sa\u2060kura", "Sakura"},
+	{"trailing ascii space", "Sakura no Uta ", "Sakura no Uta"},
+	{"leading ideographic space", "\u3000樱之诗", "樱之诗"},
+	{"tab and newline ends", "\tSakura\n", "Sakura"},
+	{"zero width wrapping a space", "\u200b \u200bSakura\u200b \u200b", "Sakura"},
+	{"emoji variation selector survives", "警告\ufe0f", "警告\ufe0f"},
+	{"inner spaces survive", "Sakura no Uta", "Sakura no Uta"},
+}
+
+func TestWorkTitleIdentityIsCleanStable(t *testing.T) {
+	newEngine(t)
+	work := createWork(t, "正規化")
+	for _, c := range dirtyTexts {
+		dirty, clean := editspec.WorkTitleIdentity(model.WorkTitleKindAlias, "ja", c.dirty),
+			editspec.WorkTitleIdentity(model.WorkTitleKindAlias, "ja", c.clean)
+		if dirty != clean {
+			t.Fatalf("%s: key(%q) = %q, key(%q) = %q", c.name, c.dirty, dirty, c.clean, clean)
+		}
+		if textnorm.Clean(c.dirty) != c.clean {
+			t.Fatalf("%s: textnorm.Clean(%q) = %q, want %q", c.name, c.dirty, textnorm.Clean(c.dirty), c.clean)
+		}
+	}
+
+	// The SQL twin has to reach the same key from the row the importer actually
+	// wrote, which is the dirty one — that is what makes the suppression survive
+	// cmd/catalog-clean-strings rewriting the column underneath it.
+	for i, c := range dirtyTexts {
+		id := importAlias(t, work.ID, "ja", c.dirty, model.WorkTitleKindAlias)
+		var key string
+		if err := testDB.Raw(`SELECT `+editspec.WorkTitleIdentitySQL("t")+
+			` FROM catalog_work_title t WHERE t.id = ?`, id).Scan(&key).Error; err != nil {
+			t.Fatalf("case %d: compute key in SQL: %v", i, err)
+		}
+		if want := editspec.WorkTitleIdentity(model.WorkTitleKindAlias, "ja", c.clean); key != want {
+			t.Fatalf("%s: SQL key %q, Go key %q", c.name, key, want)
+		}
+		deleteTitleRow(t, id)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 
 	catmodel "api/internal/platform/catalog/model"
 	"api/internal/platform/editing"
+	"api/internal/platform/textnorm"
 
 	"gorm.io/gorm"
 )
@@ -153,7 +154,7 @@ func rejectUpstreamAliasCollisions(ctx context.Context, tx *gorm.DB, entityID in
 // and needs no quoting. Nothing in the key is an entity id, so a character
 // merge cannot invalidate it.
 func CharacterAliasIdentity(kind int16, lang, name string) string {
-	return fmt.Sprintf("alias:%d:%s:%s", kind, lang, name)
+	return fmt.Sprintf("alias:%d:%s:%s", kind, lang, textnorm.Clean(name))
 }
 
 // CharacterAliasIdentitySQL restates CharacterAliasIdentity for a
@@ -161,7 +162,8 @@ func CharacterAliasIdentity(kind int16, lang, name string) string {
 // apart, which is why TestCharacterAliasIdentitySQLMatchesGo recomputes both
 // over real rows.
 func CharacterAliasIdentitySQL(alias string) string {
-	return fmt.Sprintf(`('alias:' || %[1]s.kind || ':' || %[1]s.lang || ':' || %[1]s.name)`, alias)
+	return fmt.Sprintf(`('alias:' || %[1]s.kind || ':' || %[1]s.lang || ':' || %[2]s)`,
+		alias, textnorm.CleanSQL(alias+".name"))
 }
 
 // NotSuppressedCharacterAliasSQL is the read-path predicate, correlated on a

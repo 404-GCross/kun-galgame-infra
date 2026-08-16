@@ -43,19 +43,40 @@ func SuppressedFieldKey(parentKey string) string { return parentKey + Suppressed
 func SuppressedFieldSpec(entityType string, parent FieldSpec) FieldSpec {
 	parentKey := parent.Key
 	key := SuppressedFieldKey(parentKey)
+	limit := parent.MaxSuppressed
+	if limit <= 0 {
+		limit = maxSuppressedKeys
+	}
+	var check func(string) error
+	if parent.Identity != nil {
+		check = parent.Identity.KeyCheck
+	}
+	parse := func(v any) ([]string, error) {
+		keys, err := ParseSuppressedKeys(v, limit)
+		if err != nil || check == nil {
+			return keys, err
+		}
+		for i, k := range keys {
+			if err := check(k); err != nil {
+				return nil, fmt.Errorf("element %d: %w", i, err)
+			}
+		}
+		return keys, nil
+	}
 	return FieldSpec{
-		Key:      key,
-		Kind:     KindList,
-		DiffHint: DiffHintItems,
-		Policy:   parent.Policy,
+		Key:           key,
+		Kind:          KindList,
+		DiffHint:      DiffHintItems,
+		Policy:        parent.Policy,
+		MaxSuppressed: limit,
 		Validate: func(v any) error {
-			_, err := ParseSuppressedKeys(v)
+			_, err := parse(v)
 			return err
 		},
 		Apply: func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
-			keys, err := ParseSuppressedKeys(value)
+			keys, err := parse(value)
 			if err != nil {
-				return fmt.Errorf("editing: %s: %w", key, err)
+				return &ValidationError{Key: key, Reason: err.Error()}
 			}
 			return ReconcileSuppressed(ctx, tx, entityType, entityID, parentKey, keys)
 		},
@@ -66,13 +87,16 @@ func SuppressedFieldSpec(entityType string, parent FieldSpec) FieldSpec {
 // identity keys. Existence is deliberately not checked — suppressing a row that
 // is not in the table yet is the whole point, because the importer re-pushes
 // deleted rows after the suppression is recorded.
-func ParseSuppressedKeys(v any) ([]string, error) {
+func ParseSuppressedKeys(v any, maxKeys int) ([]string, error) {
 	arr, ok := v.([]any)
 	if !ok {
 		return nil, fmt.Errorf("must be an array of identity keys")
 	}
-	if len(arr) > maxSuppressedKeys {
-		return nil, fmt.Errorf("must contain at most %d identity keys", maxSuppressedKeys)
+	if maxKeys <= 0 {
+		maxKeys = maxSuppressedKeys
+	}
+	if len(arr) > maxKeys {
+		return nil, fmt.Errorf("must contain at most %d identity keys", maxKeys)
 	}
 	out := make([]string, 0, len(arr))
 	for i, el := range arr {

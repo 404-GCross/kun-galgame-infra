@@ -120,16 +120,8 @@ func main() {
 		service.NewImageReferenceService(catalogDB.DB()))
 
 	editRegistry := editing.NewRegistry()
-	if err := editspec.RegisterWork(editRegistry, catalogDB.DB()); err != nil {
-		slog.Error("editing: register catalog.work", "error", err)
-		os.Exit(1)
-	}
-	if err := editspec.RegisterTaxonomy(editRegistry, catalogDB.DB()); err != nil {
-		slog.Error("editing: register catalog taxonomy families", "error", err)
-		os.Exit(1)
-	}
-	if err := editspec.RegisterCharacter(editRegistry, catalogDB.DB()); err != nil {
-		slog.Error("editing: register catalog.character", "error", err)
+	if err := editspec.RegisterAll(editRegistry, catalogDB.DB()); err != nil {
+		slog.Error("editing: register catalog entity types", "error", err)
 		os.Exit(1)
 	}
 	editEngine := editing.NewEngine(catalogDB.DB(), editRegistry)

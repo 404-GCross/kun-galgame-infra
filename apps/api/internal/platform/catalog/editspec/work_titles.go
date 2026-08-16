@@ -7,6 +7,7 @@ import (
 
 	catmodel "api/internal/platform/catalog/model"
 	"api/internal/platform/editing"
+	"api/internal/platform/textnorm"
 
 	"gorm.io/gorm"
 )
@@ -182,14 +183,15 @@ func applyTitles(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 // it is needed. Kind is decimal and lang carries no colon, so the title is the
 // unescaped remainder and needs no quoting.
 func WorkTitleIdentity(kind int16, lang, title string) string {
-	return fmt.Sprintf("title:%d:%s:%s", kind, lang, title)
+	return fmt.Sprintf("title:%d:%s:%s", kind, lang, textnorm.Clean(title))
 }
 
 // WorkTitleIdentitySQL restates WorkTitleIdentity for a catalog_work_title
 // alias — the one place the two definitions could drift apart, which is why
 // TestWorkTitleIdentitySQLMatchesGo recomputes both over real rows.
 func WorkTitleIdentitySQL(alias string) string {
-	return fmt.Sprintf(`('title:' || %[1]s.kind || ':' || %[1]s.lang || ':' || %[1]s.title)`, alias)
+	return fmt.Sprintf(`('title:' || %[1]s.kind || ':' || %[1]s.lang || ':' || %[2]s)`,
+		alias, textnorm.CleanSQL(alias+".title"))
 }
 
 // NotSuppressedWorkTitleSQL is the read-path predicate, correlated on a

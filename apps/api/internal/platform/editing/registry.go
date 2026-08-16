@@ -107,14 +107,16 @@ func (p Policy) allowsAutomergeWithOwner(pc PolicyContext, owner *string) bool {
 type ApplyFunc func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error
 
 type FieldSpec struct {
-	Key        string
-	Kind       FieldKind
-	DiffHint   string
-	Deprecated bool
-	Policy     *Policy
-	Provenance *ProvenanceTarget
-	Validate   func(value any) error
-	Apply      ApplyFunc
+	Key           string
+	Kind          FieldKind
+	DiffHint      string
+	Deprecated    bool
+	Policy        *Policy
+	Provenance    *ProvenanceTarget
+	Identity      *IdentitySpec
+	MaxSuppressed int
+	Validate      func(value any) error
+	Apply         ApplyFunc
 }
 
 type MergeEvent struct {
@@ -223,6 +225,11 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 		if f.Provenance != nil && (f.Provenance.Table == "" || f.Provenance.Column == "") {
 			return fmt.Errorf("editing: field %q provenance target needs a table and a column", f.Key)
 		}
+		if f.Identity != nil {
+			if err := validateIdentitySpec(*f.Identity); err != nil {
+				return fmt.Errorf("editing: field %q identity: %w", f.Key, err)
+			}
+		}
 		if f.Policy != nil {
 			if err := validatePolicy(*f.Policy); err != nil {
 				return fmt.Errorf("editing: field %q policy: %w", f.Key, err)
@@ -232,6 +239,19 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 			}
 		}
 		spec.fields[f.Key] = f
+	}
+	for i := range spec.Fields {
+		f := &spec.Fields[i]
+		if !strings.HasSuffix(f.Key, SuppressedFieldSuffix) {
+			continue
+		}
+		parent, ok := spec.fields[strings.TrimSuffix(f.Key, SuppressedFieldSuffix)]
+		if !ok {
+			return fmt.Errorf("editing: field %q suppresses a field that is not registered", f.Key)
+		}
+		if parent.Identity == nil {
+			return fmt.Errorf("editing: field %q suppresses %q, which declares no Identity", f.Key, parent.Key)
+		}
 	}
 	for site, overlay := range spec.SiteOverlays {
 		for key, p := range overlay {
