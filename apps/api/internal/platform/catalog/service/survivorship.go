@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/provenance"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -24,20 +25,7 @@ func parseResolution(raw datatypes.JSON) (fieldResolution, error) {
 }
 
 func firstProvSource(prov datatypes.JSON, field string) string {
-	if len(prov) == 0 {
-		return ""
-	}
-	var doc map[string][]struct {
-		Source string `json:"source"`
-	}
-	if err := json.Unmarshal(prov, &doc); err != nil {
-		return ""
-	}
-	entries := doc[field]
-	if len(entries) == 0 {
-		return ""
-	}
-	return entries[0].Source
+	return provenance.FirstSource(prov, field)
 }
 
 type fieldMerger struct {
@@ -61,7 +49,8 @@ func (m *fieldMerger) take(field string, targetEmpty, sourceEmpty bool) bool {
 		if m.res[field] != "source" {
 			return false
 		}
-		if firstProvSource(m.dstProv, field) == "user" && firstProvSource(m.srcProv, field) != "user" {
+		if provenance.IsHuman(firstProvSource(m.dstProv, field)) &&
+			!provenance.IsHuman(firstProvSource(m.srcProv, field)) {
 			return false
 		}
 	}

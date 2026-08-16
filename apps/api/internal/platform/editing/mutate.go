@@ -389,7 +389,7 @@ func (e *Engine) mergeLocked(
 	err = spec.Txn(withActor(ctx, prop.ProposerUID), func(atx *gorm.DB) error {
 		for _, key := range changed {
 			f, _ := spec.Field(key)
-			if err := f.Apply(ctx, atx, prop.EntityID, eff[key]); err != nil {
+			if err := ApplyField(ctx, atx, f, prop.EntityID, eff[key]); err != nil {
 				return err
 			}
 		}

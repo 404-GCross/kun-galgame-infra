@@ -160,18 +160,21 @@ func workFieldSpecs() []editing.FieldSpec {
 	return []editing.FieldSpec{
 		{
 			Key: FieldWorkDisplayName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
-			Validate: validateDisplayName,
-			Apply:    applyWorkColumn("display_name", asString),
+			Validate:   validateDisplayName,
+			Apply:      applyWorkColumn("display_name", asString),
+			Provenance: workProvenance("display_name"),
 		},
 		{
 			Key: FieldWorkOLang, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-			Validate: validateOLang,
-			Apply:    applyWorkColumn("olang", asString),
+			Validate:   validateOLang,
+			Apply:      applyWorkColumn("olang", asString),
+			Provenance: workProvenance("olang"),
 		},
 		{
 			Key: FieldWorkContentRating, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-			Validate: validateContentRating,
-			Apply:    applyWorkColumn("content_rating", asContentRating),
+			Validate:   validateContentRating,
+			Apply:      applyWorkColumn("content_rating", asContentRating),
+			Provenance: workProvenance("content_rating"),
 		},
 		titles,
 		editing.SuppressedFieldSpec(TypeWork, titles),
@@ -182,8 +185,9 @@ func workFieldSpecs() []editing.FieldSpec {
 		},
 		{
 			Key: FieldWorkDisplayNSFW, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-			Validate: validateBool,
-			Apply:    applyWorkColumn("display_nsfw", asBool),
+			Validate:   validateBool,
+			Apply:      applyWorkColumn("display_nsfw", asBool),
+			Provenance: workProvenance("display_nsfw"),
 		},
 		{
 			Key: FieldWorkTagIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
@@ -276,6 +280,10 @@ func asContentRating(v any) (any, error) {
 		return int16(n), nil
 	}
 	return nil, fmt.Errorf("must be a number")
+}
+
+func workProvenance(column string) *editing.ProvenanceTarget {
+	return &editing.ProvenanceTarget{Table: catmodel.CatalogWork{}.TableName(), Column: column}
 }
 
 func applyWorkColumn(column string, conv func(any) (any, error)) editing.ApplyFunc {
