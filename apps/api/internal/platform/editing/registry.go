@@ -112,6 +112,7 @@ type FieldSpec struct {
 	DiffHint   string
 	Deprecated bool
 	Policy     *Policy
+	Provenance *ProvenanceTarget
 	Validate   func(value any) error
 	Apply      ApplyFunc
 }
@@ -218,6 +219,9 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 		}
 		if f.Validate == nil || f.Apply == nil {
 			return fmt.Errorf("editing: field %q needs Validate and Apply", f.Key)
+		}
+		if f.Provenance != nil && (f.Provenance.Table == "" || f.Provenance.Column == "") {
+			return fmt.Errorf("editing: field %q provenance target needs a table and a column", f.Key)
 		}
 		if f.Policy != nil {
 			if err := validatePolicy(*f.Policy); err != nil {

@@ -12,6 +12,7 @@ import (
 
 	"api/internal/infrastructure/database"
 	searchInfra "api/internal/infrastructure/search"
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	catalogSearch "api/internal/platform/catalog/search"
 	"api/pkg/config"
@@ -369,7 +370,7 @@ func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 	if err := db.Raw(`SELECT t.work_id, t.lang, t.title, coalesce(t.latin,'') AS latin, t.kind
 		FROM catalog_work_title t
 		JOIN catalog_work w ON w.id = t.work_id
-		WHERE ` + population + `
+		WHERE ` + population + ` AND ` + editspec.NotSuppressedWorkTitleSQL("t") + `
 		ORDER BY t.work_id, t.kind, t.lang, t.id`).Scan(&native).Error; err != nil {
 		return nil, err
 	}

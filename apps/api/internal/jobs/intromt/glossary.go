@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
+
 	"gorm.io/gorm"
 )
 
@@ -60,12 +62,13 @@ type glossRow struct {
 	Zh      string `gorm:"column:zh"`
 }
 
-const (
+var (
 	workOwnTitleQuery = `
 		WITH t AS (
-			SELECT work_id, lang, title, kind, id FROM catalog_work_title
+			SELECT work_id, lang, title, kind, id FROM catalog_work_title wt
 			WHERE work_id IN (?) AND kind IN (0,1)
 			  AND (lang = 'ja' OR lang IN ('zh-Hans','zh','zh-Hant'))
+			  AND ` + editspec.NotSuppressedWorkTitleSQL("wt") + `
 		),
 		jat AS (
 			SELECT DISTINCT ON (work_id) work_id, title FROM t

@@ -28,7 +28,7 @@ func userClaimApp(db *gorm.DB) *fiber.App {
 func resetClaims(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, tbl := range []string{
-		"catalog_claim_event", "catalog_release", "catalog_work_title", "catalog_work",
+		"catalog_claim_event", "catalog_release", "edit_suppressed_row", "catalog_work_title", "catalog_work",
 	} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}

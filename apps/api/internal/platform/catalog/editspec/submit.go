@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	catmodel "api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"gorm.io/gorm"
 )
@@ -86,7 +87,7 @@ func ApplyWorkFields(ctx context.Context, tx *gorm.DB, workID int64, values map[
 				return &SubmissionFieldError{Field: spec.Key, Err: err}
 			}
 		}
-		if err := spec.Apply(ctx, tx, workID, value); err != nil {
+		if err := editing.ApplyField(ctx, tx, &spec, workID, value); err != nil {
 			return err
 		}
 	}

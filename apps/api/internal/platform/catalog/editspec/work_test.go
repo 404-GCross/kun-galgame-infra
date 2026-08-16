@@ -53,7 +53,7 @@ func TestMain(m *testing.M) {
 func newEngine(t *testing.T) *editing.Engine {
 	t.Helper()
 	for _, table := range []string{
-		"edit_proposal_amendment", "edit_proposal", "edit_revision",
+		"edit_proposal_amendment", "edit_proposal", "edit_revision", "edit_suppressed_row",
 		"catalog_work_title", "catalog_work_intro", "catalog_work_tag",
 		"catalog_work_label", "catalog_work_engine", "catalog_series_member",
 		"catalog_work_cover", "catalog_work_screenshot", "catalog_external_ref",

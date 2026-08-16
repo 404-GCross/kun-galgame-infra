@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"api/internal/jobs/personadj"
+	"api/internal/platform/catalog/editspec"
 
 	"gorm.io/gorm"
 )
@@ -106,7 +107,8 @@ func loadWorkTitles(db *gorm.DB, pairs []pairMeta) (map[int64]string, error) {
 		}
 		var rows []trow
 		if err := db.Raw(`SELECT DISTINCT ON (work_id) work_id, title
-			FROM catalog_work_title WHERE work_id IN ?
+			FROM catalog_work_title wt WHERE work_id IN ?
+			  AND `+editspec.NotSuppressedWorkTitleSQL("wt")+`
 			ORDER BY work_id, CASE lang WHEN 'ja' THEN 0 WHEN 'zh-Hans' THEN 1 ELSE 2 END, kind, id`,
 			chunk).Scan(&rows).Error; err != nil {
 			return nil, fmt.Errorf("work titles: %w", err)

@@ -174,6 +174,50 @@ func applyTitles(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 		Update("display_name", deriveDisplayName(titles, work.OLang)).Error
 }
 
+// WorkTitleIdentity is the frozen row identity of catalog.work.titles (doc 21
+// D10: registered means never redefined — no hashing, no normalising, no
+// reordering, ever). It is derived from the row's content and never from
+// catalog_work_title.id, because an importer that deletes and re-inserts the
+// same alias hands it a new id, which would expire the suppression exactly when
+// it is needed. Kind is decimal and lang carries no colon, so the title is the
+// unescaped remainder and needs no quoting.
+func WorkTitleIdentity(kind int16, lang, title string) string {
+	return fmt.Sprintf("title:%d:%s:%s", kind, lang, title)
+}
+
+// WorkTitleIdentitySQL restates WorkTitleIdentity for a catalog_work_title
+// alias — the one place the two definitions could drift apart, which is why
+// TestWorkTitleIdentitySQLMatchesGo recomputes both over real rows.
+func WorkTitleIdentitySQL(alias string) string {
+	return fmt.Sprintf(`('title:' || %[1]s.kind || ':' || %[1]s.lang || ':' || %[1]s.title)`, alias)
+}
+
+// NotSuppressedWorkTitleSQL is the read-path predicate, correlated on a
+// catalog_work_title alias.
+func NotSuppressedWorkTitleSQL(alias string) string {
+	return fmt.Sprintf(
+		`NOT EXISTS (SELECT 1 FROM edit_suppressed_row esr
+			WHERE esr.entity_type = '%s' AND esr.field_key = '%s'
+			  AND esr.entity_id = %s.work_id AND esr.identity_key = %s)`,
+		TypeWork, FieldWorkTitles, alias, WorkTitleIdentitySQL(alias))
+}
+
+func TitleSuppressed(suppressed map[string]struct{}, kind int16, lang, title string) bool {
+	if len(suppressed) == 0 {
+		return false
+	}
+	_, ok := suppressed[WorkTitleIdentity(kind, lang, title)]
+	return ok
+}
+
+func SuppressedWorkTitles(ctx context.Context, db *gorm.DB, workIDs []int64) (map[int64]map[string]struct{}, error) {
+	return editing.SuppressedKeysFor(ctx, db, TypeWork, FieldWorkTitles, workIDs)
+}
+
+func loadSuppressedTitles(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
+	return editing.LoadSuppressedValue(ctx, db, TypeWork, workID, FieldWorkTitles)
+}
+
 func loadTitles(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
 	var rows []catmodel.CatalogWorkTitle
 	if err := db.WithContext(ctx).

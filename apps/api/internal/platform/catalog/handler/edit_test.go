@@ -124,7 +124,7 @@ func schemaViaEngine(t *testing.T, engine *editing.Engine, perms PermResolvers, 
 
 func TestEditPolicyDefaultTenant(t *testing.T) {
 	db := openCatalogTestDB(t)
-	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	work := &model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "面テスト", Status: model.WorkStatusLive}
@@ -185,7 +185,7 @@ func TestEditPolicyDefaultTenant(t *testing.T) {
 
 func TestEditPolicyLetmoeTenant(t *testing.T) {
 	db := openCatalogTestDB(t)
-	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	site, productID := "letmoe", int64(77)
@@ -267,7 +267,7 @@ func TestEditPolicyLetmoeTenant(t *testing.T) {
 
 func TestEditPolicyKungalOwner(t *testing.T) {
 	db := openCatalogTestDB(t)
-	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	work := &model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "認領作品", Status: model.WorkStatusLive}

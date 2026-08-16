@@ -3,6 +3,7 @@ package importer
 import (
 	"fmt"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
@@ -41,7 +42,8 @@ func (im *Importer) loadExistingWorkTitleNorms() (map[string]wtNorm, error) {
 		Title  string `gorm:"column:title"`
 	}
 	if err := im.catalog.Raw(
-		`SELECT title_norm, work_id, title FROM catalog_work_title WHERE length(title_norm) >= ?`,
+		`SELECT title_norm, work_id, title FROM catalog_work_title t
+		 WHERE length(title_norm) >= ? AND `+editspec.NotSuppressedWorkTitleSQL("t"),
 		bgmGatedMinLen,
 	).Scan(&rows).Error; err != nil {
 		return nil, err

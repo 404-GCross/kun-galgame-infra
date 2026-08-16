@@ -12,20 +12,30 @@ import (
 
 type introTable struct {
 	ownerCol string
-	empty    func() any
-	newRow   func(ownerID int64, lang, intro string) any
-	read     func(ctx context.Context, db *gorm.DB, ownerID int64) (map[string]string, error)
+	// Only catalog_label_intro carries the 0/1 provenance axis. catalog_tag_intro
+	// and catalog_series_intro have no such column, so filtering on it there is a
+	// SQL error rather than a stricter query.
+	hasProvenance bool
+	empty         func() any
+	newRow        func(ownerID int64, lang, intro string) any
+	read          func(ctx context.Context, db *gorm.DB, ownerID int64) (map[string]string, error)
 }
 
 var introTableLabel = introTable{
-	ownerCol: "label_id",
-	empty:    func() any { return &catmodel.CatalogLabelIntro{} },
+	ownerCol:      "label_id",
+	hasProvenance: true,
+	empty:         func() any { return &catmodel.CatalogLabelIntro{} },
 	newRow: func(id int64, lang, intro string) any {
-		return &catmodel.CatalogLabelIntro{LabelID: id, Lang: lang, Intro: intro, SourceID: curatedSourceID}
+		return &catmodel.CatalogLabelIntro{
+			LabelID: id, Lang: lang, Intro: intro,
+			SourceID: curatedSourceID, Provenance: catmodel.IntroProvenanceSource,
+		}
 	},
 	read: func(ctx context.Context, db *gorm.DB, ownerID int64) (map[string]string, error) {
 		var rows []catmodel.CatalogLabelIntro
-		if err := curatedIntroScope(ctx, db, "label_id", ownerID).Find(&rows).Error; err != nil {
+		if err := curatedIntroScope(ctx, db, "label_id", ownerID).
+			Where("provenance = ?", catmodel.IntroProvenanceSource).
+			Find(&rows).Error; err != nil {
 			return nil, err
 		}
 		out := make(map[string]string, len(rows))
@@ -84,8 +94,19 @@ func applyEntityIntros(t introTable) editing.ApplyFunc {
 		if err != nil {
 			return fmt.Errorf("editspec: intros: %w", err)
 		}
-		if err := curatedIntroScope(ctx, tx, t.ownerCol, entityID).
-			Delete(t.empty()).Error; err != nil {
+		del := curatedIntroScope(ctx, tx, t.ownerCol, entityID)
+		if t.hasProvenance {
+			langs := make([]string, 0, len(intros))
+			for _, in := range intros {
+				langs = append(langs, in.Lang)
+			}
+			if len(langs) == 0 {
+				del = del.Where("provenance = ?", catmodel.IntroProvenanceSource)
+			} else {
+				del = del.Where("provenance = ? OR lang IN ?", catmodel.IntroProvenanceSource, langs)
+			}
+		}
+		if err := del.Delete(t.empty()).Error; err != nil {
 			return err
 		}
 		for _, in := range intros {

@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
+
 	"gorm.io/gorm"
 )
 
@@ -106,7 +108,8 @@ func loadSide(db *gorm.DB, id int64) (labelSide, error) {
 		return s, err
 	}
 	err := db.Raw(`SELECT
-			coalesce((SELECT title FROM catalog_work_title wt WHERE wt.work_id = wl.work_id ORDER BY wt.id LIMIT 1), w.display_name) AS title,
+			coalesce((SELECT title FROM catalog_work_title wt WHERE wt.work_id = wl.work_id
+				AND `+editspec.NotSuppressedWorkTitleSQL("wt")+` ORDER BY wt.id LIMIT 1), w.display_name) AS title,
 			coalesce((SELECT min(released_y) FROM catalog_release rel WHERE rel.work_id = wl.work_id AND rel.released_y IS NOT NULL), 0) AS year,
 			coalesce(src.key, '') AS src
 		FROM catalog_work_label wl

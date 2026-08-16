@@ -78,7 +78,7 @@ func actOnClaim(t *testing.T, claims *service.ClaimLifecycleService, p service.C
 
 func TestClaimEventFeedOverHTTP(t *testing.T) {
 	db := openCatalogTestDB(t)
-	for _, tbl := range []string{"catalog_claim_event", "catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"catalog_claim_event", "edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	work := &model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "投稿", Status: model.WorkStatusLive}

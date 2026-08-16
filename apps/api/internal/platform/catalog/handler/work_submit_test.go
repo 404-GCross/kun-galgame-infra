@@ -16,7 +16,7 @@ import (
 func TestSubmitFaceEndToEnd(t *testing.T) {
 	db := openCatalogTestDB(t)
 	for _, tbl := range []string{
-		"catalog_claim_event", "catalog_work_title", "catalog_work_intro",
+		"catalog_claim_event", "edit_suppressed_row", "catalog_work_title", "catalog_work_intro",
 		"catalog_external_ref", "catalog_release", "catalog_revision", "catalog_work",
 	} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)

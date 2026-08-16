@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"api/internal/platform/catalog/repository"
+	"api/internal/platform/provenance"
 
 	"gorm.io/gorm"
 )
@@ -46,10 +47,14 @@ func (w *writer) fillRating(ctx context.Context, workID int64, rating int16, app
 	if !apply {
 		return
 	}
+	// content_rating = 0 cannot tell "nobody set it" from "a human ruled
+	// all_ages", so the zero test on its own let an upstream r18 verdict
+	// overwrite the human decision.
 	res := w.db.WithContext(ctx).Exec(
 		`UPDATE catalog_work SET content_rating = ?, updated_at = now()
-		 WHERE id = ? AND deleted_at IS NULL AND content_rating = 0`,
-		rating, workID)
+		 WHERE id = ? AND deleted_at IS NULL AND content_rating = 0
+		   AND COALESCE(field_provenance -> 'content_rating' -> 0 ->> 'source', '') NOT IN ?`,
+		rating, workID, provenance.HumanSources())
 	if res.Error != nil {
 		w.stats.Errors++
 		slog.Warn("fill content_rating", "work", workID, "err", res.Error)

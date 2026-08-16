@@ -41,7 +41,7 @@ func userEditApp(t *testing.T, db *gorm.DB, clients fakeClientLookup) *fiber.App
 
 func seedUserEditWork(t *testing.T, db *gorm.DB) int64 {
 	t.Helper()
-	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	work := &model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "利用者面テスト", Status: model.WorkStatusLive}

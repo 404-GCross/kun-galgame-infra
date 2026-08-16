@@ -44,6 +44,21 @@ func taxonomyPolicy() editing.Policy {
 	}
 }
 
+// A taxonomy row fans out to every work referencing it, so kungal keeps
+// automerge=never here even though its work overlay automerges on review perm.
+func kungalTaxonomyOverlays(fields []editing.FieldSpec) map[string]map[string]editing.Policy {
+	kungal := editing.Policy{
+		Propose:   editing.ProposeOpen,
+		Review:    editing.ReviewPerm(string(perm.EditTaxonomyReview)),
+		Automerge: editing.AutomergeNever,
+	}
+	overlay := make(map[string]editing.Policy, len(fields))
+	for _, f := range fields {
+		overlay[f.Key] = kungal
+	}
+	return map[string]map[string]editing.Policy{"kungal": overlay}
+}
+
 func RegisterTaxonomy(reg *editing.Registry, db *gorm.DB) error {
 	for _, register := range []func(*editing.Registry, *gorm.DB) error{
 		registerLabel, registerTag, registerEngine, registerSeries,
@@ -62,6 +77,31 @@ func txnOn(db *gorm.DB) func(context.Context, func(*gorm.DB) error) error {
 }
 
 func registerLabel(reg *editing.Registry, db *gorm.DB) error {
+	fields := []editing.FieldSpec{
+		{
+			Key: FieldLabelName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
+			Validate: validateName,
+			Apply:    applyEntityColumn(&catmodel.CatalogLabel{}, "display_name", asString),
+			Provenance: &editing.ProvenanceTarget{
+				Table: catmodel.CatalogLabel{}.TableName(), Column: "display_name",
+			},
+		},
+		{
+			Key: FieldLabelIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
+			Validate: validateIntros,
+			Apply:    applyEntityIntros(introTableLabel),
+		},
+		{
+			Key: FieldLabelLinks, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+			Validate: validateLinks,
+			Apply: func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
+				if err := firstEntity(ctx, tx, &catmodel.CatalogLabel{}, entityID, "id"); err != nil {
+					return err
+				}
+				return applyLinksFor(ctx, tx, catmodel.EntityTypeLabel, entityID, value)
+			},
+		},
+	}
 	return reg.Register(editing.EntityTypeSpec{
 		Family: "catalog", Type: TypeLabel,
 		LoadSnapshot: func(ctx context.Context, entityID int64) (map[string]any, error) {
@@ -85,32 +125,19 @@ func registerLabel(reg *editing.Registry, db *gorm.DB) error {
 		},
 		Txn:           txnOn(db),
 		DefaultPolicy: taxonomyPolicy(),
-		Fields: []editing.FieldSpec{
-			{
-				Key: FieldLabelName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
-				Validate: validateName,
-				Apply:    applyEntityColumn(&catmodel.CatalogLabel{}, "display_name", asString),
-			},
-			{
-				Key: FieldLabelIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
-				Validate: validateIntros,
-				Apply:    applyEntityIntros(introTableLabel),
-			},
-			{
-				Key: FieldLabelLinks, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-				Validate: validateLinks,
-				Apply: func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
-					if err := firstEntity(ctx, tx, &catmodel.CatalogLabel{}, entityID, "id"); err != nil {
-						return err
-					}
-					return applyLinksFor(ctx, tx, catmodel.EntityTypeLabel, entityID, value)
-				},
-			},
-		},
+		SiteOverlays:  kungalTaxonomyOverlays(fields),
+		Fields:        fields,
 	})
 }
 
 func registerTag(reg *editing.Registry, db *gorm.DB) error {
+	fields := []editing.FieldSpec{
+		{
+			Key: FieldTagIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
+			Validate: validateIntros,
+			Apply:    applyEntityIntros(introTableTag),
+		},
+	}
 	return reg.Register(editing.EntityTypeSpec{
 		Family: "catalog", Type: TypeTag,
 		LoadSnapshot: func(ctx context.Context, entityID int64) (map[string]any, error) {
@@ -126,17 +153,29 @@ func registerTag(reg *editing.Registry, db *gorm.DB) error {
 		},
 		Txn:           txnOn(db),
 		DefaultPolicy: taxonomyPolicy(),
-		Fields: []editing.FieldSpec{
-			{
-				Key: FieldTagIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
-				Validate: validateIntros,
-				Apply:    applyEntityIntros(introTableTag),
-			},
-		},
+		SiteOverlays:  kungalTaxonomyOverlays(fields),
+		Fields:        fields,
 	})
 }
 
 func registerEngine(reg *editing.Registry, db *gorm.DB) error {
+	fields := []editing.FieldSpec{
+		{
+			Key: FieldEngineName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
+			Validate: validateName,
+			Apply:    applyEntityColumn(&catmodel.CatalogEngine{}, "name", asString),
+		},
+		{
+			Key: FieldEngineIntro, Kind: editing.KindText, DiffHint: editing.DiffHintLines,
+			Validate: validateIntroText,
+			Apply:    applyEntityColumn(&catmodel.CatalogEngine{}, "description", asString),
+		},
+		{
+			Key: FieldEngineAliases, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+			Validate: validateAliases,
+			Apply:    applyEngineAliases,
+		},
+	}
 	return reg.Register(editing.EntityTypeSpec{
 		Family: "catalog", Type: TypeEngine,
 		LoadSnapshot: func(ctx context.Context, entityID int64) (map[string]any, error) {
@@ -156,27 +195,24 @@ func registerEngine(reg *editing.Registry, db *gorm.DB) error {
 		},
 		Txn:           txnOn(db),
 		DefaultPolicy: taxonomyPolicy(),
-		Fields: []editing.FieldSpec{
-			{
-				Key: FieldEngineName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
-				Validate: validateName,
-				Apply:    applyEntityColumn(&catmodel.CatalogEngine{}, "name", asString),
-			},
-			{
-				Key: FieldEngineIntro, Kind: editing.KindText, DiffHint: editing.DiffHintLines,
-				Validate: validateIntroText,
-				Apply:    applyEntityColumn(&catmodel.CatalogEngine{}, "description", asString),
-			},
-			{
-				Key: FieldEngineAliases, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-				Validate: validateAliases,
-				Apply:    applyEngineAliases,
-			},
-		},
+		SiteOverlays:  kungalTaxonomyOverlays(fields),
+		Fields:        fields,
 	})
 }
 
 func registerSeries(reg *editing.Registry, db *gorm.DB) error {
+	fields := []editing.FieldSpec{
+		{
+			Key: FieldSeriesName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
+			Validate: validateName,
+			Apply:    curatedOnly(applyEntityColumn(&catmodel.CatalogSeries{}, "display_name", asString)),
+		},
+		{
+			Key: FieldSeriesIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
+			Validate: validateIntros,
+			Apply:    applyEntityIntros(introTableSeries),
+		},
+	}
 	return reg.Register(editing.EntityTypeSpec{
 		Family: "catalog", Type: TypeSeries,
 		LoadSnapshot: func(ctx context.Context, entityID int64) (map[string]any, error) {
@@ -195,18 +231,8 @@ func registerSeries(reg *editing.Registry, db *gorm.DB) error {
 		},
 		Txn:           txnOn(db),
 		DefaultPolicy: taxonomyPolicy(),
-		Fields: []editing.FieldSpec{
-			{
-				Key: FieldSeriesName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
-				Validate: validateName,
-				Apply:    curatedOnly(applyEntityColumn(&catmodel.CatalogSeries{}, "display_name", asString)),
-			},
-			{
-				Key: FieldSeriesIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
-				Validate: validateIntros,
-				Apply:    applyEntityIntros(introTableSeries),
-			},
-		},
+		SiteOverlays:  kungalTaxonomyOverlays(fields),
+		Fields:        fields,
 	})
 }
 

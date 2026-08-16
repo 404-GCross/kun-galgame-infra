@@ -33,7 +33,7 @@ type userClaimsBody struct {
 
 func TestUserClaimsFace(t *testing.T) {
 	db := openCatalogTestDB(t)
-	for _, tbl := range []string{"catalog_claim_event", "catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"catalog_claim_event", "edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	claims := service.NewClaimLifecycleService(db)
@@ -114,7 +114,7 @@ func TestUserClaimsFace(t *testing.T) {
 
 func TestClaimEventFeedActorFilter(t *testing.T) {
 	db := openCatalogTestDB(t)
-	for _, tbl := range []string{"catalog_claim_event", "catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"catalog_claim_event", "edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	claims := service.NewClaimLifecycleService(db)

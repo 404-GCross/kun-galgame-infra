@@ -42,7 +42,7 @@ func mkRevision(t *testing.T, db *gorm.DB, entityType string, entityID int64, si
 
 func TestRevisionFeedProjectsProductWorkID(t *testing.T) {
 	db := openCatalogTestDB(t)
-	for _, tbl := range []string{"edit_revision", "catalog_work_title", "catalog_work"} {
+	for _, tbl := range []string{"edit_revision", "edit_suppressed_row", "catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 

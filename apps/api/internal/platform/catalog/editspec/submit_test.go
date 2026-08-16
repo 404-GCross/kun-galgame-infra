@@ -21,7 +21,9 @@ func TestSubmissionFieldsMatchTheMatrix(t *testing.T) {
 			excluded = append(excluded, key)
 		}
 	}
-	want := []string{FieldWorkCovers, FieldWorkScreenshots}
+	// FieldWorkTitlesSuppr is deliberately not submittable: a work being
+	// submitted has no upstream rows yet, so there is nothing to suppress.
+	want := []string{FieldWorkTitlesSuppr, FieldWorkCovers, FieldWorkScreenshots}
 	if !slices.Equal(excluded, want) {
 		t.Fatalf("excluded from submissions = %v, want %v", excluded, want)
 	}

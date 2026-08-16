@@ -20,6 +20,7 @@ const (
 	FieldWorkOLang         = "catalog.work.olang"
 	FieldWorkContentRating = "catalog.work.content_rating"
 	FieldWorkTitles        = "catalog.work.titles"
+	FieldWorkTitlesSuppr   = FieldWorkTitles + editing.SuppressedFieldSuffix
 	FieldWorkIntros        = "catalog.work.intros"
 	FieldWorkDisplayNSFW   = "catalog.work.display_nsfw"
 	FieldWorkTagIDs        = "catalog.work.tag_ids"
@@ -96,6 +97,7 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 			}
 			for key, load := range map[string]func(context.Context, *gorm.DB, int64) ([]any, error){
 				FieldWorkTitles:      loadTitles,
+				FieldWorkTitlesSuppr: loadSuppressedTitles,
 				FieldWorkIntros:      loadIntros,
 				FieldWorkTagIDs:      loadTagIDs,
 				FieldWorkLabels:      loadLabels,
@@ -150,27 +152,32 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 }
 
 func workFieldSpecs() []editing.FieldSpec {
+	titles := editing.FieldSpec{
+		Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+		Validate: validateTitles,
+		Apply:    applyTitles,
+	}
 	return []editing.FieldSpec{
 		{
 			Key: FieldWorkDisplayName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
-			Validate: validateDisplayName,
-			Apply:    applyWorkColumn("display_name", asString),
+			Validate:   validateDisplayName,
+			Apply:      applyWorkColumn("display_name", asString),
+			Provenance: workProvenance("display_name"),
 		},
 		{
 			Key: FieldWorkOLang, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-			Validate: validateOLang,
-			Apply:    applyWorkColumn("olang", asString),
+			Validate:   validateOLang,
+			Apply:      applyWorkColumn("olang", asString),
+			Provenance: workProvenance("olang"),
 		},
 		{
 			Key: FieldWorkContentRating, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-			Validate: validateContentRating,
-			Apply:    applyWorkColumn("content_rating", asContentRating),
+			Validate:   validateContentRating,
+			Apply:      applyWorkColumn("content_rating", asContentRating),
+			Provenance: workProvenance("content_rating"),
 		},
-		{
-			Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-			Validate: validateTitles,
-			Apply:    applyTitles,
-		},
+		titles,
+		editing.SuppressedFieldSpec(TypeWork, titles),
 		{
 			Key: FieldWorkIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
 			Validate: validateIntros,
@@ -178,8 +185,9 @@ func workFieldSpecs() []editing.FieldSpec {
 		},
 		{
 			Key: FieldWorkDisplayNSFW, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-			Validate: validateBool,
-			Apply:    applyWorkColumn("display_nsfw", asBool),
+			Validate:   validateBool,
+			Apply:      applyWorkColumn("display_nsfw", asBool),
+			Provenance: workProvenance("display_nsfw"),
 		},
 		{
 			Key: FieldWorkTagIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
@@ -272,6 +280,10 @@ func asContentRating(v any) (any, error) {
 		return int16(n), nil
 	}
 	return nil, fmt.Errorf("must be a number")
+}
+
+func workProvenance(column string) *editing.ProvenanceTarget {
+	return &editing.ProvenanceTarget{Table: catmodel.CatalogWork{}.TableName(), Column: column}
 }
 
 func applyWorkColumn(column string, conv func(any) (any, error)) editing.ApplyFunc {

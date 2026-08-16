@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 )
 
@@ -34,12 +35,13 @@ func (s *ReadService) loadTitles(ctx context.Context, subjects []claimSubject, w
 }
 
 func (s *ReadService) nativeWorkTitles(ctx context.Context, workIDs []int64, out map[int64][]WorkTitleRow, withHints bool) error {
-	q := `SELECT work_id, lang, title, coalesce(latin, '') AS latin, kind FROM catalog_work_title
-		WHERE work_id IN ? AND kind <> ? ORDER BY work_id, kind, id`
+	live := editspec.NotSuppressedWorkTitleSQL("t")
+	q := `SELECT work_id, lang, title, coalesce(latin, '') AS latin, kind FROM catalog_work_title t
+		WHERE work_id IN ? AND kind <> ? AND ` + live + ` ORDER BY work_id, kind, id`
 	args := []any{workIDs, model.WorkTitleKindSearchHint}
 	if withHints {
-		q = `SELECT work_id, lang, title, coalesce(latin, '') AS latin, kind FROM catalog_work_title
-			WHERE work_id IN ? ORDER BY work_id, kind, lang, id`
+		q = `SELECT work_id, lang, title, coalesce(latin, '') AS latin, kind FROM catalog_work_title t
+			WHERE work_id IN ? AND ` + live + ` ORDER BY work_id, kind, lang, id`
 		args = []any{workIDs}
 	}
 	var rows []struct {
