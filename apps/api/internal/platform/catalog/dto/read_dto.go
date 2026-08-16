@@ -114,6 +114,13 @@ type WorkCharacter struct {
 	Va          []WorkCharacterVA `json:"va"`
 }
 
+// WorkCharacterVA deliberately carries NO `identity`, and neither do the other
+// roster-shaped voice projections (VoiceName, PublicRosterVoice,
+// PublicVoiceName). Their SQL is SELECT DISTINCT over catalog_credit with no
+// role filter, so one rendered row stands for 1..N credit rows with 1..N
+// different identities. A single value would be a lie and an array would be
+// worse: one click would suppress N rows the reader never saw. Suppressing a VA
+// is done on /works/{id}/credits, which is 1:1 with the table.
 type WorkCharacterVA struct {
 	CreditNameID int64  `json:"credit_name_id"`
 	Name         string `json:"name"`
@@ -190,6 +197,7 @@ type CreditItem struct {
 	Character    string `json:"character,omitempty"`
 	Note         string `json:"note,omitempty"`
 	Source       string `json:"source,omitempty"`
+	Identity     string `json:"identity" doc:"Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it"`
 }
 
 type WorkSearchResponse struct {
@@ -271,6 +279,7 @@ type NameWorkRole struct {
 	RoleName    string `json:"role_name"`
 	CharacterID int64  `json:"character_id,omitempty"`
 	Character   string `json:"character,omitempty"`
+	Identity    string `json:"identity" doc:"Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it"`
 }
 
 type CharacterWorksResponse struct {
@@ -341,6 +350,7 @@ type CharacterAlias struct {
 	IsPrimaryForLocale bool   `json:"is_primary_for_locale"`
 }
 
+// No `identity` here either — see WorkCharacterVA.
 type VoiceName struct {
 	CreditNameID int64  `json:"credit_name_id"`
 	Name         string `json:"name"`

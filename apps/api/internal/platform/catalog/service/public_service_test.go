@@ -477,6 +477,12 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 	}
 }
 
+// "LabelSigner" misreads the column and the name is kept so the misreading
+// stays visible: catalog_credit.label_id does not mean "signed to this brand".
+// Its only writer is the bangumi importer, which sets it when the credited
+// entity is itself a company or a circle (p.Type 2/3) — 21,425 rows, all
+// bangumi. It is therefore bangumi's modelling history, not a field a person
+// restates, which is why catalog.work.credits does not expose it.
 func TestPublicWorkCreditsLabelSigner(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()

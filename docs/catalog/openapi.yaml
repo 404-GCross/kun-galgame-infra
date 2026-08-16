@@ -508,6 +508,9 @@ components:
         credit_name_id:
           format: int64
           type: integer
+        identity:
+          description: Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it
+          type: string
         lang:
           type: string
         latin:
@@ -522,6 +525,7 @@ components:
         - credit_name_id
         - name
         - lang
+        - identity
       type: object
     CursorPageUserClaimItem:
       additionalProperties: false
@@ -897,6 +901,14 @@ components:
           type: string
         locked:
           type: boolean
+        max_elements:
+          description: Cap on this list field's element count; absent for scalar fields
+          format: int64
+          type: integer
+        max_suppressed:
+          description: Cap on this field's suppression set; absent when the field has none
+          format: int64
+          type: integer
         would_automerge:
           description: A proposal by this caller would merge instantly
           type: boolean
@@ -1805,6 +1817,9 @@ components:
         character_id:
           format: int64
           type: integer
+        identity:
+          description: Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it
+          type: string
         role_id:
           format: int64
           type: integer
@@ -1816,6 +1831,7 @@ components:
         - role_id
         - role_key
         - role_name
+        - identity
       type: object
     NameWorkRow:
       additionalProperties: false

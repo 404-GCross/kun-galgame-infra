@@ -563,7 +563,7 @@ func (s *PublicService) workCredits(ctx context.Context, workID int64) ([]dto.Pu
 			})
 			cur = &groups[len(groups)-1]
 		}
-		item := dto.PublicCreditItem{ID: r.CreditNameID, Name: r.Name, Lang: r.Lang}
+		item := dto.PublicCreditItem{ID: r.CreditNameID, Name: r.Name, Lang: r.Lang, Identity: r.Identity}
 		if r.Latin != nil {
 			item.Latin = *r.Latin
 		}
@@ -644,7 +644,8 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 			}
 			row := dto.PublicNameCredit{Work: *b, Roles: make([]dto.PublicNameRole, 0, len(w.Roles))}
 			for _, r := range w.Roles {
-				pr := dto.PublicNameRole{RoleKey: r.RoleKey, RoleName: firstNonEmptyPub(r.RoleNameCN, r.RoleNameJA, r.RoleKey)}
+				pr := dto.PublicNameRole{RoleKey: r.RoleKey, RoleName: firstNonEmptyPub(r.RoleNameCN, r.RoleNameJA, r.RoleKey),
+					Identity: r.Identity}
 				if r.CharacterID != nil {
 					pr.CharacterID = *r.CharacterID
 				}

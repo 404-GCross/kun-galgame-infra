@@ -326,6 +326,57 @@ func TestIdentityFollowStmtsCoverEveryDeclaredRef(t *testing.T) {
 	}
 }
 
+func TestRekeySuppressedFollowsRoleReclassification(t *testing.T) {
+	cleanTables(t)
+	reg := creditsRegistry(t)
+
+	insertSuppressed(t, 1, fCredits, "credit:2:7:31", "credit:2:9:0")
+	insertSuppressed(t, 2, fCredits, "credit:2:7:31", "credit:5:7:31")
+
+	moved, dropped, err := reg.RekeySuppressed(testCtx, testDB, "test.widget", fCredits, []editing.KeyMove{
+		{EntityID: 1, From: "credit:2:7:31", To: "credit:5:7:31"},
+		{EntityID: 1, From: "credit:2:9:0", To: "credit:5:9:0"},
+		// Entity 2 already carries the target key, so this row has nowhere to
+		// land and is dropped rather than raising 23505.
+		{EntityID: 2, From: "credit:2:7:31", To: "credit:5:7:31"},
+		// A row that is not suppressed at all is neither moved nor dropped.
+		{EntityID: 3, From: "credit:2:7:31", To: "credit:5:7:31"},
+	})
+	if err != nil {
+		t.Fatalf("rekey: %v", err)
+	}
+	if moved != 2 || dropped != 1 {
+		t.Fatalf("moved=%d dropped=%d, want 2 and 1", moved, dropped)
+	}
+	if got := suppressedKeys(t, 1, fCredits); !equalKeys(got, []string{"credit:5:7:31", "credit:5:9:0"}) {
+		t.Fatalf("entity 1 = %v", got)
+	}
+	if got := suppressedKeys(t, 2, fCredits); !equalKeys(got, []string{"credit:5:7:31"}) {
+		t.Fatalf("entity 2 = %v", got)
+	}
+
+	t.Run("KeyCheckRejectsAnIllegalTarget", func(t *testing.T) {
+		cleanTables(t)
+		insertSuppressed(t, 1, fCredits, "credit:2:7:31")
+		if _, _, err := reg.RekeySuppressed(testCtx, testDB, "test.widget", fCredits,
+			[]editing.KeyMove{{EntityID: 1, From: "credit:2:7:31", To: "credit:2:7"}}); err == nil {
+			t.Fatal("a target key the field would reject on the write face was accepted")
+		}
+		if got := suppressedKeys(t, 1, fCredits); !equalKeys(got, []string{"credit:2:7:31"}) {
+			t.Fatalf("a rejected batch must write nothing: %v", got)
+		}
+	})
+
+	t.Run("AnUnregisteredFieldIsAnError", func(t *testing.T) {
+		if _, _, err := reg.RekeySuppressed(testCtx, testDB, "test.widget", "test.widget.nope", nil); err == nil {
+			t.Fatal("an unregistered field key was accepted")
+		}
+		if _, _, err := reg.RekeySuppressed(testCtx, testDB, "test.nothing", fCredits, nil); err == nil {
+			t.Fatal("an unregistered entity type was accepted")
+		}
+	})
+}
+
 func mentionsPair(stmts []editing.Stmt, entityType, fieldKey string) bool {
 	for _, s := range stmts {
 		var hasType, hasField bool

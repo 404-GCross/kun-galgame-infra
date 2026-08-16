@@ -131,7 +131,7 @@ var (
 			FROM catalog_credit_name cn
 			JOIN catalog_credit cr ON cr.credit_name_id = cn.id
 			JOIN catalog_work w ON w.id = cr.work_id AND w.deleted_at IS NULL
-			WHERE cn.person_id IN (?)
+			WHERE cn.person_id IN (?) AND ` + editspec.NotSuppressedCreditSQL("cr") + `
 		)` + workTitlePairSQL
 
 	labelWorksQuery = `

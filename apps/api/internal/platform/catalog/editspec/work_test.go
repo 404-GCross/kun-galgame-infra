@@ -59,6 +59,7 @@ func newEngine(t *testing.T) *editing.Engine {
 		"catalog_work_cover", "catalog_work_screenshot", "catalog_external_ref",
 		"catalog_tag_source_map", "catalog_tag",
 		"catalog_label", "catalog_engine", "catalog_series",
+		"catalog_credit", "catalog_credit_name", "catalog_character",
 		"catalog_work",
 	} {
 		if err := testDB.Exec("TRUNCATE " + table + " RESTART IDENTITY CASCADE").Error; err != nil {

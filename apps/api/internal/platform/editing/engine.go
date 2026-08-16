@@ -270,6 +270,8 @@ type FieldProjection struct {
 	CanPropose     bool
 	CanReview      bool
 	WouldAutomerge bool
+	MaxSuppressed  int
+	MaxElements    int
 }
 
 func (e *Engine) SchemaProjection(ctx context.Context, entityType string, entityID int64, pc PolicyContext) ([]FieldProjection, error) {
@@ -299,8 +301,15 @@ func (e *Engine) SchemaProjection(ctx context.Context, entityType string, entity
 		pol := spec.EffectivePolicy(f.Key, pc.Site)
 		proj := FieldProjection{
 			Key: f.Key, Kind: f.Kind, DiffHint: f.DiffHint, Deprecated: f.Deprecated,
-			Locked:    pol.Propose == ProposeLocked,
-			CanReview: pol.AllowsReview(pc),
+			Locked:        pol.Propose == ProposeLocked,
+			CanReview:     pol.AllowsReview(pc),
+			MaxSuppressed: f.MaxSuppressed,
+		}
+		if f.Kind == KindList {
+			proj.MaxElements = f.MaxElements
+			if proj.MaxElements <= 0 {
+				proj.MaxElements = DefaultMaxElements
+			}
 		}
 		if !f.Deprecated && !proj.Locked {
 			proj.CanPropose = pol.AllowsPropose(pc)

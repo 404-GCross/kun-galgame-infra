@@ -175,6 +175,7 @@ func (s *UserEditServer) schema(ctx context.Context, in *userEditSchemaInput) (*
 			Key: f.Key, Kind: string(f.Kind), DiffHint: f.DiffHint, Deprecated: f.Deprecated,
 			Locked: f.Locked, CanPropose: f.CanPropose, CanReview: f.CanReview,
 			WouldAutomerge: f.WouldAutomerge,
+			MaxSuppressed:  f.MaxSuppressed, MaxElements: f.MaxElements,
 		})
 	}
 	return &editSchemaOutput{Body: okEnvelope(resp)}, nil

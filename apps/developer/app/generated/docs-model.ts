@@ -3985,6 +3985,12 @@ export const docsModel: DocsModel = {
                                             "type": "integer"
                                           },
                                           {
+                                            "name": "identity",
+                                            "required": true,
+                                            "doc": "Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it",
+                                            "type": "string"
+                                          },
+                                          {
                                             "name": "role_key",
                                             "required": true,
                                             "type": "string"
@@ -5002,6 +5008,12 @@ export const docsModel: DocsModel = {
                                                   "type": "integer"
                                                 },
                                                 {
+                                                  "name": "identity",
+                                                  "required": true,
+                                                  "doc": "Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it",
+                                                  "type": "string"
+                                                },
+                                                {
                                                   "name": "role_key",
                                                   "required": true,
                                                   "type": "string"
@@ -5466,6 +5478,12 @@ export const docsModel: DocsModel = {
                                         "name": "character_id",
                                         "format": "int64",
                                         "type": "integer"
+                                      },
+                                      {
+                                        "name": "identity",
+                                        "required": true,
+                                        "doc": "Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it",
+                                        "type": "string"
                                       },
                                       {
                                         "name": "role_key",
@@ -8872,6 +8890,12 @@ export const docsModel: DocsModel = {
                                         "required": true,
                                         "format": "int64",
                                         "type": "integer"
+                                      },
+                                      {
+                                        "name": "identity",
+                                        "required": true,
+                                        "doc": "Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it",
+                                        "type": "string"
                                       },
                                       {
                                         "name": "label",

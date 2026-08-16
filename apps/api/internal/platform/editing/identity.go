@@ -1,10 +1,13 @@
 package editing
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 type IdentityRef struct {
@@ -85,6 +88,70 @@ func (r *Registry) IdentityFollowStmts(entityTag string, src, dst int64, scopeEn
 		}
 	}
 	return out
+}
+
+type KeyMove struct {
+	EntityID int64
+	From, To string
+}
+
+// RekeySuppressed is for the jobs that legitimately rewrite a frozen-vocabulary
+// scalar segment of a row identity (pillar 7 (iii)). Such a job knows exactly
+// which rows it moved and where to, which the tag-driven IdentityFollowStmts
+// cannot express: there is no catalog_redirect for "this credit was
+// reclassified from other-staff to composer", and the rewrite is a subset of
+// the field's rows rather than every row carrying an id.
+//
+// Every To passes the field's own KeyCheck — the same gate the write face
+// applies — and a To that already exists on that entity drops the source row
+// instead of raising 23505, matching identityFollowPair's dedup semantics.
+func (r *Registry) RekeySuppressed(ctx context.Context, tx *gorm.DB,
+	entityType, fieldKey string, moves []KeyMove) (moved, dropped int, err error) {
+	spec, ok := r.types[entityType]
+	if !ok {
+		return 0, 0, fmt.Errorf("editing: type %q is not registered", entityType)
+	}
+	f, ok := spec.fields[fieldKey]
+	if !ok {
+		return 0, 0, fmt.Errorf("editing: type %q has no field %q", entityType, fieldKey)
+	}
+	if f.Identity == nil {
+		return 0, 0, fmt.Errorf("editing: field %q declares no Identity", fieldKey)
+	}
+	for i, m := range moves {
+		if err := f.Identity.KeyCheck(m.To); err != nil {
+			return moved, dropped, fmt.Errorf("editing: move %d: target key: %w", i, err)
+		}
+	}
+	for _, m := range moves {
+		if m.From == m.To {
+			continue
+		}
+		res := tx.WithContext(ctx).Model(&SuppressedRow{}).
+			Where("entity_type = ? AND entity_id = ? AND field_key = ? AND identity_key = ?",
+				entityType, m.EntityID, fieldKey, m.From).
+			Where(`NOT EXISTS (SELECT 1 FROM edit_suppressed_row x
+			                    WHERE x.entity_type = ? AND x.entity_id = ?
+			                      AND x.field_key = ? AND x.identity_key = ?)`,
+				entityType, m.EntityID, fieldKey, m.To).
+			Update("identity_key", m.To)
+		if res.Error != nil {
+			return moved, dropped, res.Error
+		}
+		if res.RowsAffected > 0 {
+			moved += int(res.RowsAffected)
+			continue
+		}
+		del := tx.WithContext(ctx).
+			Where("entity_type = ? AND entity_id = ? AND field_key = ? AND identity_key = ?",
+				entityType, m.EntityID, fieldKey, m.From).
+			Delete(&SuppressedRow{})
+		if del.Error != nil {
+			return moved, dropped, del.Error
+		}
+		dropped += int(del.RowsAffected)
+	}
+	return moved, dropped, nil
 }
 
 func identityFollowPair(entityType, fieldKey string, spec IdentitySpec, ref IdentityRef,

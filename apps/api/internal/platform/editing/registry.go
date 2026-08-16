@@ -106,6 +106,10 @@ func (p Policy) allowsAutomergeWithOwner(pc PolicyContext, owner *string) bool {
 
 type ApplyFunc func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error
 
+// DefaultMaxElements is the element cap a list field inherits when it declares
+// no MaxElements of its own.
+const DefaultMaxElements = 200
+
 type FieldSpec struct {
 	Key           string
 	Kind          FieldKind
@@ -115,6 +119,7 @@ type FieldSpec struct {
 	Provenance    *ProvenanceTarget
 	Identity      *IdentitySpec
 	MaxSuppressed int
+	MaxElements   int
 	Validate      func(value any) error
 	Apply         ApplyFunc
 }

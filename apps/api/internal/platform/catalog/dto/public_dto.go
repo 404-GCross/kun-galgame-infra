@@ -45,6 +45,7 @@ type PublicCreditItem struct {
 	LabelID     int64  `json:"label_id,omitempty"`
 	Label       string `json:"label,omitempty"`
 	Source      string `json:"source,omitempty"`
+	Identity    string `json:"identity" doc:"Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it"`
 }
 
 type PublicCreditGroup struct {
@@ -163,6 +164,7 @@ type PublicNameRole struct {
 	RoleName    string `json:"role_name"`
 	CharacterID int64  `json:"character_id,omitempty"`
 	Character   string `json:"character,omitempty"`
+	Identity    string `json:"identity" doc:"Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it"`
 }
 
 type PublicNameCredit struct {
@@ -191,6 +193,7 @@ type PublicName struct {
 	NextOffset  *int                           `json:"next_offset,omitempty"`
 }
 
+// No `identity` here — see dto.WorkCharacterVA.
 type PublicVoiceName struct {
 	ID    int64  `json:"id"`
 	Name  string `json:"name"`
@@ -361,6 +364,7 @@ type PublicScreenshot struct {
 	Thumbhash string `json:"thumbhash,omitempty"`
 }
 
+// No `identity` here — see dto.WorkCharacterVA.
 type PublicRosterVoice struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`

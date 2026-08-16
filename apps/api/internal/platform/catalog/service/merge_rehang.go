@@ -82,6 +82,13 @@ func rehangEntity(tx *gorm.DB, reg *editing.Registry, entityType int16, src, dst
 
 	case model.EntityTypeCreditName:
 		stmts := []mergeStmt{
+			{`DELETE FROM catalog_credit d
+			   WHERE d.credit_name_id = ? AND ` + notCuratedCreditD + `
+			     AND EXISTS (SELECT 1 FROM catalog_credit c
+			                  WHERE c.credit_name_id = ? AND ` + curatedCreditC + `
+			                    AND c.work_id = d.work_id AND c.role_id = d.role_id
+			                    AND COALESCE(c.character_id, 0) = COALESCE(d.character_id, 0))
+			  RETURNING d.work_id`, []any{dst, src}, true},
 			{`UPDATE catalog_credit c SET credit_name_id = ? WHERE c.credit_name_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
 			                     WHERE d.work_id = c.work_id AND d.credit_name_id = ?
@@ -122,6 +129,18 @@ func rehangEntity(tx *gorm.DB, reg *editing.Registry, entityType int16, src, dst
 
 	case model.EntityTypeCharacter:
 		stmts := []mergeStmt{
+			{`DELETE FROM catalog_credit d
+			   WHERE d.character_id = ? AND ` + notCuratedCreditD + `
+			     AND EXISTS (SELECT 1 FROM catalog_credit c
+			                  WHERE c.character_id = ? AND ` + curatedCreditC + `
+			                    AND c.work_id = d.work_id AND c.credit_name_id = d.credit_name_id
+			                    AND c.role_id = d.role_id)
+			  RETURNING d.work_id`, []any{dst, src}, true},
+			{`DELETE FROM catalog_character_alias b
+			   WHERE b.character_id = ? AND ` + editspec.NotCuratedLaneSQL("b.source_id") + `
+			     AND EXISTS (SELECT 1 FROM catalog_character_alias a
+			                  WHERE a.character_id = ? AND ` + editspec.CuratedLaneSQL("a.source_id") + `
+			                    AND a.name = b.name AND a.lang = b.lang)`, []any{dst, src}, false},
 			{`UPDATE catalog_credit c SET character_id = ? WHERE c.character_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
 			                     WHERE d.work_id = c.work_id AND d.credit_name_id = c.credit_name_id
@@ -180,6 +199,13 @@ func rehangEntity(tx *gorm.DB, reg *editing.Registry, entityType int16, src, dst
 			                     WHERE u.work_id = ? AND u.lang = t.lang AND u.title = t.title AND u.kind = t.kind)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_work_title WHERE work_id = ?`, []any{src}, false},
 			{`UPDATE catalog_release SET work_id = ? WHERE work_id = ?`, []any{dst, src}, false},
+			{`DELETE FROM catalog_credit d
+			   WHERE d.work_id = ? AND ` + notCuratedCreditD + `
+			     AND EXISTS (SELECT 1 FROM catalog_credit c
+			                  WHERE c.work_id = ? AND ` + curatedCreditC + `
+			                    AND c.credit_name_id = d.credit_name_id AND c.role_id = d.role_id
+			                    AND COALESCE(c.character_id, 0) = COALESCE(d.character_id, 0))`,
+				[]any{dst, src}, false},
 			{`UPDATE catalog_credit c SET work_id = ? WHERE c.work_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
 			                     WHERE d.work_id = ? AND d.credit_name_id = c.credit_name_id
@@ -193,6 +219,21 @@ func rehangEntity(tx *gorm.DB, reg *editing.Registry, entityType int16, src, dst
 	}
 	return nil, fmt.Errorf("catalog merge: unsupported entity type %d", entityType)
 }
+
+// rehangEntity's `NOT EXISTS` + unconditional DELETE pairs settle a unique-key
+// collision by keeping whatever the target already had, which for
+// catalog_credit and catalog_character_alias silently threw away the human
+// lane's row: credit rows never enter a catalog_revision snapshot and
+// edit_revision records intentions rather than machine deletes, so a curated
+// credit lost to a merge left no retrievable trace anywhere. Pillar 6 ("what a
+// person wrote outranks a machine refresh") decides it at row level, so each of
+// those pairs is preceded by a statement that removes the upstream row standing
+// on the key instead. Both tables hold 0 curated rows today (2026-08), which is
+// exactly why this is cheap now.
+var (
+	curatedCreditC    = editspec.CuratedLaneSQL("c.source_id")
+	notCuratedCreditD = editspec.NotCuratedLaneSQL("d.source_id")
+)
 
 func identityFollowStmts(reg *editing.Registry, entityTag string, src, dst int64) []mergeStmt {
 	follow := reg.IdentityFollowStmts(entityTag, src, dst, nil)

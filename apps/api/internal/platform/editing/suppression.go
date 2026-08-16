@@ -69,6 +69,7 @@ func SuppressedFieldSpec(entityType string, parent FieldSpec) FieldSpec {
 		DiffHint:      DiffHintItems,
 		Policy:        parent.Policy,
 		MaxSuppressed: limit,
+		MaxElements:   limit,
 		Validate: func(v any) error {
 			_, err := parse(v)
 			return err

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	catmodel "api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 )
 
 const curatedSourceID int16 = 12
@@ -16,6 +17,16 @@ const curatedMatchedBy = "curated"
 // HumanSourceIDs is provenance.HumanSources() in catalog_source id form;
 // TestHumanSourceIDsAreTheHumanProvenanceKeys pins the two against the seed.
 func HumanSourceIDs() []int16 { return []int16{userSourceID, curatedSourceID} }
+
+// CuratedLaneSQL and NotCuratedLaneSQL let the jobs and the merge machine name
+// the human lane without each keeping its own copy of the id.
+func CuratedLaneSQL(sourceColumn string) string {
+	return fmt.Sprintf("%s = %d", sourceColumn, curatedSourceID)
+}
+
+func NotCuratedLaneSQL(sourceColumn string) string {
+	return fmt.Sprintf("%s IS DISTINCT FROM %d", sourceColumn, curatedSourceID)
+}
 
 // HumanLaneFirstSQL orders the human lane ahead of the importers within one
 // per-lang intro fold. It exists because curated (12) sorts AFTER every upstream
@@ -54,20 +65,21 @@ func HumanLaneFirstSQL(sourceColumn, provenanceColumn string) string {
 		provenanceColumn, catmodel.IntroProvenanceSource)
 }
 
-// HumanLaneFirstNoProvenanceSQL is HumanLaneFirstSQL for the two intro tables
-// that never grew the 0/1 provenance axis (catalog_tag_intro,
-// catalog_series_intro): every row there is a source row, so the gate has
+// HumanLaneFirstNoProvenanceSQL is HumanLaneFirstSQL for the tables with no 0/1
+// provenance axis (catalog_tag_intro, catalog_series_intro, catalog_credit):
+// there is no machine tier to keep the human lane out of, so the gate has
 // nothing to gate. Using it on a table that HAS the column would resurrect the
 // 5,806-row mistake documented above.
 //
-// The missing column is not an oversight to backfill: neither table has a
-// machine writer today, and R1b's rule is that the axis follows the first one.
+// On the intro tables the missing column is not an oversight to backfill:
+// neither has a machine writer today, and R1b's rule is that the axis follows
+// the first one. catalog_credit has no MT axis at all.
 func HumanLaneFirstNoProvenanceSQL(sourceColumn string) string {
 	return fmt.Sprintf("(%s IN (%d, %d)) DESC", sourceColumn, userSourceID, curatedSourceID)
 }
 
 const (
-	maxListElements = 200
+	maxListElements = editing.DefaultMaxElements
 	maxHashRunes    = 128
 	maxCaptionRunes = 500
 	maxURLRunes     = 2000
@@ -75,12 +87,16 @@ const (
 )
 
 func asArray(v any, what string) ([]any, error) {
+	return asArrayN(v, what, maxListElements)
+}
+
+func asArrayN(v any, what string, max int) ([]any, error) {
 	arr, ok := v.([]any)
 	if !ok {
 		return nil, fmt.Errorf("must be an array of %s", what)
 	}
-	if len(arr) > maxListElements {
-		return nil, fmt.Errorf("must contain at most %d elements", maxListElements)
+	if len(arr) > max {
+		return nil, fmt.Errorf("must contain at most %d elements", max)
 	}
 	return arr, nil
 }

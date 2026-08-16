@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
+
 	"gorm.io/gorm"
 )
 
@@ -158,6 +160,8 @@ func loadVABridges(db *gorm.DB) (map[string]string, error) {
 		 AND kb.role_id = 1 AND kb.character_id > ka.character_id
 		JOIN catalog_credit_name cn ON cn.id = ka.credit_name_id
 		WHERE ka.role_id = 1 AND ka.character_id IS NOT NULL AND kb.character_id IS NOT NULL
+		  AND ` + editspec.NotSuppressedCreditSQL("ka") + `
+		  AND ` + editspec.NotSuppressedCreditSQL("kb") + `
 		GROUP BY 1, 2`).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("va bridges: %w", err)
 	}

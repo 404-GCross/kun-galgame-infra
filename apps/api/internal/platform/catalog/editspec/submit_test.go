@@ -21,9 +21,15 @@ func TestSubmissionFieldsMatchTheMatrix(t *testing.T) {
 			excluded = append(excluded, key)
 		}
 	}
-	// FieldWorkTitlesSuppr is deliberately not submittable: a work being
-	// submitted has no upstream rows yet, so there is nothing to suppress.
-	want := []string{FieldWorkTitlesSuppr, FieldWorkCovers, FieldWorkScreenshots}
+	// FieldWorkTitlesSuppr and FieldWorkCreditsSuppr are deliberately not
+	// submittable: a work being submitted has no upstream rows yet, so there is
+	// nothing to suppress. FieldWorkCredits is excluded for its own reason — a
+	// submission form has no way to hand out catalog_credit_name ids, and
+	// crediting is an edit made after the work exists.
+	want := []string{
+		FieldWorkTitlesSuppr, FieldWorkCovers, FieldWorkScreenshots,
+		FieldWorkCredits, FieldWorkCreditsSuppr,
+	}
 	if !slices.Equal(excluded, want) {
 		t.Fatalf("excluded from submissions = %v, want %v", excluded, want)
 	}
