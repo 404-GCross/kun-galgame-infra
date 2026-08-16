@@ -416,7 +416,7 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 	for _, ch := range detail.Characters {
 		pc := dto.PublicRosterCharacter{
 			ID: ch.CharacterID, Name: ch.DisplayName, Latin: derefStrPub(ch.Latin),
-			Kind: rosterKindKey(ch.Kind), Spoiler: ch.Spoiler,
+			Kind: rosterKindKey(ch.Kind), Spoiler: ch.Spoiler, Identity: ch.Identity,
 			Voices: make([]dto.PublicRosterVoice, 0, len(ch.Va)),
 		}
 		if ch.ImageHash != nil {
@@ -712,7 +712,10 @@ func (s *PublicService) Character(ctx context.Context, id int64, withWorks, nsfw
 			if b == nil {
 				continue
 			}
-			row := dto.PublicCharacterWork{Work: *b, Voices: make([]dto.PublicVoiceName, 0, len(w.Voices))}
+			row := dto.PublicCharacterWork{
+				Work: *b, Kind: rosterKindKey(w.Kind), Spoiler: w.Spoiler, Identity: w.Identity,
+				Voices: make([]dto.PublicVoiceName, 0, len(w.Voices)),
+			}
 			for _, v := range w.Voices {
 				row.Voices = append(row.Voices, dto.PublicVoiceName{
 					ID: v.CreditNameID, Name: v.Name, Lang: v.Lang, Latin: derefStrPub(v.Latin),

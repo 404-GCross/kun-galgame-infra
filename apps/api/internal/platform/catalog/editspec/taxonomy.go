@@ -82,8 +82,8 @@ func registerLabel(reg *editing.Registry, db *gorm.DB) error {
 			Key: FieldLabelName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
 			Validate: validateName,
 			Apply:    applyEntityColumn(&catmodel.CatalogLabel{}, "display_name", asString),
-			Provenance: &editing.ProvenanceTarget{
-				Table: catmodel.CatalogLabel{}.TableName(), Column: "display_name",
+			Provenance: []editing.ProvenanceTarget{
+				{Table: catmodel.CatalogLabel{}.TableName(), Column: "display_name"},
 			},
 		},
 		{

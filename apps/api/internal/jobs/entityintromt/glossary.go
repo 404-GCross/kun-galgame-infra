@@ -122,7 +122,7 @@ var (
 			SELECT DISTINCT wc.character_id AS owner_id, wc.work_id
 			FROM catalog_work_character wc
 			JOIN catalog_work w ON w.id = wc.work_id AND w.deleted_at IS NULL
-			WHERE wc.character_id IN (?)
+			WHERE wc.character_id IN (?) AND ` + editspec.NotSuppressedRosterSQL("wc") + `
 		)` + workTitlePairSQL
 
 	personWorksQuery = `

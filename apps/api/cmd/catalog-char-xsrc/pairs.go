@@ -67,6 +67,8 @@ func buildPairs(db *gorm.DB) ([]pairMeta, map[int64]*charInfo, error) {
 		  ON wb.work_id = wa.work_id AND wb.character_id > wa.character_id
 		JOIN anchored sa ON sa.id = wa.character_id
 		JOIN anchored sb ON sb.id = wb.character_id AND NOT (sa.sids && sb.sids)
+		WHERE ` + editspec.NotSuppressedRosterSQL("wa") + `
+		  AND ` + editspec.NotSuppressedRosterSQL("wb") + `
 		GROUP BY 1, 2`).Scan(&raws).Error; err != nil {
 		return nil, nil, fmt.Errorf("co-resident pairs: %w", err)
 	}

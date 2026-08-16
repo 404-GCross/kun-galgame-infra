@@ -111,6 +111,7 @@ type WorkCharacter struct {
 	Spoiler     int16             `json:"spoiler" doc:"appearance spoiler level: 0=none 1=minor 2=major"`
 	ImageHash   string            `json:"image_hash,omitempty"`
 	FigureHash  string            `json:"figure_hash,omitempty"`
+	Identity    string            `json:"identity,omitempty" doc:"Opaque row identity for catalog.work.roster.suppressed; echo it back, never rebuild it. Present when the character is on the roster; ABSENT when it appears only through a voice credit, in which case kind and spoiler are 0 and the row is edited via /works/{id}/credits"`
 	Va          []WorkCharacterVA `json:"va"`
 }
 
@@ -296,11 +297,12 @@ type CharacterHead struct {
 }
 
 type CharacterWorkRow struct {
-	Work    WorkBrief   `json:"work"`
-	Kind    int16       `json:"kind" doc:"roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)"`
-	Spoiler int16       `json:"spoiler" doc:"roster appearance spoiler level: 0=none 1=minor 2=major (0 also when reached only via a voice credit)"`
-	Voiced  bool        `json:"voiced" doc:"true when a voice credit names this character on this work"`
-	Voices  []VoiceName `json:"voices"`
+	Work     WorkBrief   `json:"work"`
+	Kind     int16       `json:"kind" doc:"roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)"`
+	Spoiler  int16       `json:"spoiler" doc:"roster appearance spoiler level: 0=none 1=minor 2=major (0 also when reached only via a voice credit)"`
+	Identity string      `json:"identity,omitempty" doc:"Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit"`
+	Voiced   bool        `json:"voiced" doc:"true when a voice credit names this character on this work"`
+	Voices   []VoiceName `json:"voices"`
 }
 
 type CharacterDetailResponse struct {

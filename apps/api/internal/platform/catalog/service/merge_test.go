@@ -553,3 +553,74 @@ func TestMergeLabelRelationRehang(t *testing.T) {
 	assert.Equal(t, x.ID, got[3].LabelID, "the mirror half now points at the survivor")
 	assert.Equal(t, target.ID, got[3].OtherLabelID)
 }
+
+func stampRosterColumn(t *testing.T, workID, characterID int64, column string) {
+	t.Helper()
+	res := testDB.Exec(
+		`UPDATE catalog_work_character SET field_provenance =
+		   jsonb_build_object(?::text, '[{"source":"curated","at":"2026-08-16T00:00:00Z"}]'::jsonb)
+		 WHERE work_id = ? AND character_id = ?`, column, workID, characterID)
+	require.NoError(t, res.Error)
+	require.EqualValues(t, 1, res.RowsAffected)
+}
+
+func rosterEdgeOf(t *testing.T, workID, characterID int64) model.CatalogWorkCharacter {
+	t.Helper()
+	var row model.CatalogWorkCharacter
+	require.NoError(t, testDB.Where("work_id = ? AND character_id = ?", workID, characterID).First(&row).Error)
+	return row
+}
+
+// TestMergeKeepsHumanRosterKind is pillar 6's real acceptance shape on this
+// table. The importers only ON CONFLICT DO NOTHING, so "a person edits, the
+// importer runs, the value is still there" is green whether or not the gate
+// exists; merge survivorship is the write path that actually overwrites, and it
+// has rewritten 40,538 rows in production.
+//
+// 0 is a legitimate human answer ("this appearance cannot be ranked"), which is
+// exactly the value the machine rule reads as "unset".
+func TestMergeKeepsHumanRosterKind(t *testing.T) {
+	cleanTables(t)
+	work := createWork(t, "作品")
+	target, source := createCharacter(t, "生存キャラ"), createCharacter(t, "統合されるキャラ")
+	createWorkCharacter(t, work.ID, target.ID, model.WorkCharacterKindUnknown, model.SpoilerNone)
+	createWorkCharacter(t, work.ID, source.ID, model.WorkCharacterKindSecondary, model.SpoilerNone)
+	stampRosterColumn(t, work.ID, target.ID, "kind")
+
+	executeMerge(t, model.EntityTypeCharacter, source.ID, target.ID, "same character")
+
+	assert.Equal(t, model.WorkCharacterKindUnknown, rosterEdgeOf(t, work.ID, target.ID).Kind,
+		"a human 0 must survive the `kind = 0 means unset` rule")
+}
+
+func TestMergeKeepsHumanRosterSpoiler(t *testing.T) {
+	cleanTables(t)
+	work := createWork(t, "作品")
+	target, source := createCharacter(t, "生存キャラ"), createCharacter(t, "統合されるキャラ")
+	createWorkCharacter(t, work.ID, target.ID, model.WorkCharacterKindMain, model.SpoilerNone)
+	createWorkCharacter(t, work.ID, source.ID, model.WorkCharacterKindMain, model.SpoilerSevere)
+	stampRosterColumn(t, work.ID, target.ID, "spoiler")
+
+	executeMerge(t, model.EntityTypeCharacter, source.ID, target.ID, "same character")
+
+	edge := rosterEdgeOf(t, work.ID, target.ID)
+	assert.EqualValues(t, model.SpoilerNone, edge.Spoiler,
+		"a human `this is not a spoiler` must survive GREATEST")
+	assert.Equal(t, model.WorkCharacterKindMain, edge.Kind)
+}
+
+// TestMergeRosterMachineRulesStillApplyToMachineRows is the control for the two
+// above: the gate must decide nothing between two machine rows.
+func TestMergeRosterMachineRulesStillApplyToMachineRows(t *testing.T) {
+	cleanTables(t)
+	work := createWork(t, "作品")
+	target, source := createCharacter(t, "生存キャラ"), createCharacter(t, "統合されるキャラ")
+	createWorkCharacter(t, work.ID, target.ID, model.WorkCharacterKindUnknown, model.SpoilerNone)
+	createWorkCharacter(t, work.ID, source.ID, model.WorkCharacterKindSecondary, model.SpoilerSevere)
+
+	executeMerge(t, model.EntityTypeCharacter, source.ID, target.ID, "same character")
+
+	edge := rosterEdgeOf(t, work.ID, target.ID)
+	assert.Equal(t, model.WorkCharacterKindSecondary, edge.Kind, "unknown kind still upgrades")
+	assert.EqualValues(t, model.SpoilerSevere, edge.Spoiler, "spoiler still takes the higher of the two")
+}

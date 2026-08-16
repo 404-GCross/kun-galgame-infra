@@ -144,6 +144,7 @@ type WorkCharacterRow struct {
 	Spoiler     int16
 	ImageHash   *string
 	FigureHash  *string
+	Identity    string
 	Va          []WorkCharacterVARow
 }
 
@@ -526,10 +527,13 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		FigureHash  *string `gorm:"column:figure_hash"`
 		Kind        int16   `gorm:"column:kind"`
 		Spoiler     int16   `gorm:"column:spoiler"`
+		Identity    string  `gorm:"column:identity"`
 	}
-	if err := db.Raw(`SELECT wc.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, ch.figure_hash, wc.kind, wc.spoiler
+	if err := db.Raw(`SELECT wc.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, ch.figure_hash, wc.kind, wc.spoiler,
+		`+editspec.RosterIdentitySQL("wc")+` AS identity
 		FROM catalog_work_character wc JOIN catalog_character ch ON ch.id = wc.character_id
-		WHERE wc.work_id = ? AND ch.deleted_at IS NULL`, workID).Scan(&edges).Error; err != nil {
+		WHERE wc.work_id = ? AND ch.deleted_at IS NULL
+		  AND `+editspec.NotSuppressedRosterSQL("wc"), workID).Scan(&edges).Error; err != nil {
 		return nil, err
 	}
 
@@ -558,7 +562,7 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		byID[e.CharacterID] = &WorkCharacterRow{
 			CharacterID: e.CharacterID, DisplayName: e.DisplayName, Latin: e.Latin,
 			Gender: e.Gender, Kind: e.Kind, Spoiler: e.Spoiler, ImageHash: e.ImageHash,
-			FigureHash: e.FigureHash,
+			FigureHash: e.FigureHash, Identity: e.Identity,
 		}
 	}
 	for _, c := range creds {
@@ -878,7 +882,8 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 // credit therefore removes the work from this union too when no roster edge
 // carries the character: charter ruling 2 (read paths exclude suppressed rows
 // uniformly) is not given an exemption for the union's existence half.
-var unionWorks = `SELECT work_id FROM catalog_work_character WHERE character_id = ?
+var unionWorks = `SELECT wc.work_id FROM catalog_work_character wc WHERE wc.character_id = ? AND ` +
+	editspec.NotSuppressedRosterSQL("wc") + `
 	UNION SELECT c.work_id FROM catalog_credit c WHERE c.character_id = ? AND ` +
 	editspec.NotSuppressedCreditSQL("c")
 
@@ -897,11 +902,12 @@ type VoiceNameRow struct {
 }
 
 type CharacterWorkDetail struct {
-	Brief   WorkBriefRow
-	Kind    int16
-	Spoiler int16
-	Voiced  bool
-	Voices  []VoiceNameRow
+	Brief    WorkBriefRow
+	Kind     int16
+	Spoiler  int16
+	Identity string
+	Voiced   bool
+	Voices   []VoiceNameRow
 }
 
 type CharacterWorksResult struct {
@@ -941,19 +947,24 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 	}
 
 	var kindRows []struct {
-		WorkID  int64 `gorm:"column:work_id"`
-		Kind    int16 `gorm:"column:kind"`
-		Spoiler int16 `gorm:"column:spoiler"`
+		WorkID   int64  `gorm:"column:work_id"`
+		Kind     int16  `gorm:"column:kind"`
+		Spoiler  int16  `gorm:"column:spoiler"`
+		Identity string `gorm:"column:identity"`
 	}
-	if err := db.Raw(`SELECT work_id, kind, spoiler FROM catalog_work_character
-		WHERE character_id = ? AND work_id IN ?`, characterID, workIDs).Scan(&kindRows).Error; err != nil {
+	if err := db.Raw(`SELECT wc.work_id, wc.kind, wc.spoiler, `+editspec.RosterIdentitySQL("wc")+` AS identity
+		FROM catalog_work_character wc
+		WHERE wc.character_id = ? AND wc.work_id IN ?
+		  AND `+editspec.NotSuppressedRosterSQL("wc"), characterID, workIDs).Scan(&kindRows).Error; err != nil {
 		return nil, err
 	}
 	kindByWork := make(map[int64]int16, len(kindRows))
 	spoilerByWork := make(map[int64]int16, len(kindRows))
+	identityByWork := make(map[int64]string, len(kindRows))
 	for _, k := range kindRows {
 		kindByWork[k.WorkID] = k.Kind
 		spoilerByWork[k.WorkID] = k.Spoiler
+		identityByWork[k.WorkID] = k.Identity
 	}
 
 	var voiceRows []struct {
@@ -983,7 +994,8 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 		}
 		voices := voicesByWork[wid]
 		res.Works = append(res.Works, CharacterWorkDetail{
-			Brief: b, Kind: kindByWork[wid], Spoiler: spoilerByWork[wid], Voiced: len(voices) > 0, Voices: voices,
+			Brief: b, Kind: kindByWork[wid], Spoiler: spoilerByWork[wid],
+			Identity: identityByWork[wid], Voiced: len(voices) > 0, Voices: voices,
 		})
 	}
 	return res, nil

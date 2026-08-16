@@ -96,6 +96,8 @@ func TestEditSchemaCarriesPerFieldCaps(t *testing.T) {
 	want := map[string][2]int{ // key -> {max_elements, max_suppressed}
 		editspec.FieldWorkCredits:      {500, 500},
 		editspec.FieldWorkCreditsSuppr: {500, 500},
+		editspec.FieldWorkRoster:       {500, 500},
+		editspec.FieldWorkRosterSuppr:  {500, 500},
 		editspec.FieldWorkTitles:       {100, 0},
 		editspec.FieldWorkTitlesSuppr:  {200, 200},
 		editspec.FieldWorkIntros:       {200, 0},

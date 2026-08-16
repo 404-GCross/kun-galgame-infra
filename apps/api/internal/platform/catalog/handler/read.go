@@ -182,8 +182,8 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 		wc := dto.WorkCharacter{
 			CharacterID: c.CharacterID, DisplayName: c.DisplayName, Latin: derefStr(c.Latin),
 			Gender: derefI16(c.Gender), Kind: c.Kind, Spoiler: c.Spoiler, ImageHash: derefStr(c.ImageHash),
-			FigureHash: derefStr(c.FigureHash),
-			Va:         make([]dto.WorkCharacterVA, 0, len(c.Va)),
+			FigureHash: derefStr(c.FigureHash), Identity: c.Identity,
+			Va: make([]dto.WorkCharacterVA, 0, len(c.Va)),
 		}
 		for _, v := range c.Va {
 			wc.Va = append(wc.Va, dto.WorkCharacterVA{CreditNameID: v.CreditNameID, Name: v.Name})
@@ -601,7 +601,8 @@ func (s *S2SServer) characterWorks(ctx context.Context, in *characterWorksInput)
 	}
 	for _, w := range res.Works {
 		row := dto.CharacterWorkRow{
-			Work: workBriefDTO(w.Brief), Kind: w.Kind, Spoiler: w.Spoiler, Voiced: w.Voiced,
+			Work: workBriefDTO(w.Brief), Kind: w.Kind, Spoiler: w.Spoiler,
+			Identity: w.Identity, Voiced: w.Voiced,
 			Voices: make([]dto.VoiceName, 0, len(w.Voices)),
 		}
 		for _, v := range w.Voices {

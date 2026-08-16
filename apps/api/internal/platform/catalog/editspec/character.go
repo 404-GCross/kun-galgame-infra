@@ -127,8 +127,8 @@ func characterFieldSpecs() []editing.FieldSpec {
 	}
 }
 
-func characterProvenance(column string) *editing.ProvenanceTarget {
-	return &editing.ProvenanceTarget{Table: catmodel.CatalogCharacter{}.TableName(), Column: column}
+func characterProvenance(column string) []editing.ProvenanceTarget {
+	return []editing.ProvenanceTarget{{Table: catmodel.CatalogCharacter{}.TableName(), Column: column}}
 }
 
 func charText(key, column string, maxRunes int) editing.FieldSpec {

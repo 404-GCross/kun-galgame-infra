@@ -1182,6 +1182,16 @@ components:
     PublicCharacterWork:
       additionalProperties: false
       properties:
+        identity:
+          description: Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit
+          type: string
+        kind:
+          description: "roster appearance strength on this work: main|secondary|appears|unknown (unknown also when reached only through a voice credit)"
+          type: string
+        spoiler:
+          description: "roster appearance spoiler level on this work: 0=none 1=minor 2=major (0 also when reached only through a voice credit)"
+          format: int32
+          type: integer
         voices:
           items:
             $ref: "#/components/schemas/PublicVoiceName"
@@ -1192,6 +1202,8 @@ components:
           $ref: "#/components/schemas/PublicWorkBrief"
       required:
         - work
+        - kind
+        - spoiler
         - voices
       type: object
     PublicClaimedBy:
@@ -2247,6 +2259,9 @@ components:
         id:
           format: int64
           type: integer
+        identity:
+          description: Opaque row identity for catalog.work.roster.suppressed; echo it back, never rebuild it. Present when the character is on the roster; ABSENT when it appears only through a voice credit, in which case kind is unknown and spoiler is 0
+          type: string
         image:
           type: string
         kind:

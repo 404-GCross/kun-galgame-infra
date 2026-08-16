@@ -88,6 +88,7 @@ var (
 			FROM catalog_work_character wc
 			JOIN catalog_character c ON c.id = wc.character_id AND c.deleted_at IS NULL
 			WHERE wc.work_id IN (?)
+			  AND ` + editspec.NotSuppressedRosterSQL("wc") + `
 		),
 		al AS (
 			SELECT DISTINCT ON (a.character_id) a.character_id, a.name

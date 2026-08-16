@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"api/internal/platform/catalog/editspec"
+
 	"gorm.io/gorm"
 )
 
@@ -29,7 +31,7 @@ type rosterChar struct {
 	Incumbent   string // panel bucket only: the elected translated machine intro
 }
 
-const candidateWorksSQL = `
+var candidateWorksSQL = `
 	WITH zhi AS (
 		SELECT DISTINCT ON (work_id) work_id, intro
 		FROM catalog_work_intro
@@ -48,6 +50,7 @@ const candidateWorksSQL = `
 	JOIN catalog_work_character wc ON wc.work_id = w.id
 	JOIN catalog_character c ON c.id = wc.character_id AND c.deleted_at IS NULL
 	WHERE w.deleted_at IS NULL
+	  AND ` + editspec.NotSuppressedRosterSQL("wc") + `
 	  AND NOT EXISTS (
 	    SELECT 1 FROM catalog_character_intro ci
 	    WHERE ci.character_id = wc.character_id AND ci.lang = 'zh-Hans')

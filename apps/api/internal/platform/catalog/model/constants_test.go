@@ -54,6 +54,10 @@ func TestConstantGroupsHaveUniqueValues(t *testing.T) {
 			ProposalStatusRejected, ProposalStatusWithdrawn,
 		},
 		"spoiler": {SpoilerNone, SpoilerMild, SpoilerSevere},
+		"work_character_kind": {
+			WorkCharacterKindUnknown, WorkCharacterKindMain,
+			WorkCharacterKindSecondary, WorkCharacterKindAppears,
+		},
 		"label_relation": {
 			LabelRelationParent, LabelRelationSubsidiary,
 			LabelRelationImprint, LabelRelationImprintOf,

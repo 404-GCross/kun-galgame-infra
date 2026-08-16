@@ -202,8 +202,11 @@ type PublicVoiceName struct {
 }
 
 type PublicCharacterWork struct {
-	Work   PublicWorkBrief   `json:"work"`
-	Voices []PublicVoiceName `json:"voices"`
+	Work     PublicWorkBrief   `json:"work"`
+	Kind     string            `json:"kind" doc:"roster appearance strength on this work: main|secondary|appears|unknown (unknown also when reached only through a voice credit)"`
+	Spoiler  int16             `json:"spoiler" doc:"roster appearance spoiler level on this work: 0=none 1=minor 2=major (0 also when reached only through a voice credit)"`
+	Identity string            `json:"identity,omitempty" doc:"Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit"`
+	Voices   []PublicVoiceName `json:"voices"`
 }
 
 type PublicCharacter struct {
@@ -371,14 +374,15 @@ type PublicRosterVoice struct {
 }
 
 type PublicRosterCharacter struct {
-	ID      int64               `json:"id"`
-	Name    string              `json:"name"`
-	Latin   string              `json:"latin,omitempty"`
-	Kind    string              `json:"kind" doc:"main|secondary|appears|unknown"`
-	Spoiler int16               `json:"spoiler" doc:"0=none 1=minor 2=major"`
-	Image   string              `json:"image,omitempty"`
-	Figure  string              `json:"figure,omitempty"`
-	Voices  []PublicRosterVoice `json:"voices"`
+	ID       int64               `json:"id"`
+	Name     string              `json:"name"`
+	Latin    string              `json:"latin,omitempty"`
+	Kind     string              `json:"kind" doc:"main|secondary|appears|unknown"`
+	Spoiler  int16               `json:"spoiler" doc:"0=none 1=minor 2=major"`
+	Image    string              `json:"image,omitempty"`
+	Figure   string              `json:"figure,omitempty"`
+	Identity string              `json:"identity,omitempty" doc:"Opaque row identity for catalog.work.roster.suppressed; echo it back, never rebuild it. Present when the character is on the roster; ABSENT when it appears only through a voice credit, in which case kind is unknown and spoiler is 0"`
+	Voices   []PublicRosterVoice `json:"voices"`
 }
 
 type PublicWorkLabel struct {

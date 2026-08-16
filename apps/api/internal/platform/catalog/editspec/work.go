@@ -32,6 +32,8 @@ const (
 	FieldWorkScreenshots   = "catalog.work.screenshots"
 	FieldWorkCredits       = "catalog.work.credits"
 	FieldWorkCreditsSuppr  = FieldWorkCredits + editing.SuppressedFieldSuffix
+	FieldWorkRoster        = "catalog.work.roster"
+	FieldWorkRosterSuppr   = FieldWorkRoster + editing.SuppressedFieldSuffix
 )
 
 var letmoeSites = []string{"letmoe", "letmoe-staging", "letmoe-dev"}
@@ -110,6 +112,8 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 				FieldWorkScreenshots:  loadScreenshots,
 				FieldWorkCredits:      loadCredits,
 				FieldWorkCreditsSuppr: loadSuppressedCredits,
+				FieldWorkRoster:       loadRoster,
+				FieldWorkRosterSuppr:  loadSuppressedRoster,
 			} {
 				value, err := load(ctx, db, entityID)
 				if err != nil {
@@ -178,6 +182,33 @@ func workFieldSpecs() []editing.FieldSpec {
 		MaxElements:   maxCreditElements,
 		Validate:      validateCredits,
 		Apply:         applyCredits,
+	}
+	// The roster is registered on catalog.work only, never on catalog.character.
+	// Both faces render the same physical row, but the two entity types can only
+	// key it differently (roster:<character_id> against a work id, versus
+	// roster:<work_id> against a character id), and edit_suppressed_row would
+	// hold both keys happily while each read path consults exactly one — an edge
+	// hidden on the character page would keep rendering on the work page.
+	roster := editing.FieldSpec{
+		Key: FieldWorkRoster, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+		Identity: &editing.IdentitySpec{
+			Segments: 2, KeyCheck: rosterKeyCheck,
+			Refs: []editing.IdentityRef{{Segment: 2, EntityTag: TagCharacter}},
+		},
+		MaxSuppressed: maxRosterSuppress,
+		MaxElements:   maxRosterElements,
+		Validate:      validateRoster,
+		Apply:         applyRoster,
+		Provenance: []editing.ProvenanceTarget{
+			{
+				Table: catmodel.CatalogWorkCharacter{}.TableName(), Column: "kind",
+				Rows: rosterRowsWhoseValueChanges("kind", func(e rosterEdge) int16 { return e.Kind }),
+			},
+			{
+				Table: catmodel.CatalogWorkCharacter{}.TableName(), Column: "spoiler",
+				Rows: rosterRowsWhoseValueChanges("spoiler", func(e rosterEdge) int16 { return e.Spoiler }),
+			},
+		},
 	}
 	return []editing.FieldSpec{
 		{
@@ -248,6 +279,8 @@ func workFieldSpecs() []editing.FieldSpec {
 		},
 		credits,
 		editing.SuppressedFieldSpec(TypeWork, credits),
+		roster,
+		editing.SuppressedFieldSpec(TypeWork, roster),
 	}
 }
 
@@ -306,8 +339,8 @@ func asContentRating(v any) (any, error) {
 	return nil, fmt.Errorf("must be a number")
 }
 
-func workProvenance(column string) *editing.ProvenanceTarget {
-	return &editing.ProvenanceTarget{Table: catmodel.CatalogWork{}.TableName(), Column: column}
+func workProvenance(column string) []editing.ProvenanceTarget {
+	return []editing.ProvenanceTarget{{Table: catmodel.CatalogWork{}.TableName(), Column: column}}
 }
 
 func applyWorkColumn(column string, conv func(any) (any, error)) editing.ApplyFunc {
