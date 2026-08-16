@@ -37,6 +37,7 @@ CORE_DBS=(
   kun_catalog
   kun_images
   kun_artifacts
+  kun_news
 )
 
 # Of the core DBs, these carry a scrub SQL file (scrub/<db>.sql) and are built
@@ -48,6 +49,7 @@ SCRUB_DBS=(
   kungalgame_patch
   kun_community
   kun_images
+  kun_news
 )
 
 # sources = raw public scrape data (zero PII, zero desensitisation, no artifact).

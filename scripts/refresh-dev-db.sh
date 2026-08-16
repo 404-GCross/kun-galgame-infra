@@ -127,6 +127,8 @@ run_assertions() {
       content_col_synthetic kun_community community_flag note ;;
     kun_images)
       assert_zero "first_uploader_ip cleared" kun_images "SELECT count(*) FROM images WHERE first_uploader_ip IS NOT NULL AND first_uploader_ip <> ''" ;;
+    kun_news)
+      content_col_synthetic kun_news news_moderation_decision reason ;;
     *) echo "   (no PII assertions defined for $db — passthrough)" ;;
   esac
 }
