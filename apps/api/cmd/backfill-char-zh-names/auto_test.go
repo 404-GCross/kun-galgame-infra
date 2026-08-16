@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -168,4 +170,44 @@ func TestFirstLine(t *testing.T) {
 	assert.Equal(t, "通过", firstLine(" 「通过」。\n理由是…"))
 	assert.Equal(t, "无误", firstLine("无误"))
 	assert.NotEqual(t, "通过", firstLine("不通过:音译生僻"), "a qualified answer never passes the gate")
+}
+
+func TestChatModelRerollsOnLengthFinish(t *testing.T) {
+	// The 08-15 ramp incident: length finishes are stochastic reasoning
+	// death-spirals, so a fresh identical request usually succeeds. The tool
+	// must re-roll instead of failing the character on the first spiral.
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		finish := "length"
+		content := ""
+		if calls == 2 {
+			finish = "stop"
+			content = "琪露诺"
+		}
+		fmt.Fprintf(w, `{"model":"m","choices":[{"message":{"content":%q},"finish_reason":%q}]}`, content, finish)
+	}))
+	defer srv.Close()
+
+	tr := newHTTPTranslator(srv.URL, "tok", "m", 4096)
+	got, model, err := tr.chatModel(context.Background(), "sys", "user", 0)
+	require.NoError(t, err)
+	assert.Equal(t, "琪露诺", got)
+	assert.Equal(t, "m", model)
+	assert.Equal(t, 2, calls)
+}
+
+func TestChatModelGivesUpAfterThreeLengthFinishes(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		fmt.Fprint(w, `{"model":"m","choices":[{"message":{"content":""},"finish_reason":"length"}]}`)
+	}))
+	defer srv.Close()
+
+	tr := newHTTPTranslator(srv.URL, "tok", "m", 4096)
+	_, _, err := tr.chatModel(context.Background(), "sys", "user", 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `finish_reason="length"`)
+	assert.Equal(t, 3, calls)
 }

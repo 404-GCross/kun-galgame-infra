@@ -184,7 +184,7 @@ func (t *httpTranslator) chat(ctx context.Context, system, user string, temperat
 	return content, err
 }
 
-var retryBackoff = []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second}
+var retryBackoff = []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second, 90 * time.Second, 120 * time.Second}
 
 // postChat retries throttled and transient gateway failures with backoff.
 // Without it a 429 turns the pacing from inference latency into delay-only fast
@@ -246,39 +246,50 @@ func (t *httpTranslator) chatModel(ctx context.Context, system, user string, tem
 	if err != nil {
 		return "", "", err
 	}
-	data, err := t.postChat(ctx, raw)
-	if err != nil {
-		return "", "", err
+	// finish_reason="length" here is a stochastic reasoning death-spiral, not a
+	// too-small ceiling: raising max_tokens 4096→16384 left the ramp's length
+	// rate unchanged (25%→28%), and a replay probe saw the same name burn all
+	// 16384 tokens of reasoning and then pass on a fresh call with 519. A fresh
+	// roll is the cure (temp 0 is not deterministic on this gateway); a taller
+	// ceiling only multiplies what each spiral burns.
+	var lastErr error
+	for roll := 0; roll < 3; roll++ {
+		data, err := t.postChat(ctx, raw)
+		if err != nil {
+			return "", "", err
+		}
+		var cr struct {
+			Model   string `json:"model"`
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(data, &cr); err != nil {
+			return "", "", fmt.Errorf("decode chat response: %w", err)
+		}
+		if cr.Error != nil {
+			return "", "", fmt.Errorf("gateway error: %s", cr.Error.Message)
+		}
+		if len(cr.Choices) == 0 {
+			return "", "", fmt.Errorf("gateway returned no choices")
+		}
+		if fr := cr.Choices[0].FinishReason; fr != "" && fr != "stop" {
+			lastErr = fmt.Errorf("generation finished with finish_reason=%q — refusing partial output", fr)
+			continue
+		}
+		model := cr.Model
+		if model == "" {
+			model = t.model
+		}
+		return cr.Choices[0].Message.Content, model, nil
 	}
-	var cr struct {
-		Model   string `json:"model"`
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason"`
-		} `json:"choices"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(data, &cr); err != nil {
-		return "", "", fmt.Errorf("decode chat response: %w", err)
-	}
-	if cr.Error != nil {
-		return "", "", fmt.Errorf("gateway error: %s", cr.Error.Message)
-	}
-	if len(cr.Choices) == 0 {
-		return "", "", fmt.Errorf("gateway returned no choices")
-	}
-	if fr := cr.Choices[0].FinishReason; fr != "" && fr != "stop" {
-		return "", "", fmt.Errorf("generation finished with finish_reason=%q — refusing partial output", fr)
-	}
-	model := cr.Model
-	if model == "" {
-		model = t.model
-	}
-	return cr.Choices[0].Message.Content, model, nil
+	return "", "", lastErr
 }
 
 func cleanProposal(s string) string {
