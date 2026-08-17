@@ -167,7 +167,10 @@ func applyLinksFor(ctx context.Context, tx *gorm.DB, entityType int16, entityID 
 		cl, _ := classifyWorkLink(u)
 		srcID, ok := sources[cl.SourceKey]
 		if !ok {
-			return fmt.Errorf("editspec: links: source %q is not registered", cl.SourceKey)
+			return &editing.ValidationError{
+				Key:    linksFieldKey(entityType),
+				Reason: fmt.Sprintf("source %q is not registered", cl.SourceKey),
+			}
 		}
 		rows = append(rows, catmodel.CatalogExternalRef{
 			EntityType: entityType, EntityID: entityID,

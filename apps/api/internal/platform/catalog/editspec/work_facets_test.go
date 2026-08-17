@@ -2,6 +2,7 @@ package editspec_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"api/internal/platform/catalog/editspec"
@@ -132,16 +133,9 @@ func TestTagEdgesCarryCatalogIDs(t *testing.T) {
 		t.Fatal("the importer tag edge must survive a curated full replace")
 	}
 
-	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
-		EntityType: editspec.TypeWork, EntityID: work.ID,
-		Patch: map[string]any{editspec.FieldWorkTagIDs: []any{float64(9999999)}},
-		Actor: realActor(100, "admin"),
-	})
-	if err != nil {
-		t.Fatalf("propose: %v", err)
-	}
-	if _, err := e.MergeProposal(testCtx, prop.ID, realActor(200, "ren"), ""); err == nil {
-		t.Fatal("a tag id that does not exist must fail the merge")
+	valErr := mergeMustReject(t, e, editspec.TypeWork, work.ID, editspec.FieldWorkTagIDs, []any{float64(9999999)})
+	if !strings.Contains(valErr.Reason, "do not exist") {
+		t.Fatalf("missing tag ids must be a ValidationError, got %q", valErr.Reason)
 	}
 }
 
@@ -213,17 +207,19 @@ func TestLabelEngineSeriesEdges(t *testing.T) {
 	snap = mergeField(t, e, work.ID, editspec.FieldWorkSeriesIDs, series)
 	sameJSON(t, "series_ids", snap[editspec.FieldWorkSeriesIDs], series)
 
-	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
-		EntityType: editspec.TypeWork, EntityID: work.ID,
-		Patch: map[string]any{editspec.FieldWorkSeriesIDs: []any{upstreamSeries.ID}},
-		Actor: realActor(100, "admin"),
+	valErr := mergeMustReject(t, e, editspec.TypeWork, work.ID, editspec.FieldWorkSeriesIDs, []any{upstreamSeries.ID})
+	if !strings.Contains(valErr.Reason, "CURATED") {
+		t.Fatalf("an upstream series must be a ValidationError naming the curated lane, got %q", valErr.Reason)
+	}
+}
+
+func TestMissingLabelAndEngineIDsAreValidationErrors(t *testing.T) {
+	e := newEngine(t)
+	work := createWork(t, "欠番参照")
+	mergeMustReject(t, e, editspec.TypeWork, work.ID, editspec.FieldWorkLabels, []any{
+		map[string]any{"label_id": float64(9_000_001), "kind": float64(0)},
 	})
-	if err != nil {
-		t.Fatalf("propose upstream series: %v", err)
-	}
-	if _, err := e.MergeProposal(testCtx, prop.ID, realActor(200, "ren"), ""); err == nil {
-		t.Fatal("membership of an upstream series must be refused")
-	}
+	mergeMustReject(t, e, editspec.TypeWork, work.ID, editspec.FieldWorkEngineIDs, []any{float64(9_000_002)})
 }
 
 func TestLinksCanonicalizeAndGrade(t *testing.T) {

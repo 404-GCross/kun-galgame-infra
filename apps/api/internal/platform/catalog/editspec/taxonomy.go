@@ -337,8 +337,11 @@ func curatedOnly(inner editing.ApplyFunc) editing.ApplyFunc {
 			return err
 		}
 		if n == 0 {
-			return fmt.Errorf("editspec: series name: only a CURATED series can be renamed here " +
-				"(an upstream series' name is reconciled by its importer)")
+			return &editing.ValidationError{
+				Key: FieldSeriesName,
+				Reason: "only a CURATED series can be renamed here " +
+					"(an upstream series' name is reconciled by its importer)",
+			}
 		}
 		return inner(ctx, tx, entityID, value)
 	}

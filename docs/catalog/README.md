@@ -13,6 +13,7 @@
 | 01 | [service-and-contract.md](./01-service-and-contract.md) | 服务定位、registry/body 分界、S2S 端点语义与 site 绑定、admin 四桶概述、**用户令牌面(§4:封面投票 4.1 + 编辑提案与审核 4.2 + 认领生命周期 4.3 + 只读与图片上传 4.4)**、鉴权形态、生成 spec、运维注记 | 已完成 |
 | — | [openapi.yaml](./openapi.yaml) | S2S face **+ 用户写面**的 OpenAPI 3.1(`gen-openapi -catalog` 生成) | 生成物 |
 | — | [admin-openapi.yaml](./admin-openapi.yaml) | admin review 队列的 OpenAPI 3.1(`gen-openapi -catalog-admin` 生成) | 生成物 |
+| — | [public-openapi.yaml](./public-openapi.yaml) | `/v1/catalog` + `/v1/playtime` 公开面的 OpenAPI 3.1(`gen-openapi -catalog-public` 生成;下游=oasdiff 破坏门 + developer 门户 docs-model) | 生成物 |
 
 ## 一句话总结
 

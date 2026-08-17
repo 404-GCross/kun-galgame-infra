@@ -247,6 +247,14 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 第 4 步即「**一等登录令牌(`/auth/login`)被拒**」的原因:它没有 `client_id`(RFC 9068 §2.2 对它是可选),因而没有可归属的站点;若允许它自报 site,就等于把本面存在的意义(消灭断言)重新打开。用户令牌须经 OAuth 授权码流从某个 client 取得。
 
 - **scope**:`catalog:edit` 是**用户 scope**(经 OP 同意页授予),与开发者平台的 **API key scope**(`internal/platform/devapi`,如 `catalog:read`)是两套凭据、两个命名空间,不可混用。常量落在 catalog handler 包内,与 image 服务把 `image:upload` 写在自己鉴权中间件旁的先例一致。
+
+**第三方应用准入(wave R3,2026-08-17 起)**:自助注册的 user_login 应用**可以申请 `catalog:edit`**(此前 `selfServiceUserScopes` 按名拒绝)。第三方令牌走的就是本节这同一个面——**没有单独的 /v1 编辑路由**(E4 的裁定原文:「同一引擎 op 的 Bearer 投影,不是新写面」)。三条第三方专属规则:
+
+1. **裁决帽**:第三方 client 的令牌永远 `ModerationCapped`——提案可,review/automerge/decline/revert 永不可,schema 投影里对它 `can_review=false`、`would_automerge=false`。这不是权限配置,是面的属性。
+2. **未决提案帽**:经第三方 client 提交时,若该用户名下 open 状态的提案已有 **20** 条(跨租户计数、含第一方面提交的——提案表不记录提交面),新建被拒 **429**,message 给出数字与出路(等审核或撤回)。第一方面提交不受此帽。
+3. **两句契约实话**(所有面共享,对第三方自动化尤其要紧):
+   - **引用类校验发生在批准合并时,不在提案时**——`Validate` 只校形状(拿不到 db),撞上游键、被引用 id 存在性、车道归属都在 Apply 里查。提案保存成功 ≠ 能合入;审核者批准时可能得到 **422**(自 wave R3 起这些失败**保证**是 422 而非 500,提案可正常 decline 不再卡死)。不提供提案期预检:预检天生 best-effort(提案与合并之间随时可撞),写它进契约反而制造虚假承诺。
+   - **提案引用的实体在提案期间被合并走 = 批准时拒绝**(404/422),不做静默 rebase——修订史永不记录提案人没写过的值。客户端经公开 redirects 面(`GET /v1/catalog/redirects`)重解析后重提。
 - **前缀不相交**:`/api/v1/user/catalog` 与 `/api/v1/catalog`、`/api/v1/admin/catalog` 三者互不为前缀——Huma 注册在 Fiber **app** 上,路径域 `Use` 是唯一的闸,前缀一旦互相包含,S2S 的 Basic 链就会拦在用户调用前面。
 - **spec**:两个写面同在 `docs/catalog/openapi.yaml`(tag `catalog-user`);运行时它是**独立的 humafiber API**,只是共用一份契约文档,便于调用方并排比较「断言 actor」与「令牌即 actor」。
 
@@ -451,7 +459,7 @@ wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留�
   - **letmoe(第二消费站,同人为主)**:`UPDATE oauth_clients SET catalog_site='letmoe' WHERE <letmoe client 定位>;`(dev = 本地主库执行即可复现;**prod = 用户 ops**,随 letmoe 上线 runbook 同批,核验 `SELECT id,catalog_site FROM oauth_clients WHERE catalog_site='letmoe'` 命中 letmoe 机密 client)。
 - **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ **ren 角色(超管专属)**,与 site 绑定列无关;wave 187b 起还要过 **client 闸**——令牌若签发自第三方应用(`oauth_clients.owner_user_id` 非空)一律 403,先于权限判定(空 `client_id` 的第一方会话令牌放行,见 §4.2 的缺口条)。
 - **user face(`/api/v1/user/catalog/*`,wave 176)**:Bearer **用户**访问令牌(同一 accept-both verifier)+ `catalog:edit` scope + **client 绑定**。这里 `oauth_clients.catalog_site` 的用法与 S2S 写面**不同**:S2S 校验「绑定值 == 请求体 site」,user face **根本不收 site**——绑定值**就是**写入的租户。因此新增消费站的动作仍是同一条(给其 client 设 `catalog_site`),但一等登录令牌(无 `client_id`)在本面**永远**拿不到租户,只能走 OAuth 授权码流取得 client 绑定令牌。详见 §4。
-- **编辑引擎提案桥面（过渡参考，09-open-api-phase2 06b）**：catalog 进程另托一个 galgame-family 的**平台提案面** `/internal/edit/*`（create / mine / get-own / withdraw + schema/snapshot 只读投影），走 devapi 双凭证链——scope **`galgame:propose`**、计量 face **`galgame_internal_propose`**；actor 取自已验用户 JWT（plain：trust 0 / roles ∅ / 非 owner），租户由 key 的 `oauth_clients.catalog_site` 反查（请求**不收** site/actor 断言）。它是**纯 Fiber、不进本目录 spec**（`openapi.yaml` 仅含 S2S face）；编辑引擎的 S2S 面（`/api/v1/catalog/edit/*`）在 wave 181 收缩为六条、又在 wave 185 收缩为 list(第三人称统计读)/revisions/diff **三条只读**,写与裁决全在用户面。**桥面不立独立契约文档**，第三方实际开放另议。
+- **编辑引擎提案桥面已死**(曾为 09-open-api-phase2 06b 的过渡参考):`/internal/edit/*`(scope `galgame:propose`、计量 face `galgame_internal_propose`)随 galgame 面退役**整体移除**——今天这些路径连 410 都不是,就是 404。编辑引擎的 S2S 面(`/api/v1/catalog/edit/*`)在 wave 181/185 两轮收缩后只剩 list(第三人称统计读)/revisions/diff **三条只读**,写与裁决全在用户面。「第三方实际开放」已于 **wave R3(2026-08-17)裁定并落地**:不复活桥面、不开 /v1 编辑路由,第三方经自助 user_login 申请 `catalog:edit` 用户 scope 后走用户面(见 §4 的第三方准入段)。
 - **playtime face(`/v1/playtime/*`)**:Bearer 用户访问令牌 + `playtime:read` / `playtime:write` + **client 绑定**,**无 API key**(令牌已带齐用户与应用两个身份,再加 key 就是第二套 scope 注册表),**不要求** `catalog_site`。详见 §4.6。
 - `GET /openapi.json`(S2S spec)、`GET /healthz` 无鉴权。
 
@@ -459,6 +467,7 @@ wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留�
 
 - S2S:`go run ./cmd/gen-openapi -catalog -o docs/catalog/openapi.yaml`(OpenAPI 3.1)。
 - admin:`go run ./cmd/gen-openapi -catalog-admin -o docs/catalog/admin-openapi.yaml`。
+- public(`/v1/catalog` + `/v1/playtime`):`go run ./cmd/gen-openapi -catalog-public -o docs/catalog/public-openapi.yaml`——CI 的 freeze 门(test.yml)一直冻着它,此前只是本清单漏列;它另有 oasdiff 破坏门与 developer 门户 docs-model 门两个下游。
 - 契约以生成的 spec 为准(Huma code-first,DTO 即契约);本 markdown 是语义说明。
 
 ## 7. 运维注记

@@ -72,7 +72,10 @@ func applyTagIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 			return err
 		}
 		if len(tags) != len(ids) {
-			return fmt.Errorf("editspec: tag_ids: %d of %d ids do not exist", len(ids)-len(tags), len(ids))
+			return &editing.ValidationError{
+				Key:    FieldWorkTagIDs,
+				Reason: fmt.Sprintf("%d of %d ids do not exist", len(ids)-len(tags), len(ids)),
+			}
 		}
 	}
 	if err := tx.WithContext(ctx).
@@ -183,7 +186,7 @@ func applyLabels(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 		for _, l := range labels {
 			ids = append(ids, l.LabelID)
 		}
-		if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogLabel{}, ids, "labels"); err != nil {
+		if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogLabel{}, ids, FieldWorkLabels); err != nil {
 			return err
 		}
 	}
@@ -261,7 +264,7 @@ func applyEngineIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any)
 	if err := assertWorkExists(ctx, tx, entityID); err != nil {
 		return err
 	}
-	if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogEngine{}, ids, "engine_ids"); err != nil {
+	if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogEngine{}, ids, FieldWorkEngineIDs); err != nil {
 		return err
 	}
 	if err := tx.WithContext(ctx).
@@ -306,8 +309,11 @@ func applySeriesIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any)
 			return err
 		}
 		if int(n) != len(ids) {
-			return fmt.Errorf("editspec: series_ids: every id must be an existing CURATED series " +
-				"(an upstream series' membership is reconciled by its importer and cannot be edited here)")
+			return &editing.ValidationError{
+				Key: FieldWorkSeriesIDs,
+				Reason: "every id must be an existing CURATED series " +
+					"(an upstream series' membership is reconciled by its importer and cannot be edited here)",
+			}
 		}
 	}
 	if err := tx.WithContext(ctx).Exec(`
@@ -348,7 +354,10 @@ func assertEntitiesExist(ctx context.Context, tx *gorm.DB, model any, ids []int6
 		return err
 	}
 	if int(n) != len(ids) {
-		return fmt.Errorf("editspec: %s: %d of %d ids do not exist", field, len(ids)-int(n), len(ids))
+		return &editing.ValidationError{
+			Key:    field,
+			Reason: fmt.Sprintf("%d of %d ids do not exist", len(ids)-int(n), len(ids)),
+		}
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"api/internal/platform/catalog/dto"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 )
+
+const maxThirdPartyOpenProposals = 20
 
 type UserEditServer struct{ *EditServer }
 
@@ -104,6 +107,9 @@ func (s *UserEditServer) create(ctx context.Context, in *userEditCreateInput) (*
 	if he != nil {
 		return nil, he
 	}
+	if err := s.refuseIfThirdPartyCap(ctx, actor.UserID); err != nil {
+		return nil, err
+	}
 	prop, rev, err := s.engine.CreateProposal(ctx, editing.CreateProposalInput{
 		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID,
 		Patch: in.Body.Patch, Note: in.Body.Note,
@@ -122,6 +128,26 @@ func (s *UserEditServer) create(ctx context.Context, in *userEditCreateInput) (*
 
 type userEditWithdrawInput struct {
 	ID int64 `path:"id" minimum:"1" doc:"Proposal id (must be one the token's user filed)"`
+}
+
+func (s *UserEditServer) refuseIfThirdPartyCap(ctx context.Context, uid int64) error {
+	if !isThirdPartyClient(clientFromCtx(ctx)) {
+		return nil
+	}
+	_, total, err := s.engine.ListProposalsWithTotal(ctx, editing.ProposalFilter{
+		ProposerUID: uid,
+		Status:      editing.StatusOpen,
+		Limit:       1,
+	})
+	if err != nil {
+		return editErr(err)
+	}
+	if total >= maxThirdPartyOpenProposals {
+		return apiErrMsg(http.StatusTooManyRequests, errors.ErrTooManyRequests,
+			fmt.Sprintf("you already have %d proposals awaiting review; wait for a decision or withdraw one before filing another",
+				maxThirdPartyOpenProposals))
+	}
+	return nil
 }
 
 func (s *UserEditServer) withdraw(ctx context.Context, in *userEditWithdrawInput) (*editCloseOutput, error) {

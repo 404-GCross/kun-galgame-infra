@@ -67,6 +67,7 @@ const scopeLabels: Record<string, string> = {
   email: '邮箱地址',
   'playtime:read': '读取你的游戏时长记录',
   'playtime:write': '记录你的游戏时长',
+  'catalog:edit': '以你的名义提交目录条目的编辑提案',
 }
 
 const respondWithError = async (errCode: string): Promise<void> => {

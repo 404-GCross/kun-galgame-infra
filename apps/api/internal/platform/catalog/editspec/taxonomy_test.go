@@ -2,6 +2,7 @@ package editspec_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"api/internal/platform/catalog/editspec"
@@ -125,6 +126,25 @@ func TestEngineAndSeriesFamilies(t *testing.T) {
 		t.Fatalf("series name: %#v", snap[editspec.FieldSeriesName])
 	}
 	sameJSON(t, "series intros", snap[editspec.FieldSeriesIntros], intros)
+}
+
+func TestUpstreamSeriesRenameIsValidationError(t *testing.T) {
+	e := newTaxonomyEngine(t)
+	series := model.CatalogSeries{DisplayName: "dlsite series", SourceID: 4, ExternalID: "s-up"}
+	if err := testDB.Create(&series).Error; err != nil {
+		t.Fatal(err)
+	}
+	valErr := mergeMustReject(t, e, editspec.TypeSeries, series.ID, editspec.FieldSeriesName, "人手改名")
+	if !strings.Contains(valErr.Reason, "CURATED") {
+		t.Fatalf("renaming an upstream series must be a ValidationError, got %q", valErr.Reason)
+	}
+	var row model.CatalogSeries
+	if err := testDB.First(&row, series.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.DisplayName != "dlsite series" {
+		t.Fatalf("the refused rename must not land, got %q", row.DisplayName)
+	}
 }
 
 func TestWorkOnMergeTouchesTheWork(t *testing.T) {

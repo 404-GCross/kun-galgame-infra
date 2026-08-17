@@ -26,6 +26,7 @@ const MaxRedirectURIsPerApp = 5
 var selfServiceUserScopes = []string{
 	"openid", "profile", "email",
 	ScopePlaytimeRead, ScopePlaytimeWrite,
+	"catalog:edit",
 }
 
 const (
@@ -37,7 +38,7 @@ var (
 	ErrRedirectURIRequired = errors.New("devapi: user login needs at least one redirect URI")
 	ErrTooManyRedirectURIs = errors.New("devapi: too many redirect URIs (max 5)")
 	ErrRedirectURIInvalid  = errors.New("devapi: redirect URI must be https://, or http:// on the 127.0.0.1 / [::1] loopback for a native app")
-	ErrUserScopeNotAllowed = errors.New("devapi: scope not permitted for a self-service app (want openid/profile/email/playtime:read/playtime:write)")
+	ErrUserScopeNotAllowed = errors.New("devapi: scope not permitted for a self-service app (want openid/profile/email/playtime:read/playtime:write/catalog:edit)")
 	ErrAppNameReserved     = errors.New("devapi: application name may not claim to be NextMoe or an official application")
 )
 
