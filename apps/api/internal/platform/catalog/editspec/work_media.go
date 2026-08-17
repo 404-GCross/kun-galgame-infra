@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	catmodel "api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -102,6 +103,9 @@ func applyCovers(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 	if err := assertWorkExists(ctx, tx, entityID); err != nil {
 		return err
 	}
+	if err := rejectUpstreamCoverCollisions(ctx, tx, entityID, covers); err != nil {
+		return err
+	}
 	if err := tx.WithContext(ctx).
 		Where("work_id = ? AND source_id = ?", entityID, curatedSourceID).
 		Delete(&catmodel.CatalogWorkCover{}).Error; err != nil {
@@ -119,6 +123,37 @@ func applyCovers(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 		})
 	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// rejectUpstreamCoverCollisions makes an unwinnable insert an explicit 422.
+// uq_catalog_work_cover does not carry source_id, so the curated lane and every
+// importer share one key.
+func rejectUpstreamCoverCollisions(ctx context.Context, tx *gorm.DB, entityID int64, covers []workCover) error {
+	if len(covers) == 0 {
+		return nil
+	}
+	hashes := make([]string, len(covers))
+	for i, c := range covers {
+		hashes[i] = c.ImageHash
+	}
+	var clash []catmodel.CatalogWorkCover
+	if err := tx.WithContext(ctx).
+		Select("image_hash").
+		Where("work_id = ? AND source_id IS DISTINCT FROM ?", entityID, curatedSourceID).
+		Where("image_hash IN ?", hashes).
+		Order("image_hash").
+		Find(&clash).Error; err != nil {
+		return err
+	}
+	if len(clash) == 0 {
+		return nil
+	}
+	return &editing.ValidationError{
+		Key: FieldWorkCovers,
+		Reason: fmt.Sprintf("image %s is already collected upstream for this work; "+
+			"upstream media rows cannot be restyled through the editor yet",
+			clash[0].ImageHash),
+	}
 }
 
 func loadCovers(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
@@ -197,6 +232,9 @@ func applyScreenshots(ctx context.Context, tx *gorm.DB, entityID int64, value an
 	if err := assertWorkExists(ctx, tx, entityID); err != nil {
 		return err
 	}
+	if err := rejectUpstreamScreenshotCollisions(ctx, tx, entityID, shots); err != nil {
+		return err
+	}
 	if err := tx.WithContext(ctx).
 		Where("work_id = ? AND source_id = ?", entityID, curatedSourceID).
 		Delete(&catmodel.CatalogWorkScreenshot{}).Error; err != nil {
@@ -214,6 +252,37 @@ func applyScreenshots(ctx context.Context, tx *gorm.DB, entityID int64, value an
 		})
 	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// rejectUpstreamScreenshotCollisions makes an unwinnable insert an explicit 422.
+// uq_catalog_work_screenshot does not carry source_id, so the curated lane and
+// every importer share one key.
+func rejectUpstreamScreenshotCollisions(ctx context.Context, tx *gorm.DB, entityID int64, shots []workScreenshot) error {
+	if len(shots) == 0 {
+		return nil
+	}
+	hashes := make([]string, len(shots))
+	for i, s := range shots {
+		hashes[i] = s.ImageHash
+	}
+	var clash []catmodel.CatalogWorkScreenshot
+	if err := tx.WithContext(ctx).
+		Select("image_hash").
+		Where("work_id = ? AND source_id IS DISTINCT FROM ?", entityID, curatedSourceID).
+		Where("image_hash IN ?", hashes).
+		Order("image_hash").
+		Find(&clash).Error; err != nil {
+		return err
+	}
+	if len(clash) == 0 {
+		return nil
+	}
+	return &editing.ValidationError{
+		Key: FieldWorkScreenshots,
+		Reason: fmt.Sprintf("image %s is already collected upstream for this work; "+
+			"upstream media rows cannot be restyled through the editor yet",
+			clash[0].ImageHash),
+	}
 }
 
 func loadScreenshots(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {

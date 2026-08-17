@@ -187,6 +187,9 @@ func applyLabels(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 			return err
 		}
 	}
+	if err := rejectUpstreamLabelCollisions(ctx, tx, entityID, labels); err != nil {
+		return err
+	}
 	if err := tx.WithContext(ctx).
 		Where("work_id = ? AND source_id = ?", entityID, curatedSourceID).
 		Delete(&catmodel.CatalogWorkLabel{}).Error; err != nil {
@@ -203,6 +206,37 @@ func applyLabels(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 		})
 	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// rejectUpstreamLabelCollisions makes an unwinnable insert an explicit 422.
+// catalog_work_label's identity is (work_id, label_id, kind) and does not carry
+// source_id (NULL is a machine row, which is why the predicate is IS DISTINCT FROM).
+func rejectUpstreamLabelCollisions(ctx context.Context, tx *gorm.DB, entityID int64, labels []workLabel) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	pairs := make([][]any, 0, len(labels))
+	for _, l := range labels {
+		pairs = append(pairs, []any{l.LabelID, l.Kind})
+	}
+	var clash []catmodel.CatalogWorkLabel
+	if err := tx.WithContext(ctx).
+		Select("label_id", "kind").
+		Where("work_id = ? AND source_id IS DISTINCT FROM ?", entityID, curatedSourceID).
+		Where("(label_id, kind) IN ?", pairs).
+		Order("label_id, kind").
+		Find(&clash).Error; err != nil {
+		return err
+	}
+	if len(clash) == 0 {
+		return nil
+	}
+	return &editing.ValidationError{
+		Key: FieldWorkLabels,
+		Reason: fmt.Sprintf("label %d (kind %d) is already attached upstream; "+
+			"upstream label edges cannot be re-added through the editor yet",
+			clash[0].LabelID, clash[0].Kind),
+	}
 }
 
 func loadLabels(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {

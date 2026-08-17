@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
@@ -382,7 +383,7 @@ func (g *gormWriter) setWorkTagSexual(ctx context.Context, source, name string) 
 		return 0, fmt.Errorf("source %q not resolved", source)
 	}
 	res := g.db.WithContext(ctx).Exec(
-		`UPDATE catalog_work_tag SET sexual = true WHERE source_id = ? AND name = ? AND sexual = false`, id, name)
+		`UPDATE catalog_work_tag SET sexual = true WHERE source_id = ? AND name = ? AND sexual = false AND `+editspec.NotCuratedLaneSQL("source_id"), id, name)
 	return res.RowsAffected, res.Error
 }
 

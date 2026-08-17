@@ -312,6 +312,72 @@ func TestCharacterAliasValidation(t *testing.T) {
 	}
 }
 
+func TestCuratedSearchHintSurvivesAliasReplace(t *testing.T) {
+	e := newCharacterEngine(t)
+	ch := createCharacter(t, "ヒント保護")
+	src := int16(12)
+	hint := model.CatalogCharacterAlias{
+		CharacterID: ch.ID, Name: "けんさくヒント", Lang: "",
+		Kind: model.AliasKindSearchHint, SourceID: &src,
+		Provenance: model.AliasProvenanceSource,
+	}
+	if err := testDB.Create(&hint).Error; err != nil {
+		t.Fatalf("seed search hint: %v", err)
+	}
+
+	old := []any{map[string]any{
+		"name": "古い別名", "lang": "zh-Hans", "kind": float64(model.AliasKindTranslation),
+	}}
+	mergeOn(t, e, editspec.TypeCharacter, ch.ID, map[string]any{
+		editspec.FieldCharacterAliases: old,
+	})
+	var still model.CatalogCharacterAlias
+	if err := testDB.First(&still, hint.ID).Error; err != nil {
+		t.Fatalf("the first save deleted the search-hint row: %v", err)
+	}
+
+	newer := []any{map[string]any{
+		"name": "新しい別名", "lang": "zh-Hans", "kind": float64(model.AliasKindTranslation),
+	}}
+	snap := mergeOn(t, e, editspec.TypeCharacter, ch.ID, map[string]any{
+		editspec.FieldCharacterAliases: newer,
+	})
+	sameJSON(t, "curated aliases", snap[editspec.FieldCharacterAliases], newer)
+
+	if err := testDB.First(&still, hint.ID).Error; err != nil {
+		t.Fatalf("the replace deleted the search-hint row: %v", err)
+	}
+	if still.Kind != model.AliasKindSearchHint || still.Name != "けんさくヒント" {
+		t.Fatalf("search hint was rewritten: %+v", still)
+	}
+
+	var rows []model.CatalogCharacterAlias
+	if err := testDB.Where("character_id = ?", ch.ID).Order("id").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("alias rows = %+v, want the search hint plus the new curated row", rows)
+	}
+	var sawOld, sawNew bool
+	for _, r := range rows {
+		if r.Name == "古い別名" {
+			sawOld = true
+		}
+		if r.Name == "新しい別名" {
+			sawNew = true
+			if r.SourceID == nil || *r.SourceID != 12 {
+				t.Fatalf("replacement curated row source = %v, want 12", r.SourceID)
+			}
+		}
+	}
+	if sawOld {
+		t.Fatal("the previous non-hint curated alias must be replaced")
+	}
+	if !sawNew {
+		t.Fatal("the new curated alias is missing")
+	}
+}
+
 func TestCharacterAliasSuppressionInheritsParentPolicy(t *testing.T) {
 	reg := editing.NewRegistry()
 	if err := editspec.RegisterCharacter(reg, testDB); err != nil {

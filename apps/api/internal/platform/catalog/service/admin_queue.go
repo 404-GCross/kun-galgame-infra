@@ -26,6 +26,8 @@ func (s *AdminQueueService) DetachName(ctx context.Context, creditNameID int64, 
 
 var ErrExactTaken = fmt.Errorf("catalog: external identity is exact-linked to another entity")
 
+const matchedByCurated = "curated"
+
 type EntitySummary struct {
 	ID          int64  `json:"id"`
 	DisplayName string `json:"display_name"`
@@ -385,6 +387,19 @@ func (s *AdminQueueService) RejectRef(ctx context.Context, key RefKey, reason st
 		return fmt.Errorf("%w: rejection reason is required", ErrProposalState)
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var matchedBy string
+		err := tx.Raw(`SELECT matched_by FROM catalog_external_ref
+		                WHERE entity_type = ? AND entity_id = ? AND source_id = ? AND external_id = ? FOR UPDATE`,
+			key.EntityType, key.EntityID, key.SourceID, key.ExternalID).Scan(&matchedBy).Error
+		if err != nil {
+			return err
+		}
+		if matchedBy == "" {
+			return fmt.Errorf("%w: external ref", ErrNotFound)
+		}
+		if matchedBy == matchedByCurated {
+			return fmt.Errorf("%w: ref is human-linked (curated); remove it through the editor", ErrProposalState)
+		}
 		res := tx.Exec(`DELETE FROM catalog_external_ref
 		                 WHERE entity_type = ? AND entity_id = ? AND source_id = ? AND external_id = ?`,
 			key.EntityType, key.EntityID, key.SourceID, key.ExternalID)

@@ -178,8 +178,9 @@ func TestSecondApplyIsAZeroWrite(t *testing.T) {
 	assert.Zero(t, second.IntrosInserted)
 	assert.Zero(t, second.TouchedWorks)
 	assert.Equal(t, 1, second.SeriesExisting)
-	assert.Equal(t, 2, second.MembersExisting)
-	assert.Equal(t, 1, second.IntrosExisting)
+	assert.Equal(t, 1, second.SeriesUntouched)
+	assert.Zero(t, second.MembersExisting)
+	assert.Zero(t, second.IntrosExisting)
 }
 
 func TestExistingDisplayNameSurvives(t *testing.T) {
@@ -196,6 +197,41 @@ func TestExistingDisplayNameSurvives(t *testing.T) {
 	var row model.CatalogSeries
 	require.NoError(t, testDB.First(&row, id).Error)
 	assert.Equal(t, "Renamed By A Human", row.DisplayName)
+}
+
+func TestExistingSeriesDoesNotResurrectHumanEdits(t *testing.T) {
+	resetCurated(t)
+	w1, w2 := mkWork(t), mkWork(t)
+	dir := fixture(t, []memberRow{{SeriesID: 9001, WorkID: w1}, {SeriesID: 9001, WorkID: w2}})
+
+	require.Equal(t, 1, run(t, dir, true).SeriesSeeded)
+	id := curatedSeriesID(t, 9001)
+	require.NotZero(t, id)
+	require.NoError(t, testDB.Where("series_id = ? AND work_id = ?", id, w2).Delete(&model.CatalogSeriesMember{}).Error)
+	require.NoError(t, testDB.Where("series_id = ?", id).Delete(&model.CatalogSeriesIntro{}).Error)
+
+	dry := run(t, dir, false)
+	assert.Equal(t, 1, dry.SeriesExisting)
+	assert.Equal(t, 1, dry.SeriesUntouched)
+	assert.Zero(t, dry.MembersInserted)
+	assert.Zero(t, dry.IntrosInserted)
+	assert.Zero(t, dry.TouchedWorks)
+
+	got := run(t, dir, true)
+	assert.Equal(t, 1, got.SeriesExisting)
+	assert.Equal(t, 1, got.SeriesUntouched)
+	assert.Zero(t, got.MembersInserted)
+	assert.Zero(t, got.IntrosInserted)
+	assert.Zero(t, got.TouchedWorks)
+
+	var members []int64
+	require.NoError(t, testDB.Model(&model.CatalogSeriesMember{}).
+		Where("series_id = ?", id).Order("work_id").Pluck("work_id", &members).Error)
+	assert.Equal(t, []int64{w1}, members)
+
+	var n int64
+	require.NoError(t, testDB.Model(&model.CatalogSeriesIntro{}).Where("series_id = ?", id).Count(&n).Error)
+	assert.Zero(t, n)
 }
 
 func TestDlsiteCoveredSeriesIsSkipped(t *testing.T) {

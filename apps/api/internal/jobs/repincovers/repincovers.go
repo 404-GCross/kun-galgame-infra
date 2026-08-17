@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"api/internal/infrastructure/database"
+	"api/internal/platform/catalog/editspec"
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
@@ -170,13 +171,14 @@ type coverRow struct {
 }
 
 func (r *runner) plan(ctx context.Context, opts Opts) ([]Plan, error) {
-	q := r.db.WithContext(ctx).Raw(`
+	q := r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT c.id, c.work_id, c.image_hash, c.kind, s.key AS source_key,
 		       c.sexual, c.sort_order, c.portrait_pinned
 		FROM catalog_work_cover c
 		JOIN catalog_source s ON s.id = c.source_id
 		WHERE c.work_id IN (SELECT work_id FROM catalog_work_cover WHERE portrait_pinned)
-		ORDER BY c.work_id, c.sort_order, c.image_hash`)
+		  AND c.work_id NOT IN (SELECT work_id FROM catalog_work_cover WHERE portrait_pinned AND %s)
+		ORDER BY c.work_id, c.sort_order, c.image_hash`, editspec.CuratedLaneSQL("source_id")))
 	var rows []coverRow
 	if err := q.Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load covers: %w", err)

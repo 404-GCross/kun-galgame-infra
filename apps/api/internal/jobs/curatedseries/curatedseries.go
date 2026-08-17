@@ -35,6 +35,7 @@ type Stats struct {
 	SeriesSkippedCovered int
 	SeriesSeeded         int
 	SeriesExisting       int
+	SeriesUntouched      int
 	MembersInserted      int
 	MembersExisting      int
 	IntrosInserted       int
@@ -225,6 +226,10 @@ func seedOne(ctx context.Context, db *gorm.DB, curatedSrc int16, p plan, apply b
 		}
 	}
 	rec.SeriesID = seriesID
+	if rec.Decision == "existing" {
+		st.SeriesUntouched++
+		return nil
+	}
 
 	if err := seedMembers(ctx, db, seriesID, p.workIDs, apply, st, rec); err != nil {
 		return err

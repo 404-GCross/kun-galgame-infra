@@ -87,7 +87,8 @@ func applyCharacterAliases(ctx context.Context, tx *gorm.DB, entityID int64, val
 		return err
 	}
 	if err := tx.WithContext(ctx).
-		Where("character_id = ? AND source_id = ?", entityID, curatedSourceID).
+		Where("character_id = ? AND source_id = ? AND kind <> ?",
+			entityID, curatedSourceID, catmodel.AliasKindSearchHint).
 		Delete(&catmodel.CatalogCharacterAlias{}).Error; err != nil {
 		return err
 	}

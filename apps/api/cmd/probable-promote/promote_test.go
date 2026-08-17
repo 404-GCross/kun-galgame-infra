@@ -147,3 +147,23 @@ func TestPromoteConflict(t *testing.T) {
 	k, _ := refState(t, 900002, 5, "shared")
 	assert.Equal(t, model.LinkKindProbable, k, "the contender stays probable")
 }
+
+func TestPromoteRefusesCuratedRule(t *testing.T) {
+	if testDB == nil {
+		t.Skip("no catalog test DB")
+	}
+	clean(t)
+	ctx := context.Background()
+	seedWork(t, 900040)
+	seedRef(t, 900040, 3, "bgm-curated", model.LinkKindProbable, matchedByCurated)
+
+	_, err := runPromote(ctx, testDB, io.Discard, []string{matchedByCurated}, 7, true, 0)
+	require.EqualError(t, err, "curated is the human lane, not a promotion rule")
+
+	_, err = runPromote(ctx, testDB, io.Discard, []string{ruleRosetta, matchedByCurated}, 7, false, 0)
+	require.EqualError(t, err, "curated is the human lane, not a promotion rule")
+
+	k, vb := refState(t, 900040, 3, "bgm-curated")
+	assert.Equal(t, model.LinkKindProbable, k)
+	assert.Nil(t, vb)
+}

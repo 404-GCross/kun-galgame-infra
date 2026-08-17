@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	catmodel "api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -149,6 +150,9 @@ func applyLinksFor(ctx context.Context, tx *gorm.DB, entityType int16, entityID 
 	if err != nil {
 		return err
 	}
+	if err := rejectUpstreamLinkCollisions(ctx, tx, entityType, entityID, urls, sources); err != nil {
+		return err
+	}
 	if err := tx.WithContext(ctx).
 		Where("entity_type = ? AND entity_id = ? AND matched_by = ?",
 			entityType, entityID, curatedMatchedBy).
@@ -172,6 +176,60 @@ func applyLinksFor(ctx context.Context, tx *gorm.DB, entityType int16, entityID 
 		})
 	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+func linksFieldKey(entityType int16) string {
+	if entityType == catmodel.EntityTypeLabel {
+		return FieldLabelLinks
+	}
+	return FieldWorkLinks
+}
+
+// rejectUpstreamLinkCollisions makes an unwinnable insert an explicit 422.
+// catalog_external_ref's identity is the (source, external_id) anchor, so a
+// curated rematch of an importer-owned URL is ON CONFLICT DO NOTHING.
+func rejectUpstreamLinkCollisions(ctx context.Context, tx *gorm.DB, entityType int16, entityID int64, urls []string, sources map[string]int16) error {
+	if len(urls) == 0 {
+		return nil
+	}
+	pairs := make([][]any, 0, len(urls))
+	for _, u := range urls {
+		cl, ok := classifyWorkLink(u)
+		if !ok {
+			continue
+		}
+		srcID, ok := sources[cl.SourceKey]
+		if !ok {
+			continue
+		}
+		pairs = append(pairs, []any{srcID, cl.ExternalID})
+	}
+	if len(pairs) == 0 {
+		return nil
+	}
+	var clash []struct {
+		SourceKey  string `gorm:"column:key"`
+		ExternalID string `gorm:"column:external_id"`
+	}
+	if err := tx.WithContext(ctx).Raw(`
+		SELECT s.key, r.external_id
+		FROM catalog_external_ref r
+		JOIN catalog_source s ON s.id = r.source_id
+		WHERE r.entity_type = ? AND r.entity_id = ? AND r.matched_by <> ?
+		  AND (r.source_id, r.external_id) IN ?
+		ORDER BY r.source_id, r.external_id`,
+		entityType, entityID, curatedMatchedBy, pairs).Scan(&clash).Error; err != nil {
+		return err
+	}
+	if len(clash) == 0 {
+		return nil
+	}
+	return &editing.ValidationError{
+		Key: linksFieldKey(entityType),
+		Reason: fmt.Sprintf("this URL is already linked upstream (%s:%s); "+
+			"upstream links cannot be re-added through the editor yet",
+			clash[0].SourceKey, clash[0].ExternalID),
+	}
 }
 
 func loadLinks(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {

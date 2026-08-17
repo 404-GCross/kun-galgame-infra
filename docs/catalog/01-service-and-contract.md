@@ -312,6 +312,8 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 - 压制与解除各产一条 `entity_revision`,可 diff、可回滚、有归属,与普通编辑同一条审计通道。
 - ⚠️ **通用渲染的 UI 注意**:如果编辑器是「遍历 `fields[]` 逐个渲染」,`F.suppressed` 会作为一个裸字符串数组出现。它要么按压制 UI 渲染(在 `F` 的行旁边给一个「隐藏此行」),要么显式跳过 `.suppressed` 后缀——**不要**当普通文本数组交给用户手打。
 
+**撞上游键 → 显式 422(wave R1c,2026-08-16 起)**:凡存储唯一键**不含 source 维度**的列表字段,人工新建的行若与 importer 既有行同键,保存**整体拒绝(422,message 点名第一个撞键元素)**,而不是静默丢弃——此前的行为是「先删光 curated 车道再 `ON CONFLICT DO NOTHING`」:撞键行插不进去且无任何报错,一次保存就把人工车道整体蒸发。本波覆盖 `catalog.work.covers` / `catalog.work.screenshots`(撞 `(work_id, image_hash)`)、`catalog.work.labels`(撞 `(work_id, label_id, kind)`;存量 NULL source 边按机器行对待)、`catalog.work.links` 与 `catalog.label.links`(撞 `(source_id, external_id)` 锚且既有行非 curated)。credits(§2.5)与 character aliases 在各自字段波已按同一裁定落地。**这些新覆盖的字段今天没有 `.suppressed`**,422 文案如实说「上游行暂不可经编辑器重加/改样」,不指向不存在的压制字段;压制原语到位是后续字段波的事。
+
 **已注册的 entity_type(wave R2a,2026-08-16 起)**:`catalog.work` · `catalog.character` · `catalog.label` / `catalog.tag` / `catalog.engine` / `catalog.series`。编辑面按 `entity_type` 泛化,**新增一个类型不新增任何路由**——`getEditSchemaUser` 换个 `entity_type` 即可,三份 spec 逐字节不变。
 
 - `catalog.character` 开的是**内容**:14 个标量(`display_name` / `lang` / `latin` / `description` / `gender` / 生日月日 / 血型 / 身高体重三围 / cup)+ `aliases`(**只含人工车道行**,上游别名不进字段值,要隐藏走 `aliases.suppressed`)+ `intros`(多语言,人工车道)。**身份不开**:`instance_of`(角色折叠)与外部锚仍归合并机器,永不注册。
