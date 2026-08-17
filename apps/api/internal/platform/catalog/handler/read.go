@@ -155,7 +155,7 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 		resp.Titles = append(resp.Titles, dto.WorkTitle{Lang: t.Lang, Title: t.Title, Latin: t.Latin, Kind: t.Kind})
 	}
 	for _, rd := range detail.Releases {
-		rb := dto.ReleaseBrief{ID: rd.Release.ID, Kind: rd.Release.Kind}
+		rb := dto.ReleaseBrief{ID: rd.Release.ID, Kind: rd.Release.Kind, Hidden: rd.Release.DeletedAt.Valid}
 		if rd.Release.Platform != nil {
 			rb.Platform = *rd.Release.Platform
 		}

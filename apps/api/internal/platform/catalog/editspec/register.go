@@ -15,7 +15,7 @@ import (
 // only and registers catalog.work alone.
 func RegisterAll(reg *editing.Registry, db *gorm.DB) error {
 	for _, register := range []func(*editing.Registry, *gorm.DB) error{
-		RegisterWork, RegisterTaxonomy, RegisterCharacter,
+		RegisterWork, RegisterTaxonomy, RegisterCharacter, RegisterRelease,
 	} {
 		if err := register(reg, db); err != nil {
 			return err

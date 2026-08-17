@@ -11,6 +11,7 @@ import (
 
 	"api/internal/infrastructure/database"
 	"api/internal/platform/catalog/repository"
+	"api/internal/platform/provenance"
 
 	"gorm.io/gorm"
 )
@@ -256,7 +257,9 @@ func runDlsite(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 		res := db.WithContext(ctx).Exec(`UPDATE catalog_release
 			SET platform = ?, extra = extra || jsonb_build_object('platforms', ?::jsonb)
-			WHERE id = ? AND coalesce(platform, '') = ''`, codes[0], string(arr), r.ReleaseID)
+			WHERE id = ? AND coalesce(platform, '') = ''
+			  AND COALESCE(field_provenance -> 'platform' -> 0 ->> 'source', '') NOT IN ?`,
+			codes[0], string(arr), r.ReleaseID, provenance.HumanSources())
 		if res.Error != nil {
 			st.Errors++
 			slog.Warn("dlsite platform update", "release", r.ReleaseID, "err", res.Error)

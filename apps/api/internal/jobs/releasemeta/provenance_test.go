@@ -78,3 +78,59 @@ func TestFillRatingSkipsHumanRuledContentRating(t *testing.T) {
 	assert.Equal(t, 1, w.stats.RatingSkippedNonEmpty)
 	assert.Zero(t, w.stats.Errors)
 }
+
+func TestFillDateSkipsEngineClearedDate(t *testing.T) {
+	clean(t)
+	require.NoError(t, testDB.Exec(
+		"TRUNCATE edit_proposal_amendment, edit_proposal, edit_revision RESTART IDENTITY CASCADE").Error)
+	ctx := context.Background()
+	medium := galgameMedium(t)
+
+	reg := editing.NewRegistry()
+	require.NoError(t, editspec.RegisterRelease(reg, testDB))
+	e := editing.NewEngine(testDB, reg)
+	actor := editing.PolicyContext{
+		UserID: 100, Site: "kungal",
+		HasPerm: func(key string) bool { return perm.Resolver.Can([]string{"ren"}, authz.Permission(key)) },
+	}
+
+	ruledWork := mkWork(t, medium, "human cleared date", nil, nil, 0)
+	ruled := mkRelease(t, ruledWork, 2001, 2, 3)
+	controlWork := mkWork(t, medium, "never edited date", nil, nil, 0)
+	control := mkRelease(t, controlWork, 0, 0, 0)
+
+	_, rev, err := e.CreateProposal(ctx, editing.CreateProposalInput{
+		EntityType: editspec.TypeRelease, EntityID: ruled,
+		Patch: map[string]any{editspec.FieldReleaseReleased: nil},
+		Actor: actor,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, rev, "the kungal overlay automerges a reviewer's own proposal")
+	require.Equal(t, provenance.SourceCurated, provenance.FirstSource(
+		reloadReleaseProv(t, ruled), "released_y"))
+
+	w := &writer{db: testDB, stats: &Stats{}}
+	var filled, skipped int
+	m, d := int16(6), int16(7)
+	w.fillDate(ctx, ruled, 2020, &m, &d, true, &filled, &skipped)
+	w.fillDate(ctx, control, 2020, &m, &d, true, &filled, &skipped)
+
+	y, _, _ := relDate(t, ruled)
+	assert.Nil(t, y, "an engine-cleared date must survive releasemeta")
+	assert.Equal(t, 1, skipped)
+	cy, cm, cd := relDate(t, control)
+	require.NotNil(t, cy)
+	assert.Equal(t, int16(2020), *cy)
+	require.NotNil(t, cm)
+	assert.Equal(t, int16(6), *cm)
+	require.NotNil(t, cd)
+	assert.Equal(t, int16(7), *cd)
+	assert.Equal(t, 1, filled)
+}
+
+func reloadReleaseProv(t *testing.T, id int64) []byte {
+	t.Helper()
+	var rel model.CatalogRelease
+	require.NoError(t, testDB.Unscoped().Select("id", "field_provenance").First(&rel, id).Error)
+	return rel.FieldProvenance
+}

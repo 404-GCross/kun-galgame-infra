@@ -160,6 +160,7 @@ type ReleaseBrief struct {
 	ReleasedD int16       `json:"released_d,omitempty"`
 	Platform  string      `json:"platform,omitempty"`
 	Platforms []string    `json:"platforms,omitempty"`
+	Hidden    bool        `json:"hidden,omitempty" doc:"true when this release is editor-hidden; omitted on live rows"`
 	Anchors   []AnchorRef `json:"anchors"`
 }
 

@@ -16,7 +16,7 @@ func TestRegisterAllRegistersEveryEditableType(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 	for _, typ := range []string{
-		editspec.TypeWork, editspec.TypeCharacter,
+		editspec.TypeWork, editspec.TypeCharacter, editspec.TypeRelease,
 		editspec.TypeLabel, editspec.TypeTag, editspec.TypeEngine, editspec.TypeSeries,
 	} {
 		if _, ok := reg.Type(typ); !ok {

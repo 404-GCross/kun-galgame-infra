@@ -314,9 +314,13 @@ catalog 的**第三张脸**,也是「用户写面」的起点。教义一句话:
 
 **撞上游键 → 显式 422(wave R1c,2026-08-16 起)**:凡存储唯一键**不含 source 维度**的列表字段,人工新建的行若与 importer 既有行同键,保存**整体拒绝(422,message 点名第一个撞键元素)**,而不是静默丢弃——此前的行为是「先删光 curated 车道再 `ON CONFLICT DO NOTHING`」:撞键行插不进去且无任何报错,一次保存就把人工车道整体蒸发。本波覆盖 `catalog.work.covers` / `catalog.work.screenshots`(撞 `(work_id, image_hash)`)、`catalog.work.labels`(撞 `(work_id, label_id, kind)`;存量 NULL source 边按机器行对待)、`catalog.work.links` 与 `catalog.label.links`(撞 `(source_id, external_id)` 锚且既有行非 curated)。credits(§2.5)与 character aliases 在各自字段波已按同一裁定落地。**这些新覆盖的字段今天没有 `.suppressed`**,422 文案如实说「上游行暂不可经编辑器重加/改样」,不指向不存在的压制字段;压制原语到位是后续字段波的事。
 
-**已注册的 entity_type(wave R2a,2026-08-16 起)**:`catalog.work` · `catalog.character` · `catalog.label` / `catalog.tag` / `catalog.engine` / `catalog.series`。编辑面按 `entity_type` 泛化,**新增一个类型不新增任何路由**——`getEditSchemaUser` 换个 `entity_type` 即可,三份 spec 逐字节不变。
+**已注册的 entity_type(wave R2a,2026-08-16 起)**:`catalog.work` · `catalog.character` · `catalog.release`(wave R2b)· `catalog.label` / `catalog.tag` / `catalog.engine` / `catalog.series`。编辑面按 `entity_type` 泛化,**新增一个类型不新增任何路由**——`getEditSchemaUser` 换个 `entity_type` 即可,三份 spec 逐字节不变。
 
 - `catalog.character` 开的是**内容**:14 个标量(`display_name` / `lang` / `latin` / `description` / `gender` / 生日月日 / 血型 / 身高体重三围 / cup)+ `aliases`(**只含人工车道行**,上游别名不进字段值,要隐藏走 `aliases.suppressed`)+ `intros`(多语言,人工车道)。**身份不开**:`instance_of`(角色折叠)与外部锚仍归合并机器,永不注册。
+- `catalog.release`(wave R2b,2026-08-16 起)开的是**既有行的就地编辑 + 隐藏**,六个字段:`kind`(冻结词表 0-4)/ `title` / `lang`(olang 词表 + 6 个 vndb 补码)/ `platform`(47 码冻结词表)/ `released`(**复合日期对象 `{y,m,d}` 或 null**,y∈[1950,2200] 必填、d 要求 m 在场;engine `KindDate` 的第一个使用者,这里就是该 Kind 的值形状定义)/ `hidden`(bool)。**没有新建 op、没有删除 op**(D8 裁定:能力缺席优于能力泛滥,引擎里没有这条路)。实体 id = `catalog_release.id`。
+  - **`hidden` 的语义 = 写 `deleted_at`**,不是 `edit_suppressed_row`:该表全部渲染面与派生 job 本就过滤软删、importer 把软删行当占位不复活(有钉死测试)、release 行永不合并去重——三个先决齐备,压制因此零读路径改动。隐藏/解除隐藏都是普通字段编辑(可提案、可回滚、有归属)。锚→work 的身份解析**有意**不看软删(隐藏的 release 仍锚定身份,与 importer 占位语义一致)。
+  - **人工编辑受柱 6 保护**:六字段全部盖 `field_provenance` 戳;`releasemeta`(填空日期)与 `workplatforms`(填空平台)在既有「只填空」守卫之上追加人工戳排除——人**清空**的日期/平台不再被机器回填。用户投稿铸的 curated 行日期自带 `user` 戳(「curated release」从此有实体标记)。
+  - **隐藏行的发现面**:`getCatalogWorkByIDUser` 传 `include_hidden=true` 时返回含隐藏行的 `releases[]` 并逐行给 `hidden` 标记;缺省载荷与 S2S/公开面逐字节不变(`hidden` 字段 omitempty)。
 - kungal 租户下 character 的 `automerge` 是 **never**(与词表同档,不与 work 同档):一个角色被它出现过的每一部作品共享,直落的波及面接近词表。有 review 权也只入队。
 - **多语言简介的折叠规则修正(同波)**:作品与角色的简介读面都是「每 lang 只渲染一条」,此前排序让 **curated(source 12)排在所有上游 importer 之后**,于是人工写的同 lang 简介保存成功、回读得到、却永远不出面。现已改为**同 provenance 档内人工车道优先**(顺序:`provenance` → 人工车道 → 其余)。生产上有 10 部作品的简介渲染文本因此改变——**这是修复不是回归**,每一条都是「人保存过的文本终于开始出面」。`provenance` 仍排在最前,所以机翻永远不会盖过原文。
 
@@ -355,6 +359,7 @@ wave 176-179 把人类的**写**搬完了;本波搬的是搬完写之后还留�
 | `getEditSnapshotUser` | `GET /user/catalog/edit/snapshot?entity_type=&entity_id=` | 实体当前的注册字段值(编辑器的 bootstrap 读),响应 `EditSnapshotResponse`(wave 181 起是**唯一**的 snapshot 面) |
 | `listEditProposalsUser` | `GET /user/catalog/edit/proposals?entity_type=&entity_id=&status=&limit=&mine=` | 提案列表:`mine=true` 是**本人**的提交史,`mine` 缺省是**审核队列**;响应 = S2S `EditProposalListResponse` 逐字相同 |
 | `listCatalogWorkCoversUser` | `GET /user/catalog/works/{id}/covers` | 一部作品的封面票数,每张带**本令牌用户**是否投过(`{work_id, covers:[{id, image_hash, vote_count, voted}]}`) |
+| `getCatalogWorkByIDUser` | `GET /user/catalog/works/{id}?include_hidden=` | 按 catalog id 读一部作品(与 S2S work-detail 同一响应束,wave R2b 起);`include_hidden=true` 时 `releases[]` 含编辑者隐藏的行并逐行标 `hidden: true`——这是隐藏 release 唯一的枚举面(解除隐藏的入口) |
 | — | `POST /user/catalog/edit/images`(multipart:`file`、`preset`) | 编辑面图片上传;**不在 spec 里**(multipart 不入 Huma 面,见下) |
 
 - **`mine` 与队列是一条路径上的两份权威**,这是本波唯一的新规则:

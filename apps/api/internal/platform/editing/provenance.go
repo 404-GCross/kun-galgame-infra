@@ -61,11 +61,18 @@ func ApplyField(ctx context.Context, tx *gorm.DB, f *FieldSpec, entityID int64, 
 	return nil
 }
 
-func stampProvenance(ctx context.Context, tx *gorm.DB, target ProvenanceTarget, entityID int64, rowIDs []int64) error {
-	entry, err := json.Marshal([]provenance.Entry{{
-		Source: provenance.SourceCurated,
+// StampJSON is the JSON array stampProvenance writes under a column. Birth
+// paths that are not an Apply (work-submit minting a release) reuse it so the
+// document shape cannot drift from the engine.
+func StampJSON(source string) ([]byte, error) {
+	return json.Marshal([]provenance.Entry{{
+		Source: source,
 		At:     time.Now().UTC().Format(time.RFC3339),
 	}})
+}
+
+func stampProvenance(ctx context.Context, tx *gorm.DB, target ProvenanceTarget, entityID int64, rowIDs []int64) error {
+	entry, err := StampJSON(provenance.SourceCurated)
 	if err != nil {
 		return err
 	}

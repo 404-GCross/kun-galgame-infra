@@ -21,13 +21,18 @@ const (
 	EditCharacterReview authz.Permission = "edit.catalog.character.review"
 )
 
+const (
+	EditRelease       authz.Permission = "edit.catalog.release"
+	EditReleaseReview authz.Permission = "edit.catalog.release.review"
+)
+
 const EditTrusted authz.Permission = "catalog.edit.trusted"
 
 var moderatorPerms = []authz.Permission{ClaimReview}
 
 var adminPerms = append(append([]authz.Permission{}, moderatorPerms...),
 	EditWork, EditWorkReview, EditTaxonomy, EditTaxonomyReview,
-	EditCharacter, EditCharacterReview, EditTrusted)
+	EditCharacter, EditCharacterReview, EditRelease, EditReleaseReview, EditTrusted)
 
 var renPerms = append(append([]authz.Permission{}, adminPerms...), Review)
 

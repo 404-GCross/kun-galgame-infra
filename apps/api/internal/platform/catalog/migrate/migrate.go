@@ -79,6 +79,12 @@ func Run(db *gorm.DB) error {
 		&model.CatalogSeriesNameOverride{}, // reviewed names for machine-owned lanes (wave 185)
 		&model.CatalogPlatform{},           // platform vocabulary registry (step 96)
 		&model.CatalogWorkPlatform{},       // work-level platform facet (step 96, bgm lane)
+		// catalog_release. Wave R2b (2026-08-16) adds field_provenance jsonb
+		// NOT NULL DEFAULT '{}' so human edits of kind/title/lang/platform/date
+		// and hide/unhide survive importer backfills. AutoMigrate is enough:
+		// the column has a default, so PG 11+ adds it as metadata without
+		// rewriting existing rows, all of which take '{}' — "nobody has
+		// claimed any column on this row".
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},

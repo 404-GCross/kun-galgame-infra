@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
+	"api/internal/platform/editing"
+	"api/internal/platform/provenance"
 
 	"gorm.io/gorm"
 )
@@ -200,8 +203,13 @@ func (s *ClaimLifecycleService) SubmitWork(ctx context.Context, p SubmitWorkPara
 		}
 
 		if p.Released.given() {
+			fp, err := mintedReleaseDateProvenance()
+			if err != nil {
+				return err
+			}
 			rel := model.CatalogRelease{
 				WorkID: w.ID, Kind: model.ReleaseKindDefault, Extra: []byte(`{}`),
+				FieldProvenance: fp,
 			}
 			rel.ReleasedY = &p.Released.Y
 			if p.Released.M > 0 {
@@ -241,4 +249,16 @@ func (s *ClaimLifecycleService) SubmitWork(ctx context.Context, p SubmitWorkPara
 		return nil, err
 	}
 	return &out, nil
+}
+
+func mintedReleaseDateProvenance() ([]byte, error) {
+	entry, err := editing.StampJSON(provenance.SourceUser)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]json.RawMessage{
+		"released_y": entry,
+		"released_m": entry,
+		"released_d": entry,
+	})
 }

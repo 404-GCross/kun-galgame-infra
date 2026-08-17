@@ -212,14 +212,18 @@ func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID st
 			return nil, err
 		}
 	}
-	return s.loadWorkDetail(ctx, workID, 0)
+	return s.loadWorkDetail(ctx, workID, 0, false)
 }
 
 func (s *ReadService) WorkByID(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
-	return s.loadWorkDetail(ctx, workID, spoilers)
+	return s.loadWorkDetail(ctx, workID, spoilers, false)
 }
 
-func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
+func (s *ReadService) WorkByIDIncludeHidden(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
+	return s.loadWorkDetail(ctx, workID, spoilers, true)
+}
+
+func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers int16, includeHidden bool) (*WorkDetail, error) {
 	db := s.db.WithContext(ctx)
 	var work model.CatalogWork
 	if err := db.First(&work, workID).Error; err != nil {
@@ -238,7 +242,11 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	detail.Titles = titles[work.ID]
 
 	var releases []model.CatalogRelease
-	if err := db.Where("work_id = ?", workID).Order("id").Find(&releases).Error; err != nil {
+	relQ := db.Where("work_id = ?", workID).Order("id")
+	if includeHidden {
+		relQ = relQ.Unscoped()
+	}
+	if err := relQ.Find(&releases).Error; err != nil {
 		return nil, err
 	}
 	anchorsByRelease := map[int64][]AnchorDetail{}
