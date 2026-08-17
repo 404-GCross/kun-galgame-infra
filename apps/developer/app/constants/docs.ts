@@ -21,5 +21,10 @@ export const DOCS_FACE_META: Record<
     icon: 'lucide:timer',
     tagline:
       '用户自己的游玩时长：上报（单条 / 外部 id 寻址 / 批量）与回拉。走用户访问令牌，不是 API 密钥。'
+  },
+  edit: {
+    icon: 'lucide:pencil',
+    tagline:
+      '目录编辑提案：读 schema / 快照，创建、列出、查看、撤回自己的提案。走用户访问令牌，需 catalog:edit；只提案、不裁决。'
   }
 }

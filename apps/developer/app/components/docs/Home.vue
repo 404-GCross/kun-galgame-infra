@@ -7,7 +7,7 @@ const { faces, findFace, faceOperationCount } = useDocs()
 useSeoMeta({
   title: 'API 文档',
   description:
-    'NextMoe 开放 API 参考文档：catalog 身份图谱面的公开只读端点，以及用户令牌认证的 playtime 面。鉴权、限流与每个端点的参数 / 响应 / curl 示例。'
+    'NextMoe 开放 API 参考文档：catalog 身份图谱面的公开只读端点，用户令牌认证的 playtime 面，以及需 catalog:edit 的 edit 提案面。鉴权、限流与每个端点的参数 / 响应 / curl 示例。'
 })
 
 const totalOperations = computed(() =>
@@ -21,6 +21,7 @@ const countOf = (key: string) => {
 
 const catalogOperations = computed(() => countOf('catalog'))
 const playtimeOperations = computed(() => countOf('playtime'))
+const editOperations = computed(() => countOf('edit'))
 </script>
 
 <template>
@@ -34,7 +35,9 @@ const playtimeOperations = computed(() => countOf('playtime'))
         当 VNDB / Bangumi / DLsite / ErogameScape 各执一词，以 NextMoe 为准。
         一个 base URL、{{ totalOperations }} 个公开端点：catalog 面
         {{ catalogOperations }} 条只读端点凭 API 密钥调用，playtime 面
-        {{ playtimeOperations }} 条用用户自己的访问令牌读写他本人的游玩记录。
+        {{ playtimeOperations }} 条用用户令牌读写本人的游玩记录，edit 面
+        {{ editOperations }} 条用同一类用户令牌提交目录编辑提案（需
+        catalog:edit）。
       </p>
     </header>
 
@@ -64,8 +67,7 @@ const playtimeOperations = computed(() => countOf('playtime'))
           >
             Authorization: Bearer nm_live_…
           </code>
-          。密钥是机密，仅服务端持有。playtime 面不用密钥，带用户授权后拿到的访问令牌，
-          需要
+          。密钥是机密，仅服务端持有。playtime 面和 edit 面不用密钥，带用户授权后拿到的访问令牌；playtime 需要
           <code
             class="rounded bg-default-100 px-1 py-0.5 font-mono text-xs text-foreground"
           >
@@ -77,7 +79,13 @@ const playtimeOperations = computed(() => countOf('playtime'))
           >
             playtime:write
           </code>
-          scope。
+          ，edit 需要
+          <code
+            class="rounded bg-default-100 px-1 py-0.5 font-mono text-xs text-foreground"
+          >
+            catalog:edit
+          </code>
+          。
         </p>
       </div>
 
@@ -100,9 +108,9 @@ const playtimeOperations = computed(() => countOf('playtime'))
       <h2 class="text-lg font-semibold text-foreground">公开数据面</h2>
       <p class="mt-1 text-sm text-default-500">
         权限范围（scope）按面表达：catalog 面凭一把 API 密钥覆盖全部只读端点，
-        playtime 面另走用户令牌，一个用户只读写得到他自己的记录。
+        playtime 面和 edit 面另走用户令牌；edit 面另需 catalog:edit，且只提案不裁决。
       </p>
-      <div class="mt-4 grid gap-4 md:grid-cols-2">
+      <div class="mt-4 grid gap-4 md:grid-cols-3">
         <NuxtLink
           v-for="face in faces"
           :key="face.key"
@@ -126,7 +134,7 @@ const playtimeOperations = computed(() => countOf('playtime'))
               {{ face.label }} 面
             </h3>
             <code class="font-mono text-xs text-default-400">
-              /v1/{{ face.key }}
+              {{ face.prefix }}
             </code>
           </div>
           <p class="mt-1 text-sm leading-relaxed text-default-500">
@@ -176,7 +184,7 @@ const playtimeOperations = computed(() => countOf('playtime'))
       <h2 class="text-lg font-semibold text-foreground">给 AI 用</h2>
       <p class="mt-1 text-sm text-default-500">
         catalog 面也以 MCP（Model Context Protocol）server 暴露，AI 助手可直接调用；
-        playtime 面按裁定不进 MCP。
+        playtime 面和 edit 面按裁定不进 MCP。
       </p>
       <NuxtLink
         to="/docs/mcp"

@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 /**
  * Builds the typed documentation model the self-built API reference (/docs/**)
- * renders. Reads the Tier-A public OpenAPI spec from the repo's docs/ (the
- * single source, produced by `cmd/gen-openapi` public targets), parses it,
+ * renders. Reads two Tier-A catalog specs from the repo's docs/, parses them,
  * dereferences $ref pointers inline into render-friendly schema trees, derives
  * parameter tables / request bodies / responses, generates a ready-to-run curl
  * example per operation, and writes `app/generated/docs-model.ts`.
  *
  * The generated file is committed (same pattern as app/assets/kun-icons.ts): a
- * derived build artifact, never hand-edited. Re-run after the public specs
- * change:  pnpm --filter developer sync:specs
+ * derived build artifact, never hand-edited. Re-run after the specs change:
+ *   pnpm --filter developer sync:specs
  *
  * The galgame face was dropped at wave 146 (2026-07-30): its /v1/galgame
  * projection was delisted and its spec deleted.
  *
- * One spec file now carries TWO faces. The catalog face is API-key
- * authenticated and read-only; /v1/playtime is a user-token face whose scopes
- * and credential differ per method. Modelling them as one face published five
- * operations documented as `catalog:read` with an `nm_live_` key in the curl
- * sample — a credential that face rejects.
+ * Two spec files, three faces. `public-openapi.yaml` carries catalog (API-key,
+ * read-only) and playtime (user-token; scope differs per method). Modelling
+ * those as one face published five playtime operations as `catalog:read` with
+ * an `nm_live_` key in the curl sample — a credential that face rejects.
+ * `openapi.yaml` is the user-edit subset only: the third face, `edit`, claims
+ * `/api/v1/user/catalog/edit` and names every op under that prefix as include
+ * or exclude. The rest of that spec (S2S, claims, covers, submit) is a
+ * first-party surface and is not portal-documented.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -32,6 +34,7 @@ const OUTPUT = join(__dirname, '..', 'app/generated/docs-model.ts')
 const API_HOST = 'https://api.nextmoe.dev'
 
 const PUBLIC_SPEC = join(REPO_ROOT, 'docs/catalog/public-openapi.yaml')
+const CATALOG_SPEC = join(REPO_ROOT, 'docs/catalog/openapi.yaml')
 
 // A face is a path prefix plus the credential that prefix accepts. The spec
 // itself carries neither: OpenAPI security schemes are not emitted by the
@@ -66,10 +69,48 @@ const FACES = [
       display: 'Authorization: Bearer <用户访问令牌>',
       note: '用户授权后拿到的访问令牌,不是 API 密钥'
     }
+  },
+  {
+    key: 'edit',
+    label: 'Edit',
+    file: CATALOG_SPEC,
+    prefix: '/api/v1/user/catalog/edit',
+    include: [
+      'getEditSchemaUser',
+      'getEditSnapshotUser',
+      'createEditProposalUser',
+      'listEditProposalsUser',
+      'getEditProposalUser',
+      'withdrawEditProposalUser'
+    ],
+    title: () => 'NextMoe Open API — Edit',
+    scope: () => 'catalog:edit',
+    auth: {
+      kind: 'user_token',
+      curl: 'Authorization: Bearer <ACCESS_TOKEN>',
+      display: 'Authorization: Bearer <用户访问令牌>',
+      note: '用户授权后的访问令牌(OAuth 授权码 + PKCE),需 catalog:edit scope'
+    },
+    notes: [
+      '第三方应用的令牌恒为「只提案」姿态：审核、自动合入、撤销他人提案永不可；schema 投影对它 can_review=false。',
+      '每用户未决提案帽 20：经第三方应用创建提案时，该用户 open 状态提案已达 20 条则返回 429。',
+      '引用类校验发生在批准合并时：提案保存成功不等于能合入，审核者批准时可能得到 422。',
+      '准入需要两步：应用经 user_login 自助申请 catalog:edit scope；应用的 client 还须由平台绑定目录租户（catalog_site）后本面才放行——目前为人工开通，请联系平台。'
+    ]
   }
 ]
 
-const EXPECTED_OPERATION_COUNTS = { catalog: 25, playtime: 5 }
+// Third-party tokens always 403 on these four; documenting them on the portal
+// would imply they are callable. The completeness guard below requires every
+// operation under /api/v1/user/catalog/edit to appear in include or here.
+const EDIT_EXCLUDED_OPERATION_IDS = [
+  'amendEditProposalUser',
+  'declineEditProposalUser',
+  'mergeEditProposalUser',
+  'revertEditEntityUser'
+]
+
+const EXPECTED_OPERATION_COUNTS = { catalog: 25, playtime: 5, edit: 6 }
 
 const refName = (ref) => ref.split('/').pop()
 
@@ -262,6 +303,7 @@ const buildFace = (faceDef, specs) => {
     for (const method of METHODS) {
       const op = item[method]
       if (!op) continue
+      if (faceDef.include && !faceDef.include.includes(op.operationId)) continue
       const tag = op.tags?.[0] || 'default'
       if (!groups.has(tag)) groups.set(tag, [])
       groups.get(tag).push(
@@ -274,12 +316,27 @@ const buildFace = (faceDef, specs) => {
     }
   }
 
+  if (faceDef.include) {
+    const builtIds = new Set(
+      [...groups.values()].flatMap((ops) => ops.map((o) => o.id))
+    )
+    for (const id of faceDef.include) {
+      if (!builtIds.has(id)) {
+        throw new Error(
+          `docs-model coverage guard: included operation ${id} was not found under ${faceDef.prefix}`
+        )
+      }
+    }
+  }
+
   return {
     key: faceDef.key,
     label: faceDef.label,
     title: faceDef.title(spec),
     baseUrl: API_HOST,
+    prefix: faceDef.prefix,
     auth: faceDef.auth,
+    ...(faceDef.notes?.length && { notes: faceDef.notes }),
     groups: [...groups.entries()].map(([tag, operations]) => ({
       tag,
       title: tag
@@ -316,15 +373,37 @@ for (const face of model.faces) {
 
 // A path the prefixes do not claim would vanish from the reference with every
 // other guard still green, which is how five playtime operations shipped
-// documented as catalog ones.
+// documented as catalog ones. Full-coverage applies to public-openapi.yaml
+// only — openapi.yaml is a first-party spec whose unclaimed prefixes must
+// not trip this guard.
+const publicSpec = specs.get(PUBLIC_SPEC)
 const claimed = new Set(
-  model.faces.flatMap((f) => f.groups.flatMap((g) => g.operations.map((o) => o.path)))
+  model.faces
+    .filter((f) => FACES.find((d) => d.key === f.key)?.file === PUBLIC_SPEC)
+    .flatMap((f) => f.groups.flatMap((g) => g.operations.map((o) => o.path)))
 )
-for (const spec of specs.values()) {
-  for (const path of Object.keys(spec.paths || {})) {
-    if (!claimed.has(path)) {
+for (const path of Object.keys(publicSpec.paths || {})) {
+  if (!claimed.has(path)) {
+    throw new Error(
+      `docs-model coverage guard: spec path ${path} belongs to no face — add one to FACES`
+    )
+  }
+}
+
+const editDef = FACES.find((f) => f.key === 'edit')
+const catalogSpec = specs.get(CATALOG_SPEC)
+const namedEditOps = new Set([
+  ...(editDef.include || []),
+  ...EDIT_EXCLUDED_OPERATION_IDS
+])
+for (const [path, item] of Object.entries(catalogSpec.paths || {})) {
+  if (!path.startsWith(editDef.prefix)) continue
+  for (const method of METHODS) {
+    const op = item[method]
+    if (!op) continue
+    if (!namedEditOps.has(op.operationId)) {
       throw new Error(
-        `docs-model coverage guard: spec path ${path} belongs to no face — add one to FACES`
+        `docs-model completeness guard: ${op.operationId} under ${editDef.prefix} is neither included nor excluded`
       )
     }
   }
@@ -336,7 +415,7 @@ const out = `/**
  * Auto-generated by scripts/sync-specs.mjs — do not edit by hand.
  * Run \`pnpm --filter developer sync:specs\` after the public specs change.
  *
- * The Tier-A public OpenAPI spec projected into the render-friendly DocsModel
+ * Two Tier-A catalog specs projected into the render-friendly DocsModel
  * the /docs/** reference pages consume, one entry per public face.
  */
 import type { DocsModel } from '~~/shared/types/docs'

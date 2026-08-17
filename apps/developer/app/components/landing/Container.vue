@@ -33,7 +33,7 @@ const quickstart = [
   {
     icon: 'lucide:key-round',
     title: '领取 API Key',
-    body: '生成密钥并妥善保存（仅显示一次）。带上它请求公开只读面，一把 key 走遍全生态；要读写用户自己的游玩记录则改走用户授权的访问令牌。'
+    body: '生成密钥并妥善保存（仅显示一次）。带上它请求公开只读面，一把 key 走遍全生态；要读写用户自己的游玩记录或提交目录编辑提案则改走用户授权的访问令牌。'
   }
 ]
 
@@ -49,6 +49,12 @@ const faces = [
     name: 'Playtime 面',
     path: '/v1/playtime',
     body: '用户自己的游玩时长:上报(单条 / 外部 id 寻址 / 最多 200 条批量)与回拉(增量续拉 / 单作品跨客户端折叠)。不用 API 密钥,凭用户授权后的访问令牌 + playtime:read / playtime:write scope,一个用户只读写得到他自己的记录。'
+  },
+  {
+    icon: 'lucide:pencil',
+    name: 'Edit 面',
+    path: '/api/v1/user/catalog/edit',
+    body: '目录编辑提案:读 schema / 快照,创建、列出、查看、撤回自己的提案。不用 API 密钥,凭用户授权后的访问令牌 + catalog:edit scope。第三方令牌只提案、不裁决;应用还须由平台绑定目录租户后才放行。'
   }
 ]
 
@@ -61,7 +67,7 @@ const features = [
   {
     icon: 'lucide:shield-check',
     title: '鉴权',
-    body: '只读面的密钥由服务端以 Authorization: Bearer nm_live_… 发送,是机密、仅服务端持有;playtime 面改带用户授权后的访问令牌。'
+    body: '只读面的密钥由服务端以 Authorization: Bearer nm_live_… 发送,是机密、仅服务端持有;playtime 与 edit 面改带用户授权后的访问令牌。'
   },
   {
     icon: 'lucide:gauge',
@@ -239,10 +245,10 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
           公开数据面
         </h2>
         <p class="mt-2 text-default-500">
-          权限范围(scope)按面表达:只读面一把密钥覆盖全部,playtime 面另走用户令牌。
+          权限范围(scope)按面表达:只读面一把密钥覆盖全部,playtime 与 edit 面另走用户令牌。
         </p>
       </div>
-      <div class="grid gap-4 md:grid-cols-2">
+      <div class="grid gap-4 md:grid-cols-3">
         <NuxtLink
           v-for="face in faces"
           :key="face.path"

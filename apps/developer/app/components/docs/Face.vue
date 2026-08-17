@@ -36,9 +36,21 @@ useSeoMeta({
           {{ faceOperationCount(current) }} 个公开端点
         </span>
         <code class="font-mono text-xs text-default-400">
-          {{ current.baseUrl }}/v1/{{ current.key }}
+          {{ current.baseUrl }}{{ current.prefix }}
         </code>
       </div>
+      <ul
+        v-if="current.notes?.length"
+        class="mt-4 space-y-2 rounded-xl border border-default-200 bg-content1 p-4"
+      >
+        <li
+          v-for="(note, i) in current.notes"
+          :key="i"
+          class="text-sm leading-relaxed text-default-500"
+        >
+          {{ note }}
+        </li>
+      </ul>
     </header>
 
     <section
