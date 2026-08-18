@@ -535,6 +535,41 @@ Content-Type: application/json
 
 **与 MCP 的关系**:playtime 面**刻意不进 MCP 工具面**,理由见 [09 §4](./09-mcp-server.md)。
 
+### 3.9 key 上的 scope:自助集与授权制(2026-08-18 落账)
+
+一把机器 API key 能带哪些 scope,分成**三档**,判据在 `devapi.gateForScope`:
+
+| 档 | 名单 | 谁决定 | 铸 key 时 |
+|---|---|---|---|
+| 自助 | `selfServiceScopes` = `catalog:read` | 调用方自己 | 控制台直接勾 |
+| 授权制 | `grantableScopes` = `news:read` | 平台逐个审批 | **该用户有 approved 申请才放行**,否则 403 |
+| 不可得 | 其余全部(`galgame:nsfw` / `galgame:write` / `galgame:read` …) | —— | 400 |
+
+**`galgame:read` 于本日退出自助集**:`/v1/galgame` 面在 wave 146 整体退役为 `410 Gone`,该 scope 此后不被任何活路由消费。已发出的旧 key **不动、不失效**(那个 scope 本就打不开任何东西);两条铸 key 路径的空 scopes 默认改为 `[catalog:read]`。
+
+**`news:read` 的授权制语义一字未变,变的只是机械动作**。此前它是"联系平台、由人手工签发一把 key";现在申请落库、平台在管理台审、**批准后该用户即可自助为自己的 key 勾上它**。授权判定仍然是人做的——自助化的是流程,不是决定权。
+
+**数据模型** `devapi_scope_applications`(主库 `kun_galgame_infra`,`devapi.ScopeApplication`):`user_id` / `scope` / `message`(必填,≤2000)/ `status`(`pending` `approved` `declined`)/ `reviewer_id` / `reviewed_at` / `decline_reason` / 时间戳。**唯一索引 `(user_id, scope)`**——每对**恰一行**:被拒后重新申请是把**同一行**打回 `pending` 并清空审核字段,而不是叠第二条;pending / approved 时重复申请返回 **409**。
+
+**自助端点**(`/api/v1/dev/*`,用户 JWT + `DevPortalFence`,见 [05 §9.1](./05-developer-portal.md)):
+
+| 端点 | 说明 |
+|---|---|
+| `POST /api/v1/dev/scope-applications` | body `{scope, message}`;`scope` 必须 ∈ 授权制名单,否则 **400**;pending/approved 重复申请 **409** |
+| `GET /api/v1/dev/scope-applications` | 当前用户的全部申请及状态(含 `decline_reason`) |
+
+**管理端点**(`/api/v1/admin/devapi/*`,`devapi.manage` 权限):
+
+| 端点 | 说明 |
+|---|---|
+| `GET /admin/devapi/scope-applications?status=pending` | 缺省 `pending`;`status=all` 查全部 |
+| `POST /admin/devapi/scope-applications/:id/approve` | 仅 `pending` 可审,否则 **409** |
+| `POST /admin/devapi/scope-applications/:id/decline` | body `{reason}`,理由**必填**(会原样回执给申请人),否则 **400** |
+
+**铸 key 时的三档错误**:自助 scope → 放行;授权制且该用户有 approved 申请 → 放行;授权制但无批准 → **403** `ErrScopeNeedsGrant`(文案指向门户申请);其余 → **400** `ErrScopeNotAllowed`。铸的是新 key,不存在 Redis 凭据缓存失效问题;**批准不会给已有 key 追加 scope**,拿到授权后要重新铸一把。
+
+> **迁移**:本节新增一张表,主库迁移**不随部署自动执行**——须手工 `go run ./cmd/migrate`(库 `kun_galgame_infra`)。
+
 ---
 
 ## 10. OpenAPI 策略

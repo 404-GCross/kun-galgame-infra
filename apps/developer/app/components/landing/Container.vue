@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { API_BASE_URL } from '~/constants/dev'
 import { DOCS_FACE_META } from '~/constants/docs'
+import { ATTRIBUTION_NOTE, SOURCES } from '~~/shared/brand.mjs'
 import type { CatalogStats } from '~~/shared/types/stats'
 
 const auth = useAuth()
@@ -52,14 +53,7 @@ const galgameCount = computed(() => {
   return row ? formatCount(row.count) : ''
 })
 
-const sources = [
-  { name: 'VNDB', body: '身份主锚、关系、角色 traits' },
-  { name: 'Bangumi', body: '中文名与条目、角色资料' },
-  { name: 'DLsite', body: '同人与商业店铺条目' },
-  { name: 'ErogameScape', body: '评分与发售信息' },
-  { name: 'Ci-en', body: '创作者动态与厂牌外链' },
-  { name: 'Getchu', body: '角色立绘、正文、截图' }
-]
+const sources = SOURCES.map(([name, body]) => ({ name, body }))
 
 const quickstart = [
   {
@@ -268,6 +262,20 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
             调用免费，编辑也免费：登录即可提交编辑提案，把你知道的补进来。没有付费档位，没有按量计费——只有一层防滥用的限流。
           </p>
         </div>
+      </div>
+
+      <div
+        class="mt-4 rounded-2xl border border-default-200 bg-content1 px-6 py-5"
+      >
+        <h3
+          class="flex items-center gap-2 text-base font-semibold text-foreground"
+        >
+          <KunIcon name="lucide:quote" class="size-4 text-primary" />
+          品牌与署名
+        </h3>
+        <p class="mt-2 text-sm leading-relaxed text-default-500">
+          {{ ATTRIBUTION_NOTE }}
+        </p>
       </div>
     </section>
 

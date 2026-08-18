@@ -70,5 +70,20 @@
 3. **保留名**:同意页把应用名显示在用户账号旁边,「NextMoe 官方助手」就是我们自己托管的钓鱼页。含 nextmoe / 未萌 / kungal / 官方 / official / admin 等片段一律拒。这是地板不是滤网(存心的冒充者会用同形字),配套的是同意页上不靠猜意图的**第三方标记**(`owner_user_id` 非空)。
 4. **同意 scope 白名单**(`selfServiceUserScopes`):`openid` / `profile` / `email` / `playtime:read` / `playtime:write` / **`catalog:edit`(wave R3,2026-08-17 起)**。**注意仍不在其中的**:`image:upload`、`artifact:upload` —— 自助注册不能向人索取花我们存储的权限。往这张表里加一项是**政策决定**,不是改配置;`catalog:edit` 就是这样一次政策决定,其代价已在面上收讫:第三方令牌永远 `ModerationCapped`(只能提案、不能裁决),且每用户未决提案帽 20(429)。写共享语料因此始终隔着一道人审。
 
-它与 API key 的 scope 白名单(`selfServiceScopes` = 两个只读)**故意分开**:两者管的是不同凭证。一个说机器 key 匿名能干什么,另一个说应用**能向人要什么**。合并就等于让只读 key 的白名单去决定同意页的政策。
+它与 API key 的 scope 白名单(`selfServiceScopes`,2026-08-18 起只剩 `catalog:read`)**故意分开**:两者管的是不同凭证。一个说机器 key 匿名能干什么,另一个说应用**能向人要什么**。合并就等于让只读 key 的白名单去决定同意页的政策。
+
+### 9.3 授权制 scope 的申请通道(2026-08-18)
+
+`/dev/*` 自助面新增两条端点,把 `news:read` 的"联系平台"变成门户里的一次申请:
+
+| 端点 | 说明 |
+|---|---|
+| `POST /api/v1/dev/scope-applications` | body `{scope, message}`,scope 必须 ∈ `grantableScopes`(现为 `news:read`) |
+| `GET /api/v1/dev/scope-applications` | 当前用户的全部申请及状态 |
+
+管理侧三条(`/api/v1/admin/devapi/scope-applications*`)与状态机、`(user, scope)` 唯一语义、三档铸 key 判据见 [02 §3.9](./02-public-api.md)。
+
+**门户 UI**:铸密钥对话框(`components/keys/MintModal.vue`)的自助复选框下方多一行授权制条目——已批准即普通复选框,未申请 / 待审 / 被拒则复选框禁用并就地给出状态与「申请授权」按钮(`components/keys/ScopeApplyModal.vue`)。**审批不追加 scope 到已有 key**:批准后要重新铸一把带 `news:read` 的密钥,对话框那一行就是这件事发生的地方。
+
+**管理台**:`apps/web` 的 `/devapi` 页新增「Scope 申请审核」面板(`components/devapi/ScopeApplications.vue`),列 pending(可切"看全部"),批准 / 拒绝(拒绝须填理由,理由原样回执给申请人)。
 

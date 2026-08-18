@@ -44,7 +44,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 
 > **wave 207 口径澄清**:本节所有**覆盖率分数**(下文的 22/25)的分母**始终是 catalog 面**,与工具总数不是一回事。平台的公开 spec 现共 **33 op = catalog 面 25 + playtime 面 5 + news 面 3**;playtime 面**刻意不在 MCP 范围内**,理由见本节末尾那条。
 
-> **2026-08-18**:news 面三条**全部进面**(下表末三行)。它们与 catalog 工具**不共用凭据前提**——`news:read` 不在 devapi 自助 scope 集内(`TestScopeNewsReadSelfServiceExcluded` 钉死),合作方只授权了索引,key 由平台人工授予;故三条工具的描述里各自写明授权制,不然模型只会稳定地拿到 403 而不知道为什么。
+> **2026-08-18**:news 面三条**全部进面**(下表末三行)。它们与 catalog 工具**不共用凭据前提**——`news:read` 不在 devapi 自助 scope 集内(`TestScopeNewsReadSelfServiceExcluded` 钉死),合作方只授权了索引;故三条工具的描述里各自写明授权制,不然模型只会稳定地拿到 403 而不知道为什么。**同日改动**:授予路径从"平台人工签发"改为**门户申请 + 平台审批**(见 [02 §3.9](./02-public-api.md)),`NewServer` 的 `instructions` 串同步改口(不再说 grants by hand,改说 apply in the developer portal),并加一句署名建议的英文等价表述——instructions 是模型在**任何工具调用之前**唯一读得到的说明,漏改会让它照着旧路径去建议用户联系平台。
 
 > **wave 146(2026-07-30)**:`galgame_search` / `galgame_get` **随其上游 `/v1/galgame` 面一同退役**——该面现返回 `410 Gone`,继续注册这两个工具只会稳定地喂给调用方一个错误。后继:`catalog_search`(`type=works`)接自然语言搜索,`catalog_work_get` 接按 id 取详情。
 

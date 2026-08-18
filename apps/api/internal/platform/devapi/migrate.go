@@ -7,9 +7,9 @@ import (
 )
 
 // Models returns the developer-platform models for AutoMigrate registration in
-// cmd/migrate (the two new tables in kun_galgame_infra).
+// cmd/migrate (the developer-platform tables in kun_galgame_infra).
 func Models() []any {
-	return []any{&DeveloperAPIKey{}, &DeveloperAPIUsage{}}
+	return []any{&DeveloperAPIKey{}, &DeveloperAPIUsage{}, &ScopeApplication{}}
 }
 
 // AddOAuthClientDevColumns adds the developer-platform columns to an existing

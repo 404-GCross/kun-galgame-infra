@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { API_BASE_URL } from '~/constants/dev'
 import { DOCS_FACE_META } from '~/constants/docs'
+import { ATTRIBUTION_NOTE } from '~~/shared/brand.mjs'
 
 const { faces, findFace, faceOperationCount } = useDocs()
 
@@ -33,6 +34,9 @@ const catalogOperations = computed(() => countOf('catalog'))
         一个 base URL、{{ totalOperations }} 个公开端点，分成四组。主力是
         {{ catalogOperations }} 条只读的目录数据端点：同一部作品在 VNDB、Bangumi、DLsite、ErogameScape、Ci-en、Getchu
         六个源各有一个页面，我们把它们对齐成一条记录，逐字段给出裁定后的标准答案，并附上这个答案取自哪个源。
+      </p>
+      <p class="mt-3 max-w-2xl text-sm text-default-400">
+        {{ ATTRIBUTION_NOTE }}
       </p>
     </header>
 

@@ -24,7 +24,9 @@ const instructions = "NextMoe catalog: read-only tools over the public galgame a
 	"catalog_works_list browses/filters the works registry in bulk; catalog_changes is the incremental-sync feed. " +
 	"R18 content is hidden by default: opt in with nsfw=true. " +
 	"The news_* tools are a separate face over partner-republished galgame news and need the news:read scope, " +
-	"which the platform grants by hand and no key carries by default."
+	"which no key carries by default — apply for it in the developer portal and the platform decides. " +
+	"Attribution: while this stage of the NextMoe API is in use, credit the API as 鲲 Galgame 论坛 " +
+	"(KUN Galgame forum) if you use galgame data, or LetMoe·一启萌 if you use doujin-game data."
 
 type tools struct {
 	up *Upstream

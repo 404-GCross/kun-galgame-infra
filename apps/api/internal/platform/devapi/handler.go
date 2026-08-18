@@ -27,6 +27,9 @@ func (h *AdminHandler) Register(r fiber.Router) {
 	r.Get("/apps/:client_id/keys", h.ListKeys)
 	r.Post("/apps/:client_id/keys/:id/rotate", h.RotateKey)
 	r.Delete("/apps/:client_id/keys/:id", h.RevokeKey)
+	r.Get("/scope-applications", h.ListScopeApplications)
+	r.Post("/scope-applications/:id/approve", h.ApproveScopeApplication)
+	r.Post("/scope-applications/:id/decline", h.DeclineScopeApplication)
 }
 
 type patchAppRequest struct {
@@ -180,7 +183,7 @@ func (h *AdminHandler) ListKeys(c fiber.Ctx) error {
 
 func (h *AdminHandler) RotateKey(c fiber.Ctx) error {
 	clientID := c.Params("client_id")
-	keyID, ok := parseKeyID(c)
+	keyID, ok := parseIDParam(c)
 	if !ok {
 		return response.BadRequest(c, apperr.ErrInvalidID)
 	}
@@ -197,7 +200,7 @@ func (h *AdminHandler) RotateKey(c fiber.Ctx) error {
 
 func (h *AdminHandler) RevokeKey(c fiber.Ctx) error {
 	clientID := c.Params("client_id")
-	keyID, ok := parseKeyID(c)
+	keyID, ok := parseIDParam(c)
 	if !ok {
 		return response.BadRequest(c, apperr.ErrInvalidID)
 	}
@@ -208,6 +211,96 @@ func (h *AdminHandler) RevokeKey(c fiber.Ctx) error {
 		return response.InternalError(c, apperr.ErrOperationFailed)
 	}
 	return response.Success(c, nil)
+}
+
+type declineScopeApplicationRequest struct {
+	Reason string `json:"reason"`
+}
+
+type adminScopeApplicationView struct {
+	ID            uint   `json:"id"`
+	UserID        uint   `json:"user_id"`
+	Scope         string `json:"scope"`
+	Message       string `json:"message"`
+	Status        string `json:"status"`
+	ReviewerID    *uint  `json:"reviewer_id,omitempty"`
+	DeclineReason string `json:"decline_reason"`
+	CreatedAt     string `json:"created_at"`
+	ReviewedAt    string `json:"reviewed_at,omitempty"`
+}
+
+func (h *AdminHandler) ListScopeApplications(c fiber.Ctx) error {
+	status := c.Query("status", ScopeAppPending)
+	if status == "all" {
+		status = ""
+	}
+	apps, err := h.svc.ListScopeApplications(c.Context(), status)
+	if err != nil {
+		return response.InternalError(c, apperr.ErrOperationFailed)
+	}
+	out := make([]adminScopeApplicationView, len(apps))
+	for i := range apps {
+		out[i] = toAdminScopeApplicationView(&apps[i])
+	}
+	return response.Success(c, out)
+}
+
+func (h *AdminHandler) ApproveScopeApplication(c fiber.Ctx) error {
+	id, ok := parseIDParam(c)
+	if !ok {
+		return response.BadRequest(c, apperr.ErrInvalidID)
+	}
+	reviewer, _ := c.Locals("user_id").(uint)
+	app, err := h.svc.ApproveScopeApplication(c.Context(), id, reviewer)
+	return h.respondScopeApplication(c, app, err)
+}
+
+func (h *AdminHandler) DeclineScopeApplication(c fiber.Ctx) error {
+	id, ok := parseIDParam(c)
+	if !ok {
+		return response.BadRequest(c, apperr.ErrInvalidID)
+	}
+	var req declineScopeApplicationRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, apperr.ErrBadRequest)
+	}
+	reviewer, _ := c.Locals("user_id").(uint)
+	app, err := h.svc.DeclineScopeApplication(c.Context(), id, reviewer, req.Reason)
+	return h.respondScopeApplication(c, app, err)
+}
+
+func (h *AdminHandler) respondScopeApplication(c fiber.Ctx, app *ScopeApplication, err error) error {
+	switch {
+	case goerrors.Is(err, gorm.ErrRecordNotFound):
+		return response.NotFound(c, apperr.ErrNotFound)
+	case goerrors.Is(err, ErrScopeAppNotPending):
+		return response.Error(c, fiber.StatusConflict, apperr.ErrValidationFailed,
+			"only a pending application can be reviewed")
+	case goerrors.Is(err, ErrScopeAppNeedsReason):
+		return response.BadRequestMsg(c, apperr.ErrValidationFailed, "a decline needs a reason")
+	case goerrors.Is(err, ErrScopeAppMsgTooLong):
+		return response.BadRequestMsg(c, apperr.ErrValidationFailed, "reason too long (max 2000)")
+	case err != nil:
+		return response.InternalError(c, apperr.ErrOperationFailed)
+	}
+	return response.Success(c, toAdminScopeApplicationView(app))
+}
+
+func toAdminScopeApplicationView(app *ScopeApplication) adminScopeApplicationView {
+	v := adminScopeApplicationView{
+		ID:            app.ID,
+		UserID:        app.UserID,
+		Scope:         app.Scope,
+		Message:       app.Message,
+		Status:        app.Status,
+		ReviewerID:    app.ReviewerID,
+		DeclineReason: app.DeclineReason,
+		CreatedAt:     app.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+	}
+	if app.ReviewedAt != nil {
+		v.ReviewedAt = app.ReviewedAt.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	return v
 }
 
 func (h *AdminHandler) requireKeyOfClient(c fiber.Ctx, clientID string, keyID uint) (*DeveloperAPIKey, error) {
@@ -221,7 +314,7 @@ func (h *AdminHandler) requireKeyOfClient(c fiber.Ctx, clientID string, keyID ui
 	return key, nil
 }
 
-func parseKeyID(c fiber.Ctx) (uint, bool) {
+func parseIDParam(c fiber.Ctx) (uint, bool) {
 	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
 		return 0, false

@@ -1,0 +1,112 @@
+// The MCP tool roster, in one place. Plain .mjs because both consumers must
+// read the SAME list: docs/mcp/Container.vue renders it, and
+// scripts/gen-llms.mjs (bare node, no TS loader) writes docs/mcp.md from it.
+// `grant: true` marks the three news tools whose scope the platform grants —
+// losing that flag ships a page that tells an agent to call something it will
+// only ever get a 403 from.
+
+export const MCP_TOOLS = [
+  {
+    name: 'catalog_search',
+    desc: '按名字搜身份图谱实体：names（人物名义）/ characters / labels / works（跨媒介作品标题，r18 需 nsfw=true）。'
+  },
+  {
+    name: 'catalog_work_get',
+    desc: '按 catalog work id 取注册行，include=credits,relations 并取子块。'
+  },
+  {
+    name: 'catalog_lookup_external',
+    desc: '外部 id 反查（如 source=vndb, external_id=v19658）——手握外部 id 时首选。'
+  },
+  {
+    name: 'catalog_name_get',
+    desc: '按 id 取名义（credit-name 同人格分组），include=credits 附署名作品与角色。'
+  },
+  {
+    name: 'catalog_label_get',
+    desc: '按 id 取厂牌 / 社团（include=works 附归属作品）。'
+  },
+  {
+    name: 'catalog_character_get',
+    desc: '按 id 取角色（traits 按 spoilers=0-2 分级；nsfw 控 r18 作品与 sexual 系 traits）。'
+  },
+  {
+    name: 'catalog_works_list',
+    desc: '批量浏览 / 过滤作品注册表（评级 / 厂牌 / 标签 / 系列 / 平台 / 发售窗，keyset 分页，ids= 批量水合）。'
+  },
+  {
+    name: 'catalog_changes',
+    desc: '增量同步变更流——存下 next_cursor，下次轮询只拿变化的部分。'
+  },
+  {
+    name: 'catalog_tag_get',
+    desc: '按 id 取正典标签（跨源标签词表），include=works 附携带作品。'
+  },
+  {
+    name: 'catalog_works_search',
+    desc: '作品产品检索：自由文本 + works-list 全过滤集，五档排序、可选 facets 分面计数、page 分页（组合「查询 + 过滤」时优先用它，纯名字检索用 catalog_search）。'
+  },
+  {
+    name: 'catalog_calendar',
+    desc: '发售月历单月（缺省为当前 Asia/Tokyo 月；olang 缺省收敛到 ja + zh* 族，olang=all 放开）。'
+  },
+  {
+    name: 'catalog_calendar_pending',
+    desc: '月历「知年不知月」桶（缺省为当前 Asia/Tokyo 年）。'
+  },
+  {
+    name: 'catalog_calendar_tba',
+    desc: '月历「已公布未定档」全局桶。'
+  },
+  {
+    name: 'catalog_labels_list',
+    desc: '浏览厂牌 / 社团词表本身（kind 过滤，每行带 nsfw 感知 work_count）——用来发现 label id。'
+  },
+  {
+    name: 'catalog_tags_list',
+    desc: '浏览正典标签词表本身（tier / kind 过滤）——用来发现 tag id 再喂给作品过滤。'
+  },
+  {
+    name: 'catalog_engines_list',
+    desc: '浏览引擎词表本身——用来发现 engine id 再喂给 catalog_works_search。'
+  },
+  {
+    name: 'catalog_engine_get',
+    desc: '按 id 取引擎记录（名称 + nsfw 感知 work_count + 跨源 refs）。'
+  },
+  {
+    name: 'catalog_series_list',
+    desc: '浏览系列词表本身（source= 泳道过滤：curated / derived / dlsite，每行带 nsfw 感知 work_count）——系列不进搜索索引，这是发现 series id 的唯一入口。'
+  },
+  {
+    name: 'catalog_series_get',
+    desc: '按 id 取系列（身份 + 源锚 + 简介），include_works 附成员作品并按阅读顺序排列——回答「这个系列按什么顺序玩」。'
+  },
+  {
+    name: 'catalog_stats',
+    desc: '全库计数：各媒介 LIVE 作品数 + 身份家族总量（无参数）。'
+  },
+  {
+    name: 'catalog_label_relation_graph',
+    desc: '一次拿到一个厂牌周围的整个会社家族（母公司 / 子品牌 / 文库 / 继承），nodes[] + edges[]。catalog_label_get 的 relations[] 只有一跳，问「某社旗下有哪些牌子」用这个。服务端封顶 depth 4 / 60 节点，不分页。'
+  },
+  {
+    name: 'catalog_releases',
+    desc: '发售动态的 release 粒度：每一条发售行各自成项，移植版 / 复刻 / 中文化都看得见（calendar 只把作品放在最早发售月且只显示一次）。可按日期区间、平台、发行语言、版本类型、官方性过滤；is_first 分辨首发与再版。'
+  },
+  {
+    name: 'news_list',
+    grant: true,
+    desc: '合作媒体的 Galgame 资讯索引（按来源 / 泳道 / 关联作品 / 发布时间窗过滤，keyset 分页）。只有标题、摘要与题图，正文永不下发——每条恒带来源与 source_url，读全文要回到媒体自己的站点。'
+  },
+  {
+    name: 'news_sources',
+    grant: true,
+    desc: '资讯来源注册表：每家媒体的 key、名称、主页、专栏入口，以及该渲染的归属文案。无参数。'
+  },
+  {
+    name: 'news_get',
+    grant: true,
+    desc: '按 id 取单条资讯。已撤回的、上游原文已消失的条目返回 404——这是契约不是查不到，别重试，也别拿缓存副本顶上。'
+  }
+]

@@ -97,7 +97,7 @@ func (s *AdminService) MintKey(ctx context.Context, clientID string, in MintKeyI
 	}
 	scopes := in.Scopes
 	if len(scopes) == 0 {
-		scopes = []string{ScopeCatalogRead, ScopeGalgameRead}
+		scopes = []string{ScopeCatalogRead}
 	}
 	key, plaintext, err := s.buildKey(clientID, in.Name, in.Test, scopes, createdBy)
 	if err != nil {

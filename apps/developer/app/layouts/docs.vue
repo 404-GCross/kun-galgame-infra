@@ -9,6 +9,9 @@
     >
       <DocsSidebar />
       <main class="min-w-0 flex-1 py-8 lg:py-10">
+        <div class="mb-4 flex justify-end">
+          <DocsCopyPage />
+        </div>
         <slot />
       </main>
     </div>

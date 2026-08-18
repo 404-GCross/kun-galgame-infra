@@ -191,11 +191,14 @@ func getAllModels() []any {
 		&siteModel.OAuthClient{},
 		&siteModel.Role{},
 
-		// Developer platform (NextMoe open API): API keys + usage rollup.
+		// Developer platform (NextMoe open API): API keys + usage rollup +
+		// grant-only scope applications (2026-08-18: news:read stopped being a
+		// hand-cut key and became an application a key owner files in the portal).
 		// The oauth_clients dev_* columns are handled by
 		// devapi.AddOAuthClientDevColumns above (raw SQL, pre-AutoMigrate).
 		&devapi.DeveloperAPIKey{},
 		&devapi.DeveloperAPIUsage{},
+		&devapi.ScopeApplication{},
 
 		// NOTE: artifact models (Artifact/Manifest) moved to the dedicated
 		// kun_artifacts DB — migrated by cmd/artifact's AutoMigrate, not here.

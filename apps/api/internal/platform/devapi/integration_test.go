@@ -203,8 +203,8 @@ func TestKeyLifecycle(t *testing.T) {
 	if cred.KeyID != key.ID || cred.ClientID != clientID || cred.Tier != TierFree {
 		t.Errorf("resolved cred mismatch: %+v", cred)
 	}
-	if !cred.HasScope(ScopeCatalogRead) || !cred.HasScope(ScopeGalgameRead) {
-		t.Errorf("resolved scopes = %v, want the two default reads", cred.Scopes)
+	if !cred.HasScope(ScopeCatalogRead) || cred.HasScope(ScopeGalgameRead) {
+		t.Errorf("resolved scopes = %v, want catalog:read alone (galgame:read retired at wave 146)", cred.Scopes)
 	}
 
 	newKey, newPlain, err := svc.RotateKey(ctx, key.ID, 42)
