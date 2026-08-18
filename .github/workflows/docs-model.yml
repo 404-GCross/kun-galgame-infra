@@ -24,6 +24,7 @@ on:
     paths: &paths
       - "docs/catalog/public-openapi.yaml"
       - "docs/catalog/openapi.yaml"
+      - "docs/news/public-openapi.yaml"
       - "apps/developer/scripts/sync-specs.mjs"
       - "apps/developer/app/generated/docs-model.ts"
       - ".github/workflows/docs-model.yml"

@@ -1,10 +1,10 @@
 
 export type DocsMethod = 'get' | 'post' | 'put' | 'patch' | 'delete'
 
-export type DocsFaceKey = 'catalog' | 'playtime' | 'edit'
+export type DocsFaceKey = 'catalog' | 'playtime' | 'edit' | 'news'
 
 export interface DocsAuth {
-  kind: 'api_key' | 'user_token'
+  kind: 'api_key' | 'user_token' | 'none'
   curl: string
   display: string
   note: string
@@ -44,7 +44,10 @@ export interface DocsOperation {
   path: string
   summary: string
   description?: string
+  /** Empty when the operation needs no credential — see `auth`. */
   scope: string
+  /** Present only where the operation's credential differs from its face's. */
+  auth?: DocsAuth
   params: DocsParam[]
   requestBody?: DocsSchemaNode
   responses: DocsResponse[]
@@ -52,15 +55,17 @@ export interface DocsOperation {
 }
 
 export interface DocsGroup {
-  tag: string
-  title: string
+  key: string
+  label: string
   operations: DocsOperation[]
 }
 
 export interface DocsFace {
   key: DocsFaceKey
+  /** Short name, for tabs and breadcrumbs. */
   label: string
-  title: string
+  /** Full display name, for headings and cards. */
+  name: string
   baseUrl: string
   prefix: string
   auth: DocsAuth

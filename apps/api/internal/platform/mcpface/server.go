@@ -17,12 +17,14 @@ const (
 )
 
 const instructions = "NextMoe catalog: read-only tools over the public galgame aggregate and " +
-	"cross-media identity registry (VNDB / Bangumi / DLsite / ErogameScape). " +
+	"cross-media identity registry, reconciled field by field from six sources " +
+	"(VNDB / Bangumi / DLsite / ErogameScape / Ci-en / Getchu). " +
 	"Send `Authorization: Bearer nm_<api-key>` on the MCP endpoint; get a key at " + devPortalURL + ". " +
 	"Use *_lookup / *_get when you already hold an id or external id, and *_search for natural language. " +
 	"catalog_works_list browses/filters the works registry in bulk; catalog_changes is the incremental-sync feed. " +
-	"R18 content is hidden by default: opt in with nsfw=true on catalog tools, or content_limit=nsfw|all " +
-	"on galgame tools (needs a key with the galgame:nsfw scope)."
+	"R18 content is hidden by default: opt in with nsfw=true. " +
+	"The news_* tools are a separate face over partner-republished galgame news and need the news:read scope, " +
+	"which the platform grants by hand and no key carries by default."
 
 type tools struct {
 	up *Upstream

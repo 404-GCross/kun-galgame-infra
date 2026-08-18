@@ -10,21 +10,27 @@ export const DOCS_METHOD_BADGE: Record<DocsMethod, string> = {
 
 export const DOCS_FACE_META: Record<
   DocsFaceKey,
-  { icon: string; tagline: string }
+  { icon: string; tagline: string; badge?: string }
 > = {
   catalog: {
     icon: 'lucide:network',
     tagline:
-      '跨媒介身份正典：作品 / 人物名义 / 角色 / 厂牌 / credits / 关系，外部 id 反查四源锚。'
+      '作品、角色、厂牌、制作人员的统一条目库。同一部作品在六个源各有一个页面，我们把它们对齐成一条记录，逐字段给出裁定后的标准答案，并附上这个答案取自哪个源。'
   },
   playtime: {
     icon: 'lucide:timer',
     tagline:
-      '用户自己的游玩时长：上报（单条 / 外部 id 寻址 / 批量）与回拉。走用户访问令牌，不是 API 密钥。'
+      '用户自己的游玩时长：上报（单条 / 用外部 id 定位 / 批量）与回拉。用用户授权后的访问令牌，不是 API 密钥；一个用户只读写得到自己的记录。'
   },
   edit: {
     icon: 'lucide:pencil',
     tagline:
-      '目录编辑提案：读 schema / 快照，创建、列出、查看、撤回自己的提案。走用户访问令牌，需 catalog:edit；只提案、不裁决。'
+      '往目录里提交修改：读字段表与当前值，创建、列出、查看、撤回自己的提案。用用户令牌，需 catalog:edit；第三方应用只能提案，不能自己批准。'
+  },
+  news: {
+    icon: 'lucide:newspaper',
+    tagline:
+      '合作媒体的 Galgame 资讯索引：标题、摘要、题图与回源链接，正文不下发。密钥须带 news:read，该权限由平台授予。',
+    badge: '授权制'
   }
 }
