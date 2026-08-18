@@ -72,7 +72,7 @@ watch(
           :to="`/docs/${f.key}`"
           :class="
             cn(
-              'rounded-md px-3 py-1.5 text-center text-sm font-medium transition-colors',
+              'rounded-md px-2 py-1.5 text-center text-sm font-medium transition-colors',
               f.key === activeFaceKey
                 ? 'bg-content1 text-foreground shadow-sm'
                 : 'text-default-500 hover:text-foreground'
@@ -98,12 +98,12 @@ watch(
       </div>
 
       <nav v-if="hasResults" class="space-y-4">
-        <div v-for="group in visibleGroups" :key="group.tag" class="space-y-1">
+        <div v-for="group in visibleGroups" :key="group.key" class="space-y-1">
           <p
             v-if="showGroupHeaders"
-            class="px-2 text-xs font-semibold uppercase tracking-wider text-default-400"
+            class="px-2 text-xs font-semibold tracking-wide text-default-400"
           >
-            {{ group.title }}
+            {{ group.label }}
           </p>
           <ul class="space-y-0.5">
             <li v-for="op in group.operations" :key="op.id">

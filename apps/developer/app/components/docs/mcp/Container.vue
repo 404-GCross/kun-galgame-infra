@@ -4,10 +4,10 @@ import { MCP_ENDPOINT } from '~/constants/dev'
 useSeoMeta({
   title: 'AI / MCP 接入',
   description:
-    '把 NextMoe 开放 API 作为 MCP（Model Context Protocol）server 接入 AI 助手：端点、密钥配置，以及 Claude Code / Claude Desktop / 通用 MCP 客户端三段配置示例。'
+    '把 NextMoe 开放 API 作为 MCP（Model Context Protocol）server 接入 AI 助手：端点、密钥配置，25 个只读工具，以及 Claude Code / Claude Desktop / 通用 MCP 客户端三段配置示例。'
 })
 
-const tools = [
+const tools: { name: string; desc: string; grant?: boolean }[] = [
   {
     name: 'catalog_search',
     desc: '按名字搜身份图谱实体：names（人物名义）/ characters / labels / works（跨媒介作品标题，r18 需 nsfw=true）。'
@@ -92,6 +92,21 @@ const tools = [
   {
     name: 'catalog_releases',
     desc: '发售动态的 release 粒度：每一条发售行各自成项，移植版 / 复刻 / 中文化都看得见（calendar 只把作品放在最早发售月且只显示一次）。可按日期区间、平台、发行语言、版本类型、官方性过滤；is_first 分辨首发与再版。'
+  },
+  {
+    name: 'news_list',
+    grant: true,
+    desc: '合作媒体的 Galgame 资讯索引（按来源 / 泳道 / 关联作品 / 发布时间窗过滤，keyset 分页）。只有标题、摘要与题图，正文永不下发——每条恒带来源与 source_url，读全文要回到媒体自己的站点。'
+  },
+  {
+    name: 'news_sources',
+    grant: true,
+    desc: '资讯来源注册表：每家媒体的 key、名称、主页、专栏入口，以及该渲染的归属文案。无参数。'
+  },
+  {
+    name: 'news_get',
+    grant: true,
+    desc: '按 id 取单条资讯。已撤回的、上游原文已消失的条目返回 404——这是契约不是查不到，别重试，也别拿缓存副本顶上。'
   }
 ]
 
@@ -138,7 +153,7 @@ const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
         NextMoe 开放 API 同时以 <strong class="text-foreground">MCP</strong>（Model
         Context Protocol）server 暴露：AI 助手 / agent 用自然的工具调用直接查生态目录，
         无需为它写胶水代码。它是一层<strong class="text-foreground">纯透传适配</strong>——
-        每次工具调用就是一次对公开 /v1 面的请求，原样带上你的密钥。
+        每次工具调用就是一次对公开 /v1 端点的请求，原样带上你的密钥。
       </p>
     </header>
 
@@ -198,31 +213,41 @@ const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
       />
       <p class="text-sm leading-relaxed text-default-600">
         MCP 层自身<strong class="text-foreground">零鉴权、零计量</strong>逻辑——鉴权、tier、
-        NSFW 可见性、限流、日配额与用量统计全部复用同一个面、记在同一把密钥上：一次工具调用在
+        NSFW 可见性、限流、日配额与用量统计全部复用同一套端点、记在同一把密钥上：一次工具调用在
         <code class="font-mono text-xs text-foreground">/dev/usage</code>
         里与一次直连 <code class="font-mono text-xs text-foreground">/v1</code> 请求毫无区别。
       </p>
     </section>
 
     <section>
-      <h2 class="text-lg font-semibold text-foreground">工具面（{{ tools.length }} 个）</h2>
+      <h2 class="text-lg font-semibold text-foreground">工具（{{ tools.length }} 个）</h2>
       <p class="mt-1 text-sm text-default-500">
         每个工具映射一个公开只读端点。手握 id / 外部 id 用
         <code class="font-mono text-xs text-foreground">*_get</code> /
         <code class="font-mono text-xs text-foreground">*_lookup</code>，自然语言用
-        <code class="font-mono text-xs text-foreground">*_search</code>。
+        <code class="font-mono text-xs text-foreground">*_search</code>。带
+        <span class="font-medium text-warning-600">授权制</span>
+        的三个走资讯 API，密钥须带
+        <code class="font-mono text-xs text-foreground">news:read</code>
+        ——该权限由平台授予，控制台勾不到；没有它调这三个一律 403。
       </p>
       <ul class="mt-4 space-y-2">
         <li
           v-for="tool in tools"
           :key="tool.name"
-          class="flex flex-col gap-1 rounded-lg border border-default-200 bg-content1 p-3 sm:flex-row sm:items-center sm:gap-3"
+          class="flex flex-col gap-1 rounded-lg border border-default-200 bg-content1 p-3 sm:flex-row sm:items-baseline sm:gap-3"
         >
           <code
             class="w-fit shrink-0 rounded bg-default-100 px-2 py-1 font-mono text-xs font-medium text-foreground"
           >
             {{ tool.name }}
           </code>
+          <span
+            v-if="tool.grant"
+            class="w-fit shrink-0 rounded-full bg-warning-50 px-2 py-1 text-xs font-medium text-warning-600"
+          >
+            授权制
+          </span>
           <span class="text-sm text-default-500">{{ tool.desc }}</span>
         </li>
       </ul>

@@ -40,9 +40,11 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 - MCP 规范的 OAuth 2.1 授权流 = M2(第三方实际开放后,与 `dev:manage`
   同期评估);M1 的静态 key 模式对 agent 场景已充分。
 
-## 4. 工具面(22 个 = M1 五个幸存 + `catalog_name_get` + canonical-W1 三件 + A2 八件 + wave-189 三件 + wave-196 两件;2026-08-08 与 canonical 轨 spec 同步)
+## 4. 工具面(25 个 = catalog 面 22 + news 面 3;catalog 22 = M1 五个幸存 + `catalog_name_get` + canonical-W1 三件 + A2 八件 + wave-189 三件 + wave-196 两件,2026-08-08 与 canonical 轨 spec 同步)
 
-> **wave 207 口径澄清**:本节所有覆盖率分数(22 个工具、下文的 22/25)的分母**始终是 catalog 面**。平台的公开 spec 现共 **30 op = catalog 面 25 + playtime 面 5**,后者**刻意不在 MCP 范围内**,理由见本节末尾那条。
+> **wave 207 口径澄清**:本节所有**覆盖率分数**(下文的 22/25)的分母**始终是 catalog 面**,与工具总数不是一回事。平台的公开 spec 现共 **33 op = catalog 面 25 + playtime 面 5 + news 面 3**;playtime 面**刻意不在 MCP 范围内**,理由见本节末尾那条。
+
+> **2026-08-18**:news 面三条**全部进面**(下表末三行)。它们与 catalog 工具**不共用凭据前提**——`news:read` 不在 devapi 自助 scope 集内(`TestScopeNewsReadSelfServiceExcluded` 钉死),合作方只授权了索引,key 由平台人工授予;故三条工具的描述里各自写明授权制,不然模型只会稳定地拿到 403 而不知道为什么。
 
 > **wave 146(2026-07-30)**:`galgame_search` / `galgame_get` **随其上游 `/v1/galgame` 面一同退役**——该面现返回 `410 Gone`,继续注册这两个工具只会稳定地喂给调用方一个错误。后继:`catalog_search`(`type=works`)接自然语言搜索,`catalog_work_get` 接按 id 取详情。
 
@@ -70,6 +72,9 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 | `catalog_stats` | `GET /v1/catalog/stats` | 全库计数(各媒介 LIVE 作品数 + 身份家族总量;无参数) |
 | `catalog_label_relation_graph` | `GET /v1/catalog/labels/{id}/relation-graph` | 会社家族整图(nodes[]+edges[];服务端封顶 depth 4 / 60 节点,广度优先,无分页;`catalog_label_get.relations[]` 只有一跳) |
 | `catalog_releases` | `GET /v1/catalog/releases` | 发售动态 release 粒度(date keyset;`date_from`/`date_to`/`platform`/`lang`/`olang`/`kind`/`official`/`content_limit`;`is_first` 分辨首发与再版) |
+| `news_list` | `GET /v1/news` | 合作方资讯索引(keyset;`source`/`lane`/`work_id`/`published_after`/`published_before`)。**索引非镜像**:只有 preview + banner + `source_url`,正文永不出面。**需 `news:read`(授权制)** |
+| `news_sources` | `GET /v1/news/sources` | 来源注册表(key / 名称 / 主页 / 专栏入口 / publisher uid / 归属文案),无参数。**需 `news:read`(授权制)** |
+| `news_get` | `GET /v1/news/{id}` | 单条资讯;撤回或上游消失后 404 是契约而非查不到。**需 `news:read`(授权制)** |
 
 - **catalog 覆盖面(22/25:三条「有意留白」,待裁定已清零;分母是 catalog 面,平台另
   5 op 属 playtime 面,见下条)**:公开 catalog 面
@@ -126,7 +131,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
   Deploy 姿态,`docker-compose.mcp.yml`);镜像走现有 CI 矩阵。
 - healthz 照平台惯例;结构化日志记 tool 名 + 上游状态码 + 时延,
   **永不记 key 明文**(fingerprint 前 8 hex)。
-- 冒烟:MCP `initialize` + `tools/list` + 一次 `catalog_search` 真调用。(wave 196 / 2026-08-08 同步后 `tools/list` 应回 22 工具——**全部是 catalog 面工具**,playtime 面按 §4 裁定不进面,故这个数不随它变;冒烟调用早先写的是 `galgame_search`,该工具已随 `/v1/galgame` 面于 wave 146 退役。)
+- 冒烟:MCP `initialize` + `tools/list` + 一次 `catalog_search` 真调用。(2026-08-18 起 `tools/list` 应回 **25** 工具 = catalog 22 + news 3;playtime 面按 §4 裁定不进面,故这个数不随它变。冒烟调用仍走 `catalog_search`——早先写的 `galgame_search` 已随 `/v1/galgame` 面于 wave 146 退役;**不要拿 news 工具冒烟**,冒烟用的 key 没有 `news:read`,一个正确的 403 会被读成部署失败。)
 
 ## 6. 阶段
 
