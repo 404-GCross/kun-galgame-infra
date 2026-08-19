@@ -47,6 +47,14 @@ const (
 	AliasProvenanceMachine int16 = 1
 )
 
+// catalog_character_trait.name_zh_provenance. Curated is the ingest tool's own
+// word for 0 (a hand-checked vocabulary row), not "a source published it" —
+// there is no upstream Chinese trait vocabulary to be sourced from.
+const (
+	TraitNameZhProvenanceCurated int16 = 0
+	TraitNameZhProvenanceMachine int16 = 1
+)
+
 const (
 	LabelKindGameBrand    int16 = 0
 	LabelKindBunko        int16 = 1

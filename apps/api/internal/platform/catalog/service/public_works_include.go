@@ -78,6 +78,8 @@ func (s *PublicService) attachWorkListBlocks(
 		}
 		for i, r := range rows {
 			items[i].Names = publicWorkNames(titles[r.ID])
+			items[i].Latin = workLatin(titles[r.ID], items[i].DisplayName)
+			items[i].Localized = workLocalized(titles[r.ID])
 		}
 	}
 	if inc.Intros {
