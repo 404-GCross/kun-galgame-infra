@@ -325,7 +325,11 @@ func assertUsage(t *testing.T, clientID string, keyID uint, face string, count, 
 }
 
 func TestAddDevColumnsBackfillsExisting(t *testing.T) {
-	cleanup(t)
+	// cleanupSelf, not cleanup: this test drops owner_user_id, and any
+	// owner-scoped row still present comes back with a NULL owner that no
+	// later cleanup can find — which is how a self-service row from an earlier
+	// test file turned up in the admin app list two tests later.
+	cleanupSelf(t)
 	flushPool := func() {
 		sqlDB, err := testDB.DB()
 		if err != nil {
@@ -335,7 +339,7 @@ func TestAddDevColumnsBackfillsExisting(t *testing.T) {
 		sqlDB.SetMaxIdleConns(2)
 	}
 	defer flushPool()
-	for _, col := range []string{"dev_enabled", "dev_tier", "dev_nsfw_allowed", "dev_rate_per_min", "dev_quota_daily", "owner_user_id"} {
+	for _, col := range []string{"dev_enabled", "dev_tier", "dev_nsfw_allowed", "dev_rate_per_min", "dev_quota_daily", "owner_user_id", "dev_review_status", "dev_review_note"} {
 		if err := testDB.Exec("ALTER TABLE oauth_clients DROP COLUMN IF EXISTS " + col).Error; err != nil {
 			t.Fatalf("drop %s: %v", col, err)
 		}
@@ -360,6 +364,15 @@ func TestAddDevColumnsBackfillsExisting(t *testing.T) {
 	if app.DevEnabled != false || app.DevTier != "free" || app.DevRatePerMin != 0 || app.DevQuotaDaily != 0 {
 		t.Errorf("legacy backfill wrong: enabled=%v tier=%q rate=%d quota=%d",
 			app.DevEnabled, app.DevTier, app.DevRatePerMin, app.DevQuotaDaily)
+	}
+	// Every row that predates the approval flow was created when creation was
+	// unconditionally self-service; backfilling anything but approved would
+	// retroactively suspend live applications.
+	if app.DevReviewStatus != AppReviewApproved || app.DevReviewNote != "" {
+		t.Errorf("legacy review backfill wrong: status=%q note=%q", app.DevReviewStatus, app.DevReviewNote)
+	}
+	if appAwaitsReview(app.DevReviewStatus) {
+		t.Error("a backfilled row must not be treated as awaiting review")
 	}
 
 	var def *string

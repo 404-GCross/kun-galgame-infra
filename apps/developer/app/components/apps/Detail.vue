@@ -1,6 +1,22 @@
 <script setup lang="ts">
-import { DEV_TIER_COLORS, DEV_TIER_LABELS } from '~/constants/dev'
-import type { DevApp, DevKey, DevKeyMinted, DevUsageDayFace } from '~~/shared/types/dev'
+import {
+  DEV_APP_REVIEW_COLORS,
+  DEV_APP_REVIEW_LABELS,
+  DEV_CAP_APP_MANAGE,
+  DEV_CAP_KEY_MINT,
+  DEV_CAP_SCOPE_APPLY,
+  DEV_DISABLED_HINT,
+  DEV_TIER_COLORS,
+  DEV_TIER_LABELS,
+  isAppUnderReview
+} from '~/constants/dev'
+import type {
+  DevApp,
+  DevKey,
+  DevKeyMinted,
+  DevPolicies,
+  DevUsageDayFace
+} from '~~/shared/types/dev'
 
 const route = useRoute()
 const clientId = computed(() => String(route.params.clientId))
@@ -18,10 +34,31 @@ const { data: keysData, refresh: refreshKeys } = await useApiFetch<DevKey[]>(
 const { data: usageData } = await useApiFetch<DevUsageDayFace[]>(
   () => `/dev/apps/${clientId.value}/usage?days=7`
 )
+const { data: policiesData } = await useApiFetch<DevPolicies>('/dev/policies')
 
 const app = computed(() => appData.value)
 const keys = computed(() => keysData.value ?? [])
 const usage = computed(() => usageData.value ?? [])
+
+const policy = (capability: string) =>
+  policiesData.value?.[capability] ?? 'self_service'
+
+const manageDisabled = computed(() => policy(DEV_CAP_APP_MANAGE) === 'disabled')
+const mintDisabled = computed(() => policy(DEV_CAP_KEY_MINT) === 'disabled')
+const scopeApplyDisabled = computed(
+  () => policy(DEV_CAP_SCOPE_APPLY) === 'disabled'
+)
+
+const reviewStatus = computed(() => app.value?.review_status ?? '')
+const underReview = computed(() => isAppUnderReview(reviewStatus.value))
+const isDeclined = computed(() => reviewStatus.value === 'declined')
+const reviewChip = computed(() => {
+  if (!underReview.value) return null
+  return {
+    label: DEV_APP_REVIEW_LABELS[reviewStatus.value],
+    color: DEV_APP_REVIEW_COLORS[reviewStatus.value]
+  }
+})
 
 const busy = ref(false)
 const showEditModal = ref(false)
@@ -107,6 +144,23 @@ const askRevoke = (key: DevKey) => {
   }
 }
 
+const resubmitting = ref(false)
+
+const resubmit = async () => {
+  resubmitting.value = true
+  try {
+    const res = await api.post<DevApp>(`/dev/apps/${clientId.value}/resubmit`)
+    if (res.code === 0) {
+      useKunMessage('已重新提交，等待平台审核', 'success')
+      refreshApp()
+    } else {
+      useKunMessage(res.message || '提交失败', 'error')
+    }
+  } finally {
+    resubmitting.value = false
+  }
+}
+
 const askDeactivate = () => {
   confirmDialog.value = {
     title: '停用应用',
@@ -161,6 +215,14 @@ const askDeactivate = () => {
               >
                 {{ DEV_TIER_LABELS[app.tier] ?? app.tier }}
               </KunChip>
+              <KunChip
+                v-if="reviewChip"
+                :color="reviewChip.color"
+                variant="flat"
+                size="sm"
+              >
+                {{ reviewChip.label }}
+              </KunChip>
             </div>
             <p v-if="app.description" class="mt-1 text-sm text-default-500">
               {{ app.description }}
@@ -173,14 +235,36 @@ const askDeactivate = () => {
             </div>
           </div>
           <div class="flex shrink-0 gap-1">
-            <KunButton variant="flat" size="sm" @click="showEditModal = true">
+            <KunButton
+              v-if="isDeclined"
+              color="primary"
+              size="sm"
+              :disabled="resubmitting"
+              @click="resubmit"
+            >
+              <KunIcon
+                v-if="resubmitting"
+                name="lucide:loader-circle"
+                class="mr-1 size-4 animate-spin"
+              />
+              <KunIcon v-else name="lucide:send" class="mr-1 size-4" />
+              重新提交
+            </KunButton>
+            <KunButton
+              variant="flat"
+              size="sm"
+              :disabled="manageDisabled"
+              @click="showEditModal = true"
+            >
               <KunIcon name="lucide:pencil" class="mr-1 size-4" />
               编辑
             </KunButton>
             <KunButton
+              v-if="!underReview"
               color="danger"
               variant="flat"
               size="sm"
+              :disabled="manageDisabled"
               @click="askDeactivate"
             >
               <KunIcon name="lucide:power-off" class="mr-1 size-4" />
@@ -188,6 +272,25 @@ const askDeactivate = () => {
             </KunButton>
           </div>
         </div>
+
+        <p
+          v-if="isDeclined && app.review_note"
+          class="mt-3 rounded-lg bg-danger-50 p-3 text-sm text-danger"
+        >
+          未通过审核：{{ app.review_note }}
+        </p>
+        <p
+          v-else-if="reviewStatus === 'pending'"
+          class="mt-3 rounded-lg bg-warning-50 p-3 text-sm text-warning"
+        >
+          已提交，等待平台审核。通过后应用即启用，届时可铸造密钥。
+        </p>
+        <p
+          v-else-if="manageDisabled"
+          class="mt-3 rounded-lg bg-default-100 p-3 text-sm text-default-500"
+        >
+          {{ DEV_DISABLED_HINT }}：应用的编辑与停用暂由平台代为处理。
+        </p>
 
         <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div>
@@ -219,15 +322,34 @@ const askDeactivate = () => {
 
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-foreground">API 密钥</h2>
-        <KunButton color="primary" size="sm" @click="showMintModal = true">
+        <KunButton
+          color="primary"
+          size="sm"
+          :disabled="mintDisabled || underReview"
+          @click="showMintModal = true"
+        >
           <KunIcon name="lucide:plus" class="mr-1 size-4" />
           生成新密钥
         </KunButton>
       </div>
 
+      <p
+        v-if="underReview"
+        class="rounded-lg bg-default-100 p-3 text-sm text-default-500"
+      >
+        审核通过后可铸造密钥。
+      </p>
+      <p
+        v-else-if="mintDisabled"
+        class="rounded-lg bg-default-100 p-3 text-sm text-default-500"
+      >
+        {{ DEV_DISABLED_HINT }}：暂不能铸造或轮换密钥；已有密钥仍可随时吊销。
+      </p>
+
       <KeysTable
         :keys="keys"
         :busy="busy"
+        :rotate-disabled="mintDisabled"
         @rotate="askRotate"
         @revoke="askRevoke"
       />
@@ -250,6 +372,7 @@ const askDeactivate = () => {
     <KeysMintModal
       v-if="showMintModal"
       :client-id="clientId"
+      :scope-apply-disabled="scopeApplyDisabled"
       @close="showMintModal = false"
       @minted="handleMinted"
     />

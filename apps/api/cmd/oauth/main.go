@@ -294,7 +294,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	devAdminSvc := devapi.NewAdminService(devRepo, devStore)
 	devAdminH := devapi.NewAdminHandler(devAdminSvc)
 	devGroup := admin.Group("/devapi", middleware.RequirePermission(devapiPerm.Resolver, devapiPerm.Manage))
-	devAdminH.Register(devGroup)
+	devAdminH.Register(devGroup, middleware.RequirePermission(devapiPerm.Resolver, devapiPerm.PolicyManage))
 
 	devSelfH := devapi.NewSelfServiceHandler(devapi.NewSelfServiceService(devRepo, devAdminSvc, devStore))
 	devPortalClients := make(map[string]bool, len(cfg.DevPortalClientIDs))

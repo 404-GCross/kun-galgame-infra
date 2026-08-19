@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DevApp } from '~~/shared/types/dev'
 
+const props = defineProps<{ needsApproval?: boolean }>()
 const emit = defineEmits<{ close: []; created: [DevApp] }>()
 
 const api = useApi()
@@ -27,7 +28,10 @@ const handleSubmit = async () => {
     if (description.value.trim()) body.description = description.value.trim()
     const res = await api.post<DevApp>('/dev/apps', body)
     if (res.code === 0 && res.data) {
-      useKunMessage('应用已创建', 'success')
+      useKunMessage(
+        props.needsApproval ? '已提交，等待平台审核' : '应用已创建',
+        'success'
+      )
       emit('created', res.data)
     } else {
       error.value = res.message || '创建失败'
@@ -42,6 +46,13 @@ const handleSubmit = async () => {
   <KunModal v-model="show" size="md">
     <div class="space-y-4">
       <h2 class="text-xl font-bold text-foreground">创建应用</h2>
+
+      <p
+        v-if="needsApproval"
+        class="rounded-lg bg-warning-50 p-3 text-sm text-warning"
+      >
+        平台当前对新应用启用审核：提交后应用先进入待审核，通过后才启用并可铸造密钥。
+      </p>
 
       <KunInput
         v-model="name"

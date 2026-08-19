@@ -29,6 +29,7 @@ func cleanupSelf(t *testing.T) {
 	if err := testDB.Exec(`DELETE FROM oauth_clients WHERE owner_user_id IS NOT NULL OR id LIKE 'devapitest_%'`).Error; err != nil {
 		t.Fatalf("clean clients: %v", err)
 	}
+	cleanupPolicies(t)
 }
 
 func TestSelfServiceCreateAndOwnerScope(t *testing.T) {
