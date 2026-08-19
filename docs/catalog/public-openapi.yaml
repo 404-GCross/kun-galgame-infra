@@ -1620,13 +1620,18 @@ components:
     PublicLabelGraphNode:
       additionalProperties: false
       properties:
+        display_name:
+          type: string
         id:
           format: int64
           type: integer
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name
+          type: object
         logo_hash:
           description: brand logo content hash in the image service; "" = this label has no logo
-          type: string
-        name:
           type: string
         work_count:
           description: nsfw-aware work count, identical to labels/{id}.work_count for the same nsfw setting
@@ -1634,7 +1639,8 @@ components:
           type: integer
       required:
         - id
-        - name
+        - display_name
+        - localized
         - logo_hash
         - work_count
       type: object

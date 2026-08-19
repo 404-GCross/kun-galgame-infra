@@ -197,3 +197,10 @@ in API POST /v1/catalog/lookup/batch the `data/items/items/work/names/en-us` res
 in API POST /v1/catalog/lookup/batch the `data/items/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
 in API POST /v1/catalog/lookup/batch the `data/items/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
 in API POST /v1/catalog/lookup/batch the `data/items/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+
+# Wave 209 follow-up (2026-08-19): the label relation-graph node was the one
+# label projection the terminalization above missed — it still carried the
+# short `name` key and no localized{}. Downstream reported the drift (detail
+# says 猫猫社, graph node says ねこねこソフト), so the node joins the primitive:
+# `name` → `display_name` + `localized{}`, same render rule as every other face.
+in API GET /v1/catalog/labels/{id}/relation-graph removed the required property `data/nodes/items/name` from the response with the `200` status

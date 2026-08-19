@@ -11481,20 +11481,47 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
                                   "name": "id",
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
                                 },
                                 {
+                                  "name": "localized",
+                                  "required": true,
+                                  "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "translation|spelling_variant",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "logo_hash",
                                   "required": true,
                                   "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
-                                  "type": "string"
-                                },
-                                {
-                                  "name": "name",
-                                  "required": true,
                                   "type": "string"
                                 },
                                 {
