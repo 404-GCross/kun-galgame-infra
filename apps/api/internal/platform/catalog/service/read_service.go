@@ -149,6 +149,8 @@ type WorkCharacterRow struct {
 type WorkCharacterVARow struct {
 	CreditNameID int64
 	Name         string
+	Lang         string
+	Latin        *string
 }
 
 type RefDetail struct {
@@ -540,9 +542,11 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		FigureHash   *string `gorm:"column:figure_hash"`
 		CreditNameID int64   `gorm:"column:credit_name_id"`
 		Name         string  `gorm:"column:name"`
+		NameLang     string  `gorm:"column:name_lang"`
+		NameLatin    *string `gorm:"column:name_latin"`
 	}
 	if err := db.Raw(`SELECT DISTINCT c.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, ch.figure_hash,
-		cn.id AS credit_name_id, cn.name
+		cn.id AS credit_name_id, cn.name, cn.lang AS name_lang, cn.latin AS name_latin
 		FROM catalog_credit c
 		JOIN catalog_character ch ON ch.id = c.character_id
 		JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
@@ -568,7 +572,7 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 			}
 			byID[c.CharacterID] = row
 		}
-		row.Va = append(row.Va, WorkCharacterVARow{CreditNameID: c.CreditNameID, Name: c.Name})
+		row.Va = append(row.Va, WorkCharacterVARow{CreditNameID: c.CreditNameID, Name: c.Name, Lang: c.NameLang, Latin: c.NameLatin})
 	}
 
 	out := make([]WorkCharacterRow, 0, len(byID))

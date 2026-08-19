@@ -15,6 +15,7 @@ type PublicWorkBrief struct {
 	DisplayName   string           `json:"display_name"`
 	ContentRating string           `json:"content_rating"`
 	ClaimedBy     *PublicClaimedBy `json:"claimed_by"`
+	Names         *PublicWorkNames `json:"names,omitempty" doc:"per-locale display titles, same election as the works-list names block; absent when no title matched a slot — render names.<yourLocale> ?? display_name"`
 }
 
 type PublicCatalogTitle struct {
@@ -36,15 +37,16 @@ type PublicRelation struct {
 }
 
 type PublicCreditItem struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Lang        string `json:"lang"`
-	Latin       string `json:"latin,omitempty"`
-	CharacterID int64  `json:"character_id,omitempty"`
-	Character   string `json:"character,omitempty"`
-	LabelID     int64  `json:"label_id,omitempty"`
-	Label       string `json:"label,omitempty"`
-	Source      string `json:"source,omitempty"`
+	ID          int64                          `json:"id"`
+	DisplayName string                         `json:"display_name"`
+	Lang        string                         `json:"lang"`
+	Latin       string                         `json:"latin,omitempty"`
+	Localized   map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin"`
+	CharacterID int64                          `json:"character_id,omitempty"`
+	Character   string                         `json:"character,omitempty"`
+	LabelID     int64                          `json:"label_id,omitempty"`
+	Label       string                         `json:"label,omitempty"`
+	Source      string                         `json:"source,omitempty"`
 }
 
 type PublicCreditGroup struct {
@@ -74,7 +76,7 @@ type PublicCatalogWork struct {
 	Playtimes      []PublicPlaytime        `json:"playtimes"`
 	Series         []PublicSeries          `json:"series"`
 	Platforms      []PublicPlatform        `json:"platforms"`
-	Intro          []PublicWorkIntro       `json:"intro"`
+	Intro          []PublicIntro           `json:"intro"`
 	Covers         []PublicCover           `json:"covers"`
 	CoverSlots     *PublicWorkCoverSlots   `json:"cover_slots"`
 	Screenshots    []PublicScreenshot      `json:"screenshots"`
@@ -147,15 +149,31 @@ type PublicMovedData struct {
 }
 
 type PublicLocalizedName struct {
-	Value string `json:"value"`
-	Kind  string `json:"kind" doc:"translation|spelling_variant"`
+	Value   string `json:"value"`
+	Kind    string `json:"kind" doc:"translation|spelling_variant"`
+	Machine bool   `json:"machine,omitempty" doc:"true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative"`
+}
+
+type PublicAlias struct {
+	Value   string `json:"value"`
+	Lang    string `json:"lang,omitempty" doc:"BCP-47 language of this spelling; empty when unrecorded"`
+	Kind    string `json:"kind" doc:"translation|spelling_variant"`
+	Machine bool   `json:"machine,omitempty"`
+}
+
+type PublicIntro struct {
+	Lang    string `json:"lang"`
+	Intro   string `json:"intro"`
+	Source  string `json:"source"`
+	Machine bool   `json:"machine,omitempty"`
 }
 
 type PublicSiblingName struct {
-	ID          int64  `json:"id"`
-	DisplayName string `json:"display_name"`
-	Lang        string `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
-	Latin       string `json:"latin,omitempty"`
+	ID          int64                          `json:"id"`
+	DisplayName string                         `json:"display_name"`
+	Lang        string                         `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
+	Latin       string                         `json:"latin,omitempty"`
+	Localized   map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin"`
 }
 
 type PublicNameRole struct {
@@ -178,24 +196,25 @@ type PublicName struct {
 	Latin       string                         `json:"latin,omitempty"`
 	PersonID    int64                          `json:"person_id,omitempty"`
 	Siblings    []PublicSiblingName            `json:"siblings"`
-	Aliases     []string                       `json:"aliases" doc:"alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none"`
+	Aliases     []PublicAlias                  `json:"aliases" doc:"alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none"`
 	PhotoHash   string                         `json:"photo_hash" doc:"person photo content hash in the image service; \"\" = no photo (or the person link is hidden)"`
 	Gender      *int16                         `json:"gender,omitempty" doc:"person gender code; absent = unknown, orphan or hidden link"`
 	BirthY      *int16                         `json:"birth_y,omitempty" doc:"fuzzy birth date, year; absent = not recorded at this precision"`
 	BirthM      *int16                         `json:"birth_m,omitempty" doc:"fuzzy birth date, month"`
 	BirthD      *int16                         `json:"birth_d,omitempty" doc:"fuzzy birth date, day"`
 	Links       []PublicPersonLink             `json:"links"`
-	Intros      []PublicNameIntro              `json:"intros"`
+	Intros      []PublicIntro                  `json:"intros"`
 	Refs        []PublicCatalogRef             `json:"refs"`
 	Credits     []PublicNameCredit             `json:"credits,omitempty"`
 	NextOffset  *int                           `json:"next_offset,omitempty"`
 }
 
 type PublicVoiceName struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	Lang  string `json:"lang"`
-	Latin string `json:"latin,omitempty"`
+	ID          int64                          `json:"id"`
+	DisplayName string                         `json:"display_name"`
+	Lang        string                         `json:"lang"`
+	Latin       string                         `json:"latin,omitempty"`
+	Localized   map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin"`
 }
 
 type PublicCharacterWork struct {
@@ -207,14 +226,14 @@ type PublicCharacter struct {
 	ID          int64                          `json:"id"`
 	DisplayName string                         `json:"display_name"`
 	Lang        string                         `json:"lang,omitempty" doc:"BCP-47 language of display_name; empty when unrecorded"`
-	Aliases     []string                       `json:"aliases" doc:"alternate spellings; deduplicated, the display name excluded, [] when it has none"`
+	Aliases     []PublicAlias                  `json:"aliases" doc:"alternate spellings; deduplicated, the display name excluded, [] when it has none"`
 	Localized   map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank"`
 	Latin       string                         `json:"latin,omitempty"`
 	Refs        []PublicCatalogRef             `json:"refs"`
 	Works       []PublicCharacterWork          `json:"works,omitempty"`
 	NextOffset  *int                           `json:"next_offset,omitempty"`
 	Traits      []PublicCharacterTrait         `json:"traits"`
-	Intros      []PublicCharacterIntro         `json:"intros"`
+	Intros      []PublicIntro                  `json:"intros"`
 	Image       string                         `json:"image,omitempty"`
 	Figure      string                         `json:"figure,omitempty"`
 }
@@ -224,27 +243,22 @@ type PublicLabelWork struct {
 	Kind string          `json:"kind"`
 }
 
-type PublicLabelIntro struct {
-	Lang    string `json:"lang"`
-	Intro   string `json:"intro"`
-	Source  string `json:"source"`
-	Machine bool   `json:"machine,omitempty"`
-}
-
 type PublicLabelLink struct {
 	Source string `json:"source"`
 	URL    string `json:"url"`
 }
 
 type PublicLabelRelation struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Relation string `json:"relation" doc:"parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<name> is the <relation> of this label\""`
+	ID          int64                          `json:"id"`
+	DisplayName string                         `json:"display_name"`
+	Localized   map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name"`
+	Relation    string                         `json:"relation" doc:"parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<display_name> is the <relation> of this label\""`
 }
 
 type PublicLabelVia struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID          int64                          `json:"id"`
+	DisplayName string                         `json:"display_name"`
+	Localized   map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name"`
 }
 
 type PublicPersonLink struct {
@@ -257,13 +271,13 @@ type PublicLabel struct {
 	DisplayName      string                         `json:"display_name"`
 	Kind             string                         `json:"kind"`
 	Lang             string                         `json:"lang,omitempty"`
-	Aliases          []string                       `json:"aliases"`
+	Aliases          []PublicAlias                  `json:"aliases"`
 	Localized        map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank"`
 	WorkCount        int                            `json:"work_count"`
 	ImprintWorkCount int                            `json:"imprint_work_count" doc:"works reachable one hop down through imprints/subsidiaries and NOT attributed to this label itself; follow it with works?label_id=<id>&label_rollup=1"`
 	LogoHash         string                         `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
 	Refs             []PublicCatalogRef             `json:"refs"`
-	Intros           []PublicLabelIntro             `json:"intros"`
+	Intros           []PublicIntro                  `json:"intros"`
 	Links            []PublicLabelLink              `json:"links"`
 	Relations        []PublicLabelRelation          `json:"relations"`
 	Works            []PublicLabelWork              `json:"works,omitempty"`
@@ -271,14 +285,16 @@ type PublicLabel struct {
 }
 
 type PublicEntityHit struct {
-	ID            int64    `json:"id"`
-	EntityType    string   `json:"entity_type"`
-	Name          string   `json:"name"`
-	Latin         string   `json:"latin,omitempty"`
-	Sources       []string `json:"sources"`
-	ContentRating string   `json:"content_rating,omitempty"`
-	Tier          string   `json:"tier,omitempty"`
-	Kind          string   `json:"kind,omitempty"`
+	ID            int64                          `json:"id"`
+	EntityType    string                         `json:"entity_type"`
+	DisplayName   string                         `json:"display_name"`
+	Latin         string                         `json:"latin,omitempty"`
+	Localized     map[string]PublicLocalizedName `json:"localized,omitempty" doc:"names/characters/labels hits only: preferred name per locale, same election as the entity's detail face — render localized[yourLocale] ?? display_name"`
+	Names         *PublicWorkNames               `json:"names,omitempty" doc:"works hits only: per-locale display titles, same election as the works-list names block"`
+	Sources       []string                       `json:"sources"`
+	ContentRating string                         `json:"content_rating,omitempty"`
+	Tier          string                         `json:"tier,omitempty"`
+	Kind          string                         `json:"kind,omitempty"`
 }
 
 type PublicEntitySearchData struct {
@@ -331,13 +347,6 @@ type PublicPlatform struct {
 	Source   string `json:"source"`
 }
 
-type PublicWorkIntro struct {
-	Lang    string `json:"lang"`
-	Intro   string `json:"intro"`
-	Source  string `json:"source"`
-	Machine bool   `json:"machine,omitempty"`
-}
-
 type PublicCover struct {
 	URL            string `json:"url"`
 	Kind           string `json:"kind,omitempty"`
@@ -362,30 +371,35 @@ type PublicScreenshot struct {
 }
 
 type PublicRosterVoice struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID          int64                          `json:"id"`
+	DisplayName string                         `json:"display_name"`
+	Lang        string                         `json:"lang,omitempty"`
+	Latin       string                         `json:"latin,omitempty"`
+	Localized   map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin"`
 }
 
 type PublicRosterCharacter struct {
-	ID      int64               `json:"id"`
-	Name    string              `json:"name"`
-	Latin   string              `json:"latin,omitempty"`
-	Kind    string              `json:"kind" doc:"main|secondary|appears|unknown"`
-	Spoiler int16               `json:"spoiler" doc:"0=none 1=minor 2=major"`
-	Image   string              `json:"image,omitempty"`
-	Figure  string              `json:"figure,omitempty"`
-	Voices  []PublicRosterVoice `json:"voices"`
+	ID          int64                          `json:"id"`
+	DisplayName string                         `json:"display_name"`
+	Latin       string                         `json:"latin,omitempty"`
+	Localized   map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, same election as the character detail face (machine fill-ins flagged); {} when none — render localized[yourLocale] ?? display_name ?? latin"`
+	Kind        string                         `json:"kind" doc:"main|secondary|appears|unknown"`
+	Spoiler     int16                          `json:"spoiler" doc:"0=none 1=minor 2=major"`
+	Image       string                         `json:"image,omitempty"`
+	Figure      string                         `json:"figure,omitempty"`
+	Voices      []PublicRosterVoice            `json:"voices"`
 }
 
 type PublicWorkLabel struct {
-	ID          int64    `json:"id"`
-	DisplayName string   `json:"display_name"`
-	LabelKind   string   `json:"label_kind"`
-	Kind        string   `json:"kind" doc:"primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all."`
-	Kinds       []string `json:"kinds" doc:"every capacity this company acted in, sorted; always at least one"`
-	Lang        string   `json:"lang,omitempty"`
-	WorkCount   int      `json:"work_count"`
-	LogoHash    string   `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
+	ID          int64                          `json:"id"`
+	DisplayName string                         `json:"display_name"`
+	Localized   map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name"`
+	LabelKind   string                         `json:"label_kind"`
+	Kind        string                         `json:"kind" doc:"primary attribution nature: circle|publisher|developer|brand. When the company acted in several capacities this is the most identifying one (brand, circle, developer, publisher in that order) and kinds[] carries them all."`
+	Kinds       []string                       `json:"kinds" doc:"every capacity this company acted in, sorted; always at least one"`
+	Lang        string                         `json:"lang,omitempty"`
+	WorkCount   int                            `json:"work_count"`
+	LogoHash    string                         `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
 }
 
 type PublicWorkEngine struct {
@@ -500,38 +514,19 @@ type PublicTagDetail struct {
 	Kind       string            `json:"kind" doc:"content|meta"`
 	WorkCount  int               `json:"work_count"`
 	Sexual     bool              `json:"sexual"`
-	Intros     []PublicTagIntro  `json:"intros"`
+	Intros     []PublicIntro     `json:"intros"`
 	Works      []PublicWorkBrief `json:"works,omitempty"`
 	NextOffset *int              `json:"next_offset,omitempty"`
 }
 
-type PublicTagIntro struct {
-	Lang   string `json:"lang"`
-	Intro  string `json:"intro"`
-	Source string `json:"source"`
-}
-
-type PublicCharacterIntro struct {
-	Lang    string `json:"lang"`
-	Intro   string `json:"intro"`
-	Source  string `json:"source"`
-	Machine bool   `json:"machine,omitempty"`
-}
-
-type PublicNameIntro struct {
-	Lang    string `json:"lang"`
-	Intro   string `json:"intro"`
-	Source  string `json:"source"`
-	Machine bool   `json:"machine,omitempty"`
-}
-
 type PublicLabelListItem struct {
-	ID           int64  `json:"id"`
-	DisplayName  string `json:"display_name"`
-	Kind         string `json:"kind" doc:"game_brand|bunko|publisher|anime_studio|doujin_circle|group|other"`
-	WorkCount    int    `json:"work_count"`
-	LogoHash     string `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
-	HasRelations bool   `json:"has_relations" doc:"true = this label has corporate-family edges; follow labels/{id}/relation-graph. False rows need no such call"`
+	ID           int64                          `json:"id"`
+	DisplayName  string                         `json:"display_name"`
+	Localized    map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name"`
+	Kind         string                         `json:"kind" doc:"game_brand|bunko|publisher|anime_studio|doujin_circle|group|other"`
+	WorkCount    int                            `json:"work_count"`
+	LogoHash     string                         `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
+	HasRelations bool                           `json:"has_relations" doc:"true = this label has corporate-family edges; follow labels/{id}/relation-graph. False rows need no such call"`
 }
 
 type PublicLabelsListData struct {

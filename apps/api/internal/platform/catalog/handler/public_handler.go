@@ -269,7 +269,7 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 			continue
 		}
 		hit := dto.PublicEntityHit{
-			ID: id, EntityType: entityType, Name: d.Name(), Latin: d.Latin, Sources: d.Sources,
+			ID: id, EntityType: entityType, DisplayName: d.Name(), Latin: d.Latin, Sources: d.Sources,
 		}
 		if d.ContentRating != nil {
 			hit.ContentRating = publicContentRatingKey(*d.ContentRating)
@@ -279,6 +279,28 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 			hit.Kind = publicTagKindKey(derefI16(d.Kind))
 		}
 		out.Items = append(out.Items, hit)
+	}
+	ids := make([]int64, len(out.Items))
+	for i := range out.Items {
+		ids[i] = out.Items[i].ID
+	}
+	switch entityType {
+	case "work":
+		names, err := h.svc.WorkNamesByID(c.Context(), ids)
+		if err != nil {
+			return response.InternalError(c, errors.ErrInternalServer)
+		}
+		for i := range out.Items {
+			out.Items[i].Names = names[out.Items[i].ID]
+		}
+	case "name", "character", "label":
+		loc, err := h.svc.LocalizedForEntities(c.Context(), entityType, ids)
+		if err != nil {
+			return response.InternalError(c, errors.ErrInternalServer)
+		}
+		for i := range out.Items {
+			out.Items[i].Localized = loc[out.Items[i].ID]
+		}
 	}
 	c.Set("Cache-Control", cacheSearch)
 	return response.Success(c, out)

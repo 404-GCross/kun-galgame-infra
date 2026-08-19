@@ -333,8 +333,10 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 	if rec.LogoHash != supplyLogoHash {
 		t.Fatalf("label logo_hash = %q, want %q", rec.LogoHash, supplyLogoHash)
 	}
-	if len(rec.Aliases) != 1 || rec.Aliases[0] != "Milk Soft" {
-		t.Fatalf("label aliases = %+v, want [Milk Soft]", rec.Aliases)
+	if len(rec.Aliases) != 2 ||
+		rec.Aliases[0].Value != "Milk Soft" || rec.Aliases[0].Lang != "en" ||
+		rec.Aliases[1].Value != "Milk Soft" || rec.Aliases[1].Lang != "ja" {
+		t.Fatalf("label aliases = %+v, want Milk Soft under en and ja as separate rows", rec.Aliases)
 	}
 	if rec.WorkCount != 1 {
 		t.Fatalf("sfw label work_count = %d, want 1 (r18 excluded)", rec.WorkCount)

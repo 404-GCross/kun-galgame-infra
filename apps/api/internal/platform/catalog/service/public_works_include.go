@@ -102,6 +102,9 @@ func (s *PublicService) attachWorkListBlocks(
 		if err := s.fillWorkLabelCounts(ctx, blocks, nsfw); err != nil {
 			return err
 		}
+		if err := s.fillLabelLocalized(ctx, blocks...); err != nil {
+			return err
+		}
 	}
 	if inc.Ratings {
 		ratings, err := s.read.loadWorkRatings(ctx, subjects)

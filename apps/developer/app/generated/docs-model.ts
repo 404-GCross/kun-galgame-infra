@@ -387,6 +387,33 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
+                                        "name": "localized",
+                                        "required": true,
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "logo_hash",
                                         "required": true,
                                         "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -553,15 +580,42 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
                                     },
                                     {
-                                      "name": "name",
+                                      "name": "localized",
                                       "required": true,
-                                      "type": "string"
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     }
                                   ]
                                 }
@@ -1011,6 +1065,33 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
+                                        "name": "localized",
+                                        "required": true,
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "logo_hash",
                                         "required": true,
                                         "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -1177,15 +1258,42 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
                                     },
                                     {
-                                      "name": "name",
+                                      "name": "localized",
                                       "required": true,
-                                      "type": "string"
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     }
                                   ]
                                 }
@@ -1628,6 +1736,33 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
+                                        "name": "localized",
+                                        "required": true,
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "logo_hash",
                                         "required": true,
                                         "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -1794,15 +1929,42 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
                                     },
                                     {
-                                      "name": "name",
+                                      "name": "localized",
                                       "required": true,
-                                      "type": "string"
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     }
                                   ]
                                 }
@@ -2088,7 +2250,29 @@ export const docsModel: DocsModel = {
                             "doc": "alternate spellings; deduplicated, the display name excluded, [] when it has none",
                             "type": "array",
                             "itemsOf": {
-                              "type": "string"
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "translation|spelling_variant",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "machine",
+                                  "type": "boolean"
+                                },
+                                {
+                                  "name": "value",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
                             }
                           },
                           {
@@ -2162,6 +2346,11 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "doc": "translation|spelling_variant",
                                   "type": "string"
+                                },
+                                {
+                                  "name": "machine",
+                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                  "type": "boolean"
                                 },
                                 {
                                   "name": "value",
@@ -2264,6 +2453,11 @@ export const docsModel: DocsModel = {
                                     "type": "object",
                                     "children": [
                                       {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
                                         "name": "id",
                                         "required": true,
                                         "format": "int64",
@@ -2279,9 +2473,31 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
-                                        "name": "name",
+                                        "name": "localized",
                                         "required": true,
-                                        "type": "string"
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
                                       }
                                     ]
                                   }
@@ -2341,6 +2557,28 @@ export const docsModel: DocsModel = {
                                       "name": "medium",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "names",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "en-us",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "ja-jp",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-cn",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-tw",
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -2754,6 +2992,33 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "localized",
+                                  "required": true,
+                                  "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "translation|spelling_variant",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "logo_hash",
                                   "required": true,
                                   "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -2886,7 +3151,29 @@ export const docsModel: DocsModel = {
                             "nullable": true,
                             "type": "array",
                             "itemsOf": {
-                              "type": "string"
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "translation|spelling_variant",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "machine",
+                                  "type": "boolean"
+                                },
+                                {
+                                  "name": "value",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
                             }
                           },
                           {
@@ -2982,6 +3269,11 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "machine",
+                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                  "type": "boolean"
+                                },
+                                {
                                   "name": "value",
                                   "required": true,
                                   "type": "string"
@@ -3030,20 +3322,47 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
                                   "name": "id",
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
                                 },
                                 {
-                                  "name": "name",
+                                  "name": "localized",
                                   "required": true,
-                                  "type": "string"
+                                  "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "translation|spelling_variant",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
                                 },
                                 {
                                   "name": "relation",
                                   "required": true,
-                                  "doc": "parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<name> is the <relation> of this label\"",
+                                  "doc": "parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<display_name> is the <relation> of this label\"",
                                   "type": "string"
                                 }
                               ]
@@ -3122,6 +3441,28 @@ export const docsModel: DocsModel = {
                                       "name": "medium",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "names",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "en-us",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "ja-jp",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-cn",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-tw",
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -3383,7 +3724,29 @@ export const docsModel: DocsModel = {
                                 "doc": "alternate spellings; deduplicated, the display name excluded, [] when it has none",
                                 "type": "array",
                                 "itemsOf": {
-                                  "type": "string"
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "doc": "translation|spelling_variant",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "lang",
+                                      "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "machine",
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "name": "value",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               },
                               {
@@ -3457,6 +3820,11 @@ export const docsModel: DocsModel = {
                                       "required": true,
                                       "doc": "translation|spelling_variant",
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "machine",
+                                      "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                      "type": "boolean"
                                     },
                                     {
                                       "name": "value",
@@ -3559,6 +3927,11 @@ export const docsModel: DocsModel = {
                                         "type": "object",
                                         "children": [
                                           {
+                                            "name": "display_name",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
                                             "name": "id",
                                             "required": true,
                                             "format": "int64",
@@ -3574,9 +3947,31 @@ export const docsModel: DocsModel = {
                                             "type": "string"
                                           },
                                           {
-                                            "name": "name",
+                                            "name": "localized",
                                             "required": true,
-                                            "type": "string"
+                                            "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin",
+                                            "type": "map",
+                                            "itemsOf": {
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "kind",
+                                                  "required": true,
+                                                  "doc": "translation|spelling_variant",
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
+                                            }
                                           }
                                         ]
                                       }
@@ -3636,6 +4031,28 @@ export const docsModel: DocsModel = {
                                           "name": "medium",
                                           "required": true,
                                           "type": "string"
+                                        },
+                                        {
+                                          "name": "names",
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "en-us",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "ja-jp",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "zh-cn",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "zh-tw",
+                                              "type": "string"
+                                            }
+                                          ]
                                         }
                                       ]
                                     }
@@ -3684,7 +4101,29 @@ export const docsModel: DocsModel = {
                                 "nullable": true,
                                 "type": "array",
                                 "itemsOf": {
-                                  "type": "string"
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "doc": "translation|spelling_variant",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "lang",
+                                      "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "machine",
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "name": "value",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               },
                               {
@@ -3780,6 +4219,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "machine",
+                                      "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                      "type": "boolean"
+                                    },
+                                    {
                                       "name": "value",
                                       "required": true,
                                       "type": "string"
@@ -3828,20 +4272,47 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
                                     },
                                     {
-                                      "name": "name",
+                                      "name": "localized",
                                       "required": true,
-                                      "type": "string"
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     },
                                     {
                                       "name": "relation",
                                       "required": true,
-                                      "doc": "parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<name> is the <relation> of this label\"",
+                                      "doc": "parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<display_name> is the <relation> of this label\"",
                                       "type": "string"
                                     }
                                   ]
@@ -3920,6 +4391,28 @@ export const docsModel: DocsModel = {
                                           "name": "medium",
                                           "required": true,
                                           "type": "string"
+                                        },
+                                        {
+                                          "name": "names",
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "en-us",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "ja-jp",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "zh-cn",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "zh-tw",
+                                              "type": "string"
+                                            }
+                                          ]
                                         }
                                       ]
                                     }
@@ -3939,7 +4432,29 @@ export const docsModel: DocsModel = {
                                 "doc": "alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none",
                                 "type": "array",
                                 "itemsOf": {
-                                  "type": "string"
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "doc": "translation|spelling_variant",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "lang",
+                                      "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "machine",
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "name": "value",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               },
                               {
@@ -4052,6 +4567,28 @@ export const docsModel: DocsModel = {
                                           "name": "medium",
                                           "required": true,
                                           "type": "string"
+                                        },
+                                        {
+                                          "name": "names",
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "en-us",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "ja-jp",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "zh-cn",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "zh-tw",
+                                              "type": "string"
+                                            }
+                                          ]
                                         }
                                       ]
                                     }
@@ -4150,6 +4687,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "machine",
+                                      "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                      "type": "boolean"
+                                    },
+                                    {
                                       "name": "value",
                                       "required": true,
                                       "type": "string"
@@ -4221,6 +4763,33 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "latin",
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     }
                                   ]
                                 }
@@ -4282,6 +4851,28 @@ export const docsModel: DocsModel = {
                                 "name": "medium",
                                 "required": true,
                                 "type": "string"
+                              },
+                              {
+                                "name": "names",
+                                "type": "object",
+                                "children": [
+                                  {
+                                    "name": "en-us",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "ja-jp",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "zh-cn",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "zh-tw",
+                                    "type": "string"
+                                  }
+                                ]
                               }
                             ]
                           }
@@ -4395,7 +4986,29 @@ export const docsModel: DocsModel = {
                                       "doc": "alternate spellings; deduplicated, the display name excluded, [] when it has none",
                                       "type": "array",
                                       "itemsOf": {
-                                        "type": "string"
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "lang",
+                                            "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
                                       }
                                     },
                                     {
@@ -4469,6 +5082,11 @@ export const docsModel: DocsModel = {
                                             "required": true,
                                             "doc": "translation|spelling_variant",
                                             "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
                                           },
                                           {
                                             "name": "value",
@@ -4571,6 +5189,11 @@ export const docsModel: DocsModel = {
                                               "type": "object",
                                               "children": [
                                                 {
+                                                  "name": "display_name",
+                                                  "required": true,
+                                                  "type": "string"
+                                                },
+                                                {
                                                   "name": "id",
                                                   "required": true,
                                                   "format": "int64",
@@ -4586,9 +5209,31 @@ export const docsModel: DocsModel = {
                                                   "type": "string"
                                                 },
                                                 {
-                                                  "name": "name",
+                                                  "name": "localized",
                                                   "required": true,
-                                                  "type": "string"
+                                                  "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin",
+                                                  "type": "map",
+                                                  "itemsOf": {
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "kind",
+                                                        "required": true,
+                                                        "doc": "translation|spelling_variant",
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
+                                                  }
                                                 }
                                               ]
                                             }
@@ -4648,6 +5293,28 @@ export const docsModel: DocsModel = {
                                                 "name": "medium",
                                                 "required": true,
                                                 "type": "string"
+                                              },
+                                              {
+                                                "name": "names",
+                                                "type": "object",
+                                                "children": [
+                                                  {
+                                                    "name": "en-us",
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "ja-jp",
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "zh-cn",
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "zh-tw",
+                                                    "type": "string"
+                                                  }
+                                                ]
                                               }
                                             ]
                                           }
@@ -4701,7 +5368,29 @@ export const docsModel: DocsModel = {
                                       "nullable": true,
                                       "type": "array",
                                       "itemsOf": {
-                                        "type": "string"
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "lang",
+                                            "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
                                       }
                                     },
                                     {
@@ -4797,6 +5486,11 @@ export const docsModel: DocsModel = {
                                             "type": "string"
                                           },
                                           {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
                                             "name": "value",
                                             "required": true,
                                             "type": "string"
@@ -4845,20 +5539,47 @@ export const docsModel: DocsModel = {
                                         "type": "object",
                                         "children": [
                                           {
+                                            "name": "display_name",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
                                             "name": "id",
                                             "required": true,
                                             "format": "int64",
                                             "type": "integer"
                                           },
                                           {
-                                            "name": "name",
+                                            "name": "localized",
                                             "required": true,
-                                            "type": "string"
+                                            "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                            "type": "map",
+                                            "itemsOf": {
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "kind",
+                                                  "required": true,
+                                                  "doc": "translation|spelling_variant",
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
+                                            }
                                           },
                                           {
                                             "name": "relation",
                                             "required": true,
-                                            "doc": "parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<name> is the <relation> of this label\"",
+                                            "doc": "parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads \"<display_name> is the <relation> of this label\"",
                                             "type": "string"
                                           }
                                         ]
@@ -4937,6 +5658,28 @@ export const docsModel: DocsModel = {
                                                 "name": "medium",
                                                 "required": true,
                                                 "type": "string"
+                                              },
+                                              {
+                                                "name": "names",
+                                                "type": "object",
+                                                "children": [
+                                                  {
+                                                    "name": "en-us",
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "ja-jp",
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "zh-cn",
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "zh-tw",
+                                                    "type": "string"
+                                                  }
+                                                ]
                                               }
                                             ]
                                           }
@@ -4956,7 +5699,29 @@ export const docsModel: DocsModel = {
                                       "doc": "alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none",
                                       "type": "array",
                                       "itemsOf": {
-                                        "type": "string"
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "lang",
+                                            "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
                                       }
                                     },
                                     {
@@ -5069,6 +5834,28 @@ export const docsModel: DocsModel = {
                                                 "name": "medium",
                                                 "required": true,
                                                 "type": "string"
+                                              },
+                                              {
+                                                "name": "names",
+                                                "type": "object",
+                                                "children": [
+                                                  {
+                                                    "name": "en-us",
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "ja-jp",
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "zh-cn",
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "zh-tw",
+                                                    "type": "string"
+                                                  }
+                                                ]
                                               }
                                             ]
                                           }
@@ -5167,6 +5954,11 @@ export const docsModel: DocsModel = {
                                             "type": "string"
                                           },
                                           {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
                                             "name": "value",
                                             "required": true,
                                             "type": "string"
@@ -5238,6 +6030,33 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "latin",
                                             "type": "string"
+                                          },
+                                          {
+                                            "name": "localized",
+                                            "required": true,
+                                            "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin",
+                                            "type": "map",
+                                            "itemsOf": {
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "kind",
+                                                  "required": true,
+                                                  "doc": "translation|spelling_variant",
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
+                                            }
                                           }
                                         ]
                                       }
@@ -5309,6 +6128,28 @@ export const docsModel: DocsModel = {
                                       "name": "medium",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "names",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "en-us",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "ja-jp",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-cn",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-tw",
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -5422,7 +6263,29 @@ export const docsModel: DocsModel = {
                             "doc": "alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none",
                             "type": "array",
                             "itemsOf": {
-                              "type": "string"
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "translation|spelling_variant",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "machine",
+                                  "type": "boolean"
+                                },
+                                {
+                                  "name": "value",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
                             }
                           },
                           {
@@ -5535,6 +6398,28 @@ export const docsModel: DocsModel = {
                                       "name": "medium",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "names",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "en-us",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "ja-jp",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-cn",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-tw",
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -5633,6 +6518,11 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "machine",
+                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                  "type": "boolean"
+                                },
+                                {
                                   "name": "value",
                                   "required": true,
                                   "type": "string"
@@ -5704,6 +6594,33 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "latin",
                                   "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "required": true,
+                                  "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "translation|spelling_variant",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
                                 }
                               ]
                             }
@@ -6077,6 +6994,33 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
+                                        "name": "localized",
+                                        "required": true,
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "logo_hash",
                                         "required": true,
                                         "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -6409,6 +7353,33 @@ export const docsModel: DocsModel = {
                                             "type": "string"
                                           },
                                           {
+                                            "name": "localized",
+                                            "required": true,
+                                            "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                            "type": "map",
+                                            "itemsOf": {
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "kind",
+                                                  "required": true,
+                                                  "doc": "translation|spelling_variant",
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
                                             "name": "logo_hash",
                                             "required": true,
                                             "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -6575,15 +7546,42 @@ export const docsModel: DocsModel = {
                                       "type": "object",
                                       "children": [
                                         {
+                                          "name": "display_name",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
                                           "name": "id",
                                           "required": true,
                                           "format": "int64",
                                           "type": "integer"
                                         },
                                         {
-                                          "name": "name",
+                                          "name": "localized",
                                           "required": true,
-                                          "type": "string"
+                                          "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                          "type": "map",
+                                          "itemsOf": {
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "kind",
+                                                "required": true,
+                                                "doc": "translation|spelling_variant",
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "machine",
+                                                "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                "type": "boolean"
+                                              },
+                                              {
+                                                "name": "value",
+                                                "required": true,
+                                                "type": "string"
+                                              }
+                                            ]
+                                          }
                                         }
                                       ]
                                     }
@@ -6822,6 +7820,11 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
                                   "name": "entity_type",
                                   "required": true,
                                   "type": "string"
@@ -6841,9 +7844,52 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
-                                  "name": "name",
-                                  "required": true,
-                                  "type": "string"
+                                  "name": "localized",
+                                  "doc": "names/characters/labels hits only: preferred name per locale, same election as the entity's detail face — render localized[yourLocale] ?? display_name",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "translation|spelling_variant",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "names",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "sources",
@@ -7267,6 +8313,28 @@ export const docsModel: DocsModel = {
                                   "name": "medium",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "names",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -7702,6 +8770,10 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "machine",
+                                  "type": "boolean"
+                                },
+                                {
                                   "name": "source",
                                   "required": true,
                                   "type": "string"
@@ -7799,6 +8871,28 @@ export const docsModel: DocsModel = {
                                   "name": "medium",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "names",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -8306,6 +9400,33 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
+                                        "name": "localized",
+                                        "required": true,
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "logo_hash",
                                         "required": true,
                                         "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -8472,15 +9593,42 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
                                     },
                                     {
-                                      "name": "name",
+                                      "name": "localized",
                                       "required": true,
-                                      "type": "string"
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     }
                                   ]
                                 }
@@ -8594,6 +9742,11 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
                                   "name": "figure",
                                   "type": "string"
                                 },
@@ -8618,9 +9771,31 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
-                                  "name": "name",
+                                  "name": "localized",
                                   "required": true,
-                                  "type": "string"
+                                  "doc": "preferred name per locale, same election as the character detail face (machine fill-ins flagged); {} when none — render localized[yourLocale] ?? display_name ?? latin",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "translation|spelling_variant",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
                                 },
                                 {
                                   "name": "spoiler",
@@ -8638,15 +9813,50 @@ export const docsModel: DocsModel = {
                                     "type": "object",
                                     "children": [
                                       {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
                                         "name": "id",
                                         "required": true,
                                         "format": "int64",
                                         "type": "integer"
                                       },
                                       {
-                                        "name": "name",
-                                        "required": true,
+                                        "name": "lang",
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "latin",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "localized",
+                                        "required": true,
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
                                       }
                                     ]
                                   }
@@ -8868,6 +10078,11 @@ export const docsModel: DocsModel = {
                                         "type": "integer"
                                       },
                                       {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
                                         "name": "id",
                                         "required": true,
                                         "format": "int64",
@@ -8892,9 +10107,31 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
-                                        "name": "name",
+                                        "name": "localized",
                                         "required": true,
-                                        "type": "string"
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
                                       },
                                       {
                                         "name": "source",
@@ -9028,6 +10265,33 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "lang",
                                   "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "required": true,
+                                  "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "translation|spelling_variant",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
                                 },
                                 {
                                   "name": "logo_hash",
@@ -9330,6 +10594,28 @@ export const docsModel: DocsModel = {
                                       "name": "medium",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "names",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "en-us",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "ja-jp",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-cn",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh-tw",
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -9411,6 +10697,33 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "lang",
                                         "type": "string"
+                                      },
+                                      {
+                                        "name": "localized",
+                                        "required": true,
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
                                       },
                                       {
                                         "name": "logo_hash",
@@ -9613,6 +10926,28 @@ export const docsModel: DocsModel = {
                                   "name": "medium",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "names",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -10218,6 +11553,33 @@ export const docsModel: DocsModel = {
                                         "type": "string"
                                       },
                                       {
+                                        "name": "localized",
+                                        "required": true,
+                                        "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                        "type": "map",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "kind",
+                                              "required": true,
+                                              "doc": "translation|spelling_variant",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "machine",
+                                              "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
                                         "name": "logo_hash",
                                         "required": true,
                                         "doc": "brand logo content hash in the image service; \"\" = this label has no logo",
@@ -10384,15 +11746,42 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
                                     },
                                     {
-                                      "name": "name",
+                                      "name": "localized",
                                       "required": true,
-                                      "type": "string"
+                                      "doc": "preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "translation|spelling_variant",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     }
                                   ]
                                 }

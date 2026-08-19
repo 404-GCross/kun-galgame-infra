@@ -786,6 +786,23 @@ components:
         - last_played_at
         - clients
       type: object
+    PublicAlias:
+      additionalProperties: false
+      properties:
+        kind:
+          description: translation|spelling_variant
+          type: string
+        lang:
+          description: BCP-47 language of this spelling; empty when unrecorded
+          type: string
+        machine:
+          type: boolean
+        value:
+          type: string
+      required:
+        - value
+        - kind
+      type: object
     PublicCalendarData:
       additionalProperties: false
       properties:
@@ -912,7 +929,7 @@ components:
           type: integer
         intro:
           items:
-            $ref: "#/components/schemas/PublicWorkIntro"
+            $ref: "#/components/schemas/PublicIntro"
           type:
             - array
             - "null"
@@ -1075,7 +1092,7 @@ components:
         aliases:
           description: alternate spellings; deduplicated, the display name excluded, [] when it has none
           items:
-            type: string
+            $ref: "#/components/schemas/PublicAlias"
           type:
             - array
             - "null"
@@ -1090,7 +1107,7 @@ components:
           type: string
         intros:
           items:
-            $ref: "#/components/schemas/PublicCharacterIntro"
+            $ref: "#/components/schemas/PublicIntro"
           type:
             - array
             - "null"
@@ -1133,22 +1150,6 @@ components:
         - refs
         - traits
         - intros
-      type: object
-    PublicCharacterIntro:
-      additionalProperties: false
-      properties:
-        intro:
-          type: string
-        lang:
-          type: string
-        machine:
-          type: boolean
-        source:
-          type: string
-      required:
-        - lang
-        - intro
-        - source
       type: object
     PublicCharacterTrait:
       additionalProperties: false
@@ -1299,6 +1300,8 @@ components:
         character_id:
           format: int64
           type: integer
+        display_name:
+          type: string
         id:
           format: int64
           type: integer
@@ -1311,14 +1314,18 @@ components:
           type: string
         latin:
           type: string
-        name:
-          type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin
+          type: object
         source:
           type: string
       required:
         - id
-        - name
+        - display_name
         - lang
+        - localized
       type: object
     PublicEngine:
       additionalProperties: false
@@ -1405,6 +1412,8 @@ components:
       properties:
         content_rating:
           type: string
+        display_name:
+          type: string
         entity_type:
           type: string
         id:
@@ -1414,8 +1423,14 @@ components:
           type: string
         latin:
           type: string
-        name:
-          type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: "names/characters/labels hits only: preferred name per locale, same election as the entity's detail face — render localized[yourLocale] ?? display_name"
+          type: object
+        names:
+          $ref: "#/components/schemas/PublicWorkNames"
+          description: "works hits only: per-locale display titles, same election as the works-list names block"
         sources:
           items:
             type: string
@@ -1427,7 +1442,7 @@ components:
       required:
         - id
         - entity_type
-        - name
+        - display_name
         - sources
       type: object
     PublicEntitySearchData:
@@ -1446,12 +1461,28 @@ components:
         - items
         - total
       type: object
+    PublicIntro:
+      additionalProperties: false
+      properties:
+        intro:
+          type: string
+        lang:
+          type: string
+        machine:
+          type: boolean
+        source:
+          type: string
+      required:
+        - lang
+        - intro
+        - source
+      type: object
     PublicLabel:
       additionalProperties: false
       properties:
         aliases:
           items:
-            type: string
+            $ref: "#/components/schemas/PublicAlias"
           type:
             - array
             - "null"
@@ -1466,7 +1497,7 @@ components:
           type: integer
         intros:
           items:
-            $ref: "#/components/schemas/PublicLabelIntro"
+            $ref: "#/components/schemas/PublicIntro"
           type:
             - array
             - "null"
@@ -1588,22 +1619,6 @@ components:
         - logo_hash
         - work_count
       type: object
-    PublicLabelIntro:
-      additionalProperties: false
-      properties:
-        intro:
-          type: string
-        lang:
-          type: string
-        machine:
-          type: boolean
-        source:
-          type: string
-      required:
-        - lang
-        - intro
-        - source
-      type: object
     PublicLabelLink:
       additionalProperties: false
       properties:
@@ -1629,6 +1644,11 @@ components:
         kind:
           description: game_brand|bunko|publisher|anime_studio|doujin_circle|group|other
           type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name
+          type: object
         logo_hash:
           description: brand logo content hash in the image service; "" = this label has no logo
           type: string
@@ -1638,6 +1658,7 @@ components:
       required:
         - id
         - display_name
+        - localized
         - kind
         - work_count
         - logo_hash
@@ -1646,30 +1667,42 @@ components:
     PublicLabelRelation:
       additionalProperties: false
       properties:
+        display_name:
+          type: string
         id:
           format: int64
           type: integer
-        name:
-          type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name
+          type: object
         relation:
-          description: parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads "<name> is the <relation> of this label"
+          description: parent|subsidiary|imprint|imprint_of|spawned|origin|succeeded_by|formerly — reads "<display_name> is the <relation> of this label"
           type: string
       required:
         - id
-        - name
+        - display_name
+        - localized
         - relation
       type: object
     PublicLabelVia:
       additionalProperties: false
       properties:
+        display_name:
+          type: string
         id:
           format: int64
           type: integer
-        name:
-          type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name
+          type: object
       required:
         - id
-        - name
+        - display_name
+        - localized
       type: object
     PublicLabelWork:
       additionalProperties: false
@@ -1709,6 +1742,9 @@ components:
         kind:
           description: translation|spelling_variant
           type: string
+        machine:
+          description: true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative
+          type: boolean
         value:
           type: string
       required:
@@ -1808,7 +1844,7 @@ components:
         aliases:
           description: alternate spellings of THIS credited name; deduplicated, the name itself excluded, [] when it has none
           items:
-            type: string
+            $ref: "#/components/schemas/PublicAlias"
           type:
             - array
             - "null"
@@ -1841,7 +1877,7 @@ components:
           type: integer
         intros:
           items:
-            $ref: "#/components/schemas/PublicNameIntro"
+            $ref: "#/components/schemas/PublicIntro"
           type:
             - array
             - "null"
@@ -1907,22 +1943,6 @@ components:
       required:
         - work
         - roles
-      type: object
-    PublicNameIntro:
-      additionalProperties: false
-      properties:
-        intro:
-          type: string
-        lang:
-          type: string
-        machine:
-          type: boolean
-        source:
-          type: string
-      required:
-        - lang
-        - intro
-        - source
       type: object
     PublicNameRole:
       additionalProperties: false
@@ -2234,6 +2254,8 @@ components:
     PublicRosterCharacter:
       additionalProperties: false
       properties:
+        display_name:
+          type: string
         figure:
           type: string
         id:
@@ -2246,8 +2268,11 @@ components:
           type: string
         latin:
           type: string
-        name:
-          type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, same election as the character detail face (machine fill-ins flagged); {} when none — render localized[yourLocale] ?? display_name ?? latin
+          type: object
         spoiler:
           description: 0=none 1=minor 2=major
           format: int32
@@ -2260,7 +2285,8 @@ components:
             - "null"
       required:
         - id
-        - name
+        - display_name
+        - localized
         - kind
         - spoiler
         - voices
@@ -2268,14 +2294,24 @@ components:
     PublicRosterVoice:
       additionalProperties: false
       properties:
+        display_name:
+          type: string
         id:
           format: int64
           type: integer
-        name:
+        lang:
           type: string
+        latin:
+          type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin
+          type: object
       required:
         - id
-        - name
+        - display_name
+        - localized
       type: object
     PublicScreenshot:
       additionalProperties: false
@@ -2458,9 +2494,15 @@ components:
           type: string
         latin:
           type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin
+          type: object
       required:
         - id
         - display_name
+        - localized
       type: object
     PublicStatsEntities:
       additionalProperties: false
@@ -2557,7 +2599,7 @@ components:
           type: integer
         intros:
           items:
-            $ref: "#/components/schemas/PublicTagIntro"
+            $ref: "#/components/schemas/PublicIntro"
           type:
             - array
             - "null"
@@ -2591,20 +2633,6 @@ components:
         - work_count
         - sexual
         - intros
-      type: object
-    PublicTagIntro:
-      additionalProperties: false
-      properties:
-        intro:
-          type: string
-        lang:
-          type: string
-        source:
-          type: string
-      required:
-        - lang
-        - intro
-        - source
       type: object
     PublicTagListItem:
       additionalProperties: false
@@ -2657,6 +2685,8 @@ components:
     PublicVoiceName:
       additionalProperties: false
       properties:
+        display_name:
+          type: string
         id:
           format: int64
           type: integer
@@ -2664,12 +2694,16 @@ components:
           type: string
         latin:
           type: string
-        name:
-          type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name ?? latin
+          type: object
       required:
         - id
-        - name
+        - display_name
         - lang
+        - localized
       type: object
     PublicWorkBrief:
       additionalProperties: false
@@ -2685,6 +2719,9 @@ components:
           type: integer
         medium:
           type: string
+        names:
+          $ref: "#/components/schemas/PublicWorkNames"
+          description: per-locale display titles, same election as the works-list names block; absent when no title matched a slot — render names.<yourLocale> ?? display_name
       required:
         - id
         - medium
@@ -2718,22 +2755,6 @@ components:
         - id
         - name
         - work_count
-      type: object
-    PublicWorkIntro:
-      additionalProperties: false
-      properties:
-        intro:
-          type: string
-        lang:
-          type: string
-        machine:
-          type: boolean
-        source:
-          type: string
-      required:
-        - lang
-        - intro
-        - source
       type: object
     PublicWorkIntroSlot:
       additionalProperties: false
@@ -2782,6 +2803,11 @@ components:
           type: string
         lang:
           type: string
+        localized:
+          additionalProperties:
+            $ref: "#/components/schemas/PublicLocalizedName"
+          description: preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name
+          type: object
         logo_hash:
           description: brand logo content hash in the image service; "" = this label has no logo
           type: string
@@ -2791,6 +2817,7 @@ components:
       required:
         - id
         - display_name
+        - localized
         - label_kind
         - kind
         - kinds

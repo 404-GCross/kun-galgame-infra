@@ -654,10 +654,10 @@ func TestPublicLabelIntrosLinks(t *testing.T) {
 	if len(got.Intros) != 2 {
 		t.Fatalf("intros len=%d want 2: %+v", len(got.Intros), got.Intros)
 	}
-	if got.Intros[0] != (dto.PublicLabelIntro{Lang: "en", Intro: "English intro.", Source: "vndb"}) {
+	if got.Intros[0] != (dto.PublicIntro{Lang: "en", Intro: "English intro.", Source: "vndb"}) {
 		t.Fatalf("intros[0]=%+v", got.Intros[0])
 	}
-	if got.Intros[1] != (dto.PublicLabelIntro{Lang: "ja", Intro: "勝つ紹介。", Source: "bangumi"}) {
+	if got.Intros[1] != (dto.PublicIntro{Lang: "ja", Intro: "勝つ紹介。", Source: "bangumi"}) {
 		t.Fatalf("intros[1] (lowest source_id must win the language)=%+v", got.Intros[1])
 	}
 
@@ -988,11 +988,14 @@ func TestPublicNameAliases(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("name: found=%v err=%v", found, err)
 	}
-	if len(rec.Aliases) != 2 || rec.Aliases[0] != "绪方刚" || rec.Aliases[1] != "绪方刚志" {
-		t.Fatalf("aliases = %+v (want the two zh spellings, deduped, display name excluded)", rec.Aliases)
+	if len(rec.Aliases) != 3 ||
+		rec.Aliases[0].Value != "绪方刚" || rec.Aliases[0].Lang != "zh-Hans" ||
+		rec.Aliases[1].Value != "绪方刚志" || rec.Aliases[1].Lang != "zh-Hans" ||
+		rec.Aliases[2].Value != "绪方刚志" || rec.Aliases[2].Lang != "" {
+		t.Fatalf("aliases = %+v (want the zh spellings per lang, display name excluded)", rec.Aliases)
 	}
 	for _, a := range rec.Aliases {
-		if a == "尾形武" {
+		if a.Value == "尾形武" {
 			t.Fatal("a sibling's alias must never be attributed to this name")
 		}
 	}
@@ -1000,7 +1003,7 @@ func TestPublicNameAliases(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("sibling: found=%v err=%v", found, err)
 	}
-	if len(sib.Aliases) != 1 || sib.Aliases[0] != "尾形武" {
+	if len(sib.Aliases) != 1 || sib.Aliases[0].Value != "尾形武" {
 		t.Fatalf("sibling aliases = %+v", sib.Aliases)
 	}
 
@@ -1181,7 +1184,7 @@ func TestPublicCharacterLocalizedNames(t *testing.T) {
 	if rec.DisplayName != "美坂香里" {
 		t.Fatalf("display_name = %q", rec.DisplayName)
 	}
-	if len(rec.Aliases) != 1 || rec.Aliases[0] != "美坂香裡" {
+	if len(rec.Aliases) != 1 || rec.Aliases[0].Value != "美坂香裡" || rec.Aliases[0].Lang != "ja" {
 		t.Fatalf("aliases = %+v (want the ja variant only)", rec.Aliases)
 	}
 	zh, ok := rec.Localized["zh-Hans"]
@@ -1192,7 +1195,7 @@ func TestPublicCharacterLocalizedNames(t *testing.T) {
 		t.Fatal("a search-hint row must never reach localized{}")
 	}
 	for _, a := range rec.Aliases {
-		if a == "misaka-kaori-hint" {
+		if a.Value == "misaka-kaori-hint" {
 			t.Fatal("a search-hint row must never reach aliases[]")
 		}
 	}
@@ -1207,5 +1210,62 @@ func TestPublicCharacterLocalizedNames(t *testing.T) {
 	}
 	if rec.Localized == nil || len(rec.Localized) != 0 {
 		t.Fatalf("an alias-less character must serialize {}: %#v", rec.Localized)
+	}
+}
+
+func TestPublicCharacterLocalizedMachineFill(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	mkAlias := func(characterID int64, name, lang string, kind, provenance int16) {
+		t.Helper()
+		a := &model.CatalogCharacterAlias{
+			CharacterID: characterID, Name: name, Lang: lang,
+			Kind: kind, Provenance: provenance,
+		}
+		if err := testDB.Create(a).Error; err != nil {
+			t.Fatalf("create alias %q/%s: %v", name, lang, err)
+		}
+	}
+
+	filled := createCharacter(t, "白河ことり")
+	mkAlias(filled.ID, "白河ことり", "ja", model.AliasKindSpellingVariant, model.AliasProvenanceSource)
+	mkAlias(filled.ID, "白河小鸟", "zh-Hans", model.AliasKindTranslation, model.AliasProvenanceMachine)
+
+	rec, found, err := svc.Character(ctx, filled.ID, false, false, 0, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("character: found=%v err=%v", found, err)
+	}
+	zh, ok := rec.Localized["zh-Hans"]
+	if !ok {
+		t.Fatalf("localized = %+v, want a machine zh-Hans fill-in", rec.Localized)
+	}
+	if zh.Value != "白河小鸟" || zh.Kind != "translation" || !zh.Machine {
+		t.Fatalf("localized[zh-Hans] = %+v, want the seeded machine row flagged machine:true", zh)
+	}
+	if ja, ok := rec.Localized["ja"]; !ok || ja.Value != "白河ことり" || ja.Machine {
+		t.Fatalf("localized[ja] = %+v (ok=%v), want the source row unflagged", ja, ok)
+	}
+
+	sourced := createCharacter(t, "神岸あかり")
+	mkAlias(sourced.ID, "神岸明", "zh-Hans", model.AliasKindTranslation, model.AliasProvenanceSource)
+	mkAlias(sourced.ID, "神岸朱里", "zh-Hans", model.AliasKindTranslation, model.AliasProvenanceMachine)
+
+	rec, found, err = svc.Character(ctx, sourced.ID, false, false, 0, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("sourced character: found=%v err=%v", found, err)
+	}
+	zh, ok = rec.Localized["zh-Hans"]
+	if !ok || zh.Value != "神岸明" || zh.Machine {
+		t.Fatalf("localized[zh-Hans] = %+v (ok=%v), a source row must beat the machine row", zh, ok)
+	}
+	if len(rec.Aliases) != 2 {
+		t.Fatalf("aliases = %+v, want both zh spellings", rec.Aliases)
+	}
+	for _, a := range rec.Aliases {
+		if a.Value == "神岸朱里" && !a.Machine {
+			t.Fatalf("the shadowed machine spelling must stay flagged in aliases[]: %+v", a)
+		}
 	}
 }

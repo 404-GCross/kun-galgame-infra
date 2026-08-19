@@ -85,10 +85,15 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 	if err != nil {
 		return dto.PublicLabelsListData{}, err
 	}
+	loc, err := s.localizedFor(ctx, labelAliasSource, ids)
+	if err != nil {
+		return dto.PublicLabelsListData{}, err
+	}
 	out := dto.PublicLabelsListData{Items: make([]dto.PublicLabelListItem, len(rows))}
 	for i, r := range rows {
 		out.Items[i] = dto.PublicLabelListItem{
-			ID: r.ID, DisplayName: r.DisplayName, Kind: labelKindKey(r.Kind), WorkCount: counts[r.ID],
+			ID: r.ID, DisplayName: r.DisplayName, Localized: locOrEmpty(loc[r.ID]),
+			Kind: labelKindKey(r.Kind), WorkCount: counts[r.ID],
 			LogoHash: r.LogoHash, HasRelations: related[r.ID],
 		}
 	}

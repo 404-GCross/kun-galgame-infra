@@ -286,7 +286,63 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		}
 		rec.Credits = groups
 	}
+	if err = s.enrichWorkNameBlocks(ctx, &rec); err != nil {
+		return dto.PublicCatalogWork{}, false, err
+	}
 	return rec, true, nil
+}
+
+func (s *PublicService) enrichWorkNameBlocks(ctx context.Context, rec *dto.PublicCatalogWork) error {
+	charIDs := make([]int64, 0, len(rec.Characters))
+	var nameIDs []int64
+	for i := range rec.Characters {
+		charIDs = append(charIDs, rec.Characters[i].ID)
+		for j := range rec.Characters[i].Voices {
+			nameIDs = append(nameIDs, rec.Characters[i].Voices[j].ID)
+		}
+	}
+	for gi := range rec.Credits {
+		for ci := range rec.Credits[gi].Credits {
+			nameIDs = append(nameIDs, rec.Credits[gi].Credits[ci].ID)
+		}
+	}
+	charLoc, err := s.localizedFor(ctx, characterAliasSource, charIDs)
+	if err != nil {
+		return err
+	}
+	nameLoc, err := s.localizedFor(ctx, creditNameAliasSource, nameIDs)
+	if err != nil {
+		return err
+	}
+	for i := range rec.Characters {
+		rec.Characters[i].Localized = locOrEmpty(charLoc[rec.Characters[i].ID])
+		for j := range rec.Characters[i].Voices {
+			v := &rec.Characters[i].Voices[j]
+			v.Localized = locOrEmpty(nameLoc[v.ID])
+		}
+	}
+	for gi := range rec.Credits {
+		for ci := range rec.Credits[gi].Credits {
+			c := &rec.Credits[gi].Credits[ci]
+			c.Localized = locOrEmpty(nameLoc[c.ID])
+		}
+	}
+	labelBlocks := make([][]dto.PublicWorkLabel, 0, len(rec.Releases)+1)
+	labelBlocks = append(labelBlocks, rec.Labels)
+	for i := range rec.Releases {
+		labelBlocks = append(labelBlocks, rec.Releases[i].Labels)
+	}
+	if err := s.fillLabelLocalized(ctx, labelBlocks...); err != nil {
+		return err
+	}
+	briefs := make([]*dto.PublicWorkBrief, 0, len(rec.SeriesSiblings)+len(rec.Relations))
+	for i := range rec.SeriesSiblings {
+		briefs = append(briefs, &rec.SeriesSiblings[i])
+	}
+	for i := range rec.Relations {
+		briefs = append(briefs, &rec.Relations[i].Work)
+	}
+	return s.fillWorkBriefNames(ctx, briefs...)
 }
 
 func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool, limits map[int64]bool) []dto.PublicRelation {
@@ -374,9 +430,9 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 	for _, p := range detail.Platforms {
 		rec.Platforms = append(rec.Platforms, dto.PublicPlatform{Platform: p.Platform, Source: s.sourceKey(p.SourceID)})
 	}
-	rec.Intro = make([]dto.PublicWorkIntro, 0, len(detail.Intros))
+	rec.Intro = make([]dto.PublicIntro, 0, len(detail.Intros))
 	for _, in := range detail.Intros {
-		rec.Intro = append(rec.Intro, dto.PublicWorkIntro{
+		rec.Intro = append(rec.Intro, dto.PublicIntro{
 			Lang: in.Lang, Intro: in.Intro, Source: s.sourceKey(in.SourceID), Machine: in.Machine,
 		})
 	}
@@ -414,7 +470,7 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 	rec.Characters = make([]dto.PublicRosterCharacter, 0, len(detail.Characters))
 	for _, ch := range detail.Characters {
 		pc := dto.PublicRosterCharacter{
-			ID: ch.CharacterID, Name: ch.DisplayName, Latin: derefStrPub(ch.Latin),
+			ID: ch.CharacterID, DisplayName: ch.DisplayName, Latin: derefStrPub(ch.Latin),
 			Kind: rosterKindKey(ch.Kind), Spoiler: ch.Spoiler,
 			Voices: make([]dto.PublicRosterVoice, 0, len(ch.Va)),
 		}
@@ -425,7 +481,9 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 			pc.Figure = s.imageURL(*ch.FigureHash)
 		}
 		for _, v := range ch.Va {
-			pc.Voices = append(pc.Voices, dto.PublicRosterVoice{ID: v.CreditNameID, Name: v.Name})
+			pc.Voices = append(pc.Voices, dto.PublicRosterVoice{
+				ID: v.CreditNameID, DisplayName: v.Name, Lang: v.Lang, Latin: derefStrPub(v.Latin),
+			})
 		}
 		rec.Characters = append(rec.Characters, pc)
 	}
@@ -562,7 +620,7 @@ func (s *PublicService) workCredits(ctx context.Context, workID int64) ([]dto.Pu
 			})
 			cur = &groups[len(groups)-1]
 		}
-		item := dto.PublicCreditItem{ID: r.CreditNameID, Name: r.Name, Lang: r.Lang}
+		item := dto.PublicCreditItem{ID: r.CreditNameID, DisplayName: r.Name, Lang: r.Lang}
 		if r.Latin != nil {
 			item.Latin = *r.Latin
 		}
@@ -621,6 +679,17 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 			Latin:       derefStrPub(sib.Latin),
 		})
 	}
+	sibIDs := make([]int64, len(p.Siblings))
+	for i := range p.Siblings {
+		sibIDs[i] = p.Siblings[i].ID
+	}
+	sibLoc, err := s.localizedFor(ctx, creditNameAliasSource, sibIDs)
+	if err != nil {
+		return dto.PublicName{}, false, err
+	}
+	for i := range p.Siblings {
+		p.Siblings[i].Localized = locOrEmpty(sibLoc[p.Siblings[i].ID])
+	}
 	if p.Aliases, p.Localized, err = s.nameAliases(ctx, id); err != nil {
 		return dto.PublicName{}, false, err
 	}
@@ -653,6 +722,13 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 				row.Roles = append(row.Roles, pr)
 			}
 			p.Credits = append(p.Credits, row)
+		}
+		creditBriefs := make([]*dto.PublicWorkBrief, len(p.Credits))
+		for i := range p.Credits {
+			creditBriefs[i] = &p.Credits[i].Work
+		}
+		if err := s.fillWorkBriefNames(ctx, creditBriefs...); err != nil {
+			return dto.PublicName{}, false, err
 		}
 		p.NextOffset = nextOffset(len(res.Works), limit, offset)
 	}
@@ -713,10 +789,31 @@ func (s *PublicService) Character(ctx context.Context, id int64, withWorks, nsfw
 			row := dto.PublicCharacterWork{Work: *b, Voices: make([]dto.PublicVoiceName, 0, len(w.Voices))}
 			for _, v := range w.Voices {
 				row.Voices = append(row.Voices, dto.PublicVoiceName{
-					ID: v.CreditNameID, Name: v.Name, Lang: v.Lang, Latin: derefStrPub(v.Latin),
+					ID: v.CreditNameID, DisplayName: v.Name, Lang: v.Lang, Latin: derefStrPub(v.Latin),
 				})
 			}
 			ch.Works = append(ch.Works, row)
+		}
+		workBriefs := make([]*dto.PublicWorkBrief, len(ch.Works))
+		var voiceIDs []int64
+		for i := range ch.Works {
+			workBriefs[i] = &ch.Works[i].Work
+			for j := range ch.Works[i].Voices {
+				voiceIDs = append(voiceIDs, ch.Works[i].Voices[j].ID)
+			}
+		}
+		if err := s.fillWorkBriefNames(ctx, workBriefs...); err != nil {
+			return dto.PublicCharacter{}, false, err
+		}
+		voiceLoc, err := s.localizedFor(ctx, creditNameAliasSource, voiceIDs)
+		if err != nil {
+			return dto.PublicCharacter{}, false, err
+		}
+		for i := range ch.Works {
+			for j := range ch.Works[i].Voices {
+				v := &ch.Works[i].Voices[j]
+				v.Localized = locOrEmpty(voiceLoc[v.ID])
+			}
 		}
 		ch.NextOffset = nextOffset(len(res.Works), limit, offset)
 	}
@@ -780,12 +877,19 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks, nsfw boo
 				Kind: workLabelKindKey(w.Kind),
 			})
 		}
+		workBriefs := make([]*dto.PublicWorkBrief, len(l.Works))
+		for i := range l.Works {
+			workBriefs[i] = &l.Works[i].Work
+		}
+		if err := s.fillWorkBriefNames(ctx, workBriefs...); err != nil {
+			return dto.PublicLabel{}, false, err
+		}
 		l.NextOffset = nextOffset(len(items), limit, offset)
 	}
 	return l, true, nil
 }
 
-func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.PublicLabelIntro, error) {
+func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.PublicIntro, error) {
 	var rows []struct {
 		Lang       string `gorm:"column:lang"`
 		Intro      string `gorm:"column:intro"`
@@ -798,32 +902,32 @@ func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.P
 		WHERE i.label_id = ? ORDER BY i.lang, i.provenance, i.source_id`, labelID).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	out := make([]dto.PublicLabelIntro, 0, len(rows))
+	out := make([]dto.PublicIntro, 0, len(rows))
 	seenLang := map[string]bool{}
 	for _, r := range rows {
 		if seenLang[r.Lang] {
 			continue
 		}
 		seenLang[r.Lang] = true
-		out = append(out, dto.PublicLabelIntro{Lang: r.Lang, Intro: r.Intro, Source: r.Source, Machine: r.Provenance == 1})
+		out = append(out, dto.PublicIntro{Lang: r.Lang, Intro: r.Intro, Source: r.Source, Machine: r.Provenance == 1})
 	}
 	return out, nil
 }
 
-func (s *PublicService) labelAliases(ctx context.Context, labelID int64) ([]string, map[string]dto.PublicLocalizedName, error) {
+func (s *PublicService) labelAliases(ctx context.Context, labelID int64) ([]dto.PublicAlias, map[string]dto.PublicLocalizedName, error) {
 	rows, err := s.entityAliases(ctx, labelAliasSource, labelID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return flatAliases(rows), localizedNames(rows), nil
+	return richAliases(rows), localizedNames(rows), nil
 }
 
-func (s *PublicService) characterAliases(ctx context.Context, characterID int64) ([]string, map[string]dto.PublicLocalizedName, error) {
+func (s *PublicService) characterAliases(ctx context.Context, characterID int64) ([]dto.PublicAlias, map[string]dto.PublicLocalizedName, error) {
 	rows, err := s.entityAliases(ctx, characterAliasSource, characterID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return flatAliases(rows), localizedNames(rows), nil
+	return richAliases(rows), localizedNames(rows), nil
 }
 
 func (s *PublicService) labelLinks(ctx context.Context, labelID int64) ([]dto.PublicLabelLink, error) {
@@ -863,12 +967,21 @@ func (s *PublicService) labelRelations(ctx context.Context, labelID int64) ([]dt
 		return nil, err
 	}
 	out := make([]dto.PublicLabelRelation, 0, len(rows))
+	ids := make([]int64, 0, len(rows))
 	for _, r := range rows {
 		key, ok := model.LabelRelationKey[r.Relation]
 		if !ok {
 			continue
 		}
-		out = append(out, dto.PublicLabelRelation{ID: r.ID, Name: r.Name, Relation: key})
+		out = append(out, dto.PublicLabelRelation{ID: r.ID, DisplayName: r.Name, Relation: key})
+		ids = append(ids, r.ID)
+	}
+	loc, err := s.localizedFor(ctx, labelAliasSource, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Localized = locOrEmpty(loc[out[i].ID])
 	}
 	return out, nil
 }
@@ -1006,6 +1119,7 @@ func (s *PublicService) loadWorkBriefs(ctx context.Context, ids []int64, nsfw bo
 		return nil, err
 	}
 	out := make(map[int64]*dto.PublicWorkBrief, len(rows))
+	briefs := make([]*dto.PublicWorkBrief, 0, len(rows))
 	for _, r := range rows {
 		if !nsfw && isR18(r.ContentRating) {
 			continue
@@ -1015,6 +1129,10 @@ func (s *PublicService) loadWorkBriefs(ctx context.Context, ids []int64, nsfw bo
 			ContentRating: contentRatingKey(r.ContentRating),
 			ClaimedBy:     claimedBy(r.Site, r.ProductWorkID, r.ClaimState, r.DisplayNSFW, r.ContentRating),
 		}
+		briefs = append(briefs, out[r.ID])
+	}
+	if err := s.fillWorkBriefNames(ctx, briefs...); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -1293,7 +1411,7 @@ func (s *PublicService) characterTraits(ctx context.Context, characterID int64, 
 // extraction outranks translated rows; source rows still win via provenance.
 const sourceDerived = 18
 
-func (s *PublicService) characterIntros(ctx context.Context, characterID int64) ([]dto.PublicCharacterIntro, error) {
+func (s *PublicService) characterIntros(ctx context.Context, characterID int64) ([]dto.PublicIntro, error) {
 	var rows []struct {
 		Lang       string
 		Intro      string
@@ -1306,27 +1424,27 @@ func (s *PublicService) characterIntros(ctx context.Context, characterID int64) 
 		characterID, sourceDerived).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	out := make([]dto.PublicCharacterIntro, 0, len(rows))
+	out := make([]dto.PublicIntro, 0, len(rows))
 	seen := map[string]bool{}
 	for _, r := range rows {
 		if seen[r.Lang] {
 			continue
 		}
 		seen[r.Lang] = true
-		out = append(out, dto.PublicCharacterIntro{Lang: r.Lang, Intro: r.Intro, Source: s.sourceKey(r.SourceID), Machine: r.Provenance == 1})
+		out = append(out, dto.PublicIntro{Lang: r.Lang, Intro: r.Intro, Source: s.sourceKey(r.SourceID), Machine: r.Provenance == 1})
 	}
 	return out, nil
 }
 
-func (s *PublicService) nameAliases(ctx context.Context, nameID int64) ([]string, map[string]dto.PublicLocalizedName, error) {
+func (s *PublicService) nameAliases(ctx context.Context, nameID int64) ([]dto.PublicAlias, map[string]dto.PublicLocalizedName, error) {
 	rows, err := s.entityAliases(ctx, creditNameAliasSource, nameID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return flatAliases(rows), localizedNames(rows), nil
+	return richAliases(rows), localizedNames(rows), nil
 }
 
-func (s *PublicService) nameIntros(ctx context.Context, nameID, personID int64) ([]dto.PublicNameIntro, error) {
+func (s *PublicService) nameIntros(ctx context.Context, nameID, personID int64) ([]dto.PublicIntro, error) {
 	var personRows []struct {
 		Lang       string
 		Intro      string
@@ -1356,14 +1474,14 @@ func (s *PublicService) nameIntros(ctx context.Context, nameID, personID int64) 
 		return nil, err
 	}
 
-	out := make([]dto.PublicNameIntro, 0, len(personRows)+len(bridged))
+	out := make([]dto.PublicIntro, 0, len(personRows)+len(bridged))
 	seen := map[string]bool{}
 	add := func(lang, intro, source string, machine bool) {
 		if lang == "" || seen[lang] {
 			return
 		}
 		seen[lang] = true
-		out = append(out, dto.PublicNameIntro{Lang: lang, Intro: intro, Source: source, Machine: machine})
+		out = append(out, dto.PublicIntro{Lang: lang, Intro: intro, Source: source, Machine: machine})
 	}
 	for _, r := range personRows {
 		if r.Provenance == 0 {
