@@ -1,0 +1,197 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"slices"
+
+	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+const (
+	langZhHans = "zh-Hans"
+	langZhHant = "zh-Hant"
+)
+
+// zhSlotSQL renders a catalog_work_title.lang as the zh SLOT it occupies, the
+// same split d7ProductKey makes on the read face: zh-Hant/zh-TW/zh-HK are the
+// traditional slot, every other zh* tag is the simplified one. NULL for
+// non-Chinese tags.
+const zhSlotSQL = `CASE
+	WHEN t.lang IN ('zh-Hant','zh-TW','zh-HK') OR t.lang LIKE 'zh-Hant-%' THEN 'zh-Hant'
+	WHEN t.lang LIKE 'zh%' THEN 'zh-Hans' END`
+
+type supplyRow struct {
+	WorkID int64  `gorm:"column:work_id"`
+	Lang   string `gorm:"column:lang"`
+	Title  string `gorm:"column:title"`
+}
+
+// loadBgmSupply lists the works with an exact bangumi anchor whose subject
+// publishes a name_cn and that carry no Chinese title AT ALL. Bangumi's
+// name_cn is simplified, so it fills the zh-Hans slot; the work-level (rather
+// than per-slot) gate is the charter's, and keeps this lane from parking a
+// simplified name beside a traditional one a source already published.
+func loadBgmSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, error) {
+	q := `
+	WITH anchored AS (
+		SELECT w.id AS work_id, s.name_cn AS title
+		FROM catalog_work w
+		JOIN catalog_external_ref r
+		  ON r.entity_type = ? AND r.entity_id = w.id
+		 AND r.source_id = (SELECT id FROM catalog_source WHERE key = 'bangumi')
+		 AND r.link_kind = ? AND r.dead_at IS NULL
+		JOIN src_bangumi.subject s ON s.id = r.external_id::bigint
+		WHERE w.deleted_at IS NULL AND s.name_cn <> ''
+	)
+	SELECT DISTINCT ON (a.work_id) a.work_id, 'zh-Hans' AS lang, a.title
+	FROM anchored a
+	WHERE NOT EXISTS (
+		SELECT 1 FROM catalog_work_title t WHERE t.work_id = a.work_id AND t.lang LIKE 'zh%')
+	ORDER BY a.work_id, a.title`
+	var rows []supplyRow
+	err := db.WithContext(ctx).Raw(q,
+		model.EntityTypeWork, model.LinkKindExact).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("load bangumi zh supply: %w", err)
+	}
+	return capRows(rows, limit), nil
+}
+
+// loadVndbSupply picks, per (work, zh slot), the title most releases agree on,
+// breaking ties on the earliest release id. mtl=false is the whole point: VNDB
+// marks machine-translated release titles and this is a SOURCE lane.
+//
+// The gate here is per-slot, not per-work: a work that already has a
+// traditional title still takes a simplified supply and vice versa.
+func loadVndbSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, error) {
+	q := `
+	WITH anchored AS (
+		SELECT w.id AS work_id, r.external_id AS vid
+		FROM catalog_work w
+		JOIN catalog_external_ref r
+		  ON r.entity_type = ? AND r.entity_id = w.id
+		 AND r.source_id = (SELECT id FROM catalog_source WHERE key = 'vndb')
+		 AND r.link_kind = ? AND r.dead_at IS NULL
+		WHERE w.deleted_at IS NULL
+	),
+	supply AS (
+		SELECT a.work_id, rt.lang, rt.title, count(*) AS agree,
+		       min(NULLIF(regexp_replace(rv.id, '^r', ''), '')::bigint) AS first_rid
+		FROM anchored a
+		JOIN src_vndb.releases_vn rv ON rv.vid = a.vid
+		JOIN src_vndb.releases_titles rt ON rt.id = rv.id
+		WHERE rt.lang IN (?, ?) AND rt.mtl = false AND rt.title <> ''
+		GROUP BY a.work_id, rt.lang, rt.title
+	)
+	SELECT DISTINCT ON (s.work_id, s.lang) s.work_id, s.lang, s.title
+	FROM supply s
+	WHERE NOT EXISTS (
+		SELECT 1 FROM catalog_work_title t
+		WHERE t.work_id = s.work_id AND (` + zhSlotSQL + `) = s.lang)
+	ORDER BY s.work_id, s.lang, s.agree DESC, s.first_rid`
+	var rows []supplyRow
+	err := db.WithContext(ctx).Raw(q,
+		model.EntityTypeWork, model.LinkKindExact,
+		langZhHans, langZhHant).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("load vndb zh supply: %w", err)
+	}
+	return capRows(rows, limit), nil
+}
+
+func capRows(rows []supplyRow, limit int) []supplyRow {
+	if limit > 0 && limit < len(rows) {
+		return rows[:limit]
+	}
+	return rows
+}
+
+type sourceLane struct {
+	name string
+	load func(context.Context, *gorm.DB, int) ([]supplyRow, error)
+}
+
+func laneFor(name string) (sourceLane, error) {
+	switch name {
+	case "bgm":
+		return sourceLane{name: "bgm", load: loadBgmSupply}, nil
+	case "vndb":
+		return sourceLane{name: "vndb", load: loadVndbSupply}, nil
+	default:
+		return sourceLane{}, fmt.Errorf("unknown --source %q (want bgm or vndb)", name)
+	}
+}
+
+const supplyInsertBatch = 500
+
+func runSource(ctx context.Context, db *gorm.DB, name string, apply bool, limit, samples int) error {
+	lane, err := laneFor(name)
+	if err != nil {
+		return err
+	}
+	rows, err := lane.load(ctx, db, limit)
+	if err != nil {
+		return err
+	}
+	perLang := map[string]int{}
+	works := map[int64]struct{}{}
+	for _, r := range rows {
+		perLang[r.Lang]++
+		works[r.WorkID] = struct{}{}
+	}
+	fmt.Printf("\n=== backfill-work-zh-titles source=%s (%s) ===\n", lane.name, modeLabel(apply))
+	fmt.Printf("supply_rows=%d works=%d zh-Hans=%d zh-Hant=%d\n",
+		len(rows), len(works), perLang[langZhHans], perLang[langZhHant])
+	for i, r := range rows {
+		if i >= samples {
+			break
+		}
+		fmt.Printf("  sample: work=%d %s %q\n", r.WorkID, r.Lang, r.Title)
+	}
+	if !apply {
+		fmt.Println("\n[dry run] nothing written — re-run with --apply")
+		return nil
+	}
+
+	titles := make([]model.CatalogWorkTitle, 0, len(rows))
+	touched := make([]int64, 0, len(works))
+	for _, r := range rows {
+		titles = append(titles, model.CatalogWorkTitle{
+			WorkID: r.WorkID, Lang: r.Lang, Title: r.Title,
+			Kind: model.WorkTitleKindOfficial, Provenance: model.WorkTitleProvenanceSource,
+		})
+	}
+	for id := range works {
+		touched = append(touched, id)
+	}
+	slices.Sort(touched)
+
+	var written int64
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(titles) > 0 {
+			res := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(titles, supplyInsertBatch)
+			if res.Error != nil {
+				return res.Error
+			}
+			written = res.RowsAffected
+		}
+		return repository.TouchWorks(ctx, tx, touched)
+	})
+	if err != nil {
+		return fmt.Errorf("write %s supply: %w", lane.name, err)
+	}
+	fmt.Printf("\nwritten=%d already=%d touched_works=%d\n", written, int64(len(titles))-written, len(touched))
+	return nil
+}
+
+func modeLabel(apply bool) string {
+	if apply {
+		return "APPLY"
+	}
+	return "DRY"
+}
