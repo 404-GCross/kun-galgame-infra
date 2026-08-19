@@ -880,6 +880,9 @@ components:
           type: string
         latin:
           type: string
+        machine:
+          description: true when the title is a machine translation, not a title a source published
+          type: boolean
         title:
           type: string
       required:
@@ -1980,6 +1983,17 @@ components:
         - role_name
         - identity
       type: object
+    PublicNameSlot:
+      additionalProperties: false
+      properties:
+        machine:
+          description: true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty
+          type: boolean
+        value:
+          type: string
+      required:
+        - value
+      type: object
     PublicPersonLink:
       additionalProperties: false
       properties:
@@ -2922,13 +2936,13 @@ components:
       additionalProperties: false
       properties:
         en-us:
-          type: string
+          $ref: "#/components/schemas/PublicNameSlot"
         ja-jp:
-          type: string
+          $ref: "#/components/schemas/PublicNameSlot"
         zh-cn:
-          type: string
+          $ref: "#/components/schemas/PublicNameSlot"
         zh-tw:
-          type: string
+          $ref: "#/components/schemas/PublicNameSlot"
       type: object
     PublicWorksListData:
       additionalProperties: false

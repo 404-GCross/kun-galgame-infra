@@ -484,7 +484,7 @@ func TestWorksSearchItemsAreWorksListRows(t *testing.T) {
 	if it.Updated == "" {
 		t.Fatal("updated must be present on a search row, like a browse row")
 	}
-	if it.Names == nil || it.Names.ZhCN != "五彩斑斓的世界" {
+	if it.Names == nil || it.Names.ZhCN == nil || it.Names.ZhCN.Value != "五彩斑斓的世界" {
 		t.Fatalf("include=names block = %+v", it.Names)
 	}
 	if len(it.Labels) != 1 || it.Labels[0].ID != c.labelID {

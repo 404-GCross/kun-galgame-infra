@@ -299,7 +299,7 @@ func TestReleaseFeedIncludeBlocks(t *testing.T) {
 	work := items[0].(map[string]any)["work"].(map[string]any)
 	names, ok := work["names"].(map[string]any)
 	require.True(t, ok, "include=names attaches the block to the work")
-	assert.Equal(t, "アルファ", names["ja-jp"])
+	assert.Equal(t, map[string]any{"value": "アルファ"}, names["ja-jp"])
 }
 
 func TestReleaseFeedParamValidation(t *testing.T) {

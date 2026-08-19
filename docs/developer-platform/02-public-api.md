@@ -190,7 +190,8 @@ catalog 内部按 BCP-47 存语言(`ja` / `zh-Hans` / `zh-Hant` / `en`、以及�
 | **其它一切**(`ko` / `ru` / …) | **丢弃** | |
 
 - **四键之外的语言在该块里丢弃**,不是丢失:详情面 `titles[]` / `intro[]` 恒发**完整**语言集合,富 brief 块只是渲染便利。
-- **每键选唯一行**:`names` 取该键下 **kind 最低**的一行(`official`(0) > `alias`(1) > `abbreviation`(2)——与详情面 `titles[]` 的 `ORDER BY kind` 同一序),同 kind 再按行 id 升序定序;**`search_hint`(kind=3)永不公开**(既有硬规则,查询层即排除)。两个语言映射到同一键时(`zh-Hans` 与裸 `zh`),按上述定序取首行,结果稳定可重放。
+- **每键选唯一行**:定序自 wave 210 起为 **provenance → kind → id**——`source`(0)恒压 `machine`(1),同 provenance 内再取 kind 最低的一行(`official`(0) > `alias`(1) > `abbreviation`(2),与详情面 `titles[]` 同一序),同 kind 按行 id 升序。**源标题永远赢下它的槽,机翻只能占源没填的空槽**(与实体 `localized{}` 的机器填缺同一条规矩)。**`search_hint`(kind=3)永不公开**(既有硬规则,查询层即排除)。两个语言映射到同一键时(`zh-Hans` 与裸 `zh`),按上述定序取首行,结果稳定可重放。
+- **每个槽是对象,不是裸串**(wave 210,**breaking**):`{value, machine}`,`machine` 仅在为真时出现。形状与 `intros` 的槽对称,语义与实体 `localized{}` 的 `machine` 逐字一致。
 - **认领作品的四键来自 wiki 桥**(A2-R1,见 §3.2.5):`ja-jp`/`en-us`/`zh-cn`/`zh-tw` 分别由 wiki 正文的四个名称列供给;wiki **别名无语言**,故进不了任何产品键——别名只出现在详情面 `titles[]`(`kind=alias`、`lang=""`)与搜索索引里。
 - `intros` 的每语言归并在读面已完成(每语言最优来源胜出 + 机翻让位于源文,见表③),此块只做重新键控:按 lang 升序取首个落入该键的行。
 
@@ -515,6 +516,15 @@ Content-Type: application/json
 - **机器填缺**:见第 3 点修订——machine 行只填无 source 行的 locale 槽,带 `machine: true`。
 
 全部破坏性行在 `docs/catalog/public-openapi-breaking-ignore.txt` 逐条具名;契约总述另见 `docs/catalog/01-service-and-contract.md` §1。
+
+### wave 210(2026-08-19):作品**标题**也进机器/源二分
+
+209 做完了实体名,标题还差一步。本波给 `catalog_work_title` 加上和别名表、简介表同一根 `provenance` 轴(0=source / 1=machine),并把它露到公开面。
+
+- **🔴 `names` 四槽对象化(breaking)**:`names["zh-cn"]` 从裸字符串变成 `{value, machine}`,四个槽同改;`names["zh-cn"].value` 是原来那个串,逐字不变。渲染仍是 `names[yourLocale]?.value ?? display_name`,多一次 `.value`。逐条声明见 `public-openapi-breaking-ignore.txt`。
+- **加法**:详情面 `titles[]` 每行补 `machine`(仅为真时出现);S2S 读面 `WorkTitle` 同补。
+- **选举**:见 §3.2.1 表① 的定序修订——**源标题永远赢下自己的 locale 槽**,机翻只填空槽。要「只看人写的标题」的消费端按 `machine` 过滤即可;要「locale 里有个能读的名字」的消费端什么都不用做。
+- **为什么需要这个旗标**:本波开始把日文原名机翻成中文标题写进目录。没有旗标,「发行商真的发过的中文名」和「我们翻的」在线上无从分辨,消费端也就没法选。供给侧同时补齐了两条**源**泳道(bangumi `name_cn`、VNDB 非机翻中文 release 标题),它们写的是 provenance=0——机翻只覆盖这两条都供不出的残量。
 
 ### 3.8 playtime 面:用户令牌认证的公开写面(wave 207 补文)
 

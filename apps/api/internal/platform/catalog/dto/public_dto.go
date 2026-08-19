@@ -19,10 +19,11 @@ type PublicWorkBrief struct {
 }
 
 type PublicCatalogTitle struct {
-	Lang  string `json:"lang"`
-	Title string `json:"title"`
-	Latin string `json:"latin,omitempty"`
-	Kind  string `json:"kind"`
+	Lang    string `json:"lang"`
+	Title   string `json:"title"`
+	Latin   string `json:"latin,omitempty"`
+	Kind    string `json:"kind"`
+	Machine bool   `json:"machine,omitempty" doc:"true when the title is a machine translation, not a title a source published"`
 }
 
 type PublicCatalogRef struct {
@@ -464,11 +465,16 @@ type PublicWorkListItem struct {
 	Refs    []PublicCatalogRef    `json:"refs,omitempty"`
 }
 
+type PublicNameSlot struct {
+	Value   string `json:"value"`
+	Machine bool   `json:"machine,omitempty" doc:"true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty"`
+}
+
 type PublicWorkNames struct {
-	JaJP string `json:"ja-jp,omitempty"`
-	ZhCN string `json:"zh-cn,omitempty"`
-	ZhTW string `json:"zh-tw,omitempty"`
-	EnUS string `json:"en-us,omitempty"`
+	JaJP *PublicNameSlot `json:"ja-jp,omitempty"`
+	ZhCN *PublicNameSlot `json:"zh-cn,omitempty"`
+	ZhTW *PublicNameSlot `json:"zh-tw,omitempty"`
+	EnUS *PublicNameSlot `json:"en-us,omitempty"`
 }
 
 type PublicWorkIntroSlot struct {

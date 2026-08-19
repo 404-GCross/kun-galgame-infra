@@ -168,19 +168,67 @@ export const docsModel: DocsModel = {
                                   "children": [
                                     {
                                       "name": "en-us",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "ja-jp",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-cn",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-tw",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -766,19 +814,67 @@ export const docsModel: DocsModel = {
                                   "children": [
                                     {
                                       "name": "en-us",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "ja-jp",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-cn",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-tw",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -1406,19 +1502,67 @@ export const docsModel: DocsModel = {
                                           "children": [
                                             {
                                               "name": "en-us",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             },
                                             {
                                               "name": "ja-jp",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             },
                                             {
                                               "name": "zh-cn",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             },
                                             {
                                               "name": "zh-tw",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             }
                                           ]
                                         }
@@ -1766,19 +1910,67 @@ export const docsModel: DocsModel = {
                                           "children": [
                                             {
                                               "name": "en-us",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             },
                                             {
                                               "name": "ja-jp",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             },
                                             {
                                               "name": "zh-cn",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             },
                                             {
                                               "name": "zh-tw",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             }
                                           ]
                                         }
@@ -1948,19 +2140,67 @@ export const docsModel: DocsModel = {
                                           "children": [
                                             {
                                               "name": "en-us",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             },
                                             {
                                               "name": "ja-jp",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             },
                                             {
                                               "name": "zh-cn",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             },
                                             {
                                               "name": "zh-tw",
-                                              "type": "string"
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
                                             }
                                           ]
                                         }
@@ -2232,19 +2472,67 @@ export const docsModel: DocsModel = {
                                 "children": [
                                   {
                                     "name": "en-us",
-                                    "type": "string"
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "machine",
+                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
                                   },
                                   {
                                     "name": "ja-jp",
-                                    "type": "string"
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "machine",
+                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
                                   },
                                   {
                                     "name": "zh-cn",
-                                    "type": "string"
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "machine",
+                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
                                   },
                                   {
                                     "name": "zh-tw",
-                                    "type": "string"
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "machine",
+                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
                                   }
                                 ]
                               }
@@ -2692,19 +2980,67 @@ export const docsModel: DocsModel = {
                                                 "children": [
                                                   {
                                                     "name": "en-us",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   },
                                                   {
                                                     "name": "ja-jp",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   },
                                                   {
                                                     "name": "zh-cn",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   },
                                                   {
                                                     "name": "zh-tw",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   }
                                                 ]
                                               }
@@ -3057,19 +3393,67 @@ export const docsModel: DocsModel = {
                                                 "children": [
                                                   {
                                                     "name": "en-us",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   },
                                                   {
                                                     "name": "ja-jp",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   },
                                                   {
                                                     "name": "zh-cn",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   },
                                                   {
                                                     "name": "zh-tw",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   }
                                                 ]
                                               }
@@ -3239,19 +3623,67 @@ export const docsModel: DocsModel = {
                                                 "children": [
                                                   {
                                                     "name": "en-us",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   },
                                                   {
                                                     "name": "ja-jp",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   },
                                                   {
                                                     "name": "zh-cn",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   },
                                                   {
                                                     "name": "zh-tw",
-                                                    "type": "string"
+                                                    "type": "object",
+                                                    "children": [
+                                                      {
+                                                        "name": "machine",
+                                                        "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                                        "type": "boolean"
+                                                      },
+                                                      {
+                                                        "name": "value",
+                                                        "required": true,
+                                                        "type": "string"
+                                                      }
+                                                    ]
                                                   }
                                                 ]
                                               }
@@ -3533,19 +3965,67 @@ export const docsModel: DocsModel = {
                                       "children": [
                                         {
                                           "name": "en-us",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "ja-jp",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-cn",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-tw",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         }
                                       ]
                                     }
@@ -4339,19 +4819,67 @@ export const docsModel: DocsModel = {
                                   "children": [
                                     {
                                       "name": "en-us",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "ja-jp",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-cn",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-tw",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -5499,19 +6027,67 @@ export const docsModel: DocsModel = {
                                       "children": [
                                         {
                                           "name": "en-us",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "ja-jp",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-cn",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-tw",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         }
                                       ]
                                     }
@@ -5831,19 +6407,67 @@ export const docsModel: DocsModel = {
                                   "children": [
                                     {
                                       "name": "en-us",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "ja-jp",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-cn",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-tw",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -5929,6 +6553,11 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "latin",
                                   "type": "string"
+                                },
+                                {
+                                  "name": "machine",
+                                  "doc": "true when the title is a machine translation, not a title a source published",
+                                  "type": "boolean"
                                 },
                                 {
                                   "name": "title",
@@ -6605,19 +7234,67 @@ export const docsModel: DocsModel = {
                                       "children": [
                                         {
                                           "name": "en-us",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "ja-jp",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-cn",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-tw",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         }
                                       ]
                                     },
@@ -7247,19 +7924,67 @@ export const docsModel: DocsModel = {
                                   "children": [
                                     {
                                       "name": "en-us",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "ja-jp",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-cn",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-tw",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -7925,19 +8650,67 @@ export const docsModel: DocsModel = {
                                   "children": [
                                     {
                                       "name": "en-us",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "ja-jp",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-cn",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-tw",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -8596,19 +9369,67 @@ export const docsModel: DocsModel = {
                                   "children": [
                                     {
                                       "name": "en-us",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "ja-jp",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-cn",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-tw",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -9276,19 +10097,67 @@ export const docsModel: DocsModel = {
                                       "children": [
                                         {
                                           "name": "en-us",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "ja-jp",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-cn",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-tw",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         }
                                       ]
                                     }
@@ -9552,19 +10421,67 @@ export const docsModel: DocsModel = {
                                       "children": [
                                         {
                                           "name": "en-us",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "ja-jp",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-cn",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-tw",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         }
                                       ]
                                     }
@@ -10373,19 +11290,67 @@ export const docsModel: DocsModel = {
                                       "children": [
                                         {
                                           "name": "en-us",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "ja-jp",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-cn",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         },
                                         {
                                           "name": "zh-tw",
-                                          "type": "string"
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "machine",
+                                              "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                              "type": "boolean"
+                                            },
+                                            {
+                                              "name": "value",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
                                         }
                                       ]
                                     }
@@ -10947,19 +11912,67 @@ export const docsModel: DocsModel = {
                                   "children": [
                                     {
                                       "name": "en-us",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "ja-jp",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-cn",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-tw",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -11379,19 +12392,67 @@ export const docsModel: DocsModel = {
                                   "children": [
                                     {
                                       "name": "en-us",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "ja-jp",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-cn",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     },
                                     {
                                       "name": "zh-tw",
-                                      "type": "string"
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "machine",
+                                          "doc": "true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "value",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }

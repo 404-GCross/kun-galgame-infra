@@ -176,6 +176,9 @@ func (s *PublicService) workListRefs(ctx context.Context, ids []int64) (map[int6
 	return out, nil
 }
 
+// publicWorkNames elects one title per d7 slot. First row wins: nativeWorkTitles
+// orders by provenance before kind, so a source title always beats a machine one
+// inside a slot and a machine title can only take a slot no source row filled.
 func publicWorkNames(titles []WorkTitleRow) *dto.PublicWorkNames {
 	var out dto.PublicWorkNames
 	filled := false
@@ -184,22 +187,26 @@ func publicWorkNames(titles []WorkTitleRow) *dto.PublicWorkNames {
 		if !ok {
 			continue
 		}
+		slot := &dto.PublicNameSlot{
+			Value:   t.Title,
+			Machine: t.Provenance == model.WorkTitleProvenanceMachine,
+		}
 		switch key {
 		case "ja-jp":
-			if out.JaJP == "" {
-				out.JaJP, filled = t.Title, true
+			if out.JaJP == nil {
+				out.JaJP, filled = slot, true
 			}
 		case "zh-cn":
-			if out.ZhCN == "" {
-				out.ZhCN, filled = t.Title, true
+			if out.ZhCN == nil {
+				out.ZhCN, filled = slot, true
 			}
 		case "zh-tw":
-			if out.ZhTW == "" {
-				out.ZhTW, filled = t.Title, true
+			if out.ZhTW == nil {
+				out.ZhTW, filled = slot, true
 			}
 		case "en-us":
-			if out.EnUS == "" {
-				out.EnUS, filled = t.Title, true
+			if out.EnUS == nil {
+				out.EnUS, filled = slot, true
 			}
 		}
 	}

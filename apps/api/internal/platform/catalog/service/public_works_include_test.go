@@ -25,7 +25,14 @@ func hash64(seed string) string {
 
 func addWorkTitle(t *testing.T, workID int64, lang, title string, kind int16) {
 	t.Helper()
-	if err := testDB.Create(&model.CatalogWorkTitle{WorkID: workID, Lang: lang, Title: title, Kind: kind}).Error; err != nil {
+	addWorkTitleP(t, workID, lang, title, kind, model.WorkTitleProvenanceSource)
+}
+
+func addWorkTitleP(t *testing.T, workID int64, lang, title string, kind, provenance int16) {
+	t.Helper()
+	if err := testDB.Create(&model.CatalogWorkTitle{
+		WorkID: workID, Lang: lang, Title: title, Kind: kind, Provenance: provenance,
+	}).Error; err != nil {
 		t.Fatalf("create work title %s/%s: %v", lang, title, err)
 	}
 }
@@ -155,14 +162,15 @@ func TestWorksListIncludeNamesAndIntros(t *testing.T) {
 	if it.Names == nil {
 		t.Fatal("names block missing")
 	}
-	if it.Names.JaJP != "ぴぼっと" {
-		t.Fatalf("names.ja-jp = %q, want the official title (alias must lose)", it.Names.JaJP)
+	if it.Names.JaJP == nil || it.Names.JaJP.Value != "ぴぼっと" || it.Names.JaJP.Machine {
+		t.Fatalf("names.ja-jp = %+v, want the official title (alias must lose), unflagged", it.Names.JaJP)
 	}
-	if it.Names.ZhCN != "枢轴" || it.Names.ZhTW != "樞軸" {
-		t.Fatalf("names zh pivot = %q / %q, want 枢轴 / 樞軸", it.Names.ZhCN, it.Names.ZhTW)
+	if it.Names.ZhCN == nil || it.Names.ZhCN.Value != "枢轴" ||
+		it.Names.ZhTW == nil || it.Names.ZhTW.Value != "樞軸" {
+		t.Fatalf("names zh pivot = %+v / %+v, want 枢轴 / 樞軸", it.Names.ZhCN, it.Names.ZhTW)
 	}
-	if it.Names.EnUS != "" {
-		t.Fatalf("names.en-us = %q, want empty (its only row is a search_hint)", it.Names.EnUS)
+	if it.Names.EnUS != nil {
+		t.Fatalf("names.en-us = %+v, want absent (its only row is a search_hint)", it.Names.EnUS)
 	}
 
 	if it.Intros == nil || it.Intros.JaJP == nil || it.Intros.ZhCN == nil {

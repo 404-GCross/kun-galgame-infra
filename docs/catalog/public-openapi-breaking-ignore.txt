@@ -88,3 +88,112 @@ in API GET /v1/catalog/works/search removed the required property `data/items/it
 in API GET /v1/catalog/works/{id} removed the required property `data/characters/items/name` from the response with the `200` status
 in API GET /v1/catalog/works/{id} removed the required property `data/characters/items/voices/items/name` from the response with the `200` status
 in API GET /v1/catalog/works/{id} removed the required property `data/credits/items/credits/items/name` from the response with the `200` status
+
+# Wave 210 (2026-08-19) objectifies the `names` block's four locale slots. Every
+# slot was a bare string; each is now `{value, machine}` — the same shape the
+# intro block's slots already had, and the same `machine` flag `localized{}`
+# carries on entities since wave 209. `names["zh-cn"]` becomes
+# `names["zh-cn"].value`.
+#
+# The flag is the point of the change, not decoration on it: this wave starts
+# writing machine-translated Chinese TITLES into catalog_work_title, and a
+# consumer must be able to tell one from a title a publisher actually shipped.
+# A source title always wins its locale slot; a machine one can only occupy a
+# slot no source row filled, and then it says so. Without the flag the two would
+# be indistinguishable on the wire and a reader could not choose.
+#
+# Every path below carries the same `names` block, so the entries are the same
+# four slots repeated per operation, once for each projection that embeds a work
+# (list items, briefs, relations, series siblings, search hits, calendar rows).
+#
+# Additive and therefore NOT listed: `machine` on the work-detail `titles[]`
+# rows, which grew the same flag from the same column.
+
+in API GET /v1/catalog/calendar the `data/items/items/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar the `data/items/items/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar the `data/items/items/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar the `data/items/items/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar/pending the `data/items/items/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar/pending the `data/items/items/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar/pending the `data/items/items/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar/pending the `data/items/items/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar/tba the `data/items/items/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar/tba the `data/items/items/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar/tba the `data/items/items/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/calendar/tba the `data/items/items/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/characters/{id} the `data/works/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/characters/{id} the `data/works/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/characters/{id} the `data/works/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/characters/{id} the `data/works/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/labels/{id} the `data/works/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/labels/{id} the `data/works/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/labels/{id} the `data/works/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/labels/{id} the `data/works/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/character/works/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/character/works/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/character/works/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/character/works/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/label/works/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/label/works/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/label/works/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/label/works/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/name/credits/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/name/credits/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/name/credits/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/name/credits/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/lookup the `data/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/names/{id} the `data/credits/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/names/{id} the `data/credits/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/names/{id} the `data/credits/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/names/{id} the `data/credits/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/releases the `data/items/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/releases the `data/items/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/releases the `data/items/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/releases the `data/items/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/search the `data/items/items/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/search the `data/items/items/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/search the `data/items/items/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/search the `data/items/items/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/series/{id} the `data/works/items/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/series/{id} the `data/works/items/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/series/{id} the `data/works/items/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/series/{id} the `data/works/items/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/tags/{id} the `data/works/items/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/tags/{id} the `data/works/items/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/tags/{id} the `data/works/items/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/tags/{id} the `data/works/items/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works the `data/items/items/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works the `data/items/items/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works the `data/items/items/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works the `data/items/items/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/search the `data/items/items/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/search the `data/items/items/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/search the `data/items/items/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/search the `data/items/items/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/{id} the `data/relations/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/{id} the `data/relations/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/{id} the `data/relations/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/{id} the `data/relations/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/{id} the `data/series_siblings/items/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/{id} the `data/series_siblings/items/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/{id} the `data/series_siblings/items/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API GET /v1/catalog/works/{id} the `data/series_siblings/items/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/character/works/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/character/works/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/character/works/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/character/works/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/label/works/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/label/works/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/label/works/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/label/works/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/name/credits/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/name/credits/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/name/credits/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/name/credits/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/work/names/en-us` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/work/names/ja-jp` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/work/names/zh-cn` response's property `type` changed from `string` to `object` for status `200`
+in API POST /v1/catalog/lookup/batch the `data/items/items/work/names/zh-tw` response's property `type` changed from `string` to `object` for status `200`

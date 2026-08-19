@@ -1271,7 +1271,10 @@ func publicTitles(titles []WorkTitleRow) []dto.PublicCatalogTitle {
 		if !ok {
 			continue
 		}
-		out = append(out, dto.PublicCatalogTitle{Lang: t.Lang, Title: t.Title, Latin: t.Latin, Kind: kind})
+		out = append(out, dto.PublicCatalogTitle{
+			Lang: t.Lang, Title: t.Title, Latin: t.Latin, Kind: kind,
+			Machine: t.Provenance == model.WorkTitleProvenanceMachine,
+		})
 	}
 	return out
 }

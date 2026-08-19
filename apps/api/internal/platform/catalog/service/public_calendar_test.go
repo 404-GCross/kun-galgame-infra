@@ -362,7 +362,7 @@ func TestCalendarItemsAreWorksListItems(t *testing.T) {
 		t.Fatalf("CalendarPage include: %v", err)
 	}
 	item = page.Items[0]
-	if item.Names == nil || item.Names.JaJP != "六月の作品" {
+	if item.Names == nil || item.Names.JaJP == nil || item.Names.JaJP.Value != "六月の作品" {
 		t.Fatalf("include=names on the calendar: %+v", item.Names)
 	}
 	if item.Intros == nil || item.Intros.JaJP == nil || item.Intros.JaJP.Intro != "紹介文" {
