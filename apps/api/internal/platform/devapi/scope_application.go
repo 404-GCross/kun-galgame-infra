@@ -113,6 +113,9 @@ func (r *Repository) UpdateScopeApplicationFields(ctx context.Context, id uint, 
 }
 
 func (s *SelfServiceService) ApplyForScope(ctx context.Context, userID uint, scope, message string) (*ScopeApplication, error) {
+	if err := s.requireCapability(ctx, CapabilityScopeApply); err != nil {
+		return nil, err
+	}
 	if !slices.Contains(grantableScopes, scope) {
 		return nil, ErrScopeNotGrantable
 	}

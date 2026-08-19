@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  DEV_DISABLED_HINT,
   DEV_GRANTABLE_SCOPES,
   DEV_MINTABLE_SCOPES,
   DEV_SCOPE_APP_STATUS_COLORS,
@@ -7,7 +8,7 @@ import {
 } from '~/constants/dev'
 import type { DevKeyMinted, DevScopeApplication } from '~~/shared/types/dev'
 
-const props = defineProps<{ clientId: string }>()
+const props = defineProps<{ clientId: string; scopeApplyDisabled?: boolean }>()
 const emit = defineEmits<{ close: []; minted: [DevKeyMinted] }>()
 
 const api = useApi()
@@ -142,11 +143,15 @@ const handleSubmit = async () => {
               variant="flat"
               color="primary"
               class="ml-auto"
+              :disabled="scopeApplyDisabled"
               @click="applyingFor = s"
             >
               {{ applicationFor(s) ? '重新申请' : '申请授权' }}
             </KunButton>
           </div>
+          <p v-if="scopeApplyDisabled" class="mt-1 text-xs text-default-400">
+            {{ DEV_DISABLED_HINT }}：暂不接受新的 scope 授权申请。
+          </p>
           <p
             v-if="applicationFor(s)?.status === 'declined'"
             class="mt-1 text-xs text-danger"

@@ -583,6 +583,59 @@ Content-Type: application/json
 
 > **迁移**:本节新增一张表,主库迁移**不随部署自动执行**——须手工 `go run ./cmd/migrate`(库 `kun_galgame_infra`)。
 
+### 3.10 平台策略矩阵与应用审批(2026-08-18 落账)
+
+上一节管的是「一把 key 能带哪些 scope」;本节管的是**「开发者在门户里能自助做到哪一步」**,由一张 **四能力策略矩阵** 决定。判据在 `devapi.capabilities`(代码注册表)+ `devapi_policy_overrides`(偏离默认的行)。**没有 override 行 = 代码默认**,删行 = 回到默认。
+
+| capability | 允许的 mode | 默认 | 管什么 |
+|---|---|---|---|
+| `app.create` | `self_service` / `approval` / `disabled` | `self_service` | 自助创建应用 |
+| `app.manage` | `self_service` / `disabled` | `self_service` | 自助编辑(`PATCH /dev/apps/:id`)与停用(`DELETE /dev/apps/:id`) |
+| `key.mint` | `self_service` / `disabled` | `self_service` | 自助铸造与轮换密钥 |
+| `scope.apply` | `self_service` / `disabled` | `self_service` | 提交授权制 scope 申请 |
+
+**吊销永不入闸**:`DELETE /dev/apps/:id/keys/:id` 是止损动作,任何策略都关不掉它。§3.9 的三档 scope 判据同样**刻意不进矩阵**——它已有自己的机制与测试钉,两处真源必漂移。
+
+**`app.create=approval` 的状态机**(`oauth_clients.dev_review_status`,值域 `approved` / `pending` / `declined`;`dev_review_note` 存拒绝理由,rune 计数上限 2000,与 scope 申请同一常量):
+
+```
+自助创建 ──self_service──> approved + dev_enabled=true      （行为与本节前完全一致）
+         └─approval──────> pending  + dev_enabled=false
+pending ──admin approve──> approved + dev_enabled=true（清空 note）
+        └─admin decline──> declined + dev_enabled=false + note（理由必填）
+declined ──owner resubmit──> pending（清空 note;可先 PATCH 改名再提交）
+```
+
+- **只有 pending 可审**,对非 pending 调 approve/decline → **409**。
+- **pending / declined 不能铸 key** → **409**(不是 403:这是状态冲突,不是权限问题)。判据写成 `status ∈ {pending, declined}` 而**不是** `status != 'approved'`——OAuth 控制台建的一方 client 不认识这两列,写进去的是空串,**空串刻意 fail-open**。
+- **pending / declined 不能停用** → **409**(pending 从未启用无可停,declined 本就 inert);门户对这两态隐藏「停用」。
+- **管理台 `PATCH /admin/devapi/apps/:id` 置 `dev_enabled=true` 时同时写 `approved`**——否则控制台放行的应用仍停在 pending,其 owner 在一个活着的应用上被拒铸 key。
+- **5-app 上限把 pending / declined 一并计入**(`CountAppsByOwner` 本就不按状态过滤),否则被拒者可以无限刷申请。
+- 凭据中间件**不读** `dev_review_status`:`dev_enabled` 仍是唯一 auth 位。
+
+**自助端点**(`/api/v1/dev/*`):
+
+| 端点 | 说明 |
+|---|---|
+| `GET /api/v1/dev/policies` | 四 capability 的生效 mode map(`{"app.create":"approval", …}`),门户据此渲染禁用态与提示 |
+| `POST /api/v1/dev/apps/:client_id/resubmit` | 仅 `declined` 可用 → 打回 `pending` 并清空 note;非 declined → **409** |
+
+**管理端点**(`/api/v1/admin/devapi/*`):
+
+| 端点 | 权限 | 说明 |
+|---|---|---|
+| `GET /admin/devapi/apps?status=` | `devapi.manage` | `enabled`(缺省,兼容旧行为)/ `pending` / `declined` / `disabled` / `all`;列表项带 owner、`review_status`、`review_note`、`created_at` |
+| `POST /admin/devapi/apps/:client_id/approve` | `devapi.manage` | 仅 pending,否则 **409** |
+| `POST /admin/devapi/apps/:client_id/decline` | `devapi.manage` | body `{reason}` 必填(**rune** 计数 ≤2000),否则 **400**;仅 pending,否则 **409** |
+| `GET /admin/devapi/keys` | `devapi.manage` | 跨全部应用的密钥清单(仅元数据)。`client_id=` / `state=active\|revoked\|expired\|all` / `page` / `limit`(≤200,缺省 50)→ `{items, total, page, limit}`。**无编辑端点**:行动作复用既有 per-app rotate / revoke |
+| `GET /admin/devapi/policies` | `devapi.manage` | 注册表(labels / modes / default)+ 生效 mode + `editable`(调用者是否持 `devapi.policy_manage`) |
+| `PUT /admin/devapi/policies/:capability` | **`devapi.policy_manage`** | body `{mode}`,upsert 一行;未知 capability 或该 capability 不允许的 mode → **400** |
+| `DELETE /admin/devapi/policies/:capability` | **`devapi.policy_manage`** | 删行 = 回到代码默认 |
+
+**capability 被关闭时**,对应自助端点返回 **403**(`ErrCapabilityDisabled`),文案说明该功能当前由平台关闭。**非 owner 仍先吃 404**:策略错误绝不能变成「别人有没有这个应用」的存在性预言机。
+
+> **迁移**:本节新增一张表 `devapi_policy_overrides` + `oauth_clients` 两列,主库迁移**不随部署自动执行**——须手工 `go run ./cmd/migrate`(库 `kun_galgame_infra`)。
+
 ---
 
 ## 10. OpenAPI 策略
