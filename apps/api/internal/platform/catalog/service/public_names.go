@@ -120,8 +120,21 @@ func (s *PublicService) LocalizedForEntities(ctx context.Context, entityType str
 	return s.localizedFor(ctx, src, ids)
 }
 
-func (s *PublicService) WorkNamesByID(ctx context.Context, ids []int64) (map[int64]*dto.PublicWorkNames, error) {
-	return s.workNamesFor(ctx, ids)
+type WorkNameBlock struct {
+	Names     *dto.PublicWorkNames
+	Localized map[string]dto.PublicLocalizedName
+}
+
+func (s *PublicService) WorkNamesByID(ctx context.Context, ids []int64) (map[int64]WorkNameBlock, error) {
+	titles, err := s.workTitlesFor(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]WorkNameBlock, len(titles))
+	for id, rows := range titles {
+		out[id] = WorkNameBlock{Names: publicWorkNames(rows), Localized: workLocalized(rows)}
+	}
+	return out, nil
 }
 
 func locOrEmpty(m map[string]dto.PublicLocalizedName) map[string]dto.PublicLocalizedName {
@@ -131,19 +144,15 @@ func locOrEmpty(m map[string]dto.PublicLocalizedName) map[string]dto.PublicLocal
 	return m
 }
 
-func (s *PublicService) workNamesFor(ctx context.Context, ids []int64) (map[int64]*dto.PublicWorkNames, error) {
-	out := make(map[int64]*dto.PublicWorkNames, len(ids))
-	if len(ids) == 0 {
-		return out, nil
-	}
+func (s *PublicService) workTitlesFor(ctx context.Context, ids []int64) (map[int64][]WorkTitleRow, error) {
 	titles := make(map[int64][]WorkTitleRow, len(ids))
+	if len(ids) == 0 {
+		return titles, nil
+	}
 	if err := s.read.nativeWorkTitles(ctx, ids, titles, false); err != nil {
 		return nil, err
 	}
-	for id, rows := range titles {
-		out[id] = publicWorkNames(rows)
-	}
-	return out, nil
+	return titles, nil
 }
 
 func (s *PublicService) fillWorkBriefNames(ctx context.Context, briefs ...*dto.PublicWorkBrief) error {
@@ -153,16 +162,59 @@ func (s *PublicService) fillWorkBriefNames(ctx context.Context, briefs ...*dto.P
 			ids = append(ids, b.ID)
 		}
 	}
-	names, err := s.workNamesFor(ctx, ids)
+	titles, err := s.workTitlesFor(ctx, ids)
 	if err != nil {
 		return err
 	}
 	for _, b := range briefs {
-		if b != nil {
-			b.Names = names[b.ID]
+		if b == nil {
+			continue
 		}
+		rows := titles[b.ID]
+		b.Names = publicWorkNames(rows)
+		b.Latin = workLatin(rows, b.DisplayName)
+		b.Localized = workLocalized(rows)
 	}
 	return nil
+}
+
+// workLocalized is localizedNames for work titles: same first-row-wins scan over
+// rows nativeWorkTitles already ordered by (provenance, kind, id), so a source
+// title beats a machine one and official beats alias inside a locale. Unlike the
+// four d7 slots the key is any canonical BCP-47 tag, so ko/ru/vi titles — which
+// had no slot to go to — reach the wire here.
+func workLocalized(rows []WorkTitleRow) map[string]dto.PublicLocalizedName {
+	out := make(map[string]dto.PublicLocalizedName, len(rows))
+	for _, t := range rows {
+		locale, ok := canonicalLocale(t.Lang)
+		if !ok {
+			continue
+		}
+		// The kind check precedes the slot check on purpose: the detail face
+		// loads titles withHints=true, and claiming a locale for a search_hint
+		// row would drop the real title behind it.
+		kind, ok := titleKindKey(t.Kind)
+		if !ok {
+			continue
+		}
+		if _, taken := out[locale]; taken {
+			continue
+		}
+		out[locale] = dto.PublicLocalizedName{
+			Value: t.Title, Kind: kind,
+			Machine: t.Provenance == model.WorkTitleProvenanceMachine,
+		}
+	}
+	return out
+}
+
+func workLatin(rows []WorkTitleRow, displayName string) string {
+	for _, t := range rows {
+		if t.Title == displayName {
+			return t.Latin
+		}
+	}
+	return ""
 }
 
 func (s *PublicService) fillLabelLocalized(ctx context.Context, blocks ...[]dto.PublicWorkLabel) error {

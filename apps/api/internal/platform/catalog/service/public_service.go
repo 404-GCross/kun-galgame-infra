@@ -258,6 +258,8 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		ContentRating: contentRatingKey(w.ContentRating),
 		ReleaseDate:   earliestReleaseDate(detail.Releases),
 		Titles:        publicTitles(detail.Titles),
+		Latin:         workLatin(detail.Titles, w.DisplayName),
+		Localized:     workLocalized(detail.Titles),
 		Refs:          publicRefs(detail.Refs),
 		ClaimedBy:     claimedBy(w.Site, w.ProductWorkID, w.ClaimState, limits[w.ID], w.ContentRating),
 		Created:       w.CreatedAt.UTC().Format(time.RFC3339),
@@ -1385,17 +1387,20 @@ func firstNonEmptyPub(vals ...string) string {
 
 func (s *PublicService) characterTraits(ctx context.Context, characterID int64, spoilers int16, nsfw bool) ([]dto.PublicCharacterTrait, error) {
 	var rows []struct {
-		ID           int64
-		Name         string
-		NameZh       string `gorm:"column:name_zh"`
-		GroupName    *string
-		GroupNameZh  *string `gorm:"column:group_name_zh"`
-		Sexual       bool
-		SpoilerLevel int16
-		Lie          bool
+		ID              int64
+		Name            string
+		NameZh          string `gorm:"column:name_zh"`
+		NameZhProv      int16  `gorm:"column:name_zh_provenance"`
+		GroupName       *string
+		GroupNameZh     *string `gorm:"column:group_name_zh"`
+		GroupNameZhProv *int16  `gorm:"column:group_name_zh_provenance"`
+		Sexual          bool
+		SpoilerLevel    int16
+		Lie             bool
 	}
-	if err := s.db.WithContext(ctx).Raw(`SELECT t.id, t.name, t.name_zh,
+	if err := s.db.WithContext(ctx).Raw(`SELECT t.id, t.name, t.name_zh, t.name_zh_provenance,
 			g.name AS group_name, g.name_zh AS group_name_zh,
+			g.name_zh_provenance AS group_name_zh_provenance,
 			t.sexual, l.spoiler_level, l.lie
 		FROM catalog_character_trait_link l
 		JOIN catalog_character_trait t ON t.id = l.trait_id
@@ -1410,10 +1415,28 @@ func (s *PublicService) characterTraits(ctx context.Context, characterID int64, 
 		out = append(out, dto.PublicCharacterTrait{
 			ID: r.ID, Name: r.Name, NameZh: r.NameZh,
 			Group: derefStrPub(r.GroupName), GroupZh: derefStrPub(r.GroupNameZh),
-			Spoiler: r.SpoilerLevel, Sexual: r.Sexual, Lie: r.Lie,
+			Localized:      traitLocalized(r.NameZh, r.NameZhProv),
+			GroupLocalized: traitLocalized(derefStrPub(r.GroupNameZh), derefI16Pub(r.GroupNameZhProv)),
+			Spoiler:        r.SpoilerLevel, Sexual: r.Sexual, Lie: r.Lie,
 		})
 	}
 	return out, nil
+}
+
+// The trait vocabulary's Chinese column is Simplified: a census of the 3,327
+// filled rows found 738 carrying simplified-only characters and none carrying a
+// traditional-only one, so the locale key is zh-Hans rather than a bare zh.
+func traitLocalized(nameZh string, provenance int16) map[string]dto.PublicLocalizedName {
+	out := map[string]dto.PublicLocalizedName{}
+	if nameZh == "" {
+		return out
+	}
+	out["zh-Hans"] = dto.PublicLocalizedName{
+		Value:   nameZh,
+		Kind:    aliasKindKey(model.AliasKindTranslation),
+		Machine: provenance == model.TraitNameZhProvenanceMachine,
+	}
+	return out
 }
 
 // sourceDerived is catalog_source 18 ("derived", first-party extraction).

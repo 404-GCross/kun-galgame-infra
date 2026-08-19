@@ -456,7 +456,7 @@ Content-Type: application/json
 | 键 | 含义 |
 |---|---|
 | `display_name` + `lang` | 记录名与它自身的 BCP-47 语言标签。`display_name` 恒非空;`lang` 未记录则省略。厂牌本已有这两键,本波补给角色与名义 |
-| `localized{}` | **按 locale 取名的 map**,键 = 规范大小写的 BCP-47 标签(`zh-Hans`/`ja`/…),值 = `{value, kind, machine}`(`machine` 为 wave 209 加法,false 时省略)。恒出,无本地化名为 `{}` |
+| `localized{}` | **按 locale 取名的 map**,键 = 规范大小写的 BCP-47 标签(`zh-Hans`/`ja`/…),值 = `{value, kind, machine}`(`machine` 为 wave 209 加法,false 时省略)。恒出,无本地化名为 `{}`。**`kind` 分两族不相交词表**:实体名 = `translation\|spelling_variant`,**作品标题 = `official\|alias\|abbreviation`**(wave 212 波 A 起 works 也发此字段) |
 | `aliases[]` | 也叫作什么(去重、剔除 display_name)。厂牌与名义本已有,本波**补给角色**——此前一条都不发。**wave 209 起从扁平字符串升级为对象数组 `{value, lang, kind, machine}`**(按 value+lang 去重,breaking,见下方 wave 209 节) |
 
 三点设计交代:
@@ -525,6 +525,19 @@ Content-Type: application/json
 - **加法**:详情面 `titles[]` 每行补 `machine`(仅为真时出现);S2S 读面 `WorkTitle` 同补。
 - **选举**:见 §3.2.1 表① 的定序修订——**源标题永远赢下自己的 locale 槽**,机翻只填空槽。要「只看人写的标题」的消费端按 `machine` 过滤即可;要「locale 里有个能读的名字」的消费端什么都不用做。
 - **为什么需要这个旗标**:本波开始把日文原名机翻成中文标题写进目录。没有旗标,「发行商真的发过的中文名」和「我们翻的」在线上无从分辨,消费端也就没法选。供给侧同时补齐了两条**源**泳道(bangumi `name_cn`、VNDB 非机翻中文 release 标题),它们写的是 provenance=0——机翻只覆盖这两条都供不出的残量。
+
+### wave 212 波 A(2026-08-19):works 补齐名字原语,四槽进入双发过渡
+
+209 统一了每个带名实体,210 给标题加上 provenance 轴——但**作品本身**从未拿到 209 的那组原语,它仍只有专为论坛留的 `names` 四槽。四槽是有损的:`lang` 为 ko/ru/vi 或未标注的标题没有槽位可去,构造上不可达。本波**纯加法**,四槽原样照发(删除等论坛/moyu 迁完,是 B 波的事)。
+
+- **四个作品投影补 `latin` + `localized{}`**:`works/{id}` 详情(**恒带**,空为 `{}`)、`works` 列表行(**仅 `include=names`**,两键与 `names` 同一道 include 闸——未点名时**整键缺席而非发 `{}`**,因为「没请求」和「没有」是两个断言)、作品 brief(与 `names` 同一次查询,恒带)、works 类 search hit(只补 `localized{}`,`latin` 本已有)。
+- **选举与四槽逐字同规**:同一批标题行、同一个 `(provenance, kind, id)` 定序、同一个 first-row-wins 扫描,源标题恒胜机翻、official 胜 alias,机翻占空槽时带 `machine: true`。差别只在键——四槽是四个固定产品键,`localized{}` 是**任意 canonical BCP-47 tag**(`zh-hant` → `zh-Hant`,**裸 `zh` 保留、不猜字形**),`lang` 为空或不成其为标签的行不入(它们仍在 `titles[]` 可列可搜)。
+- **⚠️ `kind` 是两套不相交的词表**:实体名说 `translation|spelling_variant`,**作品标题说 `official|alias|abbreviation`**。同一个 `PublicLocalizedName` 结构承载两族,按实体类型读,别拿一套词表去校验另一套。
+- **`latin`**:顺序扫标题行,取第一条 `title == display_name` 的行的 `latin`;无此行或该行无 latin 则整键缺席。
+- **同波两处加法件**(relation-graph 节点的 `localized{}` 连同 `name`→`display_name` 改名已由同日独立波先行完成):`labels` 列表行补 `aliases[]`(与详情同语义,和该行 `localized{}` 共用同一次批查,不增查询)· 角色 `traits[]` 补 `localized{}` + `group_localized{}`(键恒 `zh-Hans`,`machine` 如实映射 `name_zh_provenance`;扁平 `name_zh`/`group_zh` 保留照发)。
+- **文档注记**:`tags/{id}` 的 `intros[].machine` **恒 false**,因为 `catalog_tag_intro` 没有 provenance 列——该旗在这一面记的是「未知」,不是「人写的」。
+
+零 breaking:`public-openapi-breaking-ignore.txt` 本波**未新增任何条目**,oasdiff pinned 1.21.0 不带 ignore 也干净通过。
 
 ### 3.8 playtime 面:用户令牌认证的公开写面(wave 207 补文)
 
