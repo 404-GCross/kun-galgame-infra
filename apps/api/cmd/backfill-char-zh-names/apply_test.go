@@ -105,8 +105,8 @@ func seedWorkWithCharacter(t *testing.T, charID int64) int64 {
 		 extra, field_provenance, created_at, updated_at)
 		VALUES (1, 'ja', 'テスト作品', 0, 0, false, '{}', '{}', now(), now()) RETURNING id`).Scan(&workID).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work_title
-		(work_id, lang, title, kind)
-		VALUES (?, 'ja', 'テスト作品', 0)`, workID).Error)
+		(work_id, lang, title, kind, provenance)
+		VALUES (?, 'ja', 'テスト作品', 0, 0)`, workID).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work_character
 		(work_id, character_id, kind, spoiler, matched_by, created_at, updated_at)
 		VALUES (?, ?, 0, 0, 'test', now(), now())`, workID, charID).Error)

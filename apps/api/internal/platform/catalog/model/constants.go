@@ -212,6 +212,11 @@ const (
 )
 
 const (
+	WorkTitleProvenanceSource  int16 = 0
+	WorkTitleProvenanceMachine int16 = 1
+)
+
+const (
 	ReleaseKindDefault  int16 = 0
 	ReleaseKindDigital  int16 = 1
 	ReleaseKindPhysical int16 = 2

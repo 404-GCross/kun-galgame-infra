@@ -318,6 +318,26 @@ func preMigrate(db *gorm.DB) error {
 		}
 	}
 
+	// catalog_work_title.provenance (wave 210): the same 0=source / 1=machine
+	// axis the intro and alias tables carry, added BEFORE the work-title MT lane
+	// exists — the 0 backfill is only provably correct while every title row is
+	// still one a human source wrote. The 605 forum rows the wave reclassifies to
+	// 1 are re-marked by the lane afterwards, from evidence, not by this UPDATE.
+	// Same recipe: meaningful zero → NOT NULL with no default → add nullable,
+	// backfill 0, set NOT NULL. src_hash / mt_model are NULLABLE here (only a
+	// machine row carries them), so AutoMigrate adds them by itself.
+	if err := db.Exec(`
+		DO $$
+		BEGIN
+			IF to_regclass('catalog_work_title') IS NOT NULL THEN
+				ALTER TABLE catalog_work_title ADD COLUMN IF NOT EXISTS provenance smallint;
+				UPDATE catalog_work_title SET provenance = 0 WHERE provenance IS NULL;
+				ALTER TABLE catalog_work_title ALTER COLUMN provenance SET NOT NULL;
+			END IF;
+		END $$`).Error; err != nil {
+		return fmt.Errorf("premigrate catalog_work_title.provenance: %w", err)
+	}
+
 	// The W1-pre nativization columns (refs/proj/140,
 	// refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md): three
 	// axes that used to exist ONLY in the wiki body the read face bridged, and that
