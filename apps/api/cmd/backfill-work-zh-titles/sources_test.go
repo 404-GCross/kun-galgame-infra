@@ -173,6 +173,37 @@ func TestVndbLaneSkipsReleaseDecoratedTitles(t *testing.T) {
 	assert.Equal(t, "魔女的夜宴", rows[0].Title)
 }
 
+func TestVndbLaneRequiresHanAndSingleVNReleases(t *testing.T) {
+	clean(t)
+	ctx := t.Context()
+
+	// vndb zh release rows also carry romanizations and plain Latin strings;
+	// neither is a Chinese name. And a release spanning two VNs carries the
+	// bundle's title, not either VN's — prod grew "告别回憶 歷代回憶錄 限量版"
+	// on nine works that way before the guard existed.
+	latinOnly := mkWork(t, "拉丁行")
+	mkAnchor(t, latinOnly, "vndb", "v80")
+	mkRelease(t, "r800", "v80", langZhHans, "Rewrite", false)
+	mkRelease(t, "r801", "v80", langZhHans, "Gangtie Nüyou 2nd", false)
+
+	bundled := mkWork(t, "被合集碟盖名")
+	mkAnchor(t, bundled, "vndb", "v81")
+	other := mkWork(t, "合集碟另一部")
+	mkAnchor(t, other, "vndb", "v82")
+	for _, rid := range []string{"r810", "r812"} {
+		mkRelease(t, rid, "v81", langZhHans, "两部曲精选", false)
+		require.NoError(t, testDB.Exec(
+			`INSERT INTO src_vndb.releases_vn (id, vid, rtype) VALUES (?, 'v82', 'complete')`, rid).Error)
+	}
+	mkRelease(t, "r811", "v81", langZhHans, "第一部真名", false)
+
+	rows, err := loadVndbSupply(ctx, testDB, 0)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "no Han, no supply; a bundle title never counts even when it out-agrees")
+	assert.Equal(t, bundled, rows[0].WorkID)
+	assert.Equal(t, "第一部真名", rows[0].Title)
+}
+
 func TestVndbLaneBreaksTiesOnTheEarliestRelease(t *testing.T) {
 	clean(t)
 	ctx := t.Context()

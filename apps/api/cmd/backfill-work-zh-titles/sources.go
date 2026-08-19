@@ -70,13 +70,19 @@ func loadBgmSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, er
 }
 
 // vndbReleaseDecorationSQL names the release-packaging vocabulary that must
-// not become a work title. Measured on prod 2026-08-19: 150 of 1,839 elected
-// titles (8.2%) carried these markers — "悠之空 - 18+ 補丁", "魔女的夜宴 -
-// FHD Edition", "月姬 … 通常版"; 70 had a clean sibling candidate that this
-// filter lets win, the other 80 are deliberately skipped rather than shipped
-// or string-stripped (their zh arrives from the MT lane, honestly labeled,
-// and a later clean release replaces it via the machine-supersede path).
-const vndbReleaseDecorationSQL = `(rt.title !~* '(下載版|下载版|ダウンロード|DL版|補丁|补丁|パッチ|patch|edition|version|remake|remaster|初回|限定|通常版|体験版|體驗版|demo|trial|censored|全年齢|18\+|R18|廉価|复刻|復刻|豪華|豪华|完全版|加強|加强|移植|同梱|同捆)')`
+// not become a work title ("悠之空 - 18+ 補丁", "魔女的夜宴 - FHD Edition").
+// Skipped works are never string-stripped: their zh arrives from the MT lane,
+// honestly labeled, and a later clean release replaces it via the
+// machine-supersede path. Measured on prod twice (2026-08-19): the first cut
+// caught 8.2% of elected titles but was an undercount — it had the Japanese
+// and traditional glyphs (体験版/體驗版) without the simplified twin (体验版),
+// and killing a decorated winner promotes the next-most-agreed sibling, which
+// can itself be decorated (先行版, 18禁DLC, 语音项目, 外挂, 中国語版). The
+// list was then iterated in a read-only rehearsal until a broad sweep found
+// nothing new. The survivors that look decorated are real names — 心跳回忆
+// 女生版 is Girl's Side, 真實色情遊戲情境體驗 is the title itself — so bare
+// 版 must never join the list.
+const vndbReleaseDecorationSQL = `(rt.title !~* '(下載版|下载版|ダウンロード|DL版|補丁|补丁|パッチ|patch|edition|version|remake|remaster|初回|限定|通常版|体験版|體驗版|体验版|demo|trial|censored|全年齢|18\+|R18|R-18|廉価|复刻|復刻|豪華|豪华|完全版|加強|加强|移植|同梱|同捆|特典|首發|首发|合集|漢化|汉化|中文化|中文版|试玩版|試玩版|测试版|測試版|一般版|普通版|平裝|平装|特裝|特装|限量|特別版|特别版|解禁|摘要版|高清|検閲|审查|審查|携帯|携带|攜帶|重製|重制|重置|最終版|最终版|正式版|典藏版|紀念|纪念|小劇場|小剧场|版本|先行版|DLC|18禁|語音|语音|外挂|外掛|中国語|中國語|韓文版|韩文版|繁體中文|繁体中文|簡體中文|简体中文|v[0-9]+\.[0-9])')`
 
 // loadVndbSupply picks, per (work, zh slot), the title most releases agree on,
 // breaking ties on the earliest release id. mtl=false is the whole point: VNDB
@@ -86,6 +92,13 @@ const vndbReleaseDecorationSQL = `(rt.title !~* '(下載版|下载版|ダウン�
 // traditional title still takes a simplified supply and vice versa. As in the
 // bgm lane, only provenance=0 rows block — a machine row in the slot is
 // superseded, not respected.
+//
+// Two structural guards ride with the vocabulary. A zh row must contain a Han
+// character: vndb stores romanizations ("Xinshiji Fuyin Zhanshi…") and plain
+// Latin/kana strings in zh release rows, and none of them is a Chinese name.
+// And only single-VN releases testify: releases_vn is many-to-many, so a
+// bundle stamps its compilation title on every VN it contains — nine works
+// wore "告别回憶 歷代回憶錄 限量版" and Rance 1 wore 婦警さんVX's bundle name.
 func loadVndbSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, error) {
 	q := `
 	WITH anchored AS (
@@ -104,6 +117,9 @@ func loadVndbSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, e
 		JOIN src_vndb.releases_vn rv ON rv.vid = a.vid
 		JOIN src_vndb.releases_titles rt ON rt.id = rv.id
 		WHERE rt.lang IN (?, ?) AND rt.mtl = false AND rt.title <> ''
+		  AND rt.title ~ '[一-鿿]'
+		  AND NOT EXISTS (SELECT 1 FROM src_vndb.releases_vn rv2
+		                  WHERE rv2.id = rv.id AND rv2.vid <> rv.vid)
 		  AND ` + vndbReleaseDecorationSQL + `
 		GROUP BY a.work_id, rt.lang, rt.title
 	)
