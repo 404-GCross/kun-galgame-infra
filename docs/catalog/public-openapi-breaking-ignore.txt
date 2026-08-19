@@ -204,3 +204,64 @@ in API POST /v1/catalog/lookup/batch the `data/items/items/work/names/zh-tw` res
 # says 猫猫社, graph node says ねこねこソフト), so the node joins the primitive:
 # `name` → `display_name` + `localized{}`, same render rule as every other face.
 in API GET /v1/catalog/labels/{id}/relation-graph removed the required property `data/nodes/items/name` from the response with the `200` status
+
+# Wave 212 wave B (2026-08-19) deletes the d7 four-slot compat layer. Wave A
+# had every work projection dual-emit the legacy
+# `names{ja-jp, zh-cn, zh-tw, en-us}` block AND the wave-209 name primitive
+# `latin` + `localized{}`; this wave removes the first half. Both consumers —
+# the kungal forum and moyu/patch — have migrated to `localized{}` and deployed,
+# and the forum decodes work intros in either shape, so the transition window is
+# closed. Completion criterion: no `ja-jp` / `zh-cn` / `zh-tw` / `en-us` key
+# appears anywhere on the public face or in this spec.
+#
+# Three removals, of which only the last two are ERR-visible:
+#
+# (1) the `names` block itself, on every projection that carried it (works list
+# and search rows, work briefs, relations, series siblings, calendar rows,
+# entity-search work hits). oasdiff reports these as WARNINGs, not errors — the
+# block was optional everywhere — so they take no entry below. The replacement
+# shipped in wave A: `localized[locale] ?? display_name ?? latin`, the render
+# rule every other name on this face already follows. The four slots were lossy
+# by construction: a ko/ru/vi or untagged title had no slot to go to.
+#
+# (2) the works-list `intros` block changes shape from the four fixed slots to
+# `[{lang, intro, source, machine}]` — the generic PublicIntro array the work
+# DETAIL face has published since wave 209, one element per language, elected
+# out of the same rows by the same first-row-wins scan. List and detail now
+# answer with identical arrays for the same work. That is the
+# `object` → `array<object>, null` change below; `null` is the include-gated
+# absence (no `include=intros`, no block), which is what the absent object
+# meant too.
+#
+# (3) the work-detail synopsis key `intro` is renamed to `intros`, matching the
+# list block and the label/tag/character/name faces. Same array, same elements,
+# same order — only the key moved. The S2S read face keeps its own `intro`; it
+# is a different face and is untouched by this wave.
+#
+# Also dropped, and warning-only for the same optionality reason: the flat trait
+# keys `name_zh` / `group_zh`, superseded in wave A by
+# `traits[].localized["zh-Hans"]` and `group_localized["zh-Hans"]`, which carry
+# the same strings plus their provenance.
+#
+# NOT changed, deliberately: the `include=` token spellings. `include=names`
+# still gates `latin` + `localized{}` on the list faces, `include=intros` still
+# gates the intro block. moyu renders every work title through `include=names`;
+# renaming that token would empty its titles site-wide and raise nothing on
+# either side, so the tokens outlive the block they were named for.
+#
+# Contract prose: docs/catalog/01-service-and-contract.md §1 and
+# docs/developer-platform/02-public-api.md §3.7.
+
+in API GET /v1/catalog/calendar the response property `data/items/items/intros` became nullable for the status `200`
+in API GET /v1/catalog/calendar the `data/items/items/intros` response's property `type` changed from `object` to `array<object>, null` for status `200`
+in API GET /v1/catalog/calendar/pending the response property `data/items/items/intros` became nullable for the status `200`
+in API GET /v1/catalog/calendar/pending the `data/items/items/intros` response's property `type` changed from `object` to `array<object>, null` for status `200`
+in API GET /v1/catalog/calendar/tba the response property `data/items/items/intros` became nullable for the status `200`
+in API GET /v1/catalog/calendar/tba the `data/items/items/intros` response's property `type` changed from `object` to `array<object>, null` for status `200`
+in API GET /v1/catalog/releases the response property `data/items/items/work/intros` became nullable for the status `200`
+in API GET /v1/catalog/releases the `data/items/items/work/intros` response's property `type` changed from `object` to `array<object>, null` for status `200`
+in API GET /v1/catalog/works the response property `data/items/items/intros` became nullable for the status `200`
+in API GET /v1/catalog/works the `data/items/items/intros` response's property `type` changed from `object` to `array<object>, null` for status `200`
+in API GET /v1/catalog/works/search the response property `data/items/items/intros` became nullable for the status `200`
+in API GET /v1/catalog/works/search the `data/items/items/intros` response's property `type` changed from `object` to `array<object>, null` for status `200`
+in API GET /v1/catalog/works/{id} removed the required property `data/intro` from the response with the `200` status

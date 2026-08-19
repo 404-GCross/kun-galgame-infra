@@ -801,12 +801,14 @@ func TestPublicCharacterTraits(t *testing.T) {
 	if len(rec.Traits) != 1 || rec.Traits[0].Name != "Long Hair" {
 		t.Fatalf("default traits = %+v (want safe only)", rec.Traits)
 	}
-	if rec.Traits[0].NameZh != "长发" || rec.Traits[0].GroupZh != "毛发" {
-		t.Fatalf("zh names = %q / %q (want 长发 / 毛发)", rec.Traits[0].NameZh, rec.Traits[0].GroupZh)
+	if rec.Traits[0].Localized["zh-Hans"].Value != "长发" ||
+		rec.Traits[0].GroupLocalized["zh-Hans"].Value != "毛发" {
+		t.Fatalf("zh names = %+v / %+v (want 长发 / 毛发)",
+			rec.Traits[0].Localized, rec.Traits[0].GroupLocalized)
 	}
 	recNSFW, _, _ := svc.Character(ctx, ch.ID, false, true, 0, 50, 0)
 	for _, tr := range recNSFW.Traits {
-		if tr.Name == "Sexual Trait" && (tr.NameZh != "" || tr.GroupZh != "") {
+		if tr.Name == "Sexual Trait" && (len(tr.Localized) != 0 || len(tr.GroupLocalized) != 0) {
 			t.Fatalf("unrendered trait leaked zh fields: %+v", tr)
 		}
 	}

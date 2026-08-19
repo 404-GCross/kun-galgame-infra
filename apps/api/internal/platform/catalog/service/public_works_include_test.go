@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
+	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
 )
 
@@ -159,35 +161,31 @@ func TestWorksListIncludeNamesAndIntros(t *testing.T) {
 	}
 	it := page.Items[0]
 
-	if it.Names == nil {
-		t.Fatal("names block missing")
+	wantNames := map[string]string{
+		"ja": "ぴぼっと", "zh-Hans": "枢轴", "zh-Hant": "樞軸", "ko": "피벗",
 	}
-	if it.Names.JaJP == nil || it.Names.JaJP.Value != "ぴぼっと" || it.Names.JaJP.Machine {
-		t.Fatalf("names.ja-jp = %+v, want the official title (alias must lose), unflagged", it.Names.JaJP)
-	}
-	if it.Names.ZhCN == nil || it.Names.ZhCN.Value != "枢轴" ||
-		it.Names.ZhTW == nil || it.Names.ZhTW.Value != "樞軸" {
-		t.Fatalf("names zh pivot = %+v / %+v, want 枢轴 / 樞軸", it.Names.ZhCN, it.Names.ZhTW)
-	}
-	if it.Names.EnUS != nil {
-		t.Fatalf("names.en-us = %+v, want absent (its only row is a search_hint)", it.Names.EnUS)
+	if got := localizedValues(it.Localized); !reflect.DeepEqual(got, wantNames) {
+		t.Fatalf("localized = %+v, want %+v (alias loses to official, the search hint claims nothing)", got, wantNames)
 	}
 
-	if it.Intros == nil || it.Intros.JaJP == nil || it.Intros.ZhCN == nil {
-		t.Fatalf("intros block = %+v, want ja-jp + zh-cn filled", it.Intros)
+	wantIntros := []dto.PublicIntro{
+		{Lang: "ja", Intro: "原文", Source: "vndb"},
+		{Lang: "ko", Intro: "한국어", Source: "vndb"},
+		{Lang: "zh-Hans", Intro: "机翻", Source: "vndb", Machine: true},
 	}
-	if it.Intros.JaJP.Intro != "原文" || it.Intros.JaJP.Machine {
-		t.Fatalf("intros.ja-jp = %+v, want the source row unflagged", it.Intros.JaJP)
+	if !reflect.DeepEqual(it.Intros, wantIntros) {
+		t.Fatalf("intros = %+v, want %+v", it.Intros, wantIntros)
 	}
-	if it.Intros.ZhCN.Intro != "机翻" || !it.Intros.ZhCN.Machine {
-		t.Fatalf("intros.zh-cn = %+v, want the machine row flagged", it.Intros.ZhCN)
+
+	rec, found, err := svc.WorkDetail(t.Context(), w.ID, PublicInclude{}, false, 0)
+	if err != nil || !found {
+		t.Fatalf("WorkDetail: found=%v err=%v", found, err)
 	}
-	if it.Intros.ZhCN.Source != "vndb" {
-		t.Fatalf("intros.zh-cn source = %q, want vndb", it.Intros.ZhCN.Source)
+	if !reflect.DeepEqual(rec.Intros, it.Intros) {
+		t.Fatalf("detail intros = %+v, list intros = %+v — the two faces share one election",
+			rec.Intros, it.Intros)
 	}
-	if it.Intros.EnUS != nil || it.Intros.ZhTW != nil {
-		t.Fatalf("intros = %+v, want en-us / zh-tw absent", it.Intros)
-	}
+
 	if it.Labels != nil || it.Ratings != nil || it.Covers != nil {
 		t.Fatalf("unrequested blocks leaked: labels=%v ratings=%v covers=%v", it.Labels, it.Ratings, it.Covers)
 	}
@@ -358,6 +356,21 @@ func TestWorkDetailCoversCarryImageMeta(t *testing.T) {
 	uc := rec.Covers[byHash[unknown]]
 	if uc.Width != 0 || uc.Height != 0 || uc.Thumbhash != "" {
 		t.Fatalf("unknown cover must omit metadata, got %+v", uc)
+	}
+}
+
+// moyu renders every work title out of the include=names block, so the six
+// token spellings are a contract in their own right: rename one and it renders
+// empty titles site-wide, with no error raised on either side.
+func TestParseWorksListIncludeTokenSpellings(t *testing.T) {
+	want := WorksListInclude{Names: true, Intros: true, Labels: true, Ratings: true, Covers: true, Refs: true}
+	if inc := ParseWorksListInclude("names,intros,labels,ratings,covers,refs"); inc != want {
+		t.Fatalf("include selector = %+v, want every token set: %+v", inc, want)
+	}
+	for _, tok := range []string{"names", "intros", "labels", "ratings", "covers", "refs"} {
+		if !ParseWorksListInclude(tok).any() {
+			t.Fatalf("token %q selected nothing", tok)
+		}
 	}
 }
 

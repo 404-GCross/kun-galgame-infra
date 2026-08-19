@@ -203,7 +203,7 @@ Keyset works browse lane: the LIVE galgame registry set (claimed + bodyless) wit
 | `cursor` | query | 否 | string | Opaque keyset cursor from a prior next_cursor; omit for the first page |
 | `limit` | query | 否 | integer (int64) | Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400 |
 | `nsfw` | query | 否 | boolean | true/1 = include r18 works (default false = dropped) |
-| `include` | query | 否 | string | Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape |
+| `include` | query | 否 | string | Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names carries latin + localized{}; intros carries one intro per language, detail-face shape; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape |
 
 ```bash
 curl "https://api.nextmoe.dev/v1/catalog/works" \

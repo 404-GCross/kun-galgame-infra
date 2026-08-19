@@ -122,10 +122,6 @@ func TestPublicCharacterTraitLocalized(t *testing.T) {
 	if curated.GroupLocalized["zh-Hans"].Value != "毛发" || curated.GroupLocalized["zh-Hans"].Machine {
 		t.Fatalf("group localized = %+v, want 毛发 unflagged", curated.GroupLocalized)
 	}
-	if curated.NameZh != "长发" || curated.GroupZh != "毛发" {
-		t.Fatalf("the flat zh fields must still be emitted this wave: %+v", curated)
-	}
-
 	machine := rec.Traits[byName["Braided Hair"]]
 	if machine.Localized["zh-Hans"].Value != "编发" || !machine.Localized["zh-Hans"].Machine {
 		t.Fatalf("machine trait localized = %+v, want 编发 flagged machine=true", machine.Localized)
