@@ -32,10 +32,15 @@ type supplyRow struct {
 }
 
 // loadBgmSupply lists the works with an exact bangumi anchor whose subject
-// publishes a name_cn and that carry no Chinese title AT ALL. Bangumi's
+// publishes a name_cn and that carry no SOURCE Chinese title at all. Bangumi's
 // name_cn is simplified, so it fills the zh-Hans slot; the work-level (rather
 // than per-slot) gate is the charter's, and keeps this lane from parking a
 // simplified name beside a traditional one a source already published.
+//
+// Only provenance=0 rows block: 45 of the 605 reclassified forum works have a
+// human bgm/vndb title that is NOT the machine string, and a gate blind to
+// provenance would have locked them out of source supply forever, leaving
+// re-translation as their only exit.
 func loadBgmSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, error) {
 	q := `
 	WITH anchored AS (
@@ -51,11 +56,13 @@ func loadBgmSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, er
 	SELECT DISTINCT ON (a.work_id) a.work_id, 'zh-Hans' AS lang, a.title
 	FROM anchored a
 	WHERE NOT EXISTS (
-		SELECT 1 FROM catalog_work_title t WHERE t.work_id = a.work_id AND t.lang LIKE 'zh%')
+		SELECT 1 FROM catalog_work_title t
+		WHERE t.work_id = a.work_id AND t.lang LIKE 'zh%' AND t.provenance = ?)
 	ORDER BY a.work_id, a.title`
 	var rows []supplyRow
 	err := db.WithContext(ctx).Raw(q,
-		model.EntityTypeWork, model.LinkKindExact).Scan(&rows).Error
+		model.EntityTypeWork, model.LinkKindExact,
+		model.WorkTitleProvenanceSource).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("load bangumi zh supply: %w", err)
 	}
@@ -67,7 +74,9 @@ func loadBgmSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, er
 // marks machine-translated release titles and this is a SOURCE lane.
 //
 // The gate here is per-slot, not per-work: a work that already has a
-// traditional title still takes a simplified supply and vice versa.
+// traditional title still takes a simplified supply and vice versa. As in the
+// bgm lane, only provenance=0 rows block — a machine row in the slot is
+// superseded, not respected.
 func loadVndbSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, error) {
 	q := `
 	WITH anchored AS (
@@ -92,12 +101,13 @@ func loadVndbSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, e
 	FROM supply s
 	WHERE NOT EXISTS (
 		SELECT 1 FROM catalog_work_title t
-		WHERE t.work_id = s.work_id AND (` + zhSlotSQL + `) = s.lang)
+		WHERE t.work_id = s.work_id AND t.provenance = ? AND (` + zhSlotSQL + `) = s.lang)
 	ORDER BY s.work_id, s.lang, s.agree DESC, s.first_rid`
 	var rows []supplyRow
 	err := db.WithContext(ctx).Raw(q,
 		model.EntityTypeWork, model.LinkKindExact,
-		langZhHans, langZhHant).Scan(&rows).Error
+		langZhHans, langZhHant,
+		model.WorkTitleProvenanceSource).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("load vndb zh supply: %w", err)
 	}
@@ -171,8 +181,22 @@ func runSource(ctx context.Context, db *gorm.DB, name string, apply bool, limit,
 	}
 	slices.Sort(touched)
 
-	var written int64
+	bySlot := map[string][]int64{}
+	for _, r := range rows {
+		bySlot[r.Lang] = append(bySlot[r.Lang], r.WorkID)
+	}
+
+	var written, replacedMachine int64
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for slot, ids := range bySlot {
+			res := tx.Exec(`DELETE FROM catalog_work_title t
+				WHERE t.provenance = ? AND t.work_id IN ? AND (`+zhSlotSQL+`) = ?`,
+				model.WorkTitleProvenanceMachine, ids, slot)
+			if res.Error != nil {
+				return res.Error
+			}
+			replacedMachine += res.RowsAffected
+		}
 		if len(titles) > 0 {
 			res := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(titles, supplyInsertBatch)
 			if res.Error != nil {
@@ -185,7 +209,8 @@ func runSource(ctx context.Context, db *gorm.DB, name string, apply bool, limit,
 	if err != nil {
 		return fmt.Errorf("write %s supply: %w", lane.name, err)
 	}
-	fmt.Printf("\nwritten=%d already=%d touched_works=%d\n", written, int64(len(titles))-written, len(touched))
+	fmt.Printf("\nwritten=%d already=%d replaced_machine=%d touched_works=%d\n",
+		written, int64(len(titles))-written, replacedMachine, len(touched))
 	return nil
 }
 

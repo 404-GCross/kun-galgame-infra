@@ -94,6 +94,62 @@ func TestVndbLaneIsPerLangAndPicksTheAgreedTitle(t *testing.T) {
 	assert.Len(t, titlesOf(t, both), 2)
 }
 
+func TestSourceLaneSupersedesMachineRows(t *testing.T) {
+	clean(t)
+	ctx := t.Context()
+
+	// The 605-forum-set shape: the only zh row is a machine translation, and
+	// bangumi publishes a different human name_cn. The machine row must not
+	// block the gate, and apply must replace it, not sit beside it.
+	mtOnly := mkWork(t, "机翻占位")
+	mkTitle(t, mtOnly, "zh-Hans", "机翻标题", model.WorkTitleKindOfficial, model.WorkTitleProvenanceMachine)
+	mkAnchor(t, mtOnly, "bangumi", "400")
+	mkSubject(t, 400, "げんさく", "人工中文名")
+
+	blocked := mkWork(t, "已有源行")
+	mkTitle(t, blocked, "zh-Hans", "出版社中文名", model.WorkTitleKindOfficial, model.WorkTitleProvenanceSource)
+	mkAnchor(t, blocked, "bangumi", "401")
+	mkSubject(t, 401, "べつ", "别的中文名")
+
+	rows, err := loadBgmSupply(ctx, testDB, 0)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "machine rows do not block, source rows do")
+	assert.Equal(t, mtOnly, rows[0].WorkID)
+
+	require.NoError(t, runSource(ctx, testDB, "bgm", true, 0, 0))
+	got := titlesOf(t, mtOnly)
+	require.Len(t, got, 1, "the machine row is replaced, not kept beside the source row")
+	assert.Equal(t, "人工中文名", got[0].Title)
+	assert.Equal(t, model.WorkTitleProvenanceSource, got[0].Provenance)
+
+	rows, err = loadBgmSupply(ctx, testDB, 0)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "second run must find nothing to do")
+}
+
+func TestVndbLaneSupersedesMachineOnlyInItsOwnSlot(t *testing.T) {
+	clean(t)
+	ctx := t.Context()
+
+	w := mkWork(t, "繁體供給")
+	mkTitle(t, w, "zh-Hans", "机翻简体", model.WorkTitleKindOfficial, model.WorkTitleProvenanceMachine)
+	mkAnchor(t, w, "vndb", "v30")
+	mkRelease(t, "r300", "v30", langZhHant, "人工繁體", false)
+
+	rows, err := loadVndbSupply(ctx, testDB, 0)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, langZhHant, rows[0].Lang)
+
+	require.NoError(t, runSource(ctx, testDB, "vndb", true, 0, 0))
+	got := titlesOf(t, w)
+	require.Len(t, got, 2, "the machine zh-Hans row survives a zh-Hant-only supply")
+	assert.Equal(t, "机翻简体", got[0].Title)
+	assert.Equal(t, model.WorkTitleProvenanceMachine, got[0].Provenance)
+	assert.Equal(t, "人工繁體", got[1].Title)
+	assert.Equal(t, model.WorkTitleProvenanceSource, got[1].Provenance)
+}
+
 func TestVndbLaneBreaksTiesOnTheEarliestRelease(t *testing.T) {
 	clean(t)
 	ctx := t.Context()
