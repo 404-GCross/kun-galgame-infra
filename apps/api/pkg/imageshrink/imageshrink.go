@@ -1,4 +1,4 @@
-package hihyou
+package imageshrink
 
 import (
 	"bytes"
@@ -18,23 +18,22 @@ import (
 // handler check that would report it never runs. Over the limit the upload
 // comes back as a 413 or, for the bigger ones, as a connection reset mid-body
 // that reads exactly like a flaky network.
-const uploadLimitB = 4 << 20
+const UploadLimitB = 4 << 20
 
 // fitW/fitH mirror main_pipeline in configs/image_presets.yaml: every upload is
 // fitted into this box and re-encoded to webp anyway, so shrinking to the same
-// box first discards only bytes the service was going to discard. 546 of the
-// corpus's 8,275 pictures are over the limit, the largest 19.7 MB.
+// box first discards only bytes the service was going to discard.
 const (
 	fitW = 1920
 	fitH = 1080
 )
 
-// shrink returns body unchanged when it is already within the limit. Otherwise
+// Shrink returns body unchanged when it is already within the limit. Otherwise
 // it refits and re-encodes, keeping PNG for anything that actually uses its
-// alpha channel — a third of the oversized pictures do, so encoding them all as
-// JPEG would flatten real transparency onto black.
-func shrink(body []byte, name string) ([]byte, string, error) {
-	if len(body) <= uploadLimitB {
+// alpha channel — a third of hihyou's oversized pictures did, so encoding them
+// all as JPEG would flatten real transparency onto black.
+func Shrink(body []byte, name string) ([]byte, string, error) {
+	if len(body) <= UploadLimitB {
 		return body, name, nil
 	}
 	src, _, err := image.Decode(bytes.NewReader(body))
@@ -52,11 +51,11 @@ func shrink(body []byte, name string) ([]byte, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		if len(out) <= uploadLimitB {
+		if len(out) <= UploadLimitB {
 			return out, replaceExt(name, transparent), nil
 		}
 	}
-	return nil, "", fmt.Errorf("picture still over %d bytes at a third of the display box", uploadLimitB)
+	return nil, "", fmt.Errorf("picture still over %d bytes at a third of the display box", UploadLimitB)
 }
 
 func resize(src image.Image, maxW, maxH int) image.Image {

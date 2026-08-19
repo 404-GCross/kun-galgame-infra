@@ -1,4 +1,4 @@
-package hihyou
+package imageshrink
 
 import (
 	"bytes"
@@ -11,8 +11,8 @@ import (
 func pngBytes(t *testing.T, w, h int, alpha bool) []byte {
 	t.Helper()
 	img := image.NewNRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			a := uint8(255)
 			if alpha && x < w/2 {
 				a = 0
@@ -34,7 +34,7 @@ func pngBytes(t *testing.T, w, h int, alpha bool) []byte {
 
 func TestShrinkLeavesSmallPicturesAlone(t *testing.T) {
 	in := pngBytes(t, 200, 120, false)
-	out, name, err := shrink(in, "a.png")
+	out, name, err := Shrink(in, "a.png")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,18 +45,18 @@ func TestShrinkLeavesSmallPicturesAlone(t *testing.T) {
 
 // Half of this image is fully transparent. Re-encoding it as JPEG would keep it
 // under the limit and look fine in a byte count — and flatten the transparency
-// onto black. A third of the corpus's oversized pictures really do use alpha.
+// onto black. A third of hihyou's oversized pictures really did use alpha.
 func TestShrinkKeepsTransparency(t *testing.T) {
 	in := pngBytes(t, 2600, 2000, true)
-	if len(in) <= uploadLimitB {
+	if len(in) <= UploadLimitB {
 		t.Fatalf("fixture is only %d bytes — it never reaches the shrink path", len(in))
 	}
-	out, name, err := shrink(in, "big.png")
+	out, name, err := Shrink(in, "big.png")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) > uploadLimitB {
-		t.Fatalf("shrunk to %d bytes, still over the %d limit", len(out), uploadLimitB)
+	if len(out) > UploadLimitB {
+		t.Fatalf("shrunk to %d bytes, still over the %d limit", len(out), UploadLimitB)
 	}
 	if name != "big.png" {
 		t.Errorf("name = %q, want a .png extension", name)
@@ -78,11 +78,11 @@ func TestShrinkKeepsTransparency(t *testing.T) {
 
 func TestShrinkRefitsOpaquePictures(t *testing.T) {
 	in := pngBytes(t, 2600, 2000, false)
-	out, name, err := shrink(in, "big.png")
+	out, name, err := Shrink(in, "big.png")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) > uploadLimitB {
+	if len(out) > UploadLimitB {
 		t.Fatalf("shrunk to %d bytes", len(out))
 	}
 	if name != "big.jpg" {
