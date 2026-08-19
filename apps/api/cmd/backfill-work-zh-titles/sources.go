@@ -69,6 +69,15 @@ func loadBgmSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, er
 	return capRows(rows, limit), nil
 }
 
+// vndbReleaseDecorationSQL names the release-packaging vocabulary that must
+// not become a work title. Measured on prod 2026-08-19: 150 of 1,839 elected
+// titles (8.2%) carried these markers — "悠之空 - 18+ 補丁", "魔女的夜宴 -
+// FHD Edition", "月姬 … 通常版"; 70 had a clean sibling candidate that this
+// filter lets win, the other 80 are deliberately skipped rather than shipped
+// or string-stripped (their zh arrives from the MT lane, honestly labeled,
+// and a later clean release replaces it via the machine-supersede path).
+const vndbReleaseDecorationSQL = `(rt.title !~* '(下載版|下载版|ダウンロード|DL版|補丁|补丁|パッチ|patch|edition|version|remake|remaster|初回|限定|通常版|体験版|體驗版|demo|trial|censored|全年齢|18\+|R18|廉価|复刻|復刻|豪華|豪华|完全版|加強|加强|移植|同梱|同捆)')`
+
 // loadVndbSupply picks, per (work, zh slot), the title most releases agree on,
 // breaking ties on the earliest release id. mtl=false is the whole point: VNDB
 // marks machine-translated release titles and this is a SOURCE lane.
@@ -95,6 +104,7 @@ func loadVndbSupply(ctx context.Context, db *gorm.DB, limit int) ([]supplyRow, e
 		JOIN src_vndb.releases_vn rv ON rv.vid = a.vid
 		JOIN src_vndb.releases_titles rt ON rt.id = rv.id
 		WHERE rt.lang IN (?, ?) AND rt.mtl = false AND rt.title <> ''
+		  AND ` + vndbReleaseDecorationSQL + `
 		GROUP BY a.work_id, rt.lang, rt.title
 	)
 	SELECT DISTINCT ON (s.work_id, s.lang) s.work_id, s.lang, s.title

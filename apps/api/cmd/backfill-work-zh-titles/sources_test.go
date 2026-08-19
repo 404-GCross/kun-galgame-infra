@@ -150,6 +150,29 @@ func TestVndbLaneSupersedesMachineOnlyInItsOwnSlot(t *testing.T) {
 	assert.Equal(t, model.WorkTitleProvenanceSource, got[1].Provenance)
 }
 
+func TestVndbLaneSkipsReleaseDecoratedTitles(t *testing.T) {
+	clean(t)
+	ctx := t.Context()
+
+	// The decorated string outnumbers the clean one; the filter must beat the
+	// agree count, not merely tie-break it.
+	rescued := mkWork(t, "有干净兄弟")
+	mkAnchor(t, rescued, "vndb", "v40")
+	mkRelease(t, "r400", "v40", langZhHant, "魔女的夜宴 - FHD Edition", false)
+	mkRelease(t, "r401", "v40", langZhHant, "魔女的夜宴 - FHD Edition", false)
+	mkRelease(t, "r402", "v40", langZhHant, "魔女的夜宴", false)
+
+	skipped := mkWork(t, "只有修饰名")
+	mkAnchor(t, skipped, "vndb", "v41")
+	mkRelease(t, "r410", "v41", langZhHant, "悠之空 - 18+ 補丁", false)
+
+	rows, err := loadVndbSupply(ctx, testDB, 0)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "the decorated-only work is skipped entirely")
+	assert.Equal(t, rescued, rows[0].WorkID)
+	assert.Equal(t, "魔女的夜宴", rows[0].Title)
+}
+
 func TestVndbLaneBreaksTiesOnTheEarliestRelease(t *testing.T) {
 	clean(t)
 	ctx := t.Context()
