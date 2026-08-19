@@ -17,7 +17,6 @@ type PublicWorkBrief struct {
 	ClaimedBy     *PublicClaimedBy               `json:"claimed_by"`
 	Latin         string                         `json:"latin,omitempty" doc:"romanisation of display_name, from the title row display_name was taken from; absent when that row records none"`
 	Localized     map[string]PublicLocalizedName `json:"localized" doc:"preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank"`
-	Names         *PublicWorkNames               `json:"names,omitempty" doc:"per-locale display titles, same election as the works-list names block; absent when no title matched a slot — render names.<yourLocale> ?? display_name. Superseded by localized{}, which is keyed by any BCP-47 tag rather than four fixed slots"`
 }
 
 type PublicCatalogTitle struct {
@@ -82,7 +81,7 @@ type PublicCatalogWork struct {
 	Playtimes      []PublicPlaytime               `json:"playtimes"`
 	Series         []PublicSeries                 `json:"series"`
 	Platforms      []PublicPlatform               `json:"platforms"`
-	Intro          []PublicIntro                  `json:"intro"`
+	Intros         []PublicIntro                  `json:"intros"`
 	Covers         []PublicCover                  `json:"covers"`
 	CoverSlots     *PublicWorkCoverSlots          `json:"cover_slots"`
 	Screenshots    []PublicScreenshot             `json:"screenshots"`
@@ -301,7 +300,6 @@ type PublicEntityHit struct {
 	DisplayName   string                         `json:"display_name"`
 	Latin         string                         `json:"latin,omitempty"`
 	Localized     map[string]PublicLocalizedName `json:"localized,omitempty" doc:"names/characters/labels/works hits: preferred name per locale, same election as the entity's detail face — render localized[yourLocale] ?? display_name. Absent when the entity has no localized name (tags hits never carry it)"`
-	Names         *PublicWorkNames               `json:"names,omitempty" doc:"works hits only: per-locale display titles, same election as the works-list names block. Superseded by localized{}, which is keyed by any BCP-47 tag rather than four fixed slots"`
 	Sources       []string                       `json:"sources"`
 	ContentRating string                         `json:"content_rating,omitempty"`
 	Tier          string                         `json:"tier,omitempty"`
@@ -441,9 +439,7 @@ type PublicRelease struct {
 type PublicCharacterTrait struct {
 	ID             int64                          `json:"id"`
 	Name           string                         `json:"name"`
-	NameZh         string                         `json:"name_zh,omitempty" doc:"superseded by localized[\"zh-Hans\"].value, which carries the same string plus its provenance"`
 	Group          string                         `json:"group,omitempty"`
-	GroupZh        string                         `json:"group_zh,omitempty" doc:"superseded by group_localized[\"zh-Hans\"].value"`
 	Localized      map[string]PublicLocalizedName `json:"localized" doc:"preferred trait name per locale, keyed by canonically-cased BCP-47 tag; {} when the vocabulary row has no localized name. Today the only key is zh-Hans — render localized[yourLocale] ?? name, never a blank"`
 	GroupLocalized map[string]PublicLocalizedName `json:"group_localized" doc:"same shape for the trait's root group; {} for a root trait or a group with no localized name — render group_localized[yourLocale] ?? group"`
 	Spoiler        int16                          `json:"spoiler" doc:"0=none 1=minor 2=major"`
@@ -466,37 +462,11 @@ type PublicWorkListItem struct {
 	Latin     string                         `json:"latin,omitempty" doc:"include=names only: romanisation of display_name, from the title row display_name was taken from"`
 	Localized map[string]PublicLocalizedName `json:"localized,omitempty" doc:"include=names only, and absent (never {}) when this work has no localized title — the block is include-gated exactly like names, so its absence means \"not requested or none\", not \"none\". SPARSE by design — render localized[yourLocale] ?? display_name ?? latin"`
 
-	Names   *PublicWorkNames      `json:"names,omitempty"`
-	Intros  *PublicWorkIntros     `json:"intros,omitempty"`
+	Intros  []PublicIntro         `json:"intros,omitempty" doc:"include=intros only: one intro per language, same shape and election as the work-detail intros block"`
 	Labels  []PublicWorkLabel     `json:"labels,omitempty"`
 	Ratings []PublicRating        `json:"ratings,omitempty"`
 	Covers  *PublicWorkCoverSlots `json:"covers,omitempty"`
 	Refs    []PublicCatalogRef    `json:"refs,omitempty"`
-}
-
-type PublicNameSlot struct {
-	Value   string `json:"value"`
-	Machine bool   `json:"machine,omitempty" doc:"true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty"`
-}
-
-type PublicWorkNames struct {
-	JaJP *PublicNameSlot `json:"ja-jp,omitempty"`
-	ZhCN *PublicNameSlot `json:"zh-cn,omitempty"`
-	ZhTW *PublicNameSlot `json:"zh-tw,omitempty"`
-	EnUS *PublicNameSlot `json:"en-us,omitempty"`
-}
-
-type PublicWorkIntroSlot struct {
-	Intro   string `json:"intro"`
-	Source  string `json:"source"`
-	Machine bool   `json:"machine,omitempty"`
-}
-
-type PublicWorkIntros struct {
-	JaJP *PublicWorkIntroSlot `json:"ja-jp,omitempty"`
-	ZhCN *PublicWorkIntroSlot `json:"zh-cn,omitempty"`
-	ZhTW *PublicWorkIntroSlot `json:"zh-tw,omitempty"`
-	EnUS *PublicWorkIntroSlot `json:"en-us,omitempty"`
 }
 
 type PublicCoverSlot struct {

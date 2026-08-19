@@ -43,21 +43,6 @@ func ParseWorksListInclude(raw string) WorksListInclude {
 	return inc
 }
 
-func d7ProductKey(lang string) (string, bool) {
-	switch {
-	case lang == "ja" || strings.HasPrefix(lang, "ja-"):
-		return "ja-jp", true
-	case lang == "en" || strings.HasPrefix(lang, "en-"):
-		return "en-us", true
-	case lang == "zh-Hant" || strings.HasPrefix(lang, "zh-Hant-") || lang == "zh-TW" || lang == "zh-HK":
-		return "zh-tw", true
-	case lang == "zh" || strings.HasPrefix(lang, "zh"):
-		return "zh-cn", true
-	default:
-		return "", false
-	}
-}
-
 func (s *PublicService) attachWorkListBlocks(
 	ctx context.Context, items []dto.PublicWorkListItem, rows []workListSourceRow,
 	subjects []claimSubject, covers map[int64][]WorkCoverRow, inc WorksListInclude, nsfw bool,
@@ -77,7 +62,6 @@ func (s *PublicService) attachWorkListBlocks(
 			return err
 		}
 		for i, r := range rows {
-			items[i].Names = publicWorkNames(titles[r.ID])
 			items[i].Latin = workLatin(titles[r.ID], items[i].DisplayName)
 			items[i].Localized = workLocalized(titles[r.ID])
 		}
@@ -88,7 +72,7 @@ func (s *PublicService) attachWorkListBlocks(
 			return err
 		}
 		for i, r := range rows {
-			items[i].Intros = s.publicWorkIntros(intros[r.ID])
+			items[i].Intros = s.workIntros(intros[r.ID])
 		}
 	}
 	if inc.Labels {
@@ -178,78 +162,14 @@ func (s *PublicService) workListRefs(ctx context.Context, ids []int64) (map[int6
 	return out, nil
 }
 
-// publicWorkNames elects one title per d7 slot. First row wins: nativeWorkTitles
-// orders by provenance before kind, so a source title always beats a machine one
-// inside a slot and a machine title can only take a slot no source row filled.
-func publicWorkNames(titles []WorkTitleRow) *dto.PublicWorkNames {
-	var out dto.PublicWorkNames
-	filled := false
-	for _, t := range titles {
-		key, ok := d7ProductKey(t.Lang)
-		if !ok {
-			continue
-		}
-		slot := &dto.PublicNameSlot{
-			Value:   t.Title,
-			Machine: t.Provenance == model.WorkTitleProvenanceMachine,
-		}
-		switch key {
-		case "ja-jp":
-			if out.JaJP == nil {
-				out.JaJP, filled = slot, true
-			}
-		case "zh-cn":
-			if out.ZhCN == nil {
-				out.ZhCN, filled = slot, true
-			}
-		case "zh-tw":
-			if out.ZhTW == nil {
-				out.ZhTW, filled = slot, true
-			}
-		case "en-us":
-			if out.EnUS == nil {
-				out.EnUS, filled = slot, true
-			}
-		}
+func (s *PublicService) workIntros(rows []WorkIntroRow) []dto.PublicIntro {
+	out := make([]dto.PublicIntro, 0, len(rows))
+	for _, in := range rows {
+		out = append(out, dto.PublicIntro{
+			Lang: in.Lang, Intro: in.Intro, Source: s.sourceKey(in.SourceID), Machine: in.Machine,
+		})
 	}
-	if !filled {
-		return nil
-	}
-	return &out
-}
-
-func (s *PublicService) publicWorkIntros(intros []WorkIntroRow) *dto.PublicWorkIntros {
-	var out dto.PublicWorkIntros
-	filled := false
-	for _, in := range intros {
-		key, ok := d7ProductKey(in.Lang)
-		if !ok {
-			continue
-		}
-		slot := &dto.PublicWorkIntroSlot{Intro: in.Intro, Source: s.sourceKey(in.SourceID), Machine: in.Machine}
-		switch key {
-		case "ja-jp":
-			if out.JaJP == nil {
-				out.JaJP, filled = slot, true
-			}
-		case "zh-cn":
-			if out.ZhCN == nil {
-				out.ZhCN, filled = slot, true
-			}
-		case "zh-tw":
-			if out.ZhTW == nil {
-				out.ZhTW, filled = slot, true
-			}
-		case "en-us":
-			if out.EnUS == nil {
-				out.EnUS, filled = slot, true
-			}
-		}
-	}
-	if !filled {
-		return nil
-	}
-	return &out
+	return out
 }
 
 func publicWorkLabels(rows []LabelAttribution) []dto.PublicWorkLabel {

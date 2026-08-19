@@ -46,10 +46,7 @@ func listItemByID(t *testing.T, svc *PublicService, id int64) dto.PublicWorkList
 	return dto.PublicWorkListItem{}
 }
 
-// The four d7 slots can only answer ja/zh-cn/zh-tw/en: a Korean or Russian
-// title has nowhere to go and is dropped on the floor. localized{} keys by the
-// title's own BCP-47 tag, so the same rows all reach the wire.
-func TestPublicWorkLocalizedReachesLocalesTheSlotsCannot(t *testing.T) {
+func TestPublicWorkLocalizedKeysEveryTaggedLocale(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvcCDN()
 
@@ -63,12 +60,6 @@ func TestPublicWorkLocalizedReachesLocalesTheSlotsCannot(t *testing.T) {
 	want := map[string]string{"ja": "こころ", "ko": "코코로", "ru": "Кокоро"}
 	if got := localizedValues(item.Localized); !reflect.DeepEqual(got, want) {
 		t.Fatalf("localized = %+v, want %+v (an untagged row answers no locale)", got, want)
-	}
-	if item.Names == nil || item.Names.JaJP == nil || item.Names.JaJP.Value != "こころ" {
-		t.Fatalf("names = %+v, want the four-slot block still emitted unchanged", item.Names)
-	}
-	if item.Names.ZhCN != nil || item.Names.ZhTW != nil || item.Names.EnUS != nil {
-		t.Fatalf("names = %+v, want only the ja-jp slot filled", item.Names)
 	}
 }
 
@@ -208,7 +199,7 @@ func TestPublicWorkListNamePrimitivesAreIncludeGated(t *testing.T) {
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		t.Fatalf("unmarshal item: %v", err)
 	}
-	for _, key := range []string{"latin", "localized", "names"} {
+	for _, key := range []string{"latin", "localized"} {
 		if _, present := wire[key]; present {
 			t.Fatalf("item without include=names carries %q: %s", key, raw)
 		}
@@ -240,9 +231,6 @@ func TestPublicWorkBriefCarriesNamePrimitives(t *testing.T) {
 	if got := localizedValues(data.Work.Localized); !reflect.DeepEqual(got, want) {
 		t.Fatalf("brief localized = %+v, want %+v", got, want)
 	}
-	if data.Work.Names == nil || data.Work.Names.JaJP == nil {
-		t.Fatalf("brief names = %+v, want the four-slot block still emitted", data.Work.Names)
-	}
 }
 
 func TestPublicWorkBriefLocalizedIsAlwaysEmitted(t *testing.T) {
@@ -271,14 +259,9 @@ func TestPublicWorkBriefLocalizedIsAlwaysEmitted(t *testing.T) {
 	if m, ok := loc.(map[string]any); !ok || len(m) != 0 {
 		t.Fatalf("brief localized = %#v, want {}", loc)
 	}
-	if _, present := wire["names"]; present {
-		t.Fatalf("brief with no titles must omit names entirely: %s", raw)
-	}
 }
 
-// The entity-search works branch batches both projections out of one query;
-// this is the data behind that handler's fill.
-func TestPublicWorkNamesByIDCarriesBothProjections(t *testing.T) {
+func TestWorkNamesByIDCarriesLocalized(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvcCDN()
 
@@ -291,15 +274,11 @@ func TestPublicWorkNamesByIDCarriesBothProjections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WorkNamesByID: %v", err)
 	}
-	got := blocks[w.ID]
-	if got.Names == nil || got.Names.JaJP == nil || got.Names.JaJP.Value != "こころ" {
-		t.Fatalf("names = %+v, want the four-slot block", got.Names)
-	}
 	want := map[string]string{"ja": "こころ", "ko": "코코로"}
-	if values := localizedValues(got.Localized); !reflect.DeepEqual(values, want) {
+	if values := localizedValues(blocks[w.ID].Localized); !reflect.DeepEqual(values, want) {
 		t.Fatalf("localized = %+v, want %+v", values, want)
 	}
-	if blocks[bare.ID].Names != nil {
-		t.Fatalf("a work with no titles must carry no names block, got %+v", blocks[bare.ID].Names)
+	if len(blocks[bare.ID].Localized) != 0 {
+		t.Fatalf("a work with no titles must carry no localized names, got %+v", blocks[bare.ID].Localized)
 	}
 }

@@ -17,10 +17,9 @@ const (
 	langZhHant = "zh-Hant"
 )
 
-// zhSlotSQL renders a catalog_work_title.lang as the zh SLOT it occupies, the
-// same split d7ProductKey makes on the read face: zh-Hant/zh-TW/zh-HK are the
-// traditional slot, every other zh* tag is the simplified one. NULL for
-// non-Chinese tags.
+// zhSlotSQL renders a catalog_work_title.lang as the zh SLOT it occupies:
+// zh-Hant/zh-TW/zh-HK are the traditional slot, every other zh* tag is the
+// simplified one. NULL for non-Chinese tags.
 const zhSlotSQL = `CASE
 	WHEN t.lang IN ('zh-Hant','zh-TW','zh-HK') OR t.lang LIKE 'zh-Hant-%' THEN 'zh-Hant'
 	WHEN t.lang LIKE 'zh%' THEN 'zh-Hans' END`

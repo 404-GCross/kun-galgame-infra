@@ -433,12 +433,7 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 	for _, p := range detail.Platforms {
 		rec.Platforms = append(rec.Platforms, dto.PublicPlatform{Platform: p.Platform, Source: s.sourceKey(p.SourceID)})
 	}
-	rec.Intro = make([]dto.PublicIntro, 0, len(detail.Intros))
-	for _, in := range detail.Intros {
-		rec.Intro = append(rec.Intro, dto.PublicIntro{
-			Lang: in.Lang, Intro: in.Intro, Source: s.sourceKey(in.SourceID), Machine: in.Machine,
-		})
-	}
+	rec.Intros = s.workIntros(detail.Intros)
 	rec.Covers = make([]dto.PublicCover, 0, len(detail.Covers))
 	imgMeta := s.workMediaMetaFor(ctx, detail.Covers, detail.Screenshots)
 	for _, c := range detail.Covers {
@@ -1413,8 +1408,7 @@ func (s *PublicService) characterTraits(ctx context.Context, characterID int64, 
 	out := make([]dto.PublicCharacterTrait, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, dto.PublicCharacterTrait{
-			ID: r.ID, Name: r.Name, NameZh: r.NameZh,
-			Group: derefStrPub(r.GroupName), GroupZh: derefStrPub(r.GroupNameZh),
+			ID: r.ID, Name: r.Name, Group: derefStrPub(r.GroupName),
 			Localized:      traitLocalized(r.NameZh, r.NameZhProv),
 			GroupLocalized: traitLocalized(derefStrPub(r.GroupNameZh), derefI16Pub(r.GroupNameZhProv)),
 			Spoiler:        r.SpoilerLevel, Sexual: r.Sexual, Lie: r.Lie,
