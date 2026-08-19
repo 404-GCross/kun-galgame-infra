@@ -138,7 +138,7 @@ export const docsModel: DocsModel = {
                                 },
                                 {
                                   "name": "localized",
-                                  "doc": "names/characters/labels hits only: preferred name per locale, same election as the entity's detail face — render localized[yourLocale] ?? display_name",
+                                  "doc": "names/characters/labels/works hits: preferred name per locale, same election as the entity's detail face — render localized[yourLocale] ?? display_name. Absent when the entity has no localized name (tags hits never carry it)",
                                   "type": "map",
                                   "itemsOf": {
                                     "type": "object",
@@ -146,7 +146,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "translation|spelling_variant",
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                         "type": "string"
                                       },
                                       {
@@ -772,7 +772,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -799,6 +799,37 @@ export const docsModel: DocsModel = {
                                         "required": true,
                                         "format": "int64",
                                         "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "latin",
+                                  "doc": "include=names only: romanisation of display_name, from the title row display_name was taken from",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "doc": "include=names only, and absent (never {}) when this work has no localized title — the block is include-gated exactly like names, so its absence means \"not requested or none\", not \"none\". SPARSE by design — render localized[yourLocale] ?? display_name ?? latin",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
                                       }
                                     ]
                                   }
@@ -1024,7 +1055,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -1264,7 +1295,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "kind",
                                       "required": true,
-                                      "doc": "translation|spelling_variant",
+                                      "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                       "type": "string"
                                     },
                                     {
@@ -1319,7 +1350,35 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "group_localized",
+                                      "required": true,
+                                      "doc": "same shape for the trait's root group; {} for a root trait or a group with no localized name — render group_localized[yourLocale] ?? group",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
                                       "name": "group_zh",
+                                      "doc": "superseded by group_localized[\"zh-Hans\"].value",
                                       "type": "string"
                                     },
                                     {
@@ -1334,12 +1393,40 @@ export const docsModel: DocsModel = {
                                       "type": "boolean"
                                     },
                                     {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred trait name per locale, keyed by canonically-cased BCP-47 tag; {} when the vocabulary row has no localized name. Today the only key is zh-Hans — render localized[yourLocale] ?? name, never a blank",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
                                       "name": "name",
                                       "required": true,
                                       "type": "string"
                                     },
                                     {
                                       "name": "name_zh",
+                                      "doc": "superseded by localized[\"zh-Hans\"].value, which carries the same string plus its provenance",
                                       "type": "string"
                                     },
                                     {
@@ -1421,7 +1508,7 @@ export const docsModel: DocsModel = {
                                                 {
                                                   "name": "kind",
                                                   "required": true,
-                                                  "doc": "translation|spelling_variant",
+                                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                                   "type": "string"
                                                 },
                                                 {
@@ -1490,6 +1577,38 @@ export const docsModel: DocsModel = {
                                           "required": true,
                                           "format": "int64",
                                           "type": "integer"
+                                        },
+                                        {
+                                          "name": "latin",
+                                          "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "localized",
+                                          "required": true,
+                                          "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                          "type": "map",
+                                          "itemsOf": {
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "kind",
+                                                "required": true,
+                                                "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "machine",
+                                                "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                "type": "boolean"
+                                              },
+                                              {
+                                                "name": "value",
+                                                "required": true,
+                                                "type": "string"
+                                              }
+                                            ]
+                                          }
                                         },
                                         {
                                           "name": "medium",
@@ -1727,7 +1846,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "kind",
                                       "required": true,
-                                      "doc": "translation|spelling_variant",
+                                      "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                       "type": "string"
                                     },
                                     {
@@ -1805,7 +1924,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -1898,6 +2017,38 @@ export const docsModel: DocsModel = {
                                           "required": true,
                                           "format": "int64",
                                           "type": "integer"
+                                        },
+                                        {
+                                          "name": "latin",
+                                          "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "localized",
+                                          "required": true,
+                                          "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                          "type": "map",
+                                          "itemsOf": {
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "kind",
+                                                "required": true,
+                                                "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "machine",
+                                                "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                "type": "boolean"
+                                              },
+                                              {
+                                                "name": "value",
+                                                "required": true,
+                                                "type": "string"
+                                              }
+                                            ]
+                                          }
                                         },
                                         {
                                           "name": "medium",
@@ -2130,6 +2281,38 @@ export const docsModel: DocsModel = {
                                           "type": "integer"
                                         },
                                         {
+                                          "name": "latin",
+                                          "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "localized",
+                                          "required": true,
+                                          "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                          "type": "map",
+                                          "itemsOf": {
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "kind",
+                                                "required": true,
+                                                "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "machine",
+                                                "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                "type": "boolean"
+                                              },
+                                              {
+                                                "name": "value",
+                                                "required": true,
+                                                "type": "string"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        {
                                           "name": "medium",
                                           "required": true,
                                           "type": "string"
@@ -2297,7 +2480,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "kind",
                                       "required": true,
-                                      "doc": "translation|spelling_variant",
+                                      "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                       "type": "string"
                                     },
                                     {
@@ -2389,7 +2572,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -2460,6 +2643,38 @@ export const docsModel: DocsModel = {
                                 "required": true,
                                 "format": "int64",
                                 "type": "integer"
+                              },
+                              {
+                                "name": "latin",
+                                "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                "type": "string"
+                              },
+                              {
+                                "name": "localized",
+                                "required": true,
+                                "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                "type": "map",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "machine",
+                                      "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "name": "value",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
                               },
                               {
                                 "name": "medium",
@@ -2742,7 +2957,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -2797,7 +3012,35 @@ export const docsModel: DocsModel = {
                                             "type": "string"
                                           },
                                           {
+                                            "name": "group_localized",
+                                            "required": true,
+                                            "doc": "same shape for the trait's root group; {} for a root trait or a group with no localized name — render group_localized[yourLocale] ?? group",
+                                            "type": "map",
+                                            "itemsOf": {
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "kind",
+                                                  "required": true,
+                                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
                                             "name": "group_zh",
+                                            "doc": "superseded by group_localized[\"zh-Hans\"].value",
                                             "type": "string"
                                           },
                                           {
@@ -2812,12 +3055,40 @@ export const docsModel: DocsModel = {
                                             "type": "boolean"
                                           },
                                           {
+                                            "name": "localized",
+                                            "required": true,
+                                            "doc": "preferred trait name per locale, keyed by canonically-cased BCP-47 tag; {} when the vocabulary row has no localized name. Today the only key is zh-Hans — render localized[yourLocale] ?? name, never a blank",
+                                            "type": "map",
+                                            "itemsOf": {
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "kind",
+                                                  "required": true,
+                                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "machine",
+                                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                  "type": "boolean"
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
                                             "name": "name",
                                             "required": true,
                                             "type": "string"
                                           },
                                           {
                                             "name": "name_zh",
+                                            "doc": "superseded by localized[\"zh-Hans\"].value, which carries the same string plus its provenance",
                                             "type": "string"
                                           },
                                           {
@@ -2899,7 +3170,7 @@ export const docsModel: DocsModel = {
                                                       {
                                                         "name": "kind",
                                                         "required": true,
-                                                        "doc": "translation|spelling_variant",
+                                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                                         "type": "string"
                                                       },
                                                       {
@@ -2968,6 +3239,38 @@ export const docsModel: DocsModel = {
                                                 "required": true,
                                                 "format": "int64",
                                                 "type": "integer"
+                                              },
+                                              {
+                                                "name": "latin",
+                                                "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "localized",
+                                                "required": true,
+                                                "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                                "type": "map",
+                                                "itemsOf": {
+                                                  "type": "object",
+                                                  "children": [
+                                                    {
+                                                      "name": "kind",
+                                                      "required": true,
+                                                      "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "name": "machine",
+                                                      "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                      "type": "boolean"
+                                                    },
+                                                    {
+                                                      "name": "value",
+                                                      "required": true,
+                                                      "type": "string"
+                                                    }
+                                                  ]
+                                                }
                                               },
                                               {
                                                 "name": "medium",
@@ -3210,7 +3513,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -3288,7 +3591,7 @@ export const docsModel: DocsModel = {
                                                 {
                                                   "name": "kind",
                                                   "required": true,
-                                                  "doc": "translation|spelling_variant",
+                                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                                   "type": "string"
                                                 },
                                                 {
@@ -3381,6 +3684,38 @@ export const docsModel: DocsModel = {
                                                 "required": true,
                                                 "format": "int64",
                                                 "type": "integer"
+                                              },
+                                              {
+                                                "name": "latin",
+                                                "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "localized",
+                                                "required": true,
+                                                "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                                "type": "map",
+                                                "itemsOf": {
+                                                  "type": "object",
+                                                  "children": [
+                                                    {
+                                                      "name": "kind",
+                                                      "required": true,
+                                                      "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "name": "machine",
+                                                      "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                      "type": "boolean"
+                                                    },
+                                                    {
+                                                      "name": "value",
+                                                      "required": true,
+                                                      "type": "string"
+                                                    }
+                                                  ]
+                                                }
                                               },
                                               {
                                                 "name": "medium",
@@ -3613,6 +3948,38 @@ export const docsModel: DocsModel = {
                                                 "type": "integer"
                                               },
                                               {
+                                                "name": "latin",
+                                                "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "localized",
+                                                "required": true,
+                                                "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                                "type": "map",
+                                                "itemsOf": {
+                                                  "type": "object",
+                                                  "children": [
+                                                    {
+                                                      "name": "kind",
+                                                      "required": true,
+                                                      "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "name": "machine",
+                                                      "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                                      "type": "boolean"
+                                                    },
+                                                    {
+                                                      "name": "value",
+                                                      "required": true,
+                                                      "type": "string"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              {
                                                 "name": "medium",
                                                 "required": true,
                                                 "type": "string"
@@ -3780,7 +4147,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -3872,7 +4239,7 @@ export const docsModel: DocsModel = {
                                                 {
                                                   "name": "kind",
                                                   "required": true,
-                                                  "doc": "translation|spelling_variant",
+                                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                                   "type": "string"
                                                 },
                                                 {
@@ -3953,6 +4320,38 @@ export const docsModel: DocsModel = {
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
+                                    },
+                                    {
+                                      "name": "latin",
+                                      "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     },
                                     {
                                       "name": "medium",
@@ -4777,7 +5176,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -4804,6 +5203,37 @@ export const docsModel: DocsModel = {
                                         "required": true,
                                         "format": "int64",
                                         "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "latin",
+                                  "doc": "include=names only: romanisation of display_name, from the title row display_name was taken from",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "doc": "include=names only, and absent (never {}) when this work has no localized title — the block is include-gated exactly like names, so its absence means \"not requested or none\", not \"none\". SPARSE by design — render localized[yourLocale] ?? display_name ?? latin",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
                                       }
                                     ]
                                   }
@@ -5029,7 +5459,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -5201,7 +5631,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "translation|spelling_variant",
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                         "type": "string"
                                       },
                                       {
@@ -5262,7 +5692,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -5543,7 +5973,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -5703,7 +6133,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "translation|spelling_variant",
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                         "type": "string"
                                       },
                                       {
@@ -5735,6 +6165,11 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
+                            "name": "latin",
+                            "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                            "type": "string"
+                          },
+                          {
                             "name": "links",
                             "required": true,
                             "nullable": true,
@@ -5749,6 +6184,33 @@ export const docsModel: DocsModel = {
                                 },
                                 {
                                   "name": "url",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "localized",
+                            "required": true,
+                            "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                            "type": "map",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "machine",
+                                  "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                  "type": "boolean"
+                                },
+                                {
+                                  "name": "value",
                                   "required": true,
                                   "type": "string"
                                 }
@@ -6017,6 +6479,38 @@ export const docsModel: DocsModel = {
                                       "type": "integer"
                                     },
                                     {
+                                      "name": "latin",
+                                      "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
                                       "name": "medium",
                                       "required": true,
                                       "type": "string"
@@ -6183,7 +6677,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -6395,6 +6889,38 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "latin",
+                                  "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "required": true,
+                                  "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
                                 },
                                 {
                                   "name": "medium",
@@ -6833,7 +7359,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -7192,7 +7718,7 @@ export const docsModel: DocsModel = {
                                                 {
                                                   "name": "kind",
                                                   "required": true,
-                                                  "doc": "translation|spelling_variant",
+                                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                                   "type": "string"
                                                 },
                                                 {
@@ -7219,6 +7745,37 @@ export const docsModel: DocsModel = {
                                             "required": true,
                                             "format": "int64",
                                             "type": "integer"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "latin",
+                                      "doc": "include=names only: romanisation of display_name, from the title row display_name was taken from",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "localized",
+                                      "doc": "include=names only, and absent (never {}) when this work has no localized title — the block is include-gated exactly like names, so its absence means \"not requested or none\", not \"none\". SPARSE by design — render localized[yourLocale] ?? display_name ?? latin",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
                                           }
                                         ]
                                       }
@@ -7444,7 +8001,7 @@ export const docsModel: DocsModel = {
                                               {
                                                 "name": "kind",
                                                 "required": true,
-                                                "doc": "translation|spelling_variant",
+                                                "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                                 "type": "string"
                                               },
                                               {
@@ -7882,7 +8439,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -7909,6 +8466,37 @@ export const docsModel: DocsModel = {
                                         "required": true,
                                         "format": "int64",
                                         "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "latin",
+                                  "doc": "include=names only: romanisation of display_name, from the title row display_name was taken from",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "doc": "include=names only, and absent (never {}) when this work has no localized title — the block is include-gated exactly like names, so its absence means \"not requested or none\", not \"none\". SPARSE by design — render localized[yourLocale] ?? display_name ?? latin",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
                                       }
                                     ]
                                   }
@@ -8134,7 +8722,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -8608,7 +9196,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -8635,6 +9223,37 @@ export const docsModel: DocsModel = {
                                         "required": true,
                                         "format": "int64",
                                         "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "latin",
+                                  "doc": "include=names only: romanisation of display_name, from the title row display_name was taken from",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "doc": "include=names only, and absent (never {}) when this work has no localized title — the block is include-gated exactly like names, so its absence means \"not requested or none\", not \"none\". SPARSE by design — render localized[yourLocale] ?? display_name ?? latin",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
                                       }
                                     ]
                                   }
@@ -8860,7 +9479,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -9327,7 +9946,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -9354,6 +9973,37 @@ export const docsModel: DocsModel = {
                                         "required": true,
                                         "format": "int64",
                                         "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "latin",
+                                  "doc": "include=names only: romanisation of display_name, from the title row display_name was taken from",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "doc": "include=names only, and absent (never {}) when this work has no localized title — the block is include-gated exactly like names, so its absence means \"not requested or none\", not \"none\". SPARSE by design — render localized[yourLocale] ?? display_name ?? latin",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
                                       }
                                     ]
                                   }
@@ -9579,7 +10229,7 @@ export const docsModel: DocsModel = {
                                           {
                                             "name": "kind",
                                             "required": true,
-                                            "doc": "translation|spelling_variant",
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                             "type": "string"
                                           },
                                           {
@@ -9859,7 +10509,7 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "kind",
                                   "required": true,
-                                  "doc": "translation|spelling_variant",
+                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                   "type": "string"
                                 },
                                 {
@@ -9914,7 +10564,35 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "group_localized",
+                                  "required": true,
+                                  "doc": "same shape for the trait's root group; {} for a root trait or a group with no localized name — render group_localized[yourLocale] ?? group",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "group_zh",
+                                  "doc": "superseded by group_localized[\"zh-Hans\"].value",
                                   "type": "string"
                                 },
                                 {
@@ -9929,12 +10607,40 @@ export const docsModel: DocsModel = {
                                   "type": "boolean"
                                 },
                                 {
+                                  "name": "localized",
+                                  "required": true,
+                                  "doc": "preferred trait name per locale, keyed by canonically-cased BCP-47 tag; {} when the vocabulary row has no localized name. Today the only key is zh-Hans — render localized[yourLocale] ?? name, never a blank",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "name",
                                   "required": true,
                                   "type": "string"
                                 },
                                 {
                                   "name": "name_zh",
+                                  "doc": "superseded by localized[\"zh-Hans\"].value, which carries the same string plus its provenance",
                                   "type": "string"
                                 },
                                 {
@@ -10016,7 +10722,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "kind",
                                               "required": true,
-                                              "doc": "translation|spelling_variant",
+                                              "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                               "type": "string"
                                             },
                                             {
@@ -10085,6 +10791,38 @@ export const docsModel: DocsModel = {
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
+                                    },
+                                    {
+                                      "name": "latin",
+                                      "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     },
                                     {
                                       "name": "medium",
@@ -10411,6 +11149,38 @@ export const docsModel: DocsModel = {
                                       "type": "integer"
                                     },
                                     {
+                                      "name": "latin",
+                                      "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
                                       "name": "medium",
                                       "required": true,
                                       "type": "string"
@@ -10578,7 +11348,7 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "kind",
                                   "required": true,
-                                  "doc": "translation|spelling_variant",
+                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                   "type": "string"
                                 },
                                 {
@@ -10670,7 +11440,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "translation|spelling_variant",
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                         "type": "string"
                                       },
                                       {
@@ -10811,6 +11581,38 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "aliases",
+                                  "required": true,
+                                  "nullable": true,
+                                  "doc": "alternate spellings of this label, same election and shape as the label detail face; deduplicated by value+lang, display_name excluded, [] when it has none",
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "translation|spelling_variant",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "lang",
+                                        "doc": "BCP-47 language of this spelling; empty when unrecorded",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "display_name",
                                   "required": true,
                                   "type": "string"
@@ -10844,7 +11646,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "translation|spelling_variant",
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                         "type": "string"
                                       },
                                       {
@@ -11107,7 +11909,7 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "kind",
                                   "required": true,
-                                  "doc": "translation|spelling_variant",
+                                  "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                   "type": "string"
                                 },
                                 {
@@ -11185,7 +11987,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "translation|spelling_variant",
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                         "type": "string"
                                       },
                                       {
@@ -11278,6 +12080,38 @@ export const docsModel: DocsModel = {
                                       "required": true,
                                       "format": "int64",
                                       "type": "integer"
+                                    },
+                                    {
+                                      "name": "latin",
+                                      "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "localized",
+                                      "required": true,
+                                      "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                      "type": "map",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "machine",
+                                            "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "value",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
                                     },
                                     {
                                       "name": "medium",
@@ -11502,7 +12336,7 @@ export const docsModel: DocsModel = {
                                       {
                                         "name": "kind",
                                         "required": true,
-                                        "doc": "translation|spelling_variant",
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
                                         "type": "string"
                                       },
                                       {
@@ -11816,6 +12650,7 @@ export const docsModel: DocsModel = {
                             "name": "intros",
                             "required": true,
                             "nullable": true,
+                            "doc": "tag descriptions per language. machine is ALWAYS false on this face — catalog_tag_intro carries no provenance column, so the flag records \"unknown\", not \"human-written\"; do not read an absent machine here as a quality signal",
                             "type": "array",
                             "itemsOf": {
                               "type": "object",
@@ -11927,6 +12762,38 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "latin",
+                                  "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "required": true,
+                                  "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
                                 },
                                 {
                                   "name": "medium",
@@ -12407,6 +13274,38 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "latin",
+                                  "doc": "romanisation of display_name, from the title row display_name was taken from; absent when that row records none",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "localized",
+                                  "required": true,
+                                  "doc": "preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank",
+                                  "type": "map",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "machine",
+                                        "doc": "true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative",
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
                                 },
                                 {
                                   "name": "medium",

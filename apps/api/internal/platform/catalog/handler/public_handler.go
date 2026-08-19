@@ -286,12 +286,14 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 	}
 	switch entityType {
 	case "work":
-		names, err := h.svc.WorkNamesByID(c.Context(), ids)
+		blocks, err := h.svc.WorkNamesByID(c.Context(), ids)
 		if err != nil {
 			return response.InternalError(c, errors.ErrInternalServer)
 		}
 		for i := range out.Items {
-			out.Items[i].Names = names[out.Items[i].ID]
+			block := blocks[out.Items[i].ID]
+			out.Items[i].Names = block.Names
+			out.Items[i].Localized = block.Localized
 		}
 	case "name", "character", "label":
 		loc, err := h.svc.LocalizedForEntities(c.Context(), entityType, ids)

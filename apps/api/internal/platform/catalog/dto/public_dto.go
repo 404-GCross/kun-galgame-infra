@@ -10,12 +10,14 @@ type PublicClaimedBy struct {
 }
 
 type PublicWorkBrief struct {
-	ID            int64            `json:"id"`
-	Medium        string           `json:"medium"`
-	DisplayName   string           `json:"display_name"`
-	ContentRating string           `json:"content_rating"`
-	ClaimedBy     *PublicClaimedBy `json:"claimed_by"`
-	Names         *PublicWorkNames `json:"names,omitempty" doc:"per-locale display titles, same election as the works-list names block; absent when no title matched a slot — render names.<yourLocale> ?? display_name"`
+	ID            int64                          `json:"id"`
+	Medium        string                         `json:"medium"`
+	DisplayName   string                         `json:"display_name"`
+	ContentRating string                         `json:"content_rating"`
+	ClaimedBy     *PublicClaimedBy               `json:"claimed_by"`
+	Latin         string                         `json:"latin,omitempty" doc:"romanisation of display_name, from the title row display_name was taken from; absent when that row records none"`
+	Localized     map[string]PublicLocalizedName `json:"localized" doc:"preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank"`
+	Names         *PublicWorkNames               `json:"names,omitempty" doc:"per-locale display titles, same election as the works-list names block; absent when no title matched a slot — render names.<yourLocale> ?? display_name. Superseded by localized{}, which is keyed by any BCP-47 tag rather than four fixed slots"`
 }
 
 type PublicCatalogTitle struct {
@@ -58,35 +60,37 @@ type PublicCreditGroup struct {
 }
 
 type PublicCatalogWork struct {
-	ID             int64                   `json:"id"`
-	Medium         string                  `json:"medium"`
-	DisplayName    string                  `json:"display_name"`
-	OLang          string                  `json:"olang"`
-	ContentRating  string                  `json:"content_rating"`
-	ReleaseDate    *string                 `json:"release_date"`
-	Created        string                  `json:"created"`
-	Updated        string                  `json:"updated"`
-	Titles         []PublicCatalogTitle    `json:"titles"`
-	Refs           []PublicCatalogRef      `json:"refs"`
-	ClaimedBy      *PublicClaimedBy        `json:"claimed_by"`
-	Relations      []PublicRelation        `json:"relations,omitempty"`
-	Credits        []PublicCreditGroup     `json:"credits,omitempty"`
-	Releases       []PublicRelease         `json:"releases"`
-	Popularity     []PublicPopularity      `json:"popularity"`
-	Ratings        []PublicRating          `json:"ratings"`
-	Tags           []PublicTag             `json:"tags"`
-	Playtimes      []PublicPlaytime        `json:"playtimes"`
-	Series         []PublicSeries          `json:"series"`
-	Platforms      []PublicPlatform        `json:"platforms"`
-	Intro          []PublicIntro           `json:"intro"`
-	Covers         []PublicCover           `json:"covers"`
-	CoverSlots     *PublicWorkCoverSlots   `json:"cover_slots"`
-	Screenshots    []PublicScreenshot      `json:"screenshots"`
-	Characters     []PublicRosterCharacter `json:"characters"`
-	Labels         []PublicWorkLabel       `json:"labels"`
-	Engines        []PublicWorkEngine      `json:"engines"`
-	Links          []PublicWorkLink        `json:"links"`
-	SeriesSiblings []PublicWorkBrief       `json:"series_siblings"`
+	ID             int64                          `json:"id"`
+	Medium         string                         `json:"medium"`
+	DisplayName    string                         `json:"display_name"`
+	Latin          string                         `json:"latin,omitempty" doc:"romanisation of display_name, from the title row display_name was taken from; absent when that row records none"`
+	Localized      map[string]PublicLocalizedName `json:"localized" doc:"preferred title per locale, keyed by canonically-cased BCP-47 tag; {} when none. SPARSE by design — render localized[yourLocale] ?? display_name ?? latin, never a blank"`
+	OLang          string                         `json:"olang"`
+	ContentRating  string                         `json:"content_rating"`
+	ReleaseDate    *string                        `json:"release_date"`
+	Created        string                         `json:"created"`
+	Updated        string                         `json:"updated"`
+	Titles         []PublicCatalogTitle           `json:"titles"`
+	Refs           []PublicCatalogRef             `json:"refs"`
+	ClaimedBy      *PublicClaimedBy               `json:"claimed_by"`
+	Relations      []PublicRelation               `json:"relations,omitempty"`
+	Credits        []PublicCreditGroup            `json:"credits,omitempty"`
+	Releases       []PublicRelease                `json:"releases"`
+	Popularity     []PublicPopularity             `json:"popularity"`
+	Ratings        []PublicRating                 `json:"ratings"`
+	Tags           []PublicTag                    `json:"tags"`
+	Playtimes      []PublicPlaytime               `json:"playtimes"`
+	Series         []PublicSeries                 `json:"series"`
+	Platforms      []PublicPlatform               `json:"platforms"`
+	Intro          []PublicIntro                  `json:"intro"`
+	Covers         []PublicCover                  `json:"covers"`
+	CoverSlots     *PublicWorkCoverSlots          `json:"cover_slots"`
+	Screenshots    []PublicScreenshot             `json:"screenshots"`
+	Characters     []PublicRosterCharacter        `json:"characters"`
+	Labels         []PublicWorkLabel              `json:"labels"`
+	Engines        []PublicWorkEngine             `json:"engines"`
+	Links          []PublicWorkLink               `json:"links"`
+	SeriesSiblings []PublicWorkBrief              `json:"series_siblings"`
 }
 
 type PublicLookupData struct {
@@ -152,7 +156,7 @@ type PublicMovedData struct {
 
 type PublicLocalizedName struct {
 	Value   string `json:"value"`
-	Kind    string `json:"kind" doc:"translation|spelling_variant"`
+	Kind    string `json:"kind" doc:"which vocabulary the elected row was drawn from, and they do not overlap: an ENTITY name (character, label, credit name, and every projection of them) is translation|spelling_variant, taken from the alias tables; a WORK title is official|alias|abbreviation, taken from catalog_work_title. Read it per entity type — a works localized{} never says translation"`
 	Machine bool   `json:"machine,omitempty" doc:"true = machine-translated fill-in, present only when this locale has no source-provenance name (a source name always wins the slot); render it like any name but do not treat it as authoritative"`
 }
 
@@ -296,8 +300,8 @@ type PublicEntityHit struct {
 	EntityType    string                         `json:"entity_type"`
 	DisplayName   string                         `json:"display_name"`
 	Latin         string                         `json:"latin,omitempty"`
-	Localized     map[string]PublicLocalizedName `json:"localized,omitempty" doc:"names/characters/labels hits only: preferred name per locale, same election as the entity's detail face — render localized[yourLocale] ?? display_name"`
-	Names         *PublicWorkNames               `json:"names,omitempty" doc:"works hits only: per-locale display titles, same election as the works-list names block"`
+	Localized     map[string]PublicLocalizedName `json:"localized,omitempty" doc:"names/characters/labels/works hits: preferred name per locale, same election as the entity's detail face — render localized[yourLocale] ?? display_name. Absent when the entity has no localized name (tags hits never carry it)"`
+	Names         *PublicWorkNames               `json:"names,omitempty" doc:"works hits only: per-locale display titles, same election as the works-list names block. Superseded by localized{}, which is keyed by any BCP-47 tag rather than four fixed slots"`
 	Sources       []string                       `json:"sources"`
 	ContentRating string                         `json:"content_rating,omitempty"`
 	Tier          string                         `json:"tier,omitempty"`
@@ -435,14 +439,16 @@ type PublicRelease struct {
 }
 
 type PublicCharacterTrait struct {
-	ID      int64  `json:"id"`
-	Name    string `json:"name"`
-	NameZh  string `json:"name_zh,omitempty"`
-	Group   string `json:"group,omitempty"`
-	GroupZh string `json:"group_zh,omitempty"`
-	Spoiler int16  `json:"spoiler" doc:"0=none 1=minor 2=major"`
-	Sexual  bool   `json:"sexual"`
-	Lie     bool   `json:"lie"`
+	ID             int64                          `json:"id"`
+	Name           string                         `json:"name"`
+	NameZh         string                         `json:"name_zh,omitempty" doc:"superseded by localized[\"zh-Hans\"].value, which carries the same string plus its provenance"`
+	Group          string                         `json:"group,omitempty"`
+	GroupZh        string                         `json:"group_zh,omitempty" doc:"superseded by group_localized[\"zh-Hans\"].value"`
+	Localized      map[string]PublicLocalizedName `json:"localized" doc:"preferred trait name per locale, keyed by canonically-cased BCP-47 tag; {} when the vocabulary row has no localized name. Today the only key is zh-Hans — render localized[yourLocale] ?? name, never a blank"`
+	GroupLocalized map[string]PublicLocalizedName `json:"group_localized" doc:"same shape for the trait's root group; {} for a root trait or a group with no localized name — render group_localized[yourLocale] ?? group"`
+	Spoiler        int16                          `json:"spoiler" doc:"0=none 1=minor 2=major"`
+	Sexual         bool                           `json:"sexual"`
+	Lie            bool                           `json:"lie"`
 }
 
 type PublicWorkListItem struct {
@@ -456,6 +462,9 @@ type PublicWorkListItem struct {
 	Cover         string           `json:"cover,omitempty"`
 	Updated       string           `json:"updated"`
 	ViaLabel      *PublicLabelVia  `json:"via_label,omitempty"`
+
+	Latin     string                         `json:"latin,omitempty" doc:"include=names only: romanisation of display_name, from the title row display_name was taken from"`
+	Localized map[string]PublicLocalizedName `json:"localized,omitempty" doc:"include=names only, and absent (never {}) when this work has no localized title — the block is include-gated exactly like names, so its absence means \"not requested or none\", not \"none\". SPARSE by design — render localized[yourLocale] ?? display_name ?? latin"`
 
 	Names   *PublicWorkNames      `json:"names,omitempty"`
 	Intros  *PublicWorkIntros     `json:"intros,omitempty"`
@@ -528,7 +537,7 @@ type PublicTagDetail struct {
 	Kind       string            `json:"kind" doc:"content|meta"`
 	WorkCount  int               `json:"work_count"`
 	Sexual     bool              `json:"sexual"`
-	Intros     []PublicIntro     `json:"intros"`
+	Intros     []PublicIntro     `json:"intros" doc:"tag descriptions per language. machine is ALWAYS false on this face — catalog_tag_intro carries no provenance column, so the flag records \"unknown\", not \"human-written\"; do not read an absent machine here as a quality signal"`
 	Works      []PublicWorkBrief `json:"works,omitempty"`
 	NextOffset *int              `json:"next_offset,omitempty"`
 }
@@ -537,6 +546,7 @@ type PublicLabelListItem struct {
 	ID           int64                          `json:"id"`
 	DisplayName  string                         `json:"display_name"`
 	Localized    map[string]PublicLocalizedName `json:"localized" doc:"preferred name per locale, keyed by canonically-cased BCP-47 tag; {} when none — render localized[yourLocale] ?? display_name"`
+	Aliases      []PublicAlias                  `json:"aliases" doc:"alternate spellings of this label, same election and shape as the label detail face; deduplicated by value+lang, display_name excluded, [] when it has none"`
 	Kind         string                         `json:"kind" doc:"game_brand|bunko|publisher|anime_studio|doujin_circle|group|other"`
 	WorkCount    int                            `json:"work_count"`
 	LogoHash     string                         `json:"logo_hash" doc:"brand logo content hash in the image service; \"\" = this label has no logo"`
