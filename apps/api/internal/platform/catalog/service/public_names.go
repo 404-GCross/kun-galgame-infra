@@ -121,7 +121,6 @@ func (s *PublicService) LocalizedForEntities(ctx context.Context, entityType str
 }
 
 type WorkNameBlock struct {
-	Names     *dto.PublicWorkNames
 	Localized map[string]dto.PublicLocalizedName
 }
 
@@ -132,7 +131,7 @@ func (s *PublicService) WorkNamesByID(ctx context.Context, ids []int64) (map[int
 	}
 	out := make(map[int64]WorkNameBlock, len(titles))
 	for id, rows := range titles {
-		out[id] = WorkNameBlock{Names: publicWorkNames(rows), Localized: workLocalized(rows)}
+		out[id] = WorkNameBlock{Localized: workLocalized(rows)}
 	}
 	return out, nil
 }
@@ -171,7 +170,6 @@ func (s *PublicService) fillWorkBriefNames(ctx context.Context, briefs ...*dto.P
 			continue
 		}
 		rows := titles[b.ID]
-		b.Names = publicWorkNames(rows)
 		b.Latin = workLatin(rows, b.DisplayName)
 		b.Localized = workLocalized(rows)
 	}
@@ -180,9 +178,7 @@ func (s *PublicService) fillWorkBriefNames(ctx context.Context, briefs ...*dto.P
 
 // workLocalized is localizedNames for work titles: same first-row-wins scan over
 // rows nativeWorkTitles already ordered by (provenance, kind, id), so a source
-// title beats a machine one and official beats alias inside a locale. Unlike the
-// four d7 slots the key is any canonical BCP-47 tag, so ko/ru/vi titles — which
-// had no slot to go to — reach the wire here.
+// title beats a machine one and official beats alias inside a locale.
 func workLocalized(rows []WorkTitleRow) map[string]dto.PublicLocalizedName {
 	out := make(map[string]dto.PublicLocalizedName, len(rows))
 	for _, t := range rows {

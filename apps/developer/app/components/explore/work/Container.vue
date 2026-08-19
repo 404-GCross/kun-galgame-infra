@@ -60,7 +60,7 @@ interface WorkDetail {
   }[]
   labels?: { id: number; display_name: string; kind?: string }[]
   series?: { id: number; name: string; member_count?: number }[]
-  intro?: { lang: string; intro: string; machine?: boolean; source?: string }[]
+  intros?: { lang: string; intro: string; machine?: boolean; source?: string }[]
   titles?: { kind?: string; lang?: string; latin?: string; title: string }[]
 }
 const route = useRoute()
@@ -147,14 +147,10 @@ const banner = computed(
 )
 
 const LOCALE_LABEL: Record<string, string> = {
-  'zh-cn': '中文',
-  zh_cn: '中文',
-  'zh-tw': '繁體中文',
+  zh: '中文',
   'zh-Hans': '中文',
   'zh-Hant': '繁體中文',
-  'ja-jp': '日本語',
   ja: '日本語',
-  'en-us': 'English',
   en: 'English'
 }
 interface IntroVariant {
@@ -166,7 +162,7 @@ interface IntroVariant {
 const normalizeIntro = (s: string) => s.replace(/\\\n/g, '\n').trim()
 const introVariants = computed<IntroVariant[]>(() => {
   const byText = new Map<string, IntroVariant>()
-  for (const i of work.value?.intro ?? []) {
+  for (const i of work.value?.intros ?? []) {
     const text = normalizeIntro(i.intro)
     if (text && !byText.has(text))
       byText.set(text, {

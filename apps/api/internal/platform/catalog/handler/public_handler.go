@@ -291,9 +291,7 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 			return response.InternalError(c, errors.ErrInternalServer)
 		}
 		for i := range out.Items {
-			block := blocks[out.Items[i].ID]
-			out.Items[i].Names = block.Names
-			out.Items[i].Localized = block.Localized
+			out.Items[i].Localized = blocks[out.Items[i].ID].Localized
 		}
 	case "name", "character", "label":
 		loc, err := h.svc.LocalizedForEntities(c.Context(), entityType, ids)

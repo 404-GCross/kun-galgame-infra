@@ -38,8 +38,8 @@ func (s *ReadService) loadTitles(ctx context.Context, subjects []claimSubject, w
 func (s *ReadService) nativeWorkTitles(ctx context.Context, workIDs []int64, out map[int64][]WorkTitleRow, withHints bool) error {
 	live := editspec.NotSuppressedWorkTitleSQL("t")
 	// provenance leads the ORDER BY, ahead of kind: a source row always beats a
-	// machine one inside a locale slot, which is what makes the slot election in
-	// publicWorkNames a plain first-row-wins scan (wave 210, the aliasBeats
+	// machine one inside a locale, which is what makes the election in
+	// workLocalized a plain first-row-wins scan (wave 210, the aliasBeats
 	// philosophy of wave 209 pushed down into SQL).
 	const cols = `work_id, lang, title, coalesce(latin, '') AS latin, kind, provenance`
 	q := `SELECT ` + cols + ` FROM catalog_work_title t

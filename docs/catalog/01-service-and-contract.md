@@ -18,20 +18,21 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 **release 粒度自 wave 174 起有了公开读面**:`GET /v1/catalog/releases`(发售动态时间线)把**每一行带日期的 release** 当作一个条目按其**自身日期**排序,认领与未认领同规;人口 = LIVE galgame 作品的 release 且日期**至少精确到月**(只到年与无日期者不入本面,它们仍归日历的 pending / tba 两桶)。它是**日历的下一粒度**:日历按作品的**最早**发行日安放作品、一部作品只出现一次,故移植版/复刻版/本地化版在那里**构造上不可见**;本面的 `is_first`(该行是否为该作品最早的带日期 release)正是把二者分开的那一位。`kind` 缺省**排除 trial / patch**(发售动态问的是「东西出了」),`lang` 按 `COALESCE(release.lang, work.olang)` 匹配(dlsite/getchu 泳道的店铺 SKU 不记语言,构造上即作品原语),`official` 视**缺键为 official**(只有 VNDB 泳道写这个旗,写 `false` 即民间汉化/非官方版)。契约见 [developer-platform/02 §3.2](../developer-platform/02-public-api.md)。
 
-**公开面的名字原语自 wave 209 起终局化**:`/v1/catalog` 上**凡出现实体名的投影**——detail、list、花名册 `characters`、`voices`、`credits`、`siblings`、label `relations`、`relation-graph` 节点(08-19 补齐,209 当波漏掉的唯一 label 投影)、`via_label`、实体 search hit——一律是同一组三字段 `display_name` + `latin`(有则)+ `localized{}`(按 canonical BCP-47 tag 取名的 map,无则 `{}`),渲染规则恒为 `localized[locale] ?? display_name ?? latin`。此前一个名字按投影不同有三种形状(detail 用 `display_name`、花名册/credits/relations/search 用 `name`、别名是裸字符串数组),消费端得为每种投影各写一条渲染路径。三处随之改形(**均为 breaking,逐条声明在 `public-openapi-breaking-ignore.txt`**):① search hit / 花名册角色与其 `voices` / `credits` 条目 / label `relations` / `via_label` 的 **`name` 更名为 `display_name`**——同一字符串在同一响应里换键,没有值失联;② **`aliases[]` 从扁平字符串数组升级为 `{value, lang, kind, machine}` 对象数组**(按 value+lang 去重,display name 那一行除外),裸串答不了「这个拼法是哪门语言」和「谁写的」,于是既筛不出 locale、也挡不住机翻文本冒充源数据;③ 五个各自为政的 intro DTO 合并为一个 **`PublicIntro{lang, intro, source, machine}`**(work/character/name/label/tag 同形;tag 的 `machine` **恒 false**——`catalog_tag_intro` 没有 provenance 列)。两项是纯加法:`PublicWorkBrief` 与 works 类 search hit 补上 **`names`** 块(与 works 列表 names 同一选举),`localized{}` 补齐到此前缺它的每个投影。
+**公开面的名字原语自 wave 209 起终局化**:`/v1/catalog` 上**凡出现实体名的投影**——detail、list、花名册 `characters`、`voices`、`credits`、`siblings`、label `relations`、`relation-graph` 节点(08-19 补齐,209 当波漏掉的唯一 label 投影)、`via_label`、实体 search hit——一律是同一组三字段 `display_name` + `latin`(有则)+ `localized{}`(按 canonical BCP-47 tag 取名的 map,无则 `{}`),渲染规则恒为 `localized[locale] ?? display_name ?? latin`。此前一个名字按投影不同有三种形状(detail 用 `display_name`、花名册/credits/relations/search 用 `name`、别名是裸字符串数组),消费端得为每种投影各写一条渲染路径。三处随之改形(**均为 breaking,逐条声明在 `public-openapi-breaking-ignore.txt`**):① search hit / 花名册角色与其 `voices` / `credits` 条目 / label `relations` / `via_label` 的 **`name` 更名为 `display_name`**——同一字符串在同一响应里换键,没有值失联;② **`aliases[]` 从扁平字符串数组升级为 `{value, lang, kind, machine}` 对象数组**(按 value+lang 去重,display name 那一行除外),裸串答不了「这个拼法是哪门语言」和「谁写的」,于是既筛不出 locale、也挡不住机翻文本冒充源数据;③ 五个各自为政的 intro DTO 合并为一个 **`PublicIntro{lang, intro, source, machine}`**(work/character/name/label/tag 同形;tag 的 `machine` **恒 false**——`catalog_tag_intro` 没有 provenance 列)。一项是纯加法:`localized{}` 补齐到此前缺它的每个投影。
 
-**作品标题跟上同一根轴(wave 210,2026-08-19)**:`catalog_work_title` 加 `provenance`(0=source / 1=machine)+ `src_hash` / `mt_model`,与三张别名表、四张 intro 表同义。读面两处随之动:① **🔴 breaking**——`names` 的四个 locale 槽从裸字符串变成 **`{value, machine}`**(与 `intros` 的槽对称),`names["zh-cn"].value` 即原来那个串,逐条声明在 `public-openapi-breaking-ignore.txt`;② 加法——详情面 `titles[]` 每行、S2S `WorkTitle` 每行补 `machine`(仅为真时出现)。槽内选举定序改为 **provenance → kind → id**:**源标题恒胜,机翻只能占源没填的空槽**,与上一段实体名的规矩逐字相同。供给侧同波补齐两条**源**泳道(bangumi `name_cn`、VNDB 非机翻中文 release 标题,均 fill-missing、provenance=0),机翻只覆盖两条源都供不出的残量;`src_hash` 是日文原名的 sha256,原名一改该行即到期重译。
+**作品标题跟上同一根轴(wave 210,2026-08-19)**:`catalog_work_title` 加 `provenance`(0=source / 1=machine)+ `src_hash` / `mt_model`,与三张别名表、四张 intro 表同义。读面随之动:详情面 `titles[]` 每行、S2S `WorkTitle` 每行补 `machine`(仅为真时出现),`localized{}` 的每个 locale 条目同带该旗。选举定序改为 **provenance → kind → id**:**源标题恒胜,机翻只能占源没填的空 locale**,与上一段实体名的规矩逐字相同。供给侧同波补齐两条**源**泳道(bangumi `name_cn`、VNDB 非机翻中文 release 标题,均 fill-missing、provenance=0),机翻只覆盖两条源都供不出的残量;`src_hash` 是日文原名的 sha256,原名一改该行即到期重译。
 
-**works 补齐名字原语 + 两处加法件(wave 212 波 A,2026-08-19;纯加法,零 schema 零迁移)**:wave 209 给公开面每个带名实体统一了 `display_name` + `latin` + `localized{}`,唯独漏了 **works**——作品仍只有专为论坛四槽留的 `names{ja-jp, zh-cn, zh-tw, en-us}`。四槽是有损的:`lang` 为 ko/ru/vi 或未标注的标题**没有槽位可去,构造上不可达**(生产实测 `catalog_work_title.lang` 分布 ja / en / zh-Hans / zh-Hant / zh / 空,四槽已在丢 `zh` 与空 lang 的信息,新语种一进来即整批不可见)。本波给四个作品投影补上同一组原语,**四槽 `names` 原样保留照发**(过渡期双发,删除是 B 波的事,等论坛/moyu 迁完):
+**works 名字原语终局化,四槽 `names` 退役(wave 212,2026-08-19;A 波双发 + B 波删除,零 schema 零迁移)**:wave 209 给公开面每个带名实体统一了 `display_name` + `latin` + `localized{}`,唯独漏了 **works**——作品此前只有专为论坛留的四槽 `names{ja-jp, zh-cn, zh-tw, en-us}`。四槽是有损的:`lang` 为 ko/ru/vi 或未标注的标题**没有槽位可去,构造上不可达**(生产实测 `catalog_work_title.lang` 分布 ja / en / zh-Hans / zh-Hant / zh / 空,四槽已在丢 `zh` 与空 lang 的信息,新语种一进来即整批不可见)。**A 波**给四个作品投影补上同一组原语并与四槽双发;**B 波**在论坛与 moyu 两家消费端迁完并上线后把兼容层整层删掉——公开面自此**不存在任何 `ja-jp` / `zh-cn` / `zh-tw` / `en-us` 键**:
 
-| 投影 | 新增 | 时机 |
+| 投影 | 名字原语 | 时机 |
 |---|---|---|
 | `works/{id}` 详情 `PublicCatalogWork` | `latin` + `localized{}` | **恒带**,无本地化名发 `{}` |
-| `works` 列表行 `PublicWorkListItem` | `latin` + `localized{}` | **仅 `include=names`**;两键与 `names` 同一道 include 闸,未点名时**整键缺席而非发 `{}`**——「没请求」与「没有」是两个断言 |
-| 作品 brief `PublicWorkBrief`(relations / series_siblings / lookup / tag·label·name·character 的 works 子列表)| `latin` + `localized{}` | 与 `names` 同一次查询,`localized` 恒带、空为 `{}` |
+| `works` 列表行 `PublicWorkListItem` | `latin` + `localized{}` | **仅 `include=names`**,未点名时**整键缺席而非发 `{}`**——「没请求」与「没有」是两个断言 |
+| 作品 brief `PublicWorkBrief`(relations / series_siblings / lookup / tag·label·name·character 的 works 子列表)| `latin` + `localized{}` | 与标题同一次查询,`localized` 恒带、空为 `{}` |
 | 实体 search 的 works 类 hit | `localized{}`(`latin` 本已有,来自 Meili doc)| ≤20 命中一次批查 |
 
-- **选举与四槽逐字同规**:同一批 `catalog_work_title` 行、同一个 `(provenance, kind, id)` 定序、同一个 first-row-wins 扫描,**源标题恒胜机翻、official 胜 alias**,机翻占空槽时带 `machine: true`。差别只在键:四槽是四个固定产品键,`localized{}` 是**任意 canonical BCP-47 tag**(`zh-hant` 归一为 `zh-Hant`,**裸 `zh` 保留为 `zh` 不猜字形**),`lang` 为空或不成其为标签的行**一律不入**(它们仍在 `titles[]` 里可列可搜)。
+- **选举沿用四槽那一套**:同一批 `catalog_work_title` 行、同一个 `(provenance, kind, id)` 定序、同一个 first-row-wins 扫描,**源标题恒胜机翻、official 胜 alias**,机翻占空 locale 时带 `machine: true`。差别只在键:四槽是四个固定产品键,`localized{}` 是**任意 canonical BCP-47 tag**(`zh-hant` 归一为 `zh-Hant`,**裸 `zh` 保留为 `zh` 不猜字形**),`lang` 为空或不成其为标签的行**一律不入**(它们仍在 `titles[]` 里可列可搜)。
+- **`include=` 的六个 token 拼写不随块退役而改名**:`names,intros,labels,ratings,covers,refs` 逐字照旧,`include=names` 现在闸的是 `latin` + `localized{}`。moyu 全站标题都走 `include=names`,把这个 token 改名会让它全站渲染空标题、而两侧都不报任何错——有测试钉住这六个拼写。
 - **`kind` 是两套不相交的词表**:实体名(角色/厂牌/名义)说 `translation|spelling_variant`(取自三张别名表),**作品标题说 `official|alias|abbreviation`**(取自 `catalog_work_title`)。按实体类型读,别拿一套词表校验另一套。
 - **`latin` = display 行的罗马字**:顺序扫标题行,取第一条 `title == display_name` 的行的 `latin`;无此行或该行无 latin 则整键缺席。
 - **详情面的 `search_hint` 陷阱**:详情走 `withHints=true` 载入(比列表多一类行、`ORDER BY` 多一层 `lang`),`kind=search_hint` 的行**在认领 locale 槽之前**即被剔除——先认槽再剔除会把它背后的真标题一起丢掉,两条路径的选举结果因此逐字相等(有测试钉住)。
@@ -39,8 +40,15 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 同波另有两处加法件(均恒出、空值分别为 `[]` / `{}`;relation-graph 节点的 `localized{}` **连同 `name`→`display_name` 改名**已由同日独立波先行完成,不在本波):
 
 - **`labels` 列表行补 `aliases[]`**(`{value, lang, kind, machine}`,与 `labels/{id}` 同语义、同去重),与该行的 `localized{}` 共用同一次别名批查,不增查询。
-- **角色 `traits[]` 补 `localized{}` + `group_localized{}`**:值取自 `catalog_character_trait.name_zh`(组名经 `group_tid` 自连接解析),键恒为 **`zh-Hans`**——该列是简体(3,327 条已填行中 738 条含简体专用字、**0 条含繁体专用字**),`kind` 为 `translation`,`machine` 如实映射 `name_zh_provenance`(0=策展/1=机翻,该列此前不上读面,生产分布 3,098 / 229)。扁平的 `name_zh` / `group_zh` **本波保留照发**。
+- **角色 `traits[]` 补 `localized{}` + `group_localized{}`**:值取自 `catalog_character_trait.name_zh`(组名经 `group_tid` 自连接解析),键恒为 **`zh-Hans`**——该列是简体(3,327 条已填行中 738 条含简体专用字、**0 条含繁体专用字**),`kind` 为 `translation`,`machine` 如实映射 `name_zh_provenance`(0=策展/1=机翻,该列此前不上读面,生产分布 3,098 / 229)。
 - **文档注记**:`tags/{id}` 的 `intros[].machine` **恒 false**——`catalog_tag_intro` 没有 provenance 列,该旗在这一面记的是「未知」而不是「人写的」,已写进字段 doc,免得下游当 bug 报。
+
+B 波删掉的四件(**均为 breaking,逐条声明在 `public-openapi-breaking-ignore.txt`**):
+
+- **四个作品投影的 `names` 块整体删除**(列表行、search hit、brief、日历行);渲染改用上表的 `localized[locale] ?? display_name ?? latin`。
+- **works 列表的 `intros` 块从四槽对象改成 `[{lang, intro, source, machine}]` 数组**——即详情面自 wave 209 起发的那个 `PublicIntro` 数组:一语言一元素,同一批 `catalog_work_intro` 行、同一套选举,两面对同一部作品给出逐字相同的数组(有测试钉住)。
+- **详情面的简介键 `intro` 更名为 `intros`**(数组、元素、次序都不变,只换键),与列表块以及 label / tag / character / name 各面对齐。**S2S 读面的 `intro` 是另一张面,不动。**
+- **角色 `traits[]` 的扁平 `name_zh` / `group_zh` 删除**,由 A 波补上的 `localized["zh-Hans"]` / `group_localized["zh-Hans"]` 接管——同一个串,另带 provenance。**S2S 面的 `name_zh` / `group_name_zh` 不动。**
 
 **`localized{}` 的机器填缺(2026-08-18 裁决,推翻旧规)**:机翻别名行(`provenance=1`)现在**可以占一个 locale 槽,但仅当该 locale 没有任何 source 行**,占位时带 `machine: true`;source 行**恒胜**,机翻行只能补空、永不遮蔽(与 §2.4 intro 块的 shadow-never-delete 同规)。旧规「`localized{}` 只收权威名」把机翻行整个挡在外面,代价是中文读者对着日文 `display_name`,而可用的中文写法就躺在别名表里够不着。要挡机翻的消费端按 `machine` 过滤;不挑的消费端从此**只需 `localized[locale] ?? display_name` 两级**——`?? latin` 是名字在该 locale 完全无着落时的最后一格,机器填缺之后极少走到,而按投影分支的那套渲染逻辑已随本波作废。公开面全文契约见 [developer-platform/02 §3.7](../developer-platform/02-public-api.md)。
 

@@ -930,7 +930,7 @@ components:
         id:
           format: int64
           type: integer
-        intro:
+        intros:
           items:
             $ref: "#/components/schemas/PublicIntro"
           type:
@@ -1058,7 +1058,7 @@ components:
         - playtimes
         - series
         - platforms
-        - intro
+        - intros
         - covers
         - cover_slots
         - screenshots
@@ -1173,9 +1173,6 @@ components:
             $ref: "#/components/schemas/PublicLocalizedName"
           description: same shape for the trait's root group; {} for a root trait or a group with no localized name — render group_localized[yourLocale] ?? group
           type: object
-        group_zh:
-          description: superseded by group_localized["zh-Hans"].value
-          type: string
         id:
           format: int64
           type: integer
@@ -1187,9 +1184,6 @@ components:
           description: preferred trait name per locale, keyed by canonically-cased BCP-47 tag; {} when the vocabulary row has no localized name. Today the only key is zh-Hans — render localized[yourLocale] ?? name, never a blank
           type: object
         name:
-          type: string
-        name_zh:
-          description: superseded by localized["zh-Hans"].value, which carries the same string plus its provenance
           type: string
         sexual:
           type: boolean
@@ -1470,9 +1464,6 @@ components:
             $ref: "#/components/schemas/PublicLocalizedName"
           description: "names/characters/labels/works hits: preferred name per locale, same election as the entity's detail face — render localized[yourLocale] ?? display_name. Absent when the entity has no localized name (tags hits never carry it)"
           type: object
-        names:
-          $ref: "#/components/schemas/PublicWorkNames"
-          description: "works hits only: per-locale display titles, same election as the works-list names block. Superseded by localized{}, which is keyed by any BCP-47 tag rather than four fixed slots"
         sources:
           items:
             type: string
@@ -2019,17 +2010,6 @@ components:
         - role_key
         - role_name
         - identity
-      type: object
-    PublicNameSlot:
-      additionalProperties: false
-      properties:
-        machine:
-          description: true when the title is a machine translation, not a title a source published. A source title always wins its slot; a machine one can only occupy a slot that would otherwise be empty
-          type: boolean
-        value:
-          type: string
-      required:
-        - value
       type: object
     PublicPersonLink:
       additionalProperties: false
@@ -2802,9 +2782,6 @@ components:
           type: object
         medium:
           type: string
-        names:
-          $ref: "#/components/schemas/PublicWorkNames"
-          description: per-locale display titles, same election as the works-list names block; absent when no title matched a slot — render names.<yourLocale> ?? display_name. Superseded by localized{}, which is keyed by any BCP-47 tag rather than four fixed slots
       required:
         - id
         - medium
@@ -2839,31 +2816,6 @@ components:
         - id
         - name
         - work_count
-      type: object
-    PublicWorkIntroSlot:
-      additionalProperties: false
-      properties:
-        intro:
-          type: string
-        machine:
-          type: boolean
-        source:
-          type: string
-      required:
-        - intro
-        - source
-      type: object
-    PublicWorkIntros:
-      additionalProperties: false
-      properties:
-        en-us:
-          $ref: "#/components/schemas/PublicWorkIntroSlot"
-        ja-jp:
-          $ref: "#/components/schemas/PublicWorkIntroSlot"
-        zh-cn:
-          $ref: "#/components/schemas/PublicWorkIntroSlot"
-        zh-tw:
-          $ref: "#/components/schemas/PublicWorkIntroSlot"
       type: object
     PublicWorkLabel:
       additionalProperties: false
@@ -2936,7 +2888,12 @@ components:
           format: int64
           type: integer
         intros:
-          $ref: "#/components/schemas/PublicWorkIntros"
+          description: "include=intros only: one intro per language, same shape and election as the work-detail intros block"
+          items:
+            $ref: "#/components/schemas/PublicIntro"
+          type:
+            - array
+            - "null"
         labels:
           items:
             $ref: "#/components/schemas/PublicWorkLabel"
@@ -2953,8 +2910,6 @@ components:
           type: object
         medium:
           type: string
-        names:
-          $ref: "#/components/schemas/PublicWorkNames"
         olang:
           type: string
         ratings:
@@ -2986,18 +2941,6 @@ components:
         - release_date
         - claimed_by
         - updated
-      type: object
-    PublicWorkNames:
-      additionalProperties: false
-      properties:
-        en-us:
-          $ref: "#/components/schemas/PublicNameSlot"
-        ja-jp:
-          $ref: "#/components/schemas/PublicNameSlot"
-        zh-cn:
-          $ref: "#/components/schemas/PublicNameSlot"
-        zh-tw:
-          $ref: "#/components/schemas/PublicNameSlot"
       type: object
     PublicWorksListData:
       additionalProperties: false
@@ -4439,12 +4382,12 @@ paths:
           schema:
             description: true/1 = include r18 works (default false = dropped)
             type: boolean
-        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape"
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names carries latin + localized{}; intros carries one intro per language, detail-face shape; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape"
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape"
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names carries latin + localized{}; intros carries one intro per language, detail-face shape; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape"
             type: string
       responses:
         "200":
