@@ -98,7 +98,7 @@ func OpenAPIAuth(c fiber.Ctx) error {
     c.Locals("cred", cred)
     return c.Next()
 }
-// handler 内:requireScope("galgame:read"); content_limit = gate(c.Query("content_limit"), cred)
+// handler 内:requireScope("catalog:read"); content_limit = gate(c.Query("content_limit"), cred)
 ```
 
 ---

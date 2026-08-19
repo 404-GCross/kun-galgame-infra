@@ -20,6 +20,7 @@ const (
 	FieldWorkOLang         = "catalog.work.olang"
 	FieldWorkContentRating = "catalog.work.content_rating"
 	FieldWorkTitles        = "catalog.work.titles"
+	FieldWorkTitlesSuppr   = FieldWorkTitles + editing.SuppressedFieldSuffix
 	FieldWorkIntros        = "catalog.work.intros"
 	FieldWorkDisplayNSFW   = "catalog.work.display_nsfw"
 	FieldWorkTagIDs        = "catalog.work.tag_ids"
@@ -29,6 +30,10 @@ const (
 	FieldWorkLinks         = "catalog.work.links"
 	FieldWorkCovers        = "catalog.work.covers"
 	FieldWorkScreenshots   = "catalog.work.screenshots"
+	FieldWorkCredits       = "catalog.work.credits"
+	FieldWorkCreditsSuppr  = FieldWorkCredits + editing.SuppressedFieldSuffix
+	FieldWorkRoster        = "catalog.work.roster"
+	FieldWorkRosterSuppr   = FieldWorkRoster + editing.SuppressedFieldSuffix
 )
 
 var letmoeSites = []string{"letmoe", "letmoe-staging", "letmoe-dev"}
@@ -95,15 +100,20 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 				FieldWorkDisplayNSFW:   w.DisplayNSFW,
 			}
 			for key, load := range map[string]func(context.Context, *gorm.DB, int64) ([]any, error){
-				FieldWorkTitles:      loadTitles,
-				FieldWorkIntros:      loadIntros,
-				FieldWorkTagIDs:      loadTagIDs,
-				FieldWorkLabels:      loadLabels,
-				FieldWorkEngineIDs:   loadEngineIDs,
-				FieldWorkSeriesIDs:   loadSeriesIDs,
-				FieldWorkLinks:       loadLinks,
-				FieldWorkCovers:      loadCovers,
-				FieldWorkScreenshots: loadScreenshots,
+				FieldWorkTitles:       loadTitles,
+				FieldWorkTitlesSuppr:  loadSuppressedTitles,
+				FieldWorkIntros:       loadIntros,
+				FieldWorkTagIDs:       loadTagIDs,
+				FieldWorkLabels:       loadLabels,
+				FieldWorkEngineIDs:    loadEngineIDs,
+				FieldWorkSeriesIDs:    loadSeriesIDs,
+				FieldWorkLinks:        loadLinks,
+				FieldWorkCovers:       loadCovers,
+				FieldWorkScreenshots:  loadScreenshots,
+				FieldWorkCredits:      loadCredits,
+				FieldWorkCreditsSuppr: loadSuppressedCredits,
+				FieldWorkRoster:       loadRoster,
+				FieldWorkRosterSuppr:  loadSuppressedRoster,
 			} {
 				value, err := load(ctx, db, entityID)
 				if err != nil {
@@ -150,27 +160,77 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 }
 
 func workFieldSpecs() []editing.FieldSpec {
+	titles := editing.FieldSpec{
+		Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+		Identity: &editing.IdentitySpec{
+			Segments: 4, TrailingText: true, KeyCheck: kindLangTextKeyCheck("title"),
+		},
+		MaxElements: maxTitleElements,
+		Validate:    validateTitles,
+		Apply:       applyTitles,
+	}
+	credits := editing.FieldSpec{
+		Key: FieldWorkCredits, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+		Identity: &editing.IdentitySpec{
+			Segments: 4, KeyCheck: creditKeyCheck,
+			Refs: []editing.IdentityRef{
+				{Segment: 3, EntityTag: TagCreditName},
+				{Segment: 4, EntityTag: TagCharacter, ZeroAbsent: true},
+			},
+		},
+		MaxSuppressed: maxCreditSuppress,
+		MaxElements:   maxCreditElements,
+		Validate:      validateCredits,
+		Apply:         applyCredits,
+	}
+	// The roster is registered on catalog.work only, never on catalog.character.
+	// Both faces render the same physical row, but the two entity types can only
+	// key it differently (roster:<character_id> against a work id, versus
+	// roster:<work_id> against a character id), and edit_suppressed_row would
+	// hold both keys happily while each read path consults exactly one — an edge
+	// hidden on the character page would keep rendering on the work page.
+	roster := editing.FieldSpec{
+		Key: FieldWorkRoster, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+		Identity: &editing.IdentitySpec{
+			Segments: 2, KeyCheck: rosterKeyCheck,
+			Refs: []editing.IdentityRef{{Segment: 2, EntityTag: TagCharacter}},
+		},
+		MaxSuppressed: maxRosterSuppress,
+		MaxElements:   maxRosterElements,
+		Validate:      validateRoster,
+		Apply:         applyRoster,
+		Provenance: []editing.ProvenanceTarget{
+			{
+				Table: catmodel.CatalogWorkCharacter{}.TableName(), Column: "kind",
+				Rows: rosterRowsWhoseValueChanges("kind", func(e rosterEdge) int16 { return e.Kind }),
+			},
+			{
+				Table: catmodel.CatalogWorkCharacter{}.TableName(), Column: "spoiler",
+				Rows: rosterRowsWhoseValueChanges("spoiler", func(e rosterEdge) int16 { return e.Spoiler }),
+			},
+		},
+	}
 	return []editing.FieldSpec{
 		{
 			Key: FieldWorkDisplayName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
-			Validate: validateDisplayName,
-			Apply:    applyWorkColumn("display_name", asString),
+			Validate:   validateDisplayName,
+			Apply:      applyWorkColumn("display_name", asString),
+			Provenance: workProvenance("display_name"),
 		},
 		{
 			Key: FieldWorkOLang, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-			Validate: validateOLang,
-			Apply:    applyWorkColumn("olang", asString),
+			Validate:   validateOLang,
+			Apply:      applyWorkColumn("olang", asString),
+			Provenance: workProvenance("olang"),
 		},
 		{
 			Key: FieldWorkContentRating, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-			Validate: validateContentRating,
-			Apply:    applyWorkColumn("content_rating", asContentRating),
+			Validate:   validateContentRating,
+			Apply:      applyWorkColumn("content_rating", asContentRating),
+			Provenance: workProvenance("content_rating"),
 		},
-		{
-			Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-			Validate: validateTitles,
-			Apply:    applyTitles,
-		},
+		titles,
+		editing.SuppressedFieldSpec(TypeWork, titles),
 		{
 			Key: FieldWorkIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
 			Validate: validateIntros,
@@ -178,8 +238,9 @@ func workFieldSpecs() []editing.FieldSpec {
 		},
 		{
 			Key: FieldWorkDisplayNSFW, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-			Validate: validateBool,
-			Apply:    applyWorkColumn("display_nsfw", asBool),
+			Validate:   validateBool,
+			Apply:      applyWorkColumn("display_nsfw", asBool),
+			Provenance: workProvenance("display_nsfw"),
 		},
 		{
 			Key: FieldWorkTagIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
@@ -216,6 +277,10 @@ func workFieldSpecs() []editing.FieldSpec {
 			Validate: validateScreenshots,
 			Apply:    applyScreenshots,
 		},
+		credits,
+		editing.SuppressedFieldSpec(TypeWork, credits),
+		roster,
+		editing.SuppressedFieldSpec(TypeWork, roster),
 	}
 }
 
@@ -272,6 +337,10 @@ func asContentRating(v any) (any, error) {
 		return int16(n), nil
 	}
 	return nil, fmt.Errorf("must be a number")
+}
+
+func workProvenance(column string) []editing.ProvenanceTarget {
+	return []editing.ProvenanceTarget{{Table: catmodel.CatalogWork{}.TableName(), Column: column}}
 }
 
 func applyWorkColumn(column string, conv func(any) (any, error)) editing.ApplyFunc {

@@ -164,6 +164,8 @@ func registerTools(s *mcp.Server, up *Upstream) {
 		Description: descCatalogReleases,
 		Annotations: readOnly,
 	}, t.catalogReleases)
+
+	registerNewsTools(s, t)
 }
 
 const descCatalogSearch = "Search the cross-media identity registry for entities by name. Choose the index with `type`: " +

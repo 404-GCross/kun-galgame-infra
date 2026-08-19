@@ -72,7 +72,10 @@ func applyTagIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 			return err
 		}
 		if len(tags) != len(ids) {
-			return fmt.Errorf("editspec: tag_ids: %d of %d ids do not exist", len(ids)-len(tags), len(ids))
+			return &editing.ValidationError{
+				Key:    FieldWorkTagIDs,
+				Reason: fmt.Sprintf("%d of %d ids do not exist", len(ids)-len(tags), len(ids)),
+			}
 		}
 	}
 	if err := tx.WithContext(ctx).
@@ -84,22 +87,41 @@ func applyTagIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 		return nil
 	}
 	rows := make([]catmodel.CatalogWorkTag, 0, len(tags))
+	maps := make([]catmodel.CatalogTagSourceMap, 0, len(tags))
 	for _, t := range tags {
 		rows = append(rows, catmodel.CatalogWorkTag{
 			WorkID: entityID, Name: t.Name, SourceID: curatedSourceID,
 			Sexual: t.Sexual,
 		})
+		maps = append(maps, catmodel.CatalogTagSourceMap{
+			SourceID: curatedSourceID, SourceName: t.Name, TagID: t.ID,
+		})
+	}
+	// Every tag edge reaches its canonical through catalog_tag_source_map, so a
+	// canonical whose name never was a curated SOURCE name has no map row: wave
+	// 208 found 534 of them, and a tag the editor assigned from that set landed
+	// in catalog_work_tag invisible to the tag page, the facets and the snapshot
+	// below. The identity row is what keeps the map the single truth.
+	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "source_id"}, {Name: "source_name"}},
+		DoNothing: true,
+	}).Create(&maps).Error; err != nil {
+		return err
 	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
 
+// Resolving by name instead of through the map dropped every curated row whose
+// source name the canonicalization renamed (wave 208: 38 names, 1,205 rows) —
+// invisible in the editor, and deleted by the full-replace write above on the
+// next save.
 func loadTagIDs(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
 	var ids []int64
 	if err := db.WithContext(ctx).Raw(`
-		SELECT t.id FROM catalog_work_tag wt
-		JOIN catalog_tag t ON t.name = wt.name
+		SELECT DISTINCT m.tag_id FROM catalog_work_tag wt
+		JOIN catalog_tag_source_map m ON m.source_id = wt.source_id AND m.source_name = wt.name
 		WHERE wt.work_id = ? AND wt.source_id = ?
-		ORDER BY t.id`, workID, curatedSourceID).Scan(&ids).Error; err != nil {
+		ORDER BY m.tag_id`, workID, curatedSourceID).Scan(&ids).Error; err != nil {
 		return nil, err
 	}
 	return int64sToAny(ids), nil
@@ -164,9 +186,12 @@ func applyLabels(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 		for _, l := range labels {
 			ids = append(ids, l.LabelID)
 		}
-		if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogLabel{}, ids, "labels"); err != nil {
+		if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogLabel{}, ids, FieldWorkLabels); err != nil {
 			return err
 		}
+	}
+	if err := rejectUpstreamLabelCollisions(ctx, tx, entityID, labels); err != nil {
+		return err
 	}
 	if err := tx.WithContext(ctx).
 		Where("work_id = ? AND source_id = ?", entityID, curatedSourceID).
@@ -184,6 +209,37 @@ func applyLabels(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 		})
 	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// rejectUpstreamLabelCollisions makes an unwinnable insert an explicit 422.
+// catalog_work_label's identity is (work_id, label_id, kind) and does not carry
+// source_id (NULL is a machine row, which is why the predicate is IS DISTINCT FROM).
+func rejectUpstreamLabelCollisions(ctx context.Context, tx *gorm.DB, entityID int64, labels []workLabel) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	pairs := make([][]any, 0, len(labels))
+	for _, l := range labels {
+		pairs = append(pairs, []any{l.LabelID, l.Kind})
+	}
+	var clash []catmodel.CatalogWorkLabel
+	if err := tx.WithContext(ctx).
+		Select("label_id", "kind").
+		Where("work_id = ? AND source_id IS DISTINCT FROM ?", entityID, curatedSourceID).
+		Where("(label_id, kind) IN ?", pairs).
+		Order("label_id, kind").
+		Find(&clash).Error; err != nil {
+		return err
+	}
+	if len(clash) == 0 {
+		return nil
+	}
+	return &editing.ValidationError{
+		Key: FieldWorkLabels,
+		Reason: fmt.Sprintf("label %d (kind %d) is already attached upstream; "+
+			"upstream label edges cannot be re-added through the editor yet",
+			clash[0].LabelID, clash[0].Kind),
+	}
 }
 
 func loadLabels(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
@@ -208,7 +264,7 @@ func applyEngineIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any)
 	if err := assertWorkExists(ctx, tx, entityID); err != nil {
 		return err
 	}
-	if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogEngine{}, ids, "engine_ids"); err != nil {
+	if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogEngine{}, ids, FieldWorkEngineIDs); err != nil {
 		return err
 	}
 	if err := tx.WithContext(ctx).
@@ -253,8 +309,11 @@ func applySeriesIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any)
 			return err
 		}
 		if int(n) != len(ids) {
-			return fmt.Errorf("editspec: series_ids: every id must be an existing CURATED series " +
-				"(an upstream series' membership is reconciled by its importer and cannot be edited here)")
+			return &editing.ValidationError{
+				Key: FieldWorkSeriesIDs,
+				Reason: "every id must be an existing CURATED series " +
+					"(an upstream series' membership is reconciled by its importer and cannot be edited here)",
+			}
 		}
 	}
 	if err := tx.WithContext(ctx).Exec(`
@@ -295,7 +354,10 @@ func assertEntitiesExist(ctx context.Context, tx *gorm.DB, model any, ids []int6
 		return err
 	}
 	if int(n) != len(ids) {
-		return fmt.Errorf("editspec: %s: %d of %d ids do not exist", field, len(ids)-int(n), len(ids))
+		return &editing.ValidationError{
+			Key:    field,
+			Reason: fmt.Sprintf("%d of %d ids do not exist", len(ids)-int(n), len(ids)),
+		}
 	}
 	return nil
 }

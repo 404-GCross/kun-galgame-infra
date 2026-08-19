@@ -10,6 +10,7 @@ import (
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/seed"
+	srcb "api/internal/platform/catalog/srcbangumi"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -44,6 +45,10 @@ func TestMain(m *testing.M) {
 	}
 	if err := seed.Run(db); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: catalog seeding failed: %v\n", err)
+		os.Exit(0)
+	}
+	if err := srcb.EnsureSchema(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: src_bangumi schema failed: %v\n", err)
 		os.Exit(0)
 	}
 
@@ -81,6 +86,7 @@ func cleanTables(t *testing.T) {
 		"catalog_character_alias", "catalog_character_intro",
 		"catalog_character_trait_link", "catalog_character_trait", "catalog_character",
 		"catalog_survivorship_rule",
+		"edit_suppressed_row",
 	} {
 		if err := testDB.Exec("TRUNCATE " + table + " RESTART IDENTITY CASCADE").Error; err != nil {
 			t.Fatalf("truncate %s: %v", table, err)

@@ -127,6 +127,8 @@ const overrideLabel = (app: DevApp) => {
       </KunCard>
     </div>
 
+    <DevapiScopeApplications />
+
     <DevapiEnableModal
       v-model:open="showEnableModal"
       :candidates="candidates"

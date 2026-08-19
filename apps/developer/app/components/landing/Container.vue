@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { API_BASE_URL } from '~/constants/dev'
+import { DOCS_FACE_META } from '~/constants/docs'
+import { ATTRIBUTION_NOTE, SOURCES } from '~~/shared/brand.mjs'
+import type { CatalogStats } from '~~/shared/types/stats'
 
 const auth = useAuth()
 const { open: openLogin } = useLoginModal()
@@ -7,80 +10,82 @@ const { open: openLogin } = useLoginModal()
 useSeoMeta({
   title: '开发者平台',
   description:
-    'NextMoe 开发者平台 — ACGN 数据，以此为准。当各源各执一词，NextMoe 逐字段裁定唯一的标准答案：可溯源、可增量同步、可编程引用。首发 Galgame 面（VNDB / Bangumi / DLsite / ErogameScape）。',
+    'NextMoe 开发者平台 — ACGN 数据，以此为准。同一部作品在 VNDB、Bangumi、DLsite、ErogameScape、Ci-en、Getchu 六个源各有一个页面，NextMoe 把它们对齐成一条记录，逐字段给出裁定后的标准答案，并附上答案取自哪个源。数据完全免费调用。',
   ogTitle: 'NextMoe 开发者平台',
   ogDescription: 'ACGN 数据，以此为准 — one canon, every source reconciled.'
 })
 
-const stats = [
-  { value: '21 万+', label: '作品注册' },
-  { value: '4 源', label: 'VNDB · Bangumi · DLsite · EG' },
-  { value: '63 万+', label: 'credits 关系' },
-  { value: '/v1', label: '版本化稳定契约' }
-]
+// The portal holds no catalog key of its own, and api.nextmoe.dev's CORS
+// allowlist does not carry developer.nextmoe.dev — a browser fetch straight at
+// the absolute URL is blocked on every client-side navigation to this page.
+// Same-origin relay instead, the pattern /explore already uses.
+const { data: stats } = await useFetch<{ code: number; data: CatalogStats }>(
+  '/relay/v1/catalog/stats',
+  { key: 'landing-catalog-stats', timeout: 5000 }
+)
+
+const counts = computed(() => {
+  const s = stats.value
+  if (!s || s.code !== 0 || !s.data) return null
+  return s.data
+})
+
+const formatCount = (n: number): string => {
+  if (n < 10000) return String(n)
+  const wan = n / 10000
+  return `${wan >= 1000 ? Math.round(wan) : Number(wan.toFixed(1))} 万`
+}
+
+const metrics = computed(() => {
+  const c = counts.value
+  if (!c) return []
+  return [
+    { value: formatCount(c.works.total), label: '作品' },
+    { value: formatCount(c.entities.characters), label: '角色' },
+    { value: formatCount(c.entities.labels), label: '厂牌 · 社团' },
+    { value: formatCount(c.entities.credit_names), label: '制作人员名义' },
+    { value: formatCount(c.entities.persons), label: '人物' }
+  ]
+})
+
+const galgameCount = computed(() => {
+  const row = counts.value?.works.by_medium.find((m) => m.medium === 'galgame')
+  return row ? formatCount(row.count) : ''
+})
+
+const sources = SOURCES.map(([name, body]) => ({ name, body }))
 
 const quickstart = [
   {
     icon: 'lucide:log-in',
     title: '登录生态账号',
-    body: '使用你的 NextMoe（鲲 Galgame）账号登录，无需另行注册开发者身份。'
+    body: '用你的 NextMoe（鲲 Galgame）账号登录，不必另外注册开发者身份。'
   },
   {
     icon: 'lucide:layout-dashboard',
     title: '创建应用',
-    body: '在控制台创建一个应用（每个账号最多 5 个），即刻获得独立的配额与用量视图。'
+    body: '在控制台创建一个应用（每个账号最多 5 个），即刻拿到独立的配额与用量视图。'
   },
   {
     icon: 'lucide:key-round',
-    title: '领取 API Key',
-    body: '生成密钥并妥善保存（仅显示一次）。带上它请求公开只读面，一把 key 走遍全生态；要读写用户自己的游玩记录则改走用户授权的访问令牌。'
+    title: '领取密钥',
+    body: '生成密钥并妥善保存（只显示一次）。带上它请求只读端点；要读写用户自己的游玩记录或提交编辑提案，则改用那个用户授权后的访问令牌。'
   }
 ]
 
 const faces = [
-  {
-    icon: 'lucide:network',
-    name: 'Catalog 面',
-    path: '/v1/catalog',
-    body: '跨媒介身份正典:作品 / 人物名义 / 角色 / 厂牌 / credits / 关系,外部 id 反查四源锚,含变更流增量同步。凭 API 密钥调用。'
-  },
-  {
-    icon: 'lucide:timer',
-    name: 'Playtime 面',
-    path: '/v1/playtime',
-    body: '用户自己的游玩时长:上报(单条 / 外部 id 寻址 / 最多 200 条批量)与回拉(增量续拉 / 单作品跨客户端折叠)。不用 API 密钥,凭用户授权后的访问令牌 + playtime:read / playtime:write scope,一个用户只读写得到他自己的记录。'
-  }
-]
-
-const features = [
-  {
-    icon: 'lucide:layers',
-    title: '正典记录',
-    body: '每个字段都是多源裁定后的标准答案,响应携带 attribution 归源 —— 不是任何单一源的转发,而是可引用的结论。'
-  },
-  {
-    icon: 'lucide:shield-check',
-    title: '鉴权',
-    body: '只读面的密钥由服务端以 Authorization: Bearer nm_live_… 发送,是机密、仅服务端持有;playtime 面改带用户授权后的访问令牌。'
-  },
-  {
-    icon: 'lucide:gauge',
-    title: '限流与配额',
-    body: '按 tier 分层的每分钟限流与每日配额,响应头携带剩余额度;公开读经 Cloudflare 边缘缓存。'
-  },
-  {
-    icon: 'lucide:git-branch',
-    title: '稳定契约',
-    body: 'URL 版本化 /v1;已发布字段只做向后兼容的新增,破坏性变更升 /v2 并给足迁移窗口。'
-  }
-]
+  { key: 'catalog', path: '/v1/catalog', name: '目录数据 API（只读）' },
+  { key: 'playtime', path: '/v1/playtime', name: '游玩时长 API' },
+  { key: 'edit', path: '/api/v1/user/catalog/edit', name: '编辑提案 API' },
+  { key: 'news', path: '/v1/news', name: '资讯 API（授权制）' }
+] as const
 
 const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
   -H "Authorization: Bearer nm_live_…"`
 </script>
 
 <template>
-  <div class="space-y-24">
+  <div class="space-y-20">
     <section
       class="grid items-center gap-10 pt-4 md:pt-10 lg:grid-cols-2 lg:gap-14"
     >
@@ -89,13 +94,13 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
           class="inline-flex items-center gap-2 rounded-full border border-default-200 bg-content1 px-3 py-1 text-xs font-medium text-default-500"
         >
           <span class="size-2 rounded-full bg-success" />
-          Phase 1 · 公开只读 API
+          公开 API · 六源对齐 · 免费调用
         </div>
 
         <h1
           class="mt-6 text-4xl font-bold tracking-tight text-foreground md:text-5xl md:leading-[1.1] lg:text-6xl"
         >
-          ACGN 数据,<br class="hidden sm:inline" />
+          ACGN 数据，<br class="hidden sm:inline" />
           以此为准
         </h1>
         <p
@@ -106,9 +111,9 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
         <p
           class="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-default-500 lg:mx-0"
         >
-          当 VNDB、Bangumi、DLsite、ErogameScape 各执一词,
-          NextMoe 逐字段裁定出唯一的标准答案 —— 可溯源、可增量同步、
-          可编程引用。首发 Galgame 面,同构扩展至全部 ACGN 媒介。
+          同一部作品，在 VNDB、Bangumi、DLsite、ErogameScape、Ci-en、Getchu
+          六个源各有一个页面，写的还常常不一样。NextMoe
+          把它们对齐成一条记录，逐字段给出裁定后的标准答案，并附上这个答案取自哪个源。
         </p>
 
         <div
@@ -185,25 +190,99 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
       </div>
     </section>
 
-    <section
-      class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-default-200 bg-default-200 md:grid-cols-4"
-    >
+    <section v-if="metrics.length">
       <div
-        v-for="stat in stats"
-        :key="stat.label"
-        class="bg-background px-6 py-7 text-center"
+        class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-default-200 bg-default-200 md:grid-cols-5"
       >
-        <p class="text-2xl font-bold text-foreground md:text-3xl">
-          {{ stat.value }}
+        <div
+          v-for="metric in metrics"
+          :key="metric.label"
+          class="bg-background px-4 py-7 text-center"
+        >
+          <p class="text-2xl font-bold text-foreground md:text-3xl">
+            {{ metric.value }}
+          </p>
+          <p class="mt-1 text-xs text-default-500">{{ metric.label }}</p>
+        </div>
+      </div>
+      <p class="mt-3 text-center text-xs text-default-400">
+        实时取自
+        <code class="font-mono text-default-500">/v1/catalog/stats</code>
+        <template v-if="galgameCount">
+          ，其中 Galgame {{ galgameCount }} 部
+        </template>
+        。这个端点本身不需要任何凭据。
+      </p>
+    </section>
+
+    <section>
+      <div class="mb-8 text-center">
+        <h2 class="text-2xl font-bold text-foreground md:text-3xl">
+          数据从哪来
+        </h2>
+        <p class="mt-2 text-default-500">
+          六个上游站点，加上未萌生态自己的一手数据与用户编辑。
         </p>
-        <p class="mt-1 text-xs text-default-500">{{ stat.label }}</p>
+      </div>
+      <div class="grid gap-4 md:grid-cols-3">
+        <div
+          v-for="source in sources"
+          :key="source.name"
+          class="rounded-xl border border-default-200 bg-content1 px-5 py-4"
+        >
+          <p class="text-base font-semibold text-foreground">
+            {{ source.name }}
+          </p>
+          <p class="mt-1 text-sm text-default-500">{{ source.body }}</p>
+        </div>
+      </div>
+      <div
+        class="mt-4 grid gap-4 rounded-2xl border border-default-200 bg-content1 p-6 md:grid-cols-2"
+      >
+        <div>
+          <h3
+            class="flex items-center gap-2 text-base font-semibold text-foreground"
+          >
+            <KunIcon name="lucide:users" class="size-4 text-primary" />
+            还有一手数据
+          </h3>
+          <p class="mt-2 text-sm leading-relaxed text-default-500">
+            未萌（NextMoe）生态站点——鲲 Galgame
+            论坛等——自己产出的条目、译名与整理，以及用户经编辑提案提交的修改，同样进入这一份记录。上游没有的东西，这里可能有。
+          </p>
+        </div>
+        <div>
+          <h3
+            class="flex items-center gap-2 text-base font-semibold text-foreground"
+          >
+            <KunIcon name="lucide:heart-handshake" class="size-4 text-primary" />
+            完全免费
+          </h3>
+          <p class="mt-2 text-sm leading-relaxed text-default-500">
+            调用免费，编辑也免费：登录即可提交编辑提案，把你知道的补进来。没有付费档位，没有按量计费——只有一层防滥用的限流。
+          </p>
+        </div>
+      </div>
+
+      <div
+        class="mt-4 rounded-2xl border border-default-200 bg-content1 px-6 py-5"
+      >
+        <h3
+          class="flex items-center gap-2 text-base font-semibold text-foreground"
+        >
+          <KunIcon name="lucide:quote" class="size-4 text-primary" />
+          品牌与署名
+        </h3>
+        <p class="mt-2 text-sm leading-relaxed text-default-500">
+          {{ ATTRIBUTION_NOTE }}
+        </p>
       </div>
     </section>
 
     <section>
-      <div class="mb-10 text-center">
+      <div class="mb-8 text-center">
         <h2 class="text-2xl font-bold text-foreground md:text-3xl">三步开始</h2>
-        <p class="mt-2 text-default-500">从登录到第一个成功请求,只需几分钟。</p>
+        <p class="mt-2 text-default-500">从登录到第一个成功请求，只需几分钟。</p>
       </div>
       <div class="grid gap-4 md:grid-cols-3">
         <KunCard
@@ -234,19 +313,19 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
     </section>
 
     <section>
-      <div class="mb-10 text-center">
+      <div class="mb-8 text-center">
         <h2 class="text-2xl font-bold text-foreground md:text-3xl">
-          公开数据面
+          四个 API
         </h2>
         <p class="mt-2 text-default-500">
-          权限范围(scope)按面表达:只读面一把密钥覆盖全部,playtime 面另走用户令牌。
+          版本化的 /v1 契约；已发布的字段只做向后兼容的新增。
         </p>
       </div>
       <div class="grid gap-4 md:grid-cols-2">
         <NuxtLink
           v-for="face in faces"
-          :key="face.path"
-          to="/docs"
+          :key="face.key"
+          :to="`/docs/${face.key}`"
           class="group"
         >
           <KunCard
@@ -258,14 +337,25 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
               <div
                 class="flex size-11 items-center justify-center rounded-lg bg-default-100 text-foreground"
               >
-                <KunIcon :name="face.icon" class="size-5" />
+                <KunIcon
+                  :name="DOCS_FACE_META[face.key].icon"
+                  class="size-5"
+                />
               </div>
-              <KunIcon
-                name="lucide:arrow-up-right"
-                class="size-4 text-default-300 transition-colors group-hover:text-primary"
-              />
+              <div class="flex items-center gap-2">
+                <span
+                  v-if="DOCS_FACE_META[face.key].badge"
+                  class="rounded-full bg-warning-50 px-2 py-1 text-xs font-medium text-warning-600"
+                >
+                  {{ DOCS_FACE_META[face.key].badge }}
+                </span>
+                <KunIcon
+                  name="lucide:arrow-up-right"
+                  class="size-4 text-default-300 transition-colors group-hover:text-primary"
+                />
+              </div>
             </div>
-            <div class="mt-4 flex items-center gap-2">
+            <div class="mt-4 flex flex-wrap items-center gap-2">
               <h3 class="text-base font-semibold text-foreground">
                 {{ face.name }}
               </h3>
@@ -274,38 +364,10 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
               }}</code>
             </div>
             <p class="mt-1 text-sm leading-relaxed text-default-500">
-              {{ face.body }}
+              {{ DOCS_FACE_META[face.key].tagline }}
             </p>
           </KunCard>
         </NuxtLink>
-      </div>
-    </section>
-
-    <section>
-      <div class="mb-10 text-center">
-        <h2 class="text-2xl font-bold text-foreground md:text-3xl">
-          为生产就绪而设计
-        </h2>
-        <p class="mt-2 text-default-500">聚合、鉴权、限流、契约 —— 一次到位。</p>
-      </div>
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div
-          v-for="feature in features"
-          :key="feature.title"
-          class="rounded-2xl border border-default-200 bg-content1 p-6"
-        >
-          <div
-            class="flex size-10 items-center justify-center rounded-lg bg-primary-50 text-primary"
-          >
-            <KunIcon :name="feature.icon" class="size-5" />
-          </div>
-          <h3 class="mt-4 text-base font-semibold text-foreground">
-            {{ feature.title }}
-          </h3>
-          <p class="mt-1 text-sm leading-relaxed text-default-500">
-            {{ feature.body }}
-          </p>
-        </div>
       </div>
     </section>
 
@@ -316,7 +378,7 @@ const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
         几分钟内发出第一个请求
       </h2>
       <p class="mx-auto mt-3 max-w-xl text-default-500">
-        登录生态账号,创建应用,领取密钥 —— 然后带上它请求任意公开面。
+        登录生态账号，创建应用，领取密钥 —— 然后带上它请求任意公开端点。
       </p>
       <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
         <KunButton

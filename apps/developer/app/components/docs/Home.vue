@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { API_BASE_URL } from '~/constants/dev'
 import { DOCS_FACE_META } from '~/constants/docs'
+import { ATTRIBUTION_NOTE } from '~~/shared/brand.mjs'
 
 const { faces, findFace, faceOperationCount } = useDocs()
 
 useSeoMeta({
   title: 'API 文档',
   description:
-    'NextMoe 开放 API 参考文档：catalog 身份图谱面的公开只读端点，以及用户令牌认证的 playtime 面。鉴权、限流与每个端点的参数 / 响应 / curl 示例。'
+    'NextMoe 开放 API 参考：目录数据（只读，API 密钥）、游玩时长、编辑提案（用户令牌）与资讯（授权制）四个 API。鉴权、限流，以及每个端点的参数 / 响应 / curl 示例。'
 })
 
 const totalOperations = computed(() =>
@@ -20,7 +21,6 @@ const countOf = (key: string) => {
 }
 
 const catalogOperations = computed(() => countOf('catalog'))
-const playtimeOperations = computed(() => countOf('playtime'))
 </script>
 
 <template>
@@ -31,10 +31,12 @@ const playtimeOperations = computed(() => countOf('playtime'))
         NextMoe 开放 API
       </h1>
       <p class="mt-3 max-w-2xl text-default-500">
-        当 VNDB / Bangumi / DLsite / ErogameScape 各执一词，以 NextMoe 为准。
-        一个 base URL、{{ totalOperations }} 个公开端点：catalog 面
-        {{ catalogOperations }} 条只读端点凭 API 密钥调用，playtime 面
-        {{ playtimeOperations }} 条用用户自己的访问令牌读写他本人的游玩记录。
+        一个 base URL、{{ totalOperations }} 个公开端点，分成四组。主力是
+        {{ catalogOperations }} 条只读的目录数据端点：同一部作品在 VNDB、Bangumi、DLsite、ErogameScape、Ci-en、Getchu
+        六个源各有一个页面，我们把它们对齐成一条记录，逐字段给出裁定后的标准答案，并附上这个答案取自哪个源。
+      </p>
+      <p class="mt-3 max-w-2xl text-sm text-default-400">
+        {{ ATTRIBUTION_NOTE }}
       </p>
     </header>
 
@@ -55,29 +57,17 @@ const playtimeOperations = computed(() => countOf('playtime'))
       <div class="rounded-xl border border-default-200 bg-content1 p-4">
         <h2 class="flex items-center gap-2 text-sm font-semibold text-foreground">
           <KunIcon name="lucide:shield-check" class="size-4 text-primary" />
-          鉴权
+          两种凭据
         </h2>
-        <p class="mt-3 text-sm text-default-500">
-          catalog 面每个请求携带
-          <code
+        <p class="mt-3 text-sm leading-relaxed text-default-500">
+          读目录用
+          <strong class="text-foreground">API 密钥</strong>（<code
             class="rounded bg-default-100 px-1 py-0.5 font-mono text-xs text-foreground"
-          >
-            Authorization: Bearer nm_live_…
-          </code>
-          。密钥是机密，仅服务端持有。playtime 面不用密钥，带用户授权后拿到的访问令牌，
-          需要
-          <code
-            class="rounded bg-default-100 px-1 py-0.5 font-mono text-xs text-foreground"
-          >
-            playtime:read
-          </code>
-          /
-          <code
-            class="rounded bg-default-100 px-1 py-0.5 font-mono text-xs text-foreground"
-          >
-            playtime:write
-          </code>
-          scope。
+            >Authorization: Bearer nm_live_…</code
+          >，机密，只放在服务端）；读写某个用户自己的东西——游玩时长、编辑提案——改用那个用户
+          <strong class="text-foreground">授权后的访问令牌</strong>。目录规模统计
+          <code class="font-mono text-xs text-foreground">/v1/catalog/stats</code>
+          两者都不要，匿名即可调。
         </p>
       </div>
 
@@ -97,10 +87,9 @@ const playtimeOperations = computed(() => countOf('playtime'))
     </section>
 
     <section>
-      <h2 class="text-lg font-semibold text-foreground">公开数据面</h2>
+      <h2 class="text-lg font-semibold text-foreground">四个 API</h2>
       <p class="mt-1 text-sm text-default-500">
-        权限范围（scope）按面表达：catalog 面凭一把 API 密钥覆盖全部只读端点，
-        playtime 面另走用户令牌，一个用户只读写得到他自己的记录。
+        每个 API 各占一段路径前缀，凭据也按前缀区分——下面每张卡上都写着它收哪一种。
       </p>
       <div class="mt-4 grid gap-4 md:grid-cols-2">
         <NuxtLink
@@ -115,18 +104,26 @@ const playtimeOperations = computed(() => countOf('playtime'))
             >
               <KunIcon :name="DOCS_FACE_META[face.key].icon" class="size-5" />
             </div>
-            <span
-              class="rounded-full bg-default-100 px-2.5 py-1 text-xs font-medium text-default-500"
-            >
-              {{ faceOperationCount(face) }} 端点
-            </span>
+            <div class="flex items-center gap-2">
+              <span
+                v-if="DOCS_FACE_META[face.key].badge"
+                class="rounded-full bg-warning-50 px-2 py-1 text-xs font-medium text-warning-600"
+              >
+                {{ DOCS_FACE_META[face.key].badge }}
+              </span>
+              <span
+                class="rounded-full bg-default-100 px-2.5 py-1 text-xs font-medium text-default-500"
+              >
+                {{ faceOperationCount(face) }} 端点
+              </span>
+            </div>
           </div>
-          <div class="mt-4 flex items-center gap-2">
+          <div class="mt-4 flex flex-wrap items-center gap-2">
             <h3 class="text-base font-semibold text-foreground">
-              {{ face.label }} 面
+              {{ face.name }}
             </h3>
             <code class="font-mono text-xs text-default-400">
-              /v1/{{ face.key }}
+              {{ face.prefix }}
             </code>
           </div>
           <p class="mt-1 text-sm leading-relaxed text-default-500">
@@ -175,8 +172,8 @@ const playtimeOperations = computed(() => countOf('playtime'))
     <section>
       <h2 class="text-lg font-semibold text-foreground">给 AI 用</h2>
       <p class="mt-1 text-sm text-default-500">
-        catalog 面也以 MCP（Model Context Protocol）server 暴露，AI 助手可直接调用；
-        playtime 面按裁定不进 MCP。
+        目录数据与资讯两个 API 同时以 MCP（Model Context Protocol）server 暴露，AI
+        助手可直接调用；游玩时长与编辑提案按裁定不进 MCP。
       </p>
       <NuxtLink
         to="/docs/mcp"
@@ -190,7 +187,7 @@ const playtimeOperations = computed(() => countOf('playtime'))
         <div class="min-w-0 flex-1">
           <h3 class="text-base font-semibold text-foreground">AI / MCP 接入</h3>
           <p class="mt-1 text-sm leading-relaxed text-default-500">
-            纯透传适配层：一个端点、同一把密钥、一整套 catalog 只读工具。含 Claude Code /
+            纯透传适配层：一个端点、同一把密钥、一整套只读工具。含 Claude Code /
             Claude Desktop / 通用客户端配置示例。
           </p>
         </div>

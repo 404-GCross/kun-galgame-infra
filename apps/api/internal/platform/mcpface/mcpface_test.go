@@ -34,6 +34,9 @@ var expectedTools = []string{
 	"catalog_work_get",
 	"catalog_works_list",
 	"catalog_works_search",
+	"news_get",
+	"news_list",
+	"news_sources",
 }
 
 func TestToolRegistry(t *testing.T) {
@@ -213,6 +216,60 @@ func TestHandlerEndToEnd(t *testing.T) {
 	}
 	if !contains(textOf(t, res2), devPortalURL) {
 		t.Errorf("auth error should point at the portal: %q", textOf(t, res2))
+	}
+}
+
+func TestNewsToolsHitTheNewsFace(t *testing.T) {
+	var gotPath, gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"data":{"items":[]}}`))
+	}))
+	defer srv.Close()
+
+	tl := &tools{up: NewUpstream(srv.URL)}
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{
+		Header: http.Header{"Authorization": {"Bearer nm_test_smoke"}},
+	}}
+
+	if _, _, err := tl.newsList(ctx, req, newsListInput{Source: "ymgal", Lane: "column", Limit: 5}); err != nil {
+		t.Fatalf("news_list: %v", err)
+	}
+	if gotPath != "/v1/news" {
+		t.Errorf("news_list path = %q", gotPath)
+	}
+	if !contains(gotQuery, "source=ymgal") || !contains(gotQuery, "lane=column") || !contains(gotQuery, "limit=5") {
+		t.Errorf("news_list query = %q", gotQuery)
+	}
+
+	if _, _, err := tl.newsSources(ctx, req, newsSourcesInput{}); err != nil {
+		t.Fatalf("news_sources: %v", err)
+	}
+	if gotPath != "/v1/news/sources" || gotQuery != "" {
+		t.Errorf("news_sources = %q?%q", gotPath, gotQuery)
+	}
+
+	if _, _, err := tl.newsGet(ctx, req, newsGetInput{ID: 42}); err != nil {
+		t.Fatalf("news_get: %v", err)
+	}
+	if gotPath != "/v1/news/42" {
+		t.Errorf("news_get path = %q", gotPath)
+	}
+}
+
+func TestNewsToolDescriptionsStateTheGrant(t *testing.T) {
+	for name, desc := range map[string]string{
+		"news_list":    descNewsList,
+		"news_sources": descNewsSources,
+		"news_get":     descNewsGet,
+	} {
+		if !contains(desc, "news:read") {
+			t.Errorf("%s description must name the news:read scope", name)
+		}
+		if !contains(desc, "GRANTED BY THE PLATFORM") {
+			t.Errorf("%s description must say the scope is not self-service", name)
+		}
 	}
 }
 

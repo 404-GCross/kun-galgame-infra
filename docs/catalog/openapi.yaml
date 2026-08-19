@@ -250,6 +250,9 @@ components:
     CharacterWorkRow:
       additionalProperties: false
       properties:
+        identity:
+          description: Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit
+          type: string
         kind:
           description: "roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)"
           format: int32
@@ -508,6 +511,9 @@ components:
         credit_name_id:
           format: int64
           type: integer
+        identity:
+          description: Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it
+          type: string
         lang:
           type: string
         latin:
@@ -522,6 +528,7 @@ components:
         - credit_name_id
         - name
         - lang
+        - identity
       type: object
     CursorPageUserClaimItem:
       additionalProperties: false
@@ -897,6 +904,14 @@ components:
           type: string
         locked:
           type: boolean
+        max_elements:
+          description: Cap on this list field's element count; absent for scalar fields
+          format: int64
+          type: integer
+        max_suppressed:
+          description: Cap on this field's suppression set; absent when the field has none
+          format: int64
+          type: integer
         would_automerge:
           description: A proposal by this caller would merge instantly
           type: boolean
@@ -1805,6 +1820,9 @@ components:
         character_id:
           format: int64
           type: integer
+        identity:
+          description: Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it
+          type: string
         role_id:
           format: int64
           type: integer
@@ -1816,6 +1834,7 @@ components:
         - role_id
         - role_key
         - role_name
+        - identity
       type: object
     NameWorkRow:
       additionalProperties: false
@@ -1955,6 +1974,9 @@ components:
           type:
             - array
             - "null"
+        hidden:
+          description: true when this release is editor-hidden; omitted on live rows
+          type: boolean
         id:
           format: int64
           type: integer
@@ -2493,6 +2515,9 @@ components:
         gender:
           format: int32
           type: integer
+        identity:
+          description: Opaque row identity for catalog.work.roster.suppressed; echo it back, never rebuild it. Present when the character is on the roster; ABSENT when it appears only through a voice credit, in which case kind and spoiler are 0 and the row is edited via /works/{id}/credits
+          type: string
         image_hash:
           type: string
         kind:
@@ -4309,6 +4334,42 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Submit a work for review AS THE BEARER TOKEN'S OWN USER: mints it in the pending claim state (registry row + content + birth event, one transaction) and stamps the submitter as its owner. The submitting tenant is the token client's catalog site and the submitter is the token's user; the body names neither. product_work_id is OPTIONAL — omit it and the registry issues the identity, the claim adopting the minted work id (returned as product_work_id). IDEMPOTENCY is the S2S op's: with product_work_id a repeat is a 409 echoing the existing work (matched_by=claim); without it a repeat is recognized only by the identity anchors the payload's links assert (matched_by=anchor), and a submission carrying neither WILL mint a second work if retried"
+      tags:
+        - catalog-user
+  /api/v1/user/catalog/works/{id}:
+    get:
+      operationId: getCatalogWorkByIDUser
+      parameters:
+        - description: Catalog work id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Catalog work id
+            format: int64
+            minimum: 1
+            type: integer
+        - description: true = also return editor-hidden releases (deleted_at set) and flag them hidden=true; false/absent = live releases only, same payload as S2S
+          explode: false
+          in: query
+          name: include_hidden
+          schema:
+            description: true = also return editor-hidden releases (deleted_at set) and flag them hidden=true; false/absent = live releases only, same payload as S2S
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeWorkByAnchorResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Read a work by catalog id (same bundle as the S2S work-detail). Pass include_hidden=true to list editor-hidden releases so they can be unhidden
       tags:
         - catalog-user
   /api/v1/user/catalog/works/{id}/claim-actions/{action}:

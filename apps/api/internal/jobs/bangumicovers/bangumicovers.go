@@ -52,6 +52,7 @@ type runner struct {
 	sourceID   int16
 	gap        time.Duration
 	exist      map[int64]bool
+	pinned     map[int64]bool
 	c          counters
 	pingHashes []string
 	touched    []int64
@@ -98,10 +99,14 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
+	pinned, err := preloadPinnedCovers(ctx, db, workIDs)
+	if err != nil {
+		return nil, err
+	}
 	slog.Info("bangumi-covers candidates", "exact_anchors", len(cands), "dims_rows", len(d.entry),
 		"apply", opts.Apply, "offset", opts.Offset, "limit", opts.Limit)
 
-	r := &runner{db: db, sourceID: reg.bangumiSource, gap: opts.UploadGap, exist: exist}
+	r := &runner{db: db, sourceID: reg.bangumiSource, gap: opts.UploadGap, exist: exist, pinned: pinned}
 	if opts.Apply {
 		r.cli = imageclient.New(imageclient.Config{
 			BaseURL:      resolveBaseURL(cfg, clientCfg, opts.ImageBaseURL),

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/datatypes"
@@ -143,6 +144,7 @@ type WorkCharacterRow struct {
 	Spoiler     int16
 	ImageHash   *string
 	FigureHash  *string
+	Identity    string
 	Va          []WorkCharacterVARow
 }
 
@@ -212,14 +214,18 @@ func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID st
 			return nil, err
 		}
 	}
-	return s.loadWorkDetail(ctx, workID, 0)
+	return s.loadWorkDetail(ctx, workID, 0, false)
 }
 
 func (s *ReadService) WorkByID(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
-	return s.loadWorkDetail(ctx, workID, spoilers)
+	return s.loadWorkDetail(ctx, workID, spoilers, false)
 }
 
-func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
+func (s *ReadService) WorkByIDIncludeHidden(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
+	return s.loadWorkDetail(ctx, workID, spoilers, true)
+}
+
+func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers int16, includeHidden bool) (*WorkDetail, error) {
 	db := s.db.WithContext(ctx)
 	var work model.CatalogWork
 	if err := db.First(&work, workID).Error; err != nil {
@@ -238,7 +244,11 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	detail.Titles = titles[work.ID]
 
 	var releases []model.CatalogRelease
-	if err := db.Where("work_id = ?", workID).Order("id").Find(&releases).Error; err != nil {
+	relQ := db.Where("work_id = ?", workID).Order("id")
+	if includeHidden {
+		relQ = relQ.Unscoped()
+	}
+	if err := relQ.Find(&releases).Error; err != nil {
 		return nil, err
 	}
 	anchorsByRelease := map[int64][]AnchorDetail{}
@@ -404,7 +414,8 @@ func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out
 		Provenance int16  `gorm:"column:provenance"`
 	}
 	if err := db.Raw(`SELECT work_id, lang, intro, source_id, provenance FROM catalog_work_intro
-		WHERE work_id IN ? ORDER BY work_id, lang, provenance, source_id`, workIDs).Scan(&rows).Error; err != nil {
+		WHERE work_id IN ? ORDER BY work_id, lang, provenance, `+
+		editspec.HumanLaneFirstSQL("source_id", "provenance")+`, source_id`, workIDs).Scan(&rows).Error; err != nil {
 		return err
 	}
 	seen := make(map[int64]map[string]bool)
@@ -526,10 +537,13 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		FigureHash  *string `gorm:"column:figure_hash"`
 		Kind        int16   `gorm:"column:kind"`
 		Spoiler     int16   `gorm:"column:spoiler"`
+		Identity    string  `gorm:"column:identity"`
 	}
-	if err := db.Raw(`SELECT wc.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, ch.figure_hash, wc.kind, wc.spoiler
+	if err := db.Raw(`SELECT wc.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, ch.figure_hash, wc.kind, wc.spoiler,
+		`+editspec.RosterIdentitySQL("wc")+` AS identity
 		FROM catalog_work_character wc JOIN catalog_character ch ON ch.id = wc.character_id
-		WHERE wc.work_id = ? AND ch.deleted_at IS NULL`, workID).Scan(&edges).Error; err != nil {
+		WHERE wc.work_id = ? AND ch.deleted_at IS NULL
+		  AND `+editspec.NotSuppressedRosterSQL("wc"), workID).Scan(&edges).Error; err != nil {
 		return nil, err
 	}
 
@@ -550,7 +564,8 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		FROM catalog_credit c
 		JOIN catalog_character ch ON ch.id = c.character_id
 		JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
-		WHERE c.work_id = ? AND c.character_id IS NOT NULL AND ch.deleted_at IS NULL`, workID).Scan(&creds).Error; err != nil {
+		WHERE c.work_id = ? AND c.character_id IS NOT NULL AND ch.deleted_at IS NULL
+		  AND `+editspec.NotSuppressedCreditSQL("c"), workID).Scan(&creds).Error; err != nil {
 		return nil, err
 	}
 
@@ -559,7 +574,7 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		byID[e.CharacterID] = &WorkCharacterRow{
 			CharacterID: e.CharacterID, DisplayName: e.DisplayName, Latin: e.Latin,
 			Gender: e.Gender, Kind: e.Kind, Spoiler: e.Spoiler, ImageHash: e.ImageHash,
-			FigureHash: e.FigureHash,
+			FigureHash: e.FigureHash, Identity: e.Identity,
 		}
 	}
 	for _, c := range creds {
@@ -687,6 +702,7 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 		      SELECT 1 FROM catalog_work_title t
 		      WHERE t.work_id = w.id
 		        AND t.title_norm LIKE '%' || lower(normalize(?, NFKC)) || '%'
+		        AND `+editspec.NotSuppressedWorkTitleSQL("t")+`
 		  )
 		ORDER BY w.id
 		LIMIT ?`, args...).Scan(&hits).Error; err != nil {
@@ -775,6 +791,11 @@ type SiblingNameRow struct {
 	Latin *string
 }
 
+// nameWorkScope is shared by NameWorks' total and its page: a total of 40 that
+// pages out 38 is a defect on its own.
+var nameWorkScope = `FROM catalog_credit c WHERE c.credit_name_id = ? AND ` +
+	editspec.NotSuppressedCreditSQL("c")
+
 type NameWorkRoleRow struct {
 	WorkID      int64   `gorm:"column:work_id"`
 	RoleID      int64   `gorm:"column:role_id"`
@@ -783,6 +804,7 @@ type NameWorkRoleRow struct {
 	RoleNameJA  string  `gorm:"column:role_name_ja"`
 	CharacterID *int64  `gorm:"column:character_id"`
 	CharacterNM *string `gorm:"column:character_nm"`
+	Identity    string  `gorm:"column:identity"`
 }
 
 type NameWorkDetail struct {
@@ -825,13 +847,13 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 		}
 	}
 
-	if err := db.Raw(`SELECT count(DISTINCT work_id) FROM catalog_credit WHERE credit_name_id = ?`,
+	if err := db.Raw(`SELECT count(DISTINCT c.work_id) `+nameWorkScope,
 		nameID).Scan(&res.Total).Error; err != nil {
 		return nil, err
 	}
 	var workIDs []int64
-	if err := db.Raw(`SELECT DISTINCT work_id FROM catalog_credit WHERE credit_name_id = ?
-		ORDER BY work_id LIMIT ? OFFSET ?`, nameID, limit, offset).Scan(&workIDs).Error; err != nil {
+	if err := db.Raw(`SELECT DISTINCT c.work_id `+nameWorkScope+`
+		ORDER BY c.work_id LIMIT ? OFFSET ?`, nameID, limit, offset).Scan(&workIDs).Error; err != nil {
 		return nil, err
 	}
 	if len(workIDs) == 0 {
@@ -844,11 +866,13 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 	var roleRows []NameWorkRoleRow
 	if err := db.Raw(`SELECT c.work_id, c.role_id, ro.key AS role_key,
 		ro.name_cn AS role_name_cn, ro.name_ja AS role_name_ja,
-		c.character_id, ch.display_name AS character_nm
+		c.character_id, ch.display_name AS character_nm,
+		`+editspec.CreditIdentitySQL("c")+` AS identity
 		FROM catalog_credit c
 		JOIN catalog_role ro ON ro.id = c.role_id
 		LEFT JOIN catalog_character ch ON ch.id = c.character_id
 		WHERE c.credit_name_id = ? AND c.work_id IN ?
+		  AND `+editspec.NotSuppressedCreditSQL("c")+`
 		ORDER BY c.work_id, c.role_id, character_nm NULLS FIRST`, nameID, workIDs).Scan(&roleRows).Error; err != nil {
 		return nil, err
 	}
@@ -866,6 +890,15 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 	return res, nil
 }
 
+// unionWorks is shared by CharacterWorks' total and its page. Suppressing a VA
+// credit therefore removes the work from this union too when no roster edge
+// carries the character: charter ruling 2 (read paths exclude suppressed rows
+// uniformly) is not given an exemption for the union's existence half.
+var unionWorks = `SELECT wc.work_id FROM catalog_work_character wc WHERE wc.character_id = ? AND ` +
+	editspec.NotSuppressedRosterSQL("wc") + `
+	UNION SELECT c.work_id FROM catalog_credit c WHERE c.character_id = ? AND ` +
+	editspec.NotSuppressedCreditSQL("c")
+
 type CharacterHeadRow struct {
 	ID          int64  `gorm:"column:id"`
 	DisplayName string `gorm:"column:display_name"`
@@ -881,11 +914,12 @@ type VoiceNameRow struct {
 }
 
 type CharacterWorkDetail struct {
-	Brief   WorkBriefRow
-	Kind    int16
-	Spoiler int16
-	Voiced  bool
-	Voices  []VoiceNameRow
+	Brief    WorkBriefRow
+	Kind     int16
+	Spoiler  int16
+	Identity string
+	Voiced   bool
+	Voices   []VoiceNameRow
 }
 
 type CharacterWorksResult struct {
@@ -907,8 +941,6 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 	}
 	res := &CharacterWorksResult{Head: &head}
 
-	const unionWorks = `SELECT work_id FROM catalog_work_character WHERE character_id = ?
-		UNION SELECT work_id FROM catalog_credit WHERE character_id = ?`
 	if err := db.Raw(`SELECT count(*) FROM (`+unionWorks+`) u`,
 		characterID, characterID).Scan(&res.Total).Error; err != nil {
 		return nil, err
@@ -927,19 +959,24 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 	}
 
 	var kindRows []struct {
-		WorkID  int64 `gorm:"column:work_id"`
-		Kind    int16 `gorm:"column:kind"`
-		Spoiler int16 `gorm:"column:spoiler"`
+		WorkID   int64  `gorm:"column:work_id"`
+		Kind     int16  `gorm:"column:kind"`
+		Spoiler  int16  `gorm:"column:spoiler"`
+		Identity string `gorm:"column:identity"`
 	}
-	if err := db.Raw(`SELECT work_id, kind, spoiler FROM catalog_work_character
-		WHERE character_id = ? AND work_id IN ?`, characterID, workIDs).Scan(&kindRows).Error; err != nil {
+	if err := db.Raw(`SELECT wc.work_id, wc.kind, wc.spoiler, `+editspec.RosterIdentitySQL("wc")+` AS identity
+		FROM catalog_work_character wc
+		WHERE wc.character_id = ? AND wc.work_id IN ?
+		  AND `+editspec.NotSuppressedRosterSQL("wc"), characterID, workIDs).Scan(&kindRows).Error; err != nil {
 		return nil, err
 	}
 	kindByWork := make(map[int64]int16, len(kindRows))
 	spoilerByWork := make(map[int64]int16, len(kindRows))
+	identityByWork := make(map[int64]string, len(kindRows))
 	for _, k := range kindRows {
 		kindByWork[k.WorkID] = k.Kind
 		spoilerByWork[k.WorkID] = k.Spoiler
+		identityByWork[k.WorkID] = k.Identity
 	}
 
 	var voiceRows []struct {
@@ -952,6 +989,7 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 	if err := db.Raw(`SELECT DISTINCT c.work_id, cn.id AS credit_name_id, cn.name, cn.lang, cn.latin
 		FROM catalog_credit c JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
 		WHERE c.character_id = ? AND c.work_id IN ?
+		  AND `+editspec.NotSuppressedCreditSQL("c")+`
 		ORDER BY c.work_id, cn.id`, characterID, workIDs).Scan(&voiceRows).Error; err != nil {
 		return nil, err
 	}
@@ -968,7 +1006,8 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 		}
 		voices := voicesByWork[wid]
 		res.Works = append(res.Works, CharacterWorkDetail{
-			Brief: b, Kind: kindByWork[wid], Spoiler: spoilerByWork[wid], Voiced: len(voices) > 0, Voices: voices,
+			Brief: b, Kind: kindByWork[wid], Spoiler: spoilerByWork[wid],
+			Identity: identityByWork[wid], Voiced: len(voices) > 0, Voices: voices,
 		})
 	}
 	return res, nil
@@ -1065,8 +1104,10 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		Extra:       decodeCharExtra(head.Extra),
 		AttrSources: attrSources(head.FieldProvenance),
 	}
-	if err := db.Raw(`SELECT id, name, latin, lang, kind, is_primary_for_locale
-		FROM catalog_character_alias WHERE character_id = ? ORDER BY id`, characterID).Scan(&detail.Aliases).Error; err != nil {
+	if err := db.Raw(`SELECT a.id, a.name, a.latin, a.lang, a.kind, a.is_primary_for_locale
+		FROM catalog_character_alias a WHERE a.character_id = ? AND `+
+		editspec.NotSuppressedCharacterAliasSQL("a")+` ORDER BY a.id`,
+		characterID).Scan(&detail.Aliases).Error; err != nil {
 		return nil, err
 	}
 	var introRows []struct {
@@ -1076,7 +1117,8 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		Provenance int16  `gorm:"column:provenance"`
 	}
 	if err := db.Raw(`SELECT lang, intro, source_id, provenance FROM catalog_character_intro
-		WHERE character_id = ? ORDER BY lang, provenance,
+		WHERE character_id = ? ORDER BY lang, provenance, `+
+		editspec.HumanLaneFirstSQL("source_id", "provenance")+`,
 		(provenance = 1 AND source_id = ?) DESC, source_id`, characterID, sourceDerived).Scan(&introRows).Error; err != nil {
 		return nil, err
 	}
@@ -1118,6 +1160,7 @@ type CreditRow struct {
 	LabelNM      *string
 	Note         string
 	SourceKey    *string
+	Identity     string
 }
 
 func (s *ReadService) WorkCredits(ctx context.Context, workID int64) ([]CreditRow, error) {
@@ -1126,14 +1169,16 @@ func (s *ReadService) WorkCredits(ctx context.Context, workID int64) ([]CreditRo
 		c.role_id, ro.key AS role_key, ro.name_cn AS role_name_cn, ro.name_ja AS role_name_ja,
 		cn.id AS credit_name_id, cn.name, cn.lang, cn.latin,
 		c.character_id, ch.display_name AS character_nm,
-		c.label_id, la.display_name AS label_nm, c.note, src.key AS source_key
+		c.label_id, la.display_name AS label_nm, c.note, src.key AS source_key,
+		`+editspec.CreditIdentitySQL("c")+` AS identity
 		FROM catalog_credit c
 		JOIN catalog_role ro ON ro.id = c.role_id
 		JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
 		LEFT JOIN catalog_character ch ON ch.id = c.character_id
 		LEFT JOIN catalog_label la ON la.id = c.label_id
 		LEFT JOIN catalog_source src ON src.id = c.source_id
-		WHERE c.work_id = ?
-		ORDER BY c.role_id ASC, src.key ASC NULLS LAST, cn.id ASC`, workID).Scan(&rows).Error
+		WHERE c.work_id = ? AND `+editspec.NotSuppressedCreditSQL("c")+`
+		ORDER BY c.role_id ASC, `+editspec.HumanLaneFirstNoProvenanceSQL("c.source_id")+
+		`, src.key ASC NULLS LAST, cn.id ASC`, workID).Scan(&rows).Error
 	return rows, err
 }

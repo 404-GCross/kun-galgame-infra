@@ -106,14 +106,22 @@ func (p Policy) allowsAutomergeWithOwner(pc PolicyContext, owner *string) bool {
 
 type ApplyFunc func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error
 
+// DefaultMaxElements is the element cap a list field inherits when it declares
+// no MaxElements of its own.
+const DefaultMaxElements = 200
+
 type FieldSpec struct {
-	Key        string
-	Kind       FieldKind
-	DiffHint   string
-	Deprecated bool
-	Policy     *Policy
-	Validate   func(value any) error
-	Apply      ApplyFunc
+	Key           string
+	Kind          FieldKind
+	DiffHint      string
+	Deprecated    bool
+	Policy        *Policy
+	Provenance    []ProvenanceTarget
+	Identity      *IdentitySpec
+	MaxSuppressed int
+	MaxElements   int
+	Validate      func(value any) error
+	Apply         ApplyFunc
 }
 
 type MergeEvent struct {
@@ -205,6 +213,7 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 		return err
 	}
 	spec.fields = make(map[string]*FieldSpec, len(spec.Fields))
+	headTable := ""
 	for i := range spec.Fields {
 		f := &spec.Fields[i]
 		if !keyPattern.MatchString(f.Key) {
@@ -219,6 +228,33 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 		if f.Validate == nil || f.Apply == nil {
 			return fmt.Errorf("editing: field %q needs Validate and Apply", f.Key)
 		}
+		for _, target := range f.Provenance {
+			if target.Table == "" || target.Column == "" {
+				return fmt.Errorf("editing: field %q provenance target needs a table and a column", f.Key)
+			}
+			if target.Rows != nil {
+				continue
+			}
+			// A target with no Rows resolver stamps WHERE id = <entity id>, so
+			// its table must be the one whose primary key IS the entity id. Two
+			// different tables here means one of them is a child table being
+			// stamped by the parent's id, which does not fail: catalog_work and
+			// catalog_work_character overlap on 73% of production work ids, so
+			// the stamp silently lands on another work's row.
+			if headTable == "" {
+				headTable = target.Table
+			} else if target.Table != headTable {
+				return fmt.Errorf(
+					"editing: field %q stamps %s.%s with the entity id, but %q already stamps %s: "+
+						"a target on another table must declare a Rows resolver",
+					f.Key, target.Table, target.Column, spec.Type, headTable)
+			}
+		}
+		if f.Identity != nil {
+			if err := validateIdentitySpec(*f.Identity); err != nil {
+				return fmt.Errorf("editing: field %q identity: %w", f.Key, err)
+			}
+		}
 		if f.Policy != nil {
 			if err := validatePolicy(*f.Policy); err != nil {
 				return fmt.Errorf("editing: field %q policy: %w", f.Key, err)
@@ -228,6 +264,19 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 			}
 		}
 		spec.fields[f.Key] = f
+	}
+	for i := range spec.Fields {
+		f := &spec.Fields[i]
+		if !strings.HasSuffix(f.Key, SuppressedFieldSuffix) {
+			continue
+		}
+		parent, ok := spec.fields[strings.TrimSuffix(f.Key, SuppressedFieldSuffix)]
+		if !ok {
+			return fmt.Errorf("editing: field %q suppresses a field that is not registered", f.Key)
+		}
+		if parent.Identity == nil {
+			return fmt.Errorf("editing: field %q suppresses %q, which declares no Identity", f.Key, parent.Key)
+		}
 	}
 	for site, overlay := range spec.SiteOverlays {
 		for key, p := range overlay {

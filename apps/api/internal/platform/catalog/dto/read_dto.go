@@ -111,9 +111,17 @@ type WorkCharacter struct {
 	Spoiler     int16             `json:"spoiler" doc:"appearance spoiler level: 0=none 1=minor 2=major"`
 	ImageHash   string            `json:"image_hash,omitempty"`
 	FigureHash  string            `json:"figure_hash,omitempty"`
+	Identity    string            `json:"identity,omitempty" doc:"Opaque row identity for catalog.work.roster.suppressed; echo it back, never rebuild it. Present when the character is on the roster; ABSENT when it appears only through a voice credit, in which case kind and spoiler are 0 and the row is edited via /works/{id}/credits"`
 	Va          []WorkCharacterVA `json:"va"`
 }
 
+// WorkCharacterVA deliberately carries NO `identity`, and neither do the other
+// roster-shaped voice projections (VoiceName, PublicRosterVoice,
+// PublicVoiceName). Their SQL is SELECT DISTINCT over catalog_credit with no
+// role filter, so one rendered row stands for 1..N credit rows with 1..N
+// different identities. A single value would be a lie and an array would be
+// worse: one click would suppress N rows the reader never saw. Suppressing a VA
+// is done on /works/{id}/credits, which is 1:1 with the table.
 type WorkCharacterVA struct {
 	CreditNameID int64  `json:"credit_name_id"`
 	Name         string `json:"name"`
@@ -152,6 +160,7 @@ type ReleaseBrief struct {
 	ReleasedD int16       `json:"released_d,omitempty"`
 	Platform  string      `json:"platform,omitempty"`
 	Platforms []string    `json:"platforms,omitempty"`
+	Hidden    bool        `json:"hidden,omitempty" doc:"true when this release is editor-hidden; omitted on live rows"`
 	Anchors   []AnchorRef `json:"anchors"`
 }
 
@@ -190,6 +199,7 @@ type CreditItem struct {
 	Character    string `json:"character,omitempty"`
 	Note         string `json:"note,omitempty"`
 	Source       string `json:"source,omitempty"`
+	Identity     string `json:"identity" doc:"Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it"`
 }
 
 type WorkSearchResponse struct {
@@ -271,6 +281,7 @@ type NameWorkRole struct {
 	RoleName    string `json:"role_name"`
 	CharacterID int64  `json:"character_id,omitempty"`
 	Character   string `json:"character,omitempty"`
+	Identity    string `json:"identity" doc:"Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it"`
 }
 
 type CharacterWorksResponse struct {
@@ -287,11 +298,12 @@ type CharacterHead struct {
 }
 
 type CharacterWorkRow struct {
-	Work    WorkBrief   `json:"work"`
-	Kind    int16       `json:"kind" doc:"roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)"`
-	Spoiler int16       `json:"spoiler" doc:"roster appearance spoiler level: 0=none 1=minor 2=major (0 also when reached only via a voice credit)"`
-	Voiced  bool        `json:"voiced" doc:"true when a voice credit names this character on this work"`
-	Voices  []VoiceName `json:"voices"`
+	Work     WorkBrief   `json:"work"`
+	Kind     int16       `json:"kind" doc:"roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)"`
+	Spoiler  int16       `json:"spoiler" doc:"roster appearance spoiler level: 0=none 1=minor 2=major (0 also when reached only via a voice credit)"`
+	Identity string      `json:"identity,omitempty" doc:"Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit"`
+	Voiced   bool        `json:"voiced" doc:"true when a voice credit names this character on this work"`
+	Voices   []VoiceName `json:"voices"`
 }
 
 type CharacterDetailResponse struct {
@@ -341,6 +353,7 @@ type CharacterAlias struct {
 	IsPrimaryForLocale bool   `json:"is_primary_for_locale"`
 }
 
+// No `identity` here either — see WorkCharacterVA.
 type VoiceName struct {
 	CreditNameID int64  `json:"credit_name_id"`
 	Name         string `json:"name"`

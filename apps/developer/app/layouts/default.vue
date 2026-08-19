@@ -20,8 +20,11 @@ await callOnce('auth:user', async () => {
       <div
         class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 py-6 text-sm text-default-400 md:flex-row md:px-6"
       >
-        <p>NextMoe 开放 API · 统一四源 galgame 数据</p>
-        <p class="font-mono text-xs">api.nextmoe.dev/v1</p>
+        <p>NextMoe 开放 API · 六源对齐的 galgame 数据</p>
+        <div class="flex items-center gap-3">
+          <a href="/llms.txt" class="text-xs hover:text-foreground">llms.txt</a>
+          <p class="font-mono text-xs">api.nextmoe.dev/v1</p>
+        </div>
       </div>
     </footer>
   </div>

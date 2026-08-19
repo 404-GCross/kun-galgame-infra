@@ -17,7 +17,7 @@
   - 校验用 `crypto/subtle` 常量时间比较(同 `VerifySecret`)。
 - **传递**:`Authorization: Bearer nm_live_…`(统一用 Authorization;`X-API-Key` 作兼容备选)。
 - **一个应用可有多把 key**:支持**轮换**(签发新 key,旧 key 设未来 `expires_at`,宽限 24–72h,不瞬杀)与**吊销**(`revoked_at`,下次请求即拒)。
-- **默认 scope** = `catalog:read` + `galgame:read`(只读公开);NSFW 需单独 scope + 更高 tier。
+- **默认 scope** = `catalog:read`(只读公开);NSFW 需单独 scope + 更高 tier。**2026-08-18 更正**:原默认里的 `galgame:read` 已移除——`/v1/galgame` 面于 wave 146 整体退役为 `410 Gone`,该 scope 自那以后不被任何活路由消费,继续默认签发等于发一张对着空气的通行证。**已发出的旧 key 不动、不失效**(它们身上的这个 scope 同样什么都打不开);自助与 admin 两条铸 key 路径的空 scopes 默认现均为 `[catalog:read]`。
 - API key 是**机密**:只能服务端使用;浏览器直连第三方用 OAuth2 public client + PKCE,**不发 key**。
 - **一把 key 走遍所有面**:限流/配额计数是平台级(跨面合并计数),per-面权限用 scope 表达。
 
@@ -28,9 +28,11 @@
   - `client_credentials`:应用自身(app-only)读受限资源。
   - `authorization_code` + PKCE:**代表某用户**(如代为投稿)。
 - **scope 词表**(按面命名,起步最小,可扩展):
-  - `catalog:read` `galgame:read`(公开读;未来 `manga:read` 等同构生长)
+  - `catalog:read`(公开读;未来 `manga:read` 等同构生长)
+  - `news:read`(合作媒体资讯索引;**授权制**——不能自助勾选,须经门户申请 + 平台审批,见 [02 §3.9](./02-public-api.md))
   - `galgame:nsfw`(放开 NSFW,需 tier 批准)
   - `galgame:submit` `user:read`(Phase 3)
+  - ~~`galgame:read`~~(随 `/v1/galgame` 面于 wave 146 退役;常量仍在代码里,只为让历史 key 行与旧 `allowed_scopes` 仍能被读懂)
 
 ### 4.3 校验路径(各面服务侧)
 
@@ -44,7 +46,7 @@ introspection 契约(IdP 新增,内部 s2s):
 POST /oauth/apikey/introspect          (s2s, 仅内网/带 s2s 凭证)
   { "key": "nm_live_…" }
 → 200 { "active": true, "client_id": "...", "app_name": "...",
-        "scopes": ["catalog:read", "galgame:read"], "tier": "free",
+        "scopes": ["catalog:read"], "tier": "free",
         "nsfw_allowed": false, "key_id": 123, "rate_per_min": 60, "quota_daily": 50000 }
 → 200 { "active": false }   // 未知/已吊销/已过期
 ```

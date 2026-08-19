@@ -155,7 +155,7 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 		resp.Titles = append(resp.Titles, dto.WorkTitle{Lang: t.Lang, Title: t.Title, Latin: t.Latin, Kind: t.Kind})
 	}
 	for _, rd := range detail.Releases {
-		rb := dto.ReleaseBrief{ID: rd.Release.ID, Kind: rd.Release.Kind}
+		rb := dto.ReleaseBrief{ID: rd.Release.ID, Kind: rd.Release.Kind, Hidden: rd.Release.DeletedAt.Valid}
 		if rd.Release.Platform != nil {
 			rb.Platform = *rd.Release.Platform
 		}
@@ -182,8 +182,8 @@ func buildWorkResponse(detail *service.WorkDetail, votes map[int64]service.Cover
 		wc := dto.WorkCharacter{
 			CharacterID: c.CharacterID, DisplayName: c.DisplayName, Latin: derefStr(c.Latin),
 			Gender: derefI16(c.Gender), Kind: c.Kind, Spoiler: c.Spoiler, ImageHash: derefStr(c.ImageHash),
-			FigureHash: derefStr(c.FigureHash),
-			Va:         make([]dto.WorkCharacterVA, 0, len(c.Va)),
+			FigureHash: derefStr(c.FigureHash), Identity: c.Identity,
+			Va: make([]dto.WorkCharacterVA, 0, len(c.Va)),
 		}
 		for _, v := range c.Va {
 			wc.Va = append(wc.Va, dto.WorkCharacterVA{CreditNameID: v.CreditNameID, Name: v.Name})
@@ -302,7 +302,7 @@ func (s *S2SServer) workCredits(ctx context.Context, in *creditsInput) (*credits
 			})
 			cur = &resp.Groups[len(resp.Groups)-1]
 		}
-		item := dto.CreditItem{CreditNameID: r.CreditNameID, Name: r.Name, Lang: r.Lang, Note: r.Note}
+		item := dto.CreditItem{CreditNameID: r.CreditNameID, Name: r.Name, Lang: r.Lang, Note: r.Note, Identity: r.Identity}
 		if r.Latin != nil {
 			item.Latin = *r.Latin
 		}
@@ -558,6 +558,7 @@ func (s *S2SServer) nameWorks(ctx context.Context, in *nameWorksInput) (*nameWor
 			nr := dto.NameWorkRole{
 				RoleID: r.RoleID, RoleKey: r.RoleKey,
 				RoleName: firstNonEmpty(r.RoleNameCN, r.RoleNameJA, r.RoleKey),
+				Identity: r.Identity,
 			}
 			if r.CharacterID != nil {
 				nr.CharacterID = *r.CharacterID
@@ -600,7 +601,8 @@ func (s *S2SServer) characterWorks(ctx context.Context, in *characterWorksInput)
 	}
 	for _, w := range res.Works {
 		row := dto.CharacterWorkRow{
-			Work: workBriefDTO(w.Brief), Kind: w.Kind, Spoiler: w.Spoiler, Voiced: w.Voiced,
+			Work: workBriefDTO(w.Brief), Kind: w.Kind, Spoiler: w.Spoiler,
+			Identity: w.Identity, Voiced: w.Voiced,
 			Voices: make([]dto.VoiceName, 0, len(w.Voices)),
 		}
 		for _, v := range w.Voices {

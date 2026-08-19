@@ -82,6 +82,9 @@ func takeSnapshot(tx *gorm.DB, entityType int16, id int64) (datatypes.JSON, erro
 		if err := tx.First(&c, id).Error; err != nil {
 			return nil, err
 		}
+		// No catalog.character.aliases suppression predicate here on purpose: a
+		// merge snapshot is the record of what physically hung off the retired id,
+		// and an unmerge restores rows, not renderings.
 		var aliases []model.CatalogCharacterAlias
 		if err := tx.Where("character_id = ?", id).Order("id").Find(&aliases).Error; err != nil {
 			return nil, err

@@ -33,6 +33,8 @@ func (h *SelfServiceHandler) Register(r fiber.Router) {
 	r.Delete("/apps/:client_id/keys/:id", h.RevokeKey)
 	r.Get("/apps/:client_id/usage", h.Usage)
 	r.Get("/usage", h.OwnerUsage)
+	r.Post("/scope-applications", h.ApplyForScope)
+	r.Get("/scope-applications", h.ListScopeApplications)
 }
 
 type createAppRequest struct {
@@ -189,6 +191,10 @@ func (h *SelfServiceHandler) MintKey(c fiber.Ctx) error {
 	if goerrors.Is(err, gorm.ErrRecordNotFound) {
 		return response.NotFound(c, apperr.ErrNotFound)
 	}
+	if goerrors.Is(err, ErrScopeNeedsGrant) {
+		return response.ForbiddenMsg(c, apperr.ErrForbidden,
+			"this scope is granted, not self-issued — apply for it in the developer portal and mint the key once it is approved")
+	}
 	if msg, bad := selfServiceBadRequest(err); bad {
 		return response.BadRequestMsg(c, apperr.ErrValidationFailed, msg)
 	}
@@ -222,7 +228,7 @@ func (h *SelfServiceHandler) RotateKey(c fiber.Ctx) error {
 	if !ok {
 		return response.Unauthorized(c, apperr.ErrAuthUnauthorized)
 	}
-	keyID, ok := parseKeyID(c)
+	keyID, ok := parseIDParam(c)
 	if !ok {
 		return response.BadRequest(c, apperr.ErrInvalidID)
 	}
@@ -244,7 +250,7 @@ func (h *SelfServiceHandler) RevokeKey(c fiber.Ctx) error {
 	if !ok {
 		return response.Unauthorized(c, apperr.ErrAuthUnauthorized)
 	}
-	keyID, ok := parseKeyID(c)
+	keyID, ok := parseIDParam(c)
 	if !ok {
 		return response.BadRequest(c, apperr.ErrInvalidID)
 	}
@@ -278,6 +284,85 @@ func (h *SelfServiceHandler) Usage(c fiber.Ctx) error {
 		rows = []UsageDayFace{}
 	}
 	return response.Success(c, rows)
+}
+
+type scopeApplicationRequest struct {
+	Scope   string `json:"scope"`
+	Message string `json:"message"`
+}
+
+type scopeApplicationView struct {
+	ID            uint   `json:"id"`
+	Scope         string `json:"scope"`
+	Message       string `json:"message"`
+	Status        string `json:"status"`
+	DeclineReason string `json:"decline_reason"`
+	CreatedAt     string `json:"created_at"`
+	ReviewedAt    string `json:"reviewed_at,omitempty"`
+}
+
+func (h *SelfServiceHandler) ApplyForScope(c fiber.Ctx) error {
+	ownerID, ok := ownerFromCtx(c)
+	if !ok {
+		return response.Unauthorized(c, apperr.ErrAuthUnauthorized)
+	}
+	var req scopeApplicationRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, apperr.ErrBadRequest)
+	}
+	app, err := h.svc.ApplyForScope(c.Context(), ownerID, req.Scope, req.Message)
+	if msg, conflict := scopeApplicationConflict(err); conflict {
+		return response.Error(c, fiber.StatusConflict, apperr.ErrValidationFailed, msg)
+	}
+	if msg, bad := selfServiceBadRequest(err); bad {
+		return response.BadRequestMsg(c, apperr.ErrValidationFailed, msg)
+	}
+	if err != nil {
+		return response.InternalError(c, apperr.ErrOperationFailed)
+	}
+	return response.Success(c, toScopeApplicationView(app))
+}
+
+func (h *SelfServiceHandler) ListScopeApplications(c fiber.Ctx) error {
+	ownerID, ok := ownerFromCtx(c)
+	if !ok {
+		return response.Unauthorized(c, apperr.ErrAuthUnauthorized)
+	}
+	apps, err := h.svc.ListScopeApplications(c.Context(), ownerID)
+	if err != nil {
+		return response.InternalError(c, apperr.ErrOperationFailed)
+	}
+	out := make([]scopeApplicationView, len(apps))
+	for i := range apps {
+		out[i] = toScopeApplicationView(&apps[i])
+	}
+	return response.Success(c, out)
+}
+
+func toScopeApplicationView(app *ScopeApplication) scopeApplicationView {
+	v := scopeApplicationView{
+		ID:            app.ID,
+		Scope:         app.Scope,
+		Message:       app.Message,
+		Status:        app.Status,
+		DeclineReason: app.DeclineReason,
+		CreatedAt:     app.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+	}
+	if app.ReviewedAt != nil {
+		v.ReviewedAt = app.ReviewedAt.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	return v
+}
+
+func scopeApplicationConflict(err error) (string, bool) {
+	switch {
+	case goerrors.Is(err, ErrScopeAppPending):
+		return "an application for this scope is already awaiting review", true
+	case goerrors.Is(err, ErrScopeAppApproved):
+		return "this scope is already granted — tick it when you mint a key", true
+	default:
+		return "", false
+	}
 }
 
 func (h *SelfServiceHandler) OwnerUsage(c fiber.Ctx) error {
@@ -320,7 +405,13 @@ func selfServiceBadRequest(err error) (string, bool) {
 	case goerrors.Is(err, ErrKeyLimitReached):
 		return "active key limit reached (max 5 per application)", true
 	case goerrors.Is(err, ErrScopeNotAllowed):
-		return "scope not permitted (want catalog:read and/or galgame:read)", true
+		return "scope not permitted (want catalog:read)", true
+	case goerrors.Is(err, ErrScopeNotGrantable):
+		return "this scope is not applied for (want news:read)", true
+	case goerrors.Is(err, ErrScopeAppMessage):
+		return "message is required — tell us what the key is for", true
+	case goerrors.Is(err, ErrScopeAppMsgTooLong):
+		return "message too long (max 2000)", true
 	case goerrors.Is(err, ErrNameRequired):
 		return "name is required", true
 	case goerrors.Is(err, ErrNameTooLong):
@@ -334,7 +425,7 @@ func selfServiceBadRequest(err error) (string, bool) {
 	case goerrors.Is(err, ErrRedirectURIInvalid):
 		return "redirect URI must be https://, or http:// on the 127.0.0.1 / [::1] loopback for a native app (no wildcards, no fragments)", true
 	case goerrors.Is(err, ErrUserScopeNotAllowed):
-		return "scope not permitted for a self-service app (want openid / profile / email / playtime:read / playtime:write)", true
+		return "scope not permitted for a self-service app (want openid / profile / email / playtime:read / playtime:write / catalog:edit)", true
 	case goerrors.Is(err, ErrAppNameReserved):
 		return "application name may not claim to be NextMoe or an official application", true
 	default:

@@ -24,6 +24,14 @@ type Candidate struct {
 	Editions    []Edition
 }
 
+// rosterSQL deliberately carries no catalog.work.roster suppression predicate,
+// unlike catalog-char-xsrc which reads the same co-residence. The difference is
+// what the two conclude from it: char-xsrc concludes "these two catalog
+// characters are one person", which is the very claim a suppressed edge denies,
+// while this job uses the roster as a COORDINATE ("the Getchu character named X
+// on this work is that catalog character"). Hiding a row does not move the
+// coordinate, and filtering here would make the matcher miss the character and
+// write Getchu's profile onto nobody.
 const rosterSQL = `
 SELECT DISTINCT g.external_id AS getchu_id, rel.work_id, wc.character_id,
        lower(normalize(regexp_replace(ch.display_name, '[[:space:]　]', '', 'g'), NFKC)) AS key_name,

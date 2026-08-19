@@ -14,9 +14,10 @@ if (!resolved) {
 const { face, operation } = resolved
 
 const fullUrl = `${face.baseUrl}${operation.path}`
+const auth = operation.auth ?? face.auth
 
 useSeoMeta({
-  title: `${operation.id} · ${face.label} 面`,
+  title: `${operation.id} · ${face.name}`,
   description: operation.summary
 })
 
@@ -54,7 +55,7 @@ const statusMeta = (status: string): { label: string; class: string } => {
         :to="`/docs/${face.key}`"
         class="transition-colors hover:text-foreground"
       >
-        {{ face.label }} 面
+        {{ face.label }}
       </NuxtLink>
       <KunIcon name="lucide:chevron-right" class="size-3.5" />
       <code class="font-mono text-default-500">{{ operation.id }}</code>
@@ -79,7 +80,7 @@ const statusMeta = (status: string): { label: string; class: string } => {
       <div
         class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-default-400"
       >
-        <span class="flex items-center gap-1.5">
+        <span v-if="operation.scope" class="flex items-center gap-1.5">
           <KunIcon name="lucide:shield-check" class="size-3.5" />
           scope
           <code class="rounded bg-default-100 px-1 py-0.5 font-mono text-default-600">
@@ -87,9 +88,15 @@ const statusMeta = (status: string): { label: string; class: string } => {
           </code>
         </span>
         <span class="flex items-center gap-1.5">
-          <KunIcon name="lucide:key-round" class="size-3.5" />
-          <code class="font-mono">{{ face.auth.display }}</code>
-          <span>（{{ face.auth.note }}）</span>
+          <KunIcon
+            :name="auth.kind === 'none' ? 'lucide:lock-open' : 'lucide:key-round'"
+            class="size-3.5"
+          />
+          <code v-if="auth.curl" class="font-mono">{{ auth.display }}</code>
+          <span v-else class="font-medium text-success-600">
+            {{ auth.display }}
+          </span>
+          <span>（{{ auth.note }}）</span>
         </span>
       </div>
     </header>

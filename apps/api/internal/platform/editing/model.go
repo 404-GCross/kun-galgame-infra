@@ -62,5 +62,5 @@ type Revision struct {
 func (Revision) TableName() string { return "edit_revision" }
 
 func AutoMigrate(db *gorm.DB) error {
-	return db.AutoMigrate(&Proposal{}, &ProposalAmendment{}, &Revision{})
+	return db.AutoMigrate(&Proposal{}, &ProposalAmendment{}, &Revision{}, &SuppressedRow{})
 }

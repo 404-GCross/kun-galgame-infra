@@ -14,6 +14,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const matchedByCurated = "curated"
+
 type ruleStat struct {
 	ToPromote int
 	Promoted  int
@@ -38,6 +40,11 @@ type refRow struct {
 }
 
 func runPromote(ctx context.Context, db *gorm.DB, w io.Writer, rules []string, actor int64, apply bool, limit int) (promoteStats, error) {
+	for _, r := range rules {
+		if r == matchedByCurated {
+			return promoteStats{}, fmt.Errorf("curated is the human lane, not a promotion rule")
+		}
+	}
 	st := promoteStats{Rules: map[string]*ruleStat{}}
 	for _, r := range rules {
 		st.Rules[r] = &ruleStat{}

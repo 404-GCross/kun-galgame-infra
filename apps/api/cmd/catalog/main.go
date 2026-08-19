@@ -120,12 +120,8 @@ func main() {
 		service.NewImageReferenceService(catalogDB.DB()))
 
 	editRegistry := editing.NewRegistry()
-	if err := editspec.RegisterWork(editRegistry, catalogDB.DB()); err != nil {
-		slog.Error("editing: register catalog.work", "error", err)
-		os.Exit(1)
-	}
-	if err := editspec.RegisterTaxonomy(editRegistry, catalogDB.DB()); err != nil {
-		slog.Error("editing: register catalog taxonomy families", "error", err)
+	if err := editspec.RegisterAll(editRegistry, catalogDB.DB()); err != nil {
+		slog.Error("editing: register catalog entity types", "error", err)
 		os.Exit(1)
 	}
 	editEngine := editing.NewEngine(catalogDB.DB(), editRegistry)
@@ -306,6 +302,13 @@ func setupPublicCatalog(
 		return err
 	}
 
+	// Credential-free: the catalogue-size counters the public site and the
+	// developer portal's landing page render before anyone holds a key.
+	// Fiber matches its stack in registration order and a Group's handlers are
+	// a prefix Use, so this line must stay ABOVE the group — moved below it the
+	// route still resolves, silently back behind the key gate.
+	application.Fiber.Get("/v1/catalog/stats", publicH.Stats)
+
 	v1 := application.Fiber.Group("/v1/catalog",
 		mw.ResolveCredential,
 		recordUsage,
@@ -322,7 +325,6 @@ func setupPublicCatalog(
 	v1.Get("/works", middleware.OptionalJWT(tokenVerifier), publicH.WorksList)
 	v1.Get("/works/search", publicH.WorksSearch)
 	v1.Get("/changes", publicH.Changes)
-	v1.Get("/stats", publicH.Stats)
 	v1.Get("/releases", publicH.Releases)
 	v1.Get("/calendar", publicH.Calendar)
 	v1.Get("/calendar/pending", publicH.CalendarPending)

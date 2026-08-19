@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -317,4 +319,34 @@ func TestMockTranslatorShowsGlossary(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, some, "[gloss:1]")
 	assert.NotEqual(t, none, some, "glossary presence is visible in the mock output")
+}
+
+// TestCreditsSuppressionExcludedOnEveryReadSite is this package's share of the
+// R2c-1 read-site sweep: the person lane's glossary is built from "which works
+// did this person work on", and a suppressed credit says that association is
+// wrong. Feeding a known-wrong association to the translator puts it in
+// user-visible prose. The same query already excludes suppressed work titles.
+func TestCreditsSuppressionExcludedOnEveryReadSite(t *testing.T) {
+	clean(t)
+	cleanWorks(t)
+	require.NoError(t, testDB.Exec("TRUNCATE edit_suppressed_row CASCADE").Error)
+	ctx := context.Background()
+
+	p, cn := mkNamedPerson(t, "田中 涼子", "田中凉子")
+	w1 := mkTitledWork(t, "星空のメモリア", "星空的记忆")
+	w2 := mkTitledWork(t, "夏空のペルソナ", "夏空的人格")
+	mkCredit(t, w1, cn)
+	mkCredit(t, w2, cn)
+
+	require.NoError(t, testDB.Create(&editing.SuppressedRow{
+		EntityType: editspec.TypeWork, EntityID: w2, FieldKey: editspec.FieldWorkCredits,
+		IdentityKey: editspec.CreditIdentity(anyRoleID(t), cn, 0),
+	}).Error)
+
+	gs, err := loadGlossaries(ctx, testDB, laneByKey(t, LanePerson), []int64{p})
+	require.NoError(t, err)
+	assert.Equal(t, Glossary{
+		{Src: "田中 涼子", Zh: "田中凉子"},
+		{Src: "星空のメモリア", Zh: "星空的记忆"},
+	}, gs[p], "the work reached only through a suppressed credit must not enter the glossary")
 }

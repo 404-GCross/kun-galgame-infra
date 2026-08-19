@@ -6,8 +6,10 @@ import (
 )
 
 // The news feed republishes two partners' content under our byline, and both
-// authorised our downstream specifically. Who holds a key is therefore the gate,
-// so the scope must never become self-serviceable.
+// authorised our downstream specifically. Who holds a key is therefore the gate.
+// 2026-08-18 mechanised the paperwork (an application a key owner files in the
+// portal) WITHOUT loosening the gate: the scope must never enter
+// selfServiceScopes, and an unapproved owner must still be refused.
 func TestScopeNewsReadSelfServiceExcluded(t *testing.T) {
 	if ScopeNewsRead != "news:read" {
 		t.Errorf("ScopeNewsRead = %q, want %q", ScopeNewsRead, "news:read")
@@ -15,8 +17,22 @@ func TestScopeNewsReadSelfServiceExcluded(t *testing.T) {
 	if slices.Contains(selfServiceScopes, ScopeNewsRead) {
 		t.Errorf("selfServiceScopes must NOT contain %q — news keys are granted by us, never self-issued", ScopeNewsRead)
 	}
-	if err := checkSelfServiceScopes([]string{ScopeNewsRead}); err != ErrScopeNotAllowed {
-		t.Errorf("checkSelfServiceScopes([news:read]) = %v, want ErrScopeNotAllowed", err)
+	if got := gateForScope(ScopeNewsRead); got != scopeGateGrant {
+		t.Errorf("gateForScope(news:read) = %v, want scopeGateGrant", got)
+	}
+}
+
+// galgame:read outlived its face: /v1/galgame is a 410 tombstone since wave 146,
+// so the portal was still offering a permission over nothing.
+func TestScopeGalgameReadRetired(t *testing.T) {
+	if slices.Contains(selfServiceScopes, ScopeGalgameRead) {
+		t.Errorf("selfServiceScopes must NOT contain %q — the galgame face retired at wave 146", ScopeGalgameRead)
+	}
+	if got := gateForScope(ScopeGalgameRead); got != scopeGateDenied {
+		t.Errorf("gateForScope(galgame:read) = %v, want scopeGateDenied", got)
+	}
+	if want := []string{ScopeCatalogRead}; !slices.Equal(selfServiceScopes, want) {
+		t.Errorf("selfServiceScopes = %v, want %v", selfServiceScopes, want)
 	}
 }
 
@@ -27,14 +43,11 @@ func TestScopeGalgameWriteSelfServiceExcluded(t *testing.T) {
 	if slices.Contains(selfServiceScopes, ScopeGalgameWrite) {
 		t.Errorf("selfServiceScopes must NOT contain %q (D3: write is never self-service)", ScopeGalgameWrite)
 	}
-	if err := checkSelfServiceScopes([]string{ScopeGalgameWrite}); err != ErrScopeNotAllowed {
-		t.Errorf("checkSelfServiceScopes([write]) = %v, want ErrScopeNotAllowed", err)
+	if got := gateForScope(ScopeGalgameWrite); got != scopeGateDenied {
+		t.Errorf("gateForScope(galgame:write) = %v, want scopeGateDenied", got)
 	}
-	if err := checkSelfServiceScopes([]string{ScopeGalgameRead, ScopeGalgameWrite}); err != ErrScopeNotAllowed {
-		t.Errorf("checkSelfServiceScopes([read,write]) = %v, want ErrScopeNotAllowed", err)
-	}
-	if err := checkSelfServiceScopes([]string{ScopeCatalogRead, ScopeGalgameRead}); err != nil {
-		t.Errorf("checkSelfServiceScopes([catalog:read,galgame:read]) = %v, want nil", err)
+	if got := gateForScope(ScopeCatalogRead); got != scopeGateSelfService {
+		t.Errorf("gateForScope(catalog:read) = %v, want scopeGateSelfService", got)
 	}
 }
 

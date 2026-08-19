@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	catsearch "api/internal/platform/catalog/search"
 	"api/pkg/imageclient"
@@ -471,7 +472,7 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 	for _, ch := range detail.Characters {
 		pc := dto.PublicRosterCharacter{
 			ID: ch.CharacterID, DisplayName: ch.DisplayName, Latin: derefStrPub(ch.Latin),
-			Kind: rosterKindKey(ch.Kind), Spoiler: ch.Spoiler,
+			Kind: rosterKindKey(ch.Kind), Spoiler: ch.Spoiler, Identity: ch.Identity,
 			Voices: make([]dto.PublicRosterVoice, 0, len(ch.Va)),
 		}
 		if ch.ImageHash != nil {
@@ -620,7 +621,7 @@ func (s *PublicService) workCredits(ctx context.Context, workID int64) ([]dto.Pu
 			})
 			cur = &groups[len(groups)-1]
 		}
-		item := dto.PublicCreditItem{ID: r.CreditNameID, DisplayName: r.Name, Lang: r.Lang}
+		item := dto.PublicCreditItem{ID: r.CreditNameID, DisplayName: r.Name, Lang: r.Lang, Identity: r.Identity}
 		if r.Latin != nil {
 			item.Latin = *r.Latin
 		}
@@ -712,7 +713,8 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 			}
 			row := dto.PublicNameCredit{Work: *b, Roles: make([]dto.PublicNameRole, 0, len(w.Roles))}
 			for _, r := range w.Roles {
-				pr := dto.PublicNameRole{RoleKey: r.RoleKey, RoleName: firstNonEmptyPub(r.RoleNameCN, r.RoleNameJA, r.RoleKey)}
+				pr := dto.PublicNameRole{RoleKey: r.RoleKey, RoleName: firstNonEmptyPub(r.RoleNameCN, r.RoleNameJA, r.RoleKey),
+					Identity: r.Identity}
 				if r.CharacterID != nil {
 					pr.CharacterID = *r.CharacterID
 				}
@@ -786,7 +788,10 @@ func (s *PublicService) Character(ctx context.Context, id int64, withWorks, nsfw
 			if b == nil {
 				continue
 			}
-			row := dto.PublicCharacterWork{Work: *b, Voices: make([]dto.PublicVoiceName, 0, len(w.Voices))}
+			row := dto.PublicCharacterWork{
+				Work: *b, Kind: rosterKindKey(w.Kind), Spoiler: w.Spoiler, Identity: w.Identity,
+				Voices: make([]dto.PublicVoiceName, 0, len(w.Voices)),
+			}
 			for _, v := range w.Voices {
 				row.Voices = append(row.Voices, dto.PublicVoiceName{
 					ID: v.CreditNameID, DisplayName: v.Name, Lang: v.Lang, Latin: derefStrPub(v.Latin),
@@ -899,7 +904,9 @@ func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.P
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT i.lang, i.intro, src.key AS source, i.provenance
 		FROM catalog_label_intro i JOIN catalog_source src ON src.id = i.source_id
-		WHERE i.label_id = ? ORDER BY i.lang, i.provenance, i.source_id`, labelID).Scan(&rows).Error; err != nil {
+		WHERE i.label_id = ? ORDER BY i.lang, i.provenance, `+
+		editspec.HumanLaneFirstSQL("i.source_id", "i.provenance")+
+		`, i.source_id`, labelID).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]dto.PublicIntro, 0, len(rows))
@@ -1420,7 +1427,8 @@ func (s *PublicService) characterIntros(ctx context.Context, characterID int64) 
 	}
 	if err := s.db.WithContext(ctx).Raw(`SELECT lang, intro, source_id, provenance
 		FROM catalog_character_intro WHERE character_id = ?
-		ORDER BY lang, provenance, (provenance = 1 AND source_id = ?) DESC, source_id`,
+		ORDER BY lang, provenance, `+editspec.HumanLaneFirstSQL("source_id", "provenance")+
+		`, (provenance = 1 AND source_id = ?) DESC, source_id`,
 		characterID, sourceDerived).Scan(&rows).Error; err != nil {
 		return nil, err
 	}

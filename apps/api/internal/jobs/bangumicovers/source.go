@@ -85,3 +85,20 @@ func preloadExistingCovers(ctx context.Context, db *gorm.DB, workIDs []int64, ba
 	}
 	return have, nil
 }
+
+func preloadPinnedCovers(ctx context.Context, db *gorm.DB, workIDs []int64) (map[int64]bool, error) {
+	have := map[int64]bool{}
+	if len(workIDs) == 0 {
+		return have, nil
+	}
+	var ids []int64
+	if err := db.WithContext(ctx).Raw(
+		`SELECT DISTINCT work_id FROM catalog_work_cover WHERE portrait_pinned AND work_id IN ?`,
+		workIDs).Scan(&ids).Error; err != nil {
+		return nil, fmt.Errorf("preload pinned covers: %w", err)
+	}
+	for _, id := range ids {
+		have[id] = true
+	}
+	return have, nil
+}

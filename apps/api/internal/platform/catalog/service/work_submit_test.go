@@ -6,6 +6,7 @@ import (
 
 	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/provenance"
 )
 
 const submitSite = "kungal"
@@ -116,6 +117,40 @@ func TestSubmitWorkMintsPendingClaim(t *testing.T) {
 	if e.FromState != nil || e.ToState != model.ClaimStateKeyPending ||
 		e.WorkID != res.WorkID || e.ActorUID != 7 || e.Site != submitSite {
 		t.Fatalf("birth event: %+v", e)
+	}
+}
+
+func TestSubmitWorkStampsReleaseDateAsUser(t *testing.T) {
+	s := newLifecycle(t)
+	res, err := s.SubmitWork(t.Context(), SubmitWorkParams{
+		Site: submitSite, ProductWorkID: 90011, ActorUID: 7,
+		Fields:   submitFields("日付投稿"),
+		Released: ReleaseDate{Y: 2019, M: 5},
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+
+	var rel model.CatalogRelease
+	if err := testDB.First(&rel, res.ReleaseID).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, column := range []string{"released_y", "released_m", "released_d"} {
+		if head := provenance.FirstSource(rel.FieldProvenance, column); head != provenance.SourceUser {
+			t.Errorf("submit-minted field_provenance[%s] = %q, want %q",
+				column, head, provenance.SourceUser)
+		}
+	}
+
+	var wouldFill int64
+	if err := testDB.Raw(
+		`SELECT count(*) FROM catalog_release
+		 WHERE id = ? AND COALESCE(field_provenance -> 'released_y' -> 0 ->> 'source', '') NOT IN ?`,
+		res.ReleaseID, provenance.HumanSources()).Scan(&wouldFill).Error; err != nil {
+		t.Fatal(err)
+	}
+	if wouldFill != 0 {
+		t.Fatal("the exact C7 guard expression must skip a submit-minted row")
 	}
 }
 

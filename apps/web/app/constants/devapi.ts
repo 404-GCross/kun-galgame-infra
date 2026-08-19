@@ -23,7 +23,25 @@ export const DEV_TIER_LIMITS: Record<
   internal: { rate: 0, quota: 0, unlimited: true },
 }
 
-export const DEV_MINTABLE_SCOPES = ['catalog:read', 'galgame:read'] as const
+export const DEV_MINTABLE_SCOPES = ['catalog:read'] as const
+
+// Mirrors devapi's maxScopeAppMessageLen (counted in runes server-side).
+export const DEV_SCOPE_APP_REASON_MAX = 2000
+
+export const DEV_SCOPE_APP_STATUS_LABELS: Record<string, string> = {
+  pending: '待审核',
+  approved: '已批准',
+  declined: '已拒绝',
+}
+
+export const DEV_SCOPE_APP_STATUS_COLORS: Record<
+  string,
+  'warning' | 'success' | 'danger'
+> = {
+  pending: 'warning',
+  approved: 'success',
+  declined: 'danger',
+}
 
 export const devTierLimitHint = (tier: string): string => {
   const l = DEV_TIER_LIMITS[tier]

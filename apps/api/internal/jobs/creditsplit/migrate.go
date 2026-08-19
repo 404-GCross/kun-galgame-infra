@@ -11,8 +11,10 @@ import (
 	"strings"
 
 	"api/internal/infrastructure/database"
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
+	"api/internal/platform/editing"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -152,12 +154,16 @@ func RunMigrate(ctx context.Context, opts Opts) (*MigrateStats, error) {
 	if err != nil {
 		return nil, err
 	}
+	reg := editing.NewRegistry()
+	if err := editspec.RegisterAll(reg, db); err != nil {
+		return nil, fmt.Errorf("build edit registry: %w", err)
+	}
 	st := &MigrateStats{Rows: len(rows)}
 	for _, r := range rows {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if err := migrateOne(ctx, db, sources, r, opts, st); err != nil {
+		if err := migrateOne(ctx, db, reg, sources, r, opts, st); err != nil {
 			return nil, err
 		}
 	}
@@ -187,7 +193,8 @@ func (c creditRow) key() creditKey {
 	return k
 }
 
-func migrateOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r MigrateRow, opts Opts, st *MigrateStats) error {
+func migrateOne(ctx context.Context, db *gorm.DB, reg *editing.Registry, sources map[string]int16,
+	r MigrateRow, opts Opts, st *MigrateStats) error {
 	refuse := func(reason string) {
 		st.Refused++
 		st.Refusals = append(st.Refusals, Refusal{r.CreditNameID, reason})
@@ -344,6 +351,26 @@ func migrateOne(ctx context.Context, db *gorm.DB, sources map[string]int16, r Mi
 				return res.Error
 			}
 			st.CreditsMoved += int(res.RowsAffected)
+
+			// This is the one subset mover in the repo: it re-points SOME of a
+			// credit_name's rows, so the suppressions that name the old id must
+			// follow only on the works whose rows actually moved. That is what
+			// scopeEntityIDs is for, and the entity of catalog.work.credits is
+			// the work, not the credit row.
+			seen := make(map[int64]struct{}, len(moving))
+			scope := make([]int64, 0, len(moving))
+			for _, c := range moving {
+				if _, dup := seen[c.WorkID]; dup {
+					continue
+				}
+				seen[c.WorkID] = struct{}{}
+				scope = append(scope, c.WorkID)
+			}
+			for _, stmt := range reg.IdentityFollowStmts(editspec.TagCreditName, from.ID, target, scope) {
+				if err := tx.Exec(stmt.SQL, stmt.Args...).Error; err != nil {
+					return err
+				}
+			}
 
 			snap, err := json.Marshal(map[string]any{"credit_name": from, "moved_credit_ids": ids})
 			if err != nil {

@@ -349,6 +349,55 @@ func TestAnchorAndEnrich_Bangumi(t *testing.T) {
 	assert.Equal(t, int64(1), twID)
 }
 
+func TestEnrichIntroLandsAlongsideHumanIntro(t *testing.T) {
+	if testDB == nil {
+		t.Skip("no test db")
+	}
+	cleanAll(t)
+
+	mkLabel(t, 800, "アージュ", model.LabelKindGameBrand)
+	mkLabel(t, 801, "TakenCo", model.LabelKindGameBrand)
+	require.NoError(t, testDB.Exec(
+		`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by, created_at)
+		 VALUES (3, 800, ?, 'p1', 0, 'rule:test-label', now()),
+		        (3, 801, ?, 'p2', 0, 'rule:test-label', now())`, sourceVNDB, sourceVNDB).Error)
+
+	var curated int16
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'curated'`).Scan(&curated).Error)
+	require.NotZero(t, curated)
+	require.NoError(t, testDB.Create(&model.CatalogLabelIntro{
+		LabelID: 800, Lang: "en", Intro: "human wrote this", SourceID: curated, Provenance: 0,
+	}).Error)
+	require.NoError(t, testDB.Create(&model.CatalogLabelIntro{
+		LabelID: 801, Lang: "en", Intro: "already from vndb", SourceID: sourceVNDB, Provenance: 0,
+	}).Error)
+
+	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.producers (id,type,lang,name,latin,alias,description) VALUES
+		('p1','co','ja','アージュ','age','','age is a Japanese developer of visual novels'),
+		('p2','co','en','TakenCo','','','TakenCo publishes visual novels in English')`).Error)
+
+	existing, err := preloadIntroLangs(testDB)
+	require.NoError(t, err)
+	assert.False(t, existing[800]["en"], "a human intro does not occupy the (label, lang) slot")
+	assert.True(t, existing[801]["en"], "a machine original still occupies the slot")
+
+	est, err := enrichAll(context.Background(), testDB, testDB, "intro", true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, est.IntroWritten)
+	assert.Equal(t, 1, est.IntroSkipDup)
+
+	var human, machine, blocked string
+	require.NoError(t, testDB.Raw(
+		`SELECT intro FROM catalog_label_intro WHERE label_id=800 AND source_id=?`, curated).Scan(&human).Error)
+	require.NoError(t, testDB.Raw(
+		`SELECT intro FROM catalog_label_intro WHERE label_id=800 AND source_id=?`, sourceVNDB).Scan(&machine).Error)
+	require.NoError(t, testDB.Raw(
+		`SELECT intro FROM catalog_label_intro WHERE label_id=801 AND source_id=?`, sourceVNDB).Scan(&blocked).Error)
+	assert.Equal(t, "human wrote this", human)
+	assert.Contains(t, machine, "age is a Japanese developer")
+	assert.Equal(t, "already from vndb", blocked)
+}
+
 func TestNameIndexExcludesRetiredLabels(t *testing.T) {
 	cleanAll(t)
 	mkLabel(t, 41, "NEXTON", model.LabelKindPublisher)

@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
+
 	"gorm.io/gorm"
 )
 
@@ -61,13 +63,14 @@ type glossRow struct {
 	Zh      string `gorm:"column:zh"`
 }
 
-const (
+var (
 	characterOwnQuery = `
 		SELECT a.character_id AS owner_id, c.display_name AS src, a.name AS zh
 		FROM catalog_character_alias a
 		JOIN catalog_character c ON c.id = a.character_id
 		WHERE a.character_id IN (?)
 		  AND a.lang IN ('zh-Hans','zh','zh-Hant') AND a.kind IN (0,1)
+		  AND ` + editspec.NotSuppressedCharacterAliasSQL("a") + `
 		ORDER BY a.character_id, (NOT a.is_primary_for_locale), (a.lang <> 'zh-Hans'), a.id`
 
 	personOwnQuery = `
@@ -90,9 +93,10 @@ const (
 
 var workTitlePairSQL = `,
 		t AS (
-			SELECT work_id, lang, title, kind, id FROM catalog_work_title
+			SELECT work_id, lang, title, kind, id FROM catalog_work_title wt
 			WHERE work_id IN (SELECT work_id FROM scope) AND kind IN (0,1)
 			  AND (lang = 'ja' OR lang IN ('zh-Hans','zh','zh-Hant'))
+			  AND ` + editspec.NotSuppressedWorkTitleSQL("wt") + `
 		),
 		jat AS (
 			SELECT DISTINCT ON (work_id) work_id, title FROM t
@@ -118,7 +122,7 @@ var (
 			SELECT DISTINCT wc.character_id AS owner_id, wc.work_id
 			FROM catalog_work_character wc
 			JOIN catalog_work w ON w.id = wc.work_id AND w.deleted_at IS NULL
-			WHERE wc.character_id IN (?)
+			WHERE wc.character_id IN (?) AND ` + editspec.NotSuppressedRosterSQL("wc") + `
 		)` + workTitlePairSQL
 
 	personWorksQuery = `
@@ -127,7 +131,7 @@ var (
 			FROM catalog_credit_name cn
 			JOIN catalog_credit cr ON cr.credit_name_id = cn.id
 			JOIN catalog_work w ON w.id = cr.work_id AND w.deleted_at IS NULL
-			WHERE cn.person_id IN (?)
+			WHERE cn.person_id IN (?) AND ` + editspec.NotSuppressedCreditSQL("cr") + `
 		)` + workTitlePairSQL
 
 	labelWorksQuery = `

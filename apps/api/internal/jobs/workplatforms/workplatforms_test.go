@@ -7,10 +7,15 @@ import (
 	"testing"
 	"time"
 
+	"api/internal/platform/authz"
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/migrate"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/perm"
 	"api/internal/platform/catalog/seed"
 	srcb "api/internal/platform/catalog/srcbangumi"
+	"api/internal/platform/editing"
+	"api/internal/platform/provenance"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -222,6 +227,52 @@ func TestImportWorkPlatforms(t *testing.T) {
 	assert.Equal(t, 1, st.DlNoMirror)
 	assert.Zero(t, st.DlWritten+st.BgmWritten, "idempotent re-run")
 	assert.Equal(t, 4, st.BgmConflict)
+}
+
+func TestDlsitePlatformSkipsEngineCleared(t *testing.T) {
+	clean(t)
+	require.NoError(t, testDB.Exec(
+		"TRUNCATE edit_proposal_amendment, edit_proposal, edit_revision RESTART IDENTITY CASCADE").Error)
+	gal := mediumID(t, "galgame")
+	ruledWork := mkWork(t, gal, "human cleared platform", nil)
+	ruled := mkDlsiteRelAnchor(t, ruledWork, "RJ200001", strPtr("win"))
+	controlWork := mkWork(t, gal, "never edited platform", nil)
+	control := mkDlsiteRelAnchor(t, controlWork, "RJ200002", nil)
+	require.NoError(t, testDB.Exec(`INSERT INTO workplatforms_dl.works (workno, product_json) VALUES
+		('RJ200001', '{"platform": ["pc"]}'),
+		('RJ200002', '{"platform": ["pc"]}')`).Error)
+
+	reg := editing.NewRegistry()
+	require.NoError(t, editspec.RegisterRelease(reg, testDB))
+	e := editing.NewEngine(testDB, reg)
+	actor := editing.PolicyContext{
+		UserID: 100, Site: "kungal",
+		HasPerm: func(key string) bool { return perm.Resolver.Can([]string{"ren"}, authz.Permission(key)) },
+	}
+	_, rev, err := e.CreateProposal(context.Background(), editing.CreateProposalInput{
+		EntityType: editspec.TypeRelease, EntityID: ruled,
+		Patch: map[string]any{editspec.FieldReleasePlatform: nil},
+		Actor: actor,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, rev)
+	var stamped model.CatalogRelease
+	require.NoError(t, testDB.Unscoped().First(&stamped, ruled).Error)
+	require.Equal(t, provenance.SourceCurated, provenance.FirstSource(stamped.FieldProvenance, "platform"))
+
+	st, err := Run(context.Background(), Opts{DSN: testDSN, DlsiteDSN: dlTestDSN, Source: "dlsite", Apply: true})
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.DlCandidates)
+	assert.Equal(t, 1, st.DlWritten)
+	assert.Equal(t, 1, st.DlRaced, "the human-stamped empty platform is not overwritten")
+
+	var rel model.CatalogRelease
+	require.NoError(t, testDB.First(&rel, ruled).Error)
+	assert.Nil(t, rel.Platform, "engine-cleared platform must survive workplatforms")
+	rel = model.CatalogRelease{}
+	require.NoError(t, testDB.First(&rel, control).Error)
+	require.NotNil(t, rel.Platform)
+	assert.Equal(t, "win", *rel.Platform)
 }
 
 func TestNormalizeSpellingTail(t *testing.T) {

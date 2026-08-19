@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"gorm.io/gorm"
 )
@@ -48,7 +50,23 @@ type mergeStmt struct {
 //     compared.
 //   - catalog_work.product_work_id — a PRODUCT-side id (the claim), not a
 //     catalog entity id; retireSource frees the source's claim slot.
-func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error) {
+//   - edit_proposal, edit_proposal_amendment, edit_revision — the editing
+//     engine's history and its open queue, addressed to the id that was
+//     actually edited; same rationale as catalog_revision. edit_suppressed_row
+//     is NOT history — it is live negative knowledge the read paths consult on
+//     every request, so it rehangs with the title and alias rows below. One
+//     branch per REGISTERED entity type, not per merge-able type: work
+//     (catalog.work.titles) and character (catalog.character.aliases) each move
+//     their own rows.
+//
+// THE LIST ABOVE IS ONLY ABOUT TABLES (wave 09/D13). A suppression's identity
+// key can itself contain the id of a merge-able entity, and that drift is not a
+// table this list could name — a credit_name merge rewrites keys hanging off
+// works that are not in the merge at all. Those rewrites therefore come from the
+// registry, not from here: every field declares its IdentitySpec and
+// IdentityFollowStmts derives the statements, so registering a new field with an
+// id segment needs nobody to remember this file.
+func rehangEntity(tx *gorm.DB, reg *editing.Registry, entityType int16, src, dst int64) ([]int64, error) {
 	switch entityType {
 	case model.EntityTypePerson:
 		stmts := []mergeStmt{
@@ -59,10 +77,18 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 				[]any{dst, src, dst}, false},
 			{`DELETE FROM catalog_person_intro WHERE person_id = ?`, []any{src}, false},
 		}
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagPerson, src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeCreditName:
 		stmts := []mergeStmt{
+			{`DELETE FROM catalog_credit d
+			   WHERE d.credit_name_id = ? AND ` + notCuratedCreditD + `
+			     AND EXISTS (SELECT 1 FROM catalog_credit c
+			                  WHERE c.credit_name_id = ? AND ` + curatedCreditC + `
+			                    AND c.work_id = d.work_id AND c.role_id = d.role_id
+			                    AND COALESCE(c.character_id, 0) = COALESCE(d.character_id, 0))
+			  RETURNING d.work_id`, []any{dst, src}, true},
 			{`UPDATE catalog_credit c SET credit_name_id = ? WHERE c.credit_name_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
 			                     WHERE d.work_id = c.work_id AND d.credit_name_id = ?
@@ -76,6 +102,7 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			{`DELETE FROM catalog_name_alias WHERE credit_name_id = ?`, []any{src}, false},
 			{`UPDATE catalog_person SET primary_credit_name_id = ? WHERE primary_credit_name_id = ?`, []any{dst, src}, false},
 		}
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagCreditName, src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeLabel:
@@ -97,10 +124,23 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			{`DELETE FROM catalog_work_label WHERE label_id = ? RETURNING work_id`, []any{src}, true},
 		}
 		stmts = append(stmts, labelRelationStmts(src, dst)...)
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagLabel, src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeCharacter:
 		stmts := []mergeStmt{
+			{`DELETE FROM catalog_credit d
+			   WHERE d.character_id = ? AND ` + notCuratedCreditD + `
+			     AND EXISTS (SELECT 1 FROM catalog_credit c
+			                  WHERE c.character_id = ? AND ` + curatedCreditC + `
+			                    AND c.work_id = d.work_id AND c.credit_name_id = d.credit_name_id
+			                    AND c.role_id = d.role_id)
+			  RETURNING d.work_id`, []any{dst, src}, true},
+			{`DELETE FROM catalog_character_alias b
+			   WHERE b.character_id = ? AND ` + editspec.NotCuratedLaneSQL("b.source_id") + `
+			     AND EXISTS (SELECT 1 FROM catalog_character_alias a
+			                  WHERE a.character_id = ? AND ` + editspec.CuratedLaneSQL("a.source_id") + `
+			                    AND a.name = b.name AND a.lang = b.lang)`, []any{dst, src}, false},
 			{`UPDATE catalog_credit c SET character_id = ? WHERE c.character_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
 			                     WHERE d.work_id = c.work_id AND d.credit_name_id = c.credit_name_id
@@ -112,9 +152,7 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			                     WHERE b.character_id = ? AND b.name = a.name AND b.lang = a.lang)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_character_alias WHERE character_id = ?`, []any{src}, false},
 			{`UPDATE catalog_work_character d
-			    SET kind = CASE WHEN d.kind = 0 THEN s.kind ELSE d.kind END,
-			        spoiler = GREATEST(d.spoiler, s.spoiler),
-			        updated_at = now()
+			    ` + rosterSurvivorshipSet + `
 			    FROM catalog_work_character s
 			    WHERE d.character_id = ? AND s.character_id = ? AND s.work_id = d.work_id`, []any{dst, src}, false},
 			{`UPDATE catalog_work_character e SET character_id = ?, updated_at = now() WHERE e.character_id = ?
@@ -134,6 +172,8 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			{`DELETE FROM catalog_character_trait_link WHERE character_id = ?`, []any{src}, false},
 			{`UPDATE catalog_character SET instance_of = ? WHERE instance_of = ?`, []any{dst, src}, false},
 		}
+		stmts = append(stmts, suppressedRowStmts(editspec.TypeCharacter, src, dst)...)
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagCharacter, src, dst)...)
 		return execAll(tx, append(stmts, entityRelationStmts(entityType, src, dst)...))
 
 	case model.EntityTypeWork:
@@ -157,6 +197,13 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			                     WHERE u.work_id = ? AND u.lang = t.lang AND u.title = t.title AND u.kind = t.kind)`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_work_title WHERE work_id = ?`, []any{src}, false},
 			{`UPDATE catalog_release SET work_id = ? WHERE work_id = ?`, []any{dst, src}, false},
+			{`DELETE FROM catalog_credit d
+			   WHERE d.work_id = ? AND ` + notCuratedCreditD + `
+			     AND EXISTS (SELECT 1 FROM catalog_credit c
+			                  WHERE c.work_id = ? AND ` + curatedCreditC + `
+			                    AND c.credit_name_id = d.credit_name_id AND c.role_id = d.role_id
+			                    AND COALESCE(c.character_id, 0) = COALESCE(d.character_id, 0))`,
+				[]any{dst, src}, false},
 			{`UPDATE catalog_credit c SET work_id = ? WHERE c.work_id = ?
 			    AND NOT EXISTS (SELECT 1 FROM catalog_credit d
 			                     WHERE d.work_id = ? AND d.credit_name_id = c.credit_name_id
@@ -164,17 +211,69 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			                       AND COALESCE(d.character_id, 0) = COALESCE(c.character_id, 0))`, []any{dst, src, dst}, false},
 			{`DELETE FROM catalog_credit WHERE work_id = ?`, []any{src}, false},
 		}
+		stmts = append(stmts, suppressedRowStmts(editspec.TypeWork, src, dst)...)
+		stmts = append(stmts, identityFollowStmts(reg, editspec.TagWork, src, dst)...)
 		return execAll(tx, append(stmts, workFacetStmts(src, dst)...))
 	}
 	return nil, fmt.Errorf("catalog merge: unsupported entity type %d", entityType)
 }
 
+// rehangEntity's `NOT EXISTS` + unconditional DELETE pairs settle a unique-key
+// collision by keeping whatever the target already had, which for
+// catalog_credit and catalog_character_alias silently threw away the human
+// lane's row: credit rows never enter a catalog_revision snapshot and
+// edit_revision records intentions rather than machine deletes, so a curated
+// credit lost to a merge left no retrievable trace anywhere. Pillar 6 ("what a
+// person wrote outranks a machine refresh") decides it at row level, so each of
+// those pairs is preceded by a statement that removes the upstream row standing
+// on the key instead. Both tables hold 0 curated rows today (2026-08), which is
+// exactly why this is cheap now.
+var (
+	curatedCreditC    = editspec.CuratedLaneSQL("c.source_id")
+	notCuratedCreditD = editspec.NotCuratedLaneSQL("d.source_id")
+
+	// catalog_work_character has no source column: one (work, character) pair is
+	// a single consensus row every importer and every merge writes into, and the
+	// only record of who set a column is its field_provenance stamp. The two
+	// machine rules stay as they were; a stamped column simply keeps what the
+	// person put there. Both axes of the merge share this clause because they
+	// were copy-pasted from each other.
+	rosterSurvivorshipSet = `SET kind = CASE
+		        WHEN ` + editspec.HumanFieldProvenanceSQL("d.field_provenance", "kind") + ` THEN d.kind
+		        WHEN d.kind = 0 THEN s.kind
+		        ELSE d.kind END,
+		    spoiler = CASE
+		        WHEN ` + editspec.HumanFieldProvenanceSQL("d.field_provenance", "spoiler") + ` THEN d.spoiler
+		        ELSE GREATEST(d.spoiler, s.spoiler) END,
+		    updated_at = now()`
+)
+
+func identityFollowStmts(reg *editing.Registry, entityTag string, src, dst int64) []mergeStmt {
+	follow := reg.IdentityFollowStmts(entityTag, src, dst, nil)
+	out := make([]mergeStmt, 0, len(follow))
+	for _, s := range follow {
+		out = append(out, mergeStmt{sql: s.SQL, args: s.Args})
+	}
+	return out
+}
+
+func suppressedRowStmts(entityType string, src, dst int64) []mergeStmt {
+	return []mergeStmt{
+		{`UPDATE edit_suppressed_row s SET entity_id = ?
+		    WHERE s.entity_type = ? AND s.entity_id = ?
+		    AND NOT EXISTS (SELECT 1 FROM edit_suppressed_row x
+		                     WHERE x.entity_type = s.entity_type AND x.entity_id = ?
+		                       AND x.field_key = s.field_key AND x.identity_key = s.identity_key)`,
+			[]any{dst, entityType, src, dst}, false},
+		{`DELETE FROM edit_suppressed_row WHERE entity_type = ? AND entity_id = ?`,
+			[]any{entityType, src}, false},
+	}
+}
+
 func workFacetStmts(src, dst int64) []mergeStmt {
 	stmts := []mergeStmt{
 		{`UPDATE catalog_work_character d
-		    SET kind = CASE WHEN d.kind = 0 THEN s.kind ELSE d.kind END,
-		        spoiler = GREATEST(d.spoiler, s.spoiler),
-		        updated_at = now()
+		    ` + rosterSurvivorshipSet + `
 		    FROM catalog_work_character s
 		    WHERE d.work_id = ? AND s.work_id = ? AND s.character_id = d.character_id`, []any{dst, src}, false},
 		{`UPDATE catalog_user_playtime d

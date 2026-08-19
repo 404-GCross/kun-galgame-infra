@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
+
 	"gorm.io/gorm"
 )
 
@@ -60,12 +62,13 @@ type glossRow struct {
 	Zh      string `gorm:"column:zh"`
 }
 
-const (
+var (
 	workOwnTitleQuery = `
 		WITH t AS (
-			SELECT work_id, lang, title, kind, id FROM catalog_work_title
+			SELECT work_id, lang, title, kind, id FROM catalog_work_title wt
 			WHERE work_id IN (?) AND kind IN (0,1)
 			  AND (lang = 'ja' OR lang IN ('zh-Hans','zh','zh-Hant'))
+			  AND ` + editspec.NotSuppressedWorkTitleSQL("wt") + `
 		),
 		jat AS (
 			SELECT DISTINCT ON (work_id) work_id, title FROM t
@@ -85,12 +88,14 @@ const (
 			FROM catalog_work_character wc
 			JOIN catalog_character c ON c.id = wc.character_id AND c.deleted_at IS NULL
 			WHERE wc.work_id IN (?)
+			  AND ` + editspec.NotSuppressedRosterSQL("wc") + `
 		),
 		al AS (
 			SELECT DISTINCT ON (a.character_id) a.character_id, a.name
 			FROM catalog_character_alias a
 			WHERE a.character_id IN (SELECT character_id FROM ros)
 			  AND a.lang IN ('zh-Hans','zh','zh-Hant') AND a.kind IN (0,1)
+			  AND ` + editspec.NotSuppressedCharacterAliasSQL("a") + `
 			ORDER BY a.character_id, (NOT a.is_primary_for_locale), (a.lang <> 'zh-Hans'), a.id
 		)
 		SELECT ros.work_id AS owner_id, ros.display_name AS src, al.name AS zh

@@ -163,7 +163,7 @@ func (c *moondreamClient) askYesNo(ctx context.Context, dataURI, question string
 				return false, nil
 			}
 			// moondream is not deterministic: an answer that is neither yes nor no
-			// ("partially nude") parses on a later attempt rather than never.
+			// parses on a later attempt rather than never.
 			lastErr = fmt.Errorf("unparsable answer %q", truncate(answer, 60))
 		}
 		select {
@@ -180,6 +180,13 @@ func normalizeYesNo(s string) string {
 	s = strings.Trim(s, ".,!\"' \t")
 	switch {
 	case strings.HasPrefix(s, "yes"):
+		return "yes"
+	// Two images in the full-corpus run answered the nude question with the
+	// question's own words ("partially nude") on every attempt at every
+	// concurrency — not jitter. Left unparsed they fail the run, which under the
+	// nightly cron means a false alert every night; answering with a partial
+	// degree of the asked attribute is a yes.
+	case strings.HasPrefix(s, "partial"):
 		return "yes"
 	case strings.HasPrefix(s, "no"):
 		return "no"

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
+
 	"gorm.io/gorm"
 )
 
@@ -65,6 +67,8 @@ func buildPairs(db *gorm.DB) ([]pairMeta, map[int64]*charInfo, error) {
 		  ON wb.work_id = wa.work_id AND wb.character_id > wa.character_id
 		JOIN anchored sa ON sa.id = wa.character_id
 		JOIN anchored sb ON sb.id = wb.character_id AND NOT (sa.sids && sb.sids)
+		WHERE ` + editspec.NotSuppressedRosterSQL("wa") + `
+		  AND ` + editspec.NotSuppressedRosterSQL("wb") + `
 		GROUP BY 1, 2`).Scan(&raws).Error; err != nil {
 		return nil, nil, fmt.Errorf("co-resident pairs: %w", err)
 	}
@@ -158,6 +162,8 @@ func loadVABridges(db *gorm.DB) (map[string]string, error) {
 		 AND kb.role_id = 1 AND kb.character_id > ka.character_id
 		JOIN catalog_credit_name cn ON cn.id = ka.credit_name_id
 		WHERE ka.role_id = 1 AND ka.character_id IS NOT NULL AND kb.character_id IS NOT NULL
+		  AND ` + editspec.NotSuppressedCreditSQL("ka") + `
+		  AND ` + editspec.NotSuppressedCreditSQL("kb") + `
 		GROUP BY 1, 2`).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("va bridges: %w", err)
 	}

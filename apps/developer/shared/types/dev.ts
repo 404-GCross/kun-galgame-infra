@@ -29,6 +29,16 @@ export interface DevKeyMinted extends DevKey {
   key: string
 }
 
+export interface DevScopeApplication {
+  id: number
+  scope: string
+  message: string
+  status: 'pending' | 'approved' | 'declined'
+  decline_reason: string
+  created_at: string
+  reviewed_at?: string
+}
+
 export interface DevUsageDayFace {
   day: string
   face: string

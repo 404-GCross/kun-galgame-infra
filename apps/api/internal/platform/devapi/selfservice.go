@@ -23,12 +23,22 @@ const (
 	maxAppDescLen       = 100
 )
 
-var selfServiceScopes = []string{ScopeCatalogRead, ScopeGalgameRead}
+// Scopes a key owner may tick unilaterally. galgame:read left this list when the
+// /v1/galgame face retired to a 410 tombstone (wave 146): no live route consumes
+// it, so offering it minted a permission over nothing.
+var selfServiceScopes = []string{ScopeCatalogRead}
+
+// Scopes a key owner may hold only after we approve an application. The news
+// partners authorised NextMoe's index, not whoever asks us for it, so who
+// carries news:read stays our decision — the application only mechanises the
+// paperwork, it does not make the scope self-service.
+var grantableScopes = []string{ScopeNewsRead}
 
 var (
 	ErrAppLimitReached = errors.New("devapi: application limit reached")
 	ErrKeyLimitReached = errors.New("devapi: active key limit reached")
-	ErrScopeNotAllowed = errors.New("devapi: scope not permitted (want catalog:read and/or galgame:read)")
+	ErrScopeNotAllowed = errors.New("devapi: scope not permitted (want catalog:read)")
+	ErrScopeNeedsGrant = errors.New("devapi: scope requires an approved application")
 	ErrNameRequired    = errors.New("devapi: name is required")
 	ErrNameTooLong     = errors.New("devapi: name too long (max 100)")
 	ErrDescTooLong     = errors.New("devapi: description too long (max 100)")
@@ -205,7 +215,7 @@ func (s *SelfServiceService) MintKey(ctx context.Context, ownerUserID uint, clie
 	if len(in.Name) > maxAppNameLen {
 		return nil, "", ErrNameTooLong
 	}
-	if err := checkSelfServiceScopes(in.Scopes); err != nil {
+	if err := s.checkMintScopes(ctx, ownerUserID, in.Scopes); err != nil {
 		return nil, "", err
 	}
 	active, err := s.repo.CountActiveKeysByClient(ctx, clientID, time.Now())
@@ -429,9 +439,38 @@ func denseDays(now time.Time, days int, rows []UsageDayTotal) []UsageDayTotal {
 	return out
 }
 
-func checkSelfServiceScopes(scopes []string) error {
+type scopeGate int
+
+const (
+	scopeGateDenied scopeGate = iota
+	scopeGateSelfService
+	scopeGateGrant
+)
+
+func gateForScope(sc string) scopeGate {
+	switch {
+	case slices.Contains(selfServiceScopes, sc):
+		return scopeGateSelfService
+	case slices.Contains(grantableScopes, sc):
+		return scopeGateGrant
+	default:
+		return scopeGateDenied
+	}
+}
+
+func (s *SelfServiceService) checkMintScopes(ctx context.Context, ownerUserID uint, scopes []string) error {
 	for _, sc := range scopes {
-		if !slices.Contains(selfServiceScopes, sc) {
+		switch gateForScope(sc) {
+		case scopeGateSelfService:
+		case scopeGateGrant:
+			approved, err := s.repo.HasApprovedScopeApplication(ctx, ownerUserID, sc)
+			if err != nil {
+				return err
+			}
+			if !approved {
+				return ErrScopeNeedsGrant
+			}
+		default:
 			return ErrScopeNotAllowed
 		}
 	}

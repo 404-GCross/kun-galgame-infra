@@ -515,6 +515,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/user/catalog/works/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a work by catalog id (same bundle as the S2S work-detail). Pass include_hidden=true to list editor-hidden releases so they can be unhidden */
+        get: operations["getCatalogWorkByIDUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/user/catalog/works/{id}/claim-actions/{action}": {
         parameters: {
             query?: never;
@@ -689,6 +706,8 @@ export interface components {
             spoiler_level: number;
         };
         CharacterWorkRow: {
+            /** @description Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit */
+            identity?: string;
             /**
              * Format: int32
              * @description roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)
@@ -815,6 +834,8 @@ export interface components {
             character_id?: number;
             /** Format: int64 */
             credit_name_id: number;
+            /** @description Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it */
+            identity: string;
             lang: string;
             latin?: string;
             name: string;
@@ -984,6 +1005,16 @@ export interface components {
             key: string;
             kind: string;
             locked: boolean;
+            /**
+             * Format: int64
+             * @description Cap on this list field's element count; absent for scalar fields
+             */
+            max_elements?: number;
+            /**
+             * Format: int64
+             * @description Cap on this field's suppression set; absent when the field has none
+             */
+            max_suppressed?: number;
             /** @description A proposal by this caller would merge instantly */
             would_automerge: boolean;
         };
@@ -1492,6 +1523,8 @@ export interface components {
             character?: string;
             /** Format: int64 */
             character_id?: number;
+            /** @description Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it */
+            identity: string;
             /** Format: int64 */
             role_id: number;
             role_key: string;
@@ -1557,6 +1590,8 @@ export interface components {
         };
         ReleaseBrief: {
             anchors: components["schemas"]["AnchorRef"][] | null;
+            /** @description true when this release is editor-hidden; omitted on live rows */
+            hidden?: boolean;
             /** Format: int64 */
             id: number;
             /**
@@ -1802,6 +1837,8 @@ export interface components {
             figure_hash?: string;
             /** Format: int32 */
             gender?: number;
+            /** @description Opaque row identity for catalog.work.roster.suppressed; echo it back, never rebuild it. Present when the character is on the roster; ABSENT when it appears only through a voice credit, in which case kind and spoiler are 0 and the row is edited via /works/{id}/credits */
+            identity?: string;
             image_hash?: string;
             /**
              * Format: int32
@@ -3267,6 +3304,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeWorkSubmitResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    getCatalogWorkByIDUser: {
+        parameters: {
+            query?: {
+                /** @description true = also return editor-hidden releases (deleted_at set) and flag them hidden=true; false/absent = live releases only, same payload as S2S */
+                include_hidden?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Catalog work id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeWorkByAnchorResponse"];
                 };
             };
             /** @description Error */

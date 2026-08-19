@@ -113,13 +113,6 @@ const expandAll = async () => {
       (i) => `v1/catalog/works/${i}`,
       { include: 'relations,credits', ...gate() }
     )
-  const cb = d.claimed_by as { site?: string; work_id?: number } | null
-  if (cb && typeof cb.work_id === 'number' && String(cb.site ?? '').includes('galgame'))
-    push('跨面 · Galgame 聚合', cb.work_id, (i) => `v1/galgame/${i}`, {
-      include: 'intro,scores,covers,taxonomy,links,screenshots,series,meta',
-      content_limit: nsfw.value ? 'all' : 'sfw'
-    })
-
   const totals = new Map<string, number>()
   for (const j of jobs) totals.set(j.group, (totals.get(j.group) ?? 0) + 1)
   const taken = new Map<string, number>()

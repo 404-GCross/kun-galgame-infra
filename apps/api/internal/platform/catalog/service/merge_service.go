@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
+	"api/internal/platform/editing"
 
 	"gorm.io/gorm"
 )
@@ -19,11 +22,21 @@ type MergeService struct {
 	resolve   *ResolveService
 	proposals *repository.ProposalRepository
 	revisions *repository.RevisionRepository
+	editReg   func() (*editing.Registry, error)
 }
 
 func NewMergeService(db *gorm.DB, resolve *ResolveService,
 	proposals *repository.ProposalRepository, revisions *repository.RevisionRepository) *MergeService {
-	return &MergeService{db: db, resolve: resolve, proposals: proposals, revisions: revisions}
+	return &MergeService{
+		db: db, resolve: resolve, proposals: proposals, revisions: revisions,
+		editReg: sync.OnceValues(func() (*editing.Registry, error) {
+			reg := editing.NewRegistry()
+			if err := editspec.RegisterAll(reg, db); err != nil {
+				return nil, err
+			}
+			return reg, nil
+		}),
+	}
 }
 
 func (s *MergeService) ProposeMerge(ctx context.Context, entityType int16, sourceID, targetID, proposedBy int64, note string) (*model.CatalogMergeProposal, error) {

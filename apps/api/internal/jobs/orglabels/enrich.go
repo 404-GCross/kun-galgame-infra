@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
@@ -124,7 +125,7 @@ func preloadIntroLangs(db *gorm.DB) (map[int64]map[string]bool, error) {
 		LabelID int64  `gorm:"column:label_id"`
 		Lang    string `gorm:"column:lang"`
 	}
-	if err := db.Raw(`SELECT label_id, lang FROM catalog_label_intro WHERE provenance = 0`).Scan(&rows).Error; err != nil {
+	if err := db.Raw(`SELECT label_id, lang FROM catalog_label_intro WHERE provenance = 0 AND ` + editspec.NotCuratedLaneSQL("source_id")).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	m := make(map[int64]map[string]bool, len(rows))

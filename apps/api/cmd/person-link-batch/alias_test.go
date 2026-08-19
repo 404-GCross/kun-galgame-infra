@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -224,4 +226,37 @@ func maxI(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// TestCreditsSuppressionExcludedOnEveryReadSite is this package's share of the
+// R2c-1 read-site sweep: rule A3 links two credited names because they appear
+// on the same work, and a suppressed credit is exactly the statement that the
+// appearance is wrong. Building a merge candidate out of it hands the reviewer
+// back the mistake they just recorded.
+func TestCreditsSuppressionExcludedOnEveryReadSite(t *testing.T) {
+	if testDB == nil {
+		t.Skip("no catalog test DB")
+	}
+	cleanAll(t)
+	require.NoError(t, testDB.Exec(`TRUNCATE edit_suppressed_row RESTART IDENTITY CASCADE`).Error)
+	ctx := context.Background()
+	role := seededRoleID(t)
+
+	a := mkName(t, "田中ロミオ")
+	b := mkName(t, "山田一")
+	w := mkWork(t)
+	mkCredit(t, w, a, role)
+	mkCredit(t, w, b, role)
+	mkCandidateReason(t, a, b, model.CandidateReasonAliasDeclared)
+
+	require.NoError(t, testDB.Create(&editing.SuppressedRow{
+		EntityType: editspec.TypeWork, EntityID: w, FieldKey: editspec.FieldWorkCredits,
+		IdentityKey: editspec.CreditIdentity(role, b, 0),
+	}).Error)
+
+	st, err := run(ctx, testDB, io.Discard, 7, true, ruleSetAlias)
+	require.NoError(t, err)
+	assert.Zero(t, st.A3Hits, "a suppressed credit is not co-credit evidence")
+	assert.Equal(t, 1, st.Unmatched)
+	assert.Nil(t, personIDOf(t, a))
 }

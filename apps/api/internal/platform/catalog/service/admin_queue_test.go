@@ -161,3 +161,48 @@ func TestConfirmAndRejectRefs(t *testing.T) {
 	require.NotNil(t, rej.RejectedBy)
 	assert.Equal(t, int64(9), *rej.RejectedBy)
 }
+
+func TestRejectRefRefusesCuratedLink(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+
+	person := createPerson(t, "human-linked")
+	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypePerson, EntityID: person.ID,
+		SourceID: 3, ExternalID: "bgm-human", LinkKind: model.LinkKindProbable, MatchedBy: matchedByCurated,
+	}).Error)
+	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypePerson, EntityID: person.ID,
+		SourceID: 2, ExternalID: "v-machine", LinkKind: model.LinkKindProbable, MatchedBy: "import:test",
+	}).Error)
+
+	err := testQueues.RejectRef(ctx, RefKey{
+		EntityType: model.EntityTypePerson, EntityID: person.ID, SourceID: 3, ExternalID: "bgm-human",
+	}, "looks wrong", 9)
+	require.ErrorIs(t, err, ErrProposalState)
+	assert.Contains(t, err.Error(), "human-linked")
+
+	var curated model.CatalogExternalRef
+	require.NoError(t, testDB.Where("entity_id = ? AND source_id = ? AND external_id = ?",
+		person.ID, 3, "bgm-human").First(&curated).Error)
+	assert.Equal(t, matchedByCurated, curated.MatchedBy)
+
+	var rejCount int64
+	testDB.Model(&model.CatalogMatchRejection{}).Where("entity_id = ? AND source_id = ?", person.ID, 3).Count(&rejCount)
+	assert.Zero(t, rejCount)
+
+	err = testQueues.RejectRef(ctx, RefKey{
+		EntityType: model.EntityTypePerson, EntityID: person.ID, SourceID: 9, ExternalID: "missing",
+	}, "gone", 9)
+	require.ErrorIs(t, err, ErrNotFound)
+
+	require.NoError(t, testQueues.RejectRef(ctx, RefKey{
+		EntityType: model.EntityTypePerson, EntityID: person.ID, SourceID: 2, ExternalID: "v-machine",
+	}, "wrong person", 9))
+	var leftover int64
+	testDB.Model(&model.CatalogExternalRef{}).Where("entity_id = ? AND source_id = ?", person.ID, 2).Count(&leftover)
+	assert.Zero(t, leftover)
+	var rej model.CatalogMatchRejection
+	require.NoError(t, testDB.Where("entity_id = ? AND source_id = ?", person.ID, 2).First(&rej).Error)
+	assert.Equal(t, "wrong person", rej.Reason)
+}

@@ -12,6 +12,7 @@ import (
 
 	"api/internal/infrastructure/database"
 	searchInfra "api/internal/infrastructure/search"
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 	catalogSearch "api/internal/platform/catalog/search"
 	"api/pkg/config"
@@ -63,7 +64,8 @@ func main() {
 			err = reindexCreditNames(ctx, db.DB(), idx, *batch)
 		case catalogSearch.IndexCharacters:
 			err = reindexEntity(ctx, db.DB(), idx, *batch, catalogSearch.IndexCharacters, "catalog_character", "c",
-				model.EntityTypeCharacter, "character_id", "character", "catalog_character_alias", "character_id")
+				model.EntityTypeCharacter, "character_id", "character", "catalog_character_alias", "character_id",
+				editspec.NotSuppressedCharacterAliasSQL("a"))
 		case catalogSearch.IndexLabels:
 			err = reindexLabels(ctx, db.DB(), idx, *batch)
 		case catalogSearch.IndexWorks:
@@ -189,7 +191,7 @@ func reindexLabels(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 	if err != nil {
 		return err
 	}
-	aliases, err := loadAliasTable(db, "catalog_label_alias", "label_id")
+	aliases, err := loadAliasTable(db, "catalog_label_alias", "label_id", "")
 	if err != nil {
 		return err
 	}
@@ -236,7 +238,7 @@ func reindexLabels(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 	return nil
 }
 
-func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int, uid, table, prefix string, entityType int16, popCol, etype, aliasTable, aliasCol string) error {
+func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int, uid, table, prefix string, entityType int16, popCol, etype, aliasTable, aliasCol, aliasLive string) error {
 	pop, err := loadPopularity(db, popCol)
 	if err != nil {
 		return err
@@ -245,7 +247,7 @@ func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 	if err != nil {
 		return err
 	}
-	aliases, err := loadAliasTable(db, aliasTable, aliasCol)
+	aliases, err := loadAliasTable(db, aliasTable, aliasCol, aliasLive)
 	if err != nil {
 		return err
 	}
@@ -292,16 +294,19 @@ func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 type alias struct{ lang, name string }
 
 func loadAliases(db *gorm.DB) (map[int64][]alias, error) {
-	return loadAliasTable(db, "catalog_name_alias", "credit_name_id")
+	return loadAliasTable(db, "catalog_name_alias", "credit_name_id", "")
 }
 
-func loadAliasTable(db *gorm.DB, table, ownerCol string) (map[int64][]alias, error) {
+func loadAliasTable(db *gorm.DB, table, ownerCol, live string) (map[int64][]alias, error) {
 	var rows []struct {
 		OwnerID int64  `gorm:"column:owner_id"`
 		Name    string `gorm:"column:name"`
 		Lang    string `gorm:"column:lang"`
 	}
-	q := fmt.Sprintf(`SELECT %s AS owner_id, name, lang FROM %s`, ownerCol, table)
+	q := fmt.Sprintf(`SELECT a.%s AS owner_id, a.name, a.lang FROM %s a`, ownerCol, table)
+	if live != "" {
+		q += " WHERE " + live
+	}
 	if err := db.Raw(q).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -369,7 +374,7 @@ func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 	if err := db.Raw(`SELECT t.work_id, t.lang, t.title, coalesce(t.latin,'') AS latin, t.kind
 		FROM catalog_work_title t
 		JOIN catalog_work w ON w.id = t.work_id
-		WHERE ` + population + `
+		WHERE ` + population + ` AND ` + editspec.NotSuppressedWorkTitleSQL("t") + `
 		ORDER BY t.work_id, t.kind, t.lang, t.id`).Scan(&native).Error; err != nil {
 		return nil, err
 	}
@@ -394,7 +399,9 @@ func loadWorkIntros(db *gorm.DB) (map[int64][]workIntro, error) {
 	if err := db.Raw(`SELECT i.work_id, i.lang, i.intro
 		FROM catalog_work_intro i JOIN catalog_work w ON w.id = i.work_id
 		WHERE ` + population + `
-		ORDER BY i.work_id, i.lang, i.provenance, i.source_id, i.id`).Scan(&native).Error; err != nil {
+		ORDER BY i.work_id, i.lang, i.provenance, ` +
+		editspec.HumanLaneFirstSQL("i.source_id", "i.provenance") +
+		`, i.source_id, i.id`).Scan(&native).Error; err != nil {
 		return nil, err
 	}
 	seen := map[int64]map[string]bool{}

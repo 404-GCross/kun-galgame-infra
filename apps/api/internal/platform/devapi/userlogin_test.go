@@ -3,6 +3,8 @@ package devapi
 import (
 	"testing"
 
+	siteModel "api/internal/platform/site/model"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,8 +57,17 @@ func TestValidateUserLogin(t *testing.T) {
 		assert.Contains(t, scopes, ScopePlaytimeWrite)
 	})
 
+	t.Run("catalog:edit is accepted as a user scope", func(t *testing.T) {
+		scopes, err := validateUserLogin(UserLoginRequest{
+			RedirectURIs: good, Scopes: []string{"catalog:edit"},
+		})
+		require.NoError(t, err)
+		assert.Contains(t, scopes, "openid")
+		assert.Contains(t, scopes, "catalog:edit")
+	})
+
 	t.Run("a scope off the allow-list is refused", func(t *testing.T) {
-		for _, scope := range []string{"catalog:edit", "image:upload", "artifact:upload", "galgame:nsfw"} {
+		for _, scope := range []string{"image:upload", "artifact:upload", "galgame:nsfw"} {
 			_, err := validateUserLogin(UserLoginRequest{RedirectURIs: good, Scopes: []string{scope}})
 			assert.ErrorIs(t, err, ErrUserScopeNotAllowed, "scope %q", scope)
 		}
@@ -108,12 +119,25 @@ func TestValidateAppName(t *testing.T) {
 	}
 }
 
+// The fixture keeps galgame:read on purpose: it is the shape of every app
+// registered before 2026-08-18, and those rows are exactly what the filter in
+// toUserLoginView still has to strip.
+func TestToUserLoginViewKeepsCatalogEdit(t *testing.T) {
+	view := toUserLoginView(&siteModel.OAuthClient{
+		RedirectURIs:  []byte(`["https://example.com/cb"]`),
+		AllowedScopes: []byte(`["catalog:read","galgame:read","openid","catalog:edit"]`),
+	})
+	require.NotNil(t, view)
+	assert.Equal(t, []string{"openid", "catalog:edit"}, view.Scopes,
+		"catalog:read / legacy galgame:read are stripped from the consent view; catalog:edit must stay")
+}
+
 func TestAppAllowedScopesKeyOnly(t *testing.T) {
-	assert.JSONEq(t, `["catalog:read","galgame:read"]`, string(appAllowedScopes("")))
+	assert.JSONEq(t, `["catalog:read"]`, string(appAllowedScopes("")))
 }
 
 func TestAppAllowedScopesWithConsent(t *testing.T) {
 	assert.JSONEq(t,
-		`["catalog:read","galgame:read","openid","playtime:write"]`,
+		`["catalog:read","openid","playtime:write"]`,
 		string(appAllowedScopes("openid playtime:write")))
 }

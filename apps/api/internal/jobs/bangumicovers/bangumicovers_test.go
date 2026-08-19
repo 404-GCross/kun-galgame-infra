@@ -273,6 +273,65 @@ func TestTwoCoversReadFace(t *testing.T) {
 	assert.EqualValues(t, reg.bangumiSource, portrait.SourceID, "portrait attributed to Bangumi")
 }
 
+func TestWriteCoverDoesNotStealExistingPin(t *testing.T) {
+	truncate(t)
+	reg := resolveTestRegistry(t)
+	var curated int16
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'curated'`).Scan(&curated).Error)
+	require.NotZero(t, curated)
+
+	alreadyPinned := mkWork(t, reg.galgameMedium, "already-pinned", nil)
+	fresh := mkWork(t, reg.galgameMedium, "no-pin", nil)
+	require.NoError(t, testDB.Create(&model.CatalogWorkCover{
+		WorkID: alreadyPinned, ImageHash: sha256hex("human-pin"), SortOrder: 0, Kind: "main",
+		PortraitPinned: true, SourceID: curated,
+	}).Error)
+
+	mirror := writeMirror(t, []dimsEntry{
+		{SubjectID: 9301, W: 800, H: 1200, File: "9301/cover.jpg"},
+		{SubjectID: 9302, W: 800, H: 1200, File: "9302/cover.jpg"},
+	}, map[string]bool{"9301": true, "9302": true})
+	d, err := loadDims(mirror)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	workIDs := []int64{alreadyPinned, fresh}
+	exist, err := preloadExistingCovers(ctx, testDB, workIDs, reg.bangumiSource)
+	require.NoError(t, err)
+	pinned, err := preloadPinnedCovers(ctx, testDB, workIDs)
+	require.NoError(t, err)
+	assert.True(t, pinned[alreadyPinned])
+	assert.False(t, pinned[fresh])
+
+	r := &runner{db: testDB, cli: &fakeUploader{}, sourceID: reg.bangumiSource, exist: exist, pinned: pinned}
+	require.False(t, r.process(ctx, Opts{Apply: true, BangumiMirror: mirror}, []candidate{
+		{WorkID: alreadyPinned, SubjectID: "9301", Site: nil},
+		{WorkID: fresh, SubjectID: "9302", Site: nil},
+	}, d))
+	assert.Equal(t, 2, r.c.coverUploaded)
+
+	held := coversOf(t, alreadyPinned)
+	require.Len(t, held, 2)
+	var humanPin, bangumiOnHeld *model.CatalogWorkCover
+	for i := range held {
+		switch held[i].SourceID {
+		case curated:
+			humanPin = &held[i]
+		case reg.bangumiSource:
+			bangumiOnHeld = &held[i]
+		}
+	}
+	require.NotNil(t, humanPin)
+	require.NotNil(t, bangumiOnHeld)
+	assert.True(t, humanPin.PortraitPinned, "the human pin stays")
+	assert.False(t, bangumiOnHeld.PortraitPinned, "bangumi lands unpinned when a pin already exists")
+
+	freshRows := coversOf(t, fresh)
+	require.Len(t, freshRows, 1)
+	assert.True(t, freshRows[0].PortraitPinned, "a work with no pin still gets the bangumi pin")
+	assert.EqualValues(t, reg.bangumiSource, freshRows[0].SourceID)
+}
+
 func TestQuotaAbort(t *testing.T) {
 	truncate(t)
 	reg := resolveTestRegistry(t)

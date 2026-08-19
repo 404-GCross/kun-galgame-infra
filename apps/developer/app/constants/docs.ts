@@ -10,16 +10,34 @@ export const DOCS_METHOD_BADGE: Record<DocsMethod, string> = {
 
 export const DOCS_FACE_META: Record<
   DocsFaceKey,
-  { icon: string; tagline: string }
+  { icon: string; label: string; tagline: string; badge?: string }
 > = {
   catalog: {
     icon: 'lucide:network',
+    label: '目录数据',
     tagline:
-      '跨媒介身份正典：作品 / 人物名义 / 角色 / 厂牌 / credits / 关系，外部 id 反查四源锚。'
+      '作品、角色、厂牌、制作人员的统一条目库。同一部作品在六个源各有一个页面，我们把它们对齐成一条记录，逐字段给出裁定后的标准答案，并附上这个答案取自哪个源。'
   },
   playtime: {
     icon: 'lucide:timer',
+    label: '游玩时长',
     tagline:
-      '用户自己的游玩时长：上报（单条 / 外部 id 寻址 / 批量）与回拉。走用户访问令牌，不是 API 密钥。'
+      '用户自己的游玩时长：上报（单条 / 用外部 id 定位 / 批量）与回拉。用用户授权后的访问令牌，不是 API 密钥；一个用户只读写得到自己的记录。'
+  },
+  edit: {
+    icon: 'lucide:pencil',
+    label: '编辑提案',
+    tagline:
+      '往目录里提交修改：读字段表与当前值，创建、列出、查看、撤回自己的提案。用用户令牌，需 catalog:edit；第三方应用只能提案，不能自己批准。'
+  },
+  news: {
+    icon: 'lucide:newspaper',
+    label: '资讯',
+    tagline:
+      '合作媒体的 Galgame 资讯索引：标题、摘要、题图与回源链接，正文不下发。密钥须带 news:read，该权限授权制——登录门户后在控制台申请，批准后即可自助勾选。',
+    badge: '授权制'
   }
 }
+
+export const docsFaceLabel = (face: string): string =>
+  DOCS_FACE_META[face as DocsFaceKey]?.label ?? face

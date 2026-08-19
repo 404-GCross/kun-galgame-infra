@@ -79,12 +79,25 @@ func Run(db *gorm.DB) error {
 		&model.CatalogSeriesNameOverride{}, // reviewed names for machine-owned lanes (wave 185)
 		&model.CatalogPlatform{},           // platform vocabulary registry (step 96)
 		&model.CatalogWorkPlatform{},       // work-level platform facet (step 96, bgm lane)
+		// catalog_release. Wave R2b (2026-08-16) adds field_provenance jsonb
+		// NOT NULL DEFAULT '{}' so human edits of kind/title/lang/platform/date
+		// and hide/unhide survive importer backfills. AutoMigrate is enough:
+		// the column has a default, so PG 11+ adds it as metadata without
+		// rewriting existing rows, all of which take '{}' — "nobody has
+		// claimed any column on this row".
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},
-		&model.CatalogWorkLabel{},     // work↔label attribution edge (step 18)
-		&model.CatalogReleaseLabel{},  // release↔label attribution edge (wave 200)
-		&model.CatalogWorkCharacter{}, // work↔character roster edge (step 45)
+		&model.CatalogWorkLabel{},    // work↔label attribution edge (step 18)
+		&model.CatalogReleaseLabel{}, // release↔label attribution edge (wave 200)
+		// work↔character roster edge (step 45). Wave R2c-2 (2026-08-16) adds
+		// field_provenance jsonb NOT NULL DEFAULT '{}' — the first row-level
+		// provenance column on a CHILD table, needed because kind/spoiler became
+		// editable and merge survivorship would otherwise overwrite what a person
+		// set. AutoMigrate is enough: the column has a default, so PG 11+ adds it
+		// as metadata without rewriting the 218,846 existing rows, all of which
+		// take '{}' — "nobody has claimed any column on this row".
+		&model.CatalogWorkCharacter{},
 		&model.CatalogLabelRelation{}, // label↔label corporate-structure edge (wave 186)
 
 		// Engine facet (refs/plans/10 W0 ruling 4): the wiki family's engine
@@ -100,6 +113,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogTag{},
 		&model.CatalogTagSourceMap{},
 		&model.CatalogTagIntro{}, // multilingual tag intros (refs/plans/10 W0 ruling 3)
+		&model.CatalogTagRejection{},
 		// The tag chips' precomputed work_count. After catalog_tag, whose id it
 		// keys on; derived data, so it carries no FK — a tag merge that removes
 		// the tag simply leaves a row the refresh drops on its next pass.

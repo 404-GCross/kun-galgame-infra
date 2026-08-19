@@ -47,6 +47,7 @@ type PublicCreditItem struct {
 	LabelID     int64                          `json:"label_id,omitempty"`
 	Label       string                         `json:"label,omitempty"`
 	Source      string                         `json:"source,omitempty"`
+	Identity    string                         `json:"identity" doc:"Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it"`
 }
 
 type PublicCreditGroup struct {
@@ -181,6 +182,7 @@ type PublicNameRole struct {
 	RoleName    string `json:"role_name"`
 	CharacterID int64  `json:"character_id,omitempty"`
 	Character   string `json:"character,omitempty"`
+	Identity    string `json:"identity" doc:"Opaque row identity for catalog.work.credits.suppressed; echo it back, never rebuild it"`
 }
 
 type PublicNameCredit struct {
@@ -209,6 +211,7 @@ type PublicName struct {
 	NextOffset  *int                           `json:"next_offset,omitempty"`
 }
 
+// No `identity` here — see dto.WorkCharacterVA.
 type PublicVoiceName struct {
 	ID          int64                          `json:"id"`
 	DisplayName string                         `json:"display_name"`
@@ -218,8 +221,11 @@ type PublicVoiceName struct {
 }
 
 type PublicCharacterWork struct {
-	Work   PublicWorkBrief   `json:"work"`
-	Voices []PublicVoiceName `json:"voices"`
+	Work     PublicWorkBrief   `json:"work"`
+	Kind     string            `json:"kind" doc:"roster appearance strength on this work: main|secondary|appears|unknown (unknown also when reached only through a voice credit)"`
+	Spoiler  int16             `json:"spoiler" doc:"roster appearance spoiler level on this work: 0=none 1=minor 2=major (0 also when reached only through a voice credit)"`
+	Identity string            `json:"identity,omitempty" doc:"Opaque row identity for catalog.work.roster.suppressed on THIS work; echo it back, never rebuild it. Absent when the work is reached only through a voice credit"`
+	Voices   []PublicVoiceName `json:"voices"`
 }
 
 type PublicCharacter struct {
@@ -370,6 +376,7 @@ type PublicScreenshot struct {
 	Thumbhash string `json:"thumbhash,omitempty"`
 }
 
+// No `identity` here — see dto.WorkCharacterVA.
 type PublicRosterVoice struct {
 	ID          int64                          `json:"id"`
 	DisplayName string                         `json:"display_name"`
@@ -387,6 +394,7 @@ type PublicRosterCharacter struct {
 	Spoiler     int16                          `json:"spoiler" doc:"0=none 1=minor 2=major"`
 	Image       string                         `json:"image,omitempty"`
 	Figure      string                         `json:"figure,omitempty"`
+	Identity    string                         `json:"identity,omitempty" doc:"Opaque row identity for catalog.work.roster.suppressed; echo it back, never rebuild it. Present when the character is on the roster; ABSENT when it appears only through a voice credit, in which case kind is unknown and spoiler is 0"`
 	Voices      []PublicRosterVoice            `json:"voices"`
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
@@ -44,6 +45,7 @@ func loadCandidateTitles(ctx context.Context, db *gorm.DB, reg registry) ([]cand
 			JOIN catalog_work_title t ON t.work_id = w.id
 			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
 				AND length(t.title_norm) >= ?
+				AND `+editspec.NotSuppressedWorkTitleSQL("t")+`
 			ORDER BY w.id`,
 		reg.galgameMedium, minTitleLen,
 	).Scan(&out).Error

@@ -17,7 +17,15 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestBgmJunk(t *testing.T) {
-	labels := map[string]struct{}{"avantgarde": {}, "ディーゼルマイン": {}}
+	labels := &junkIndex{
+		blocked: map[string]string{
+			"avantgarde": "label", "ディーゼルマイン": "label",
+			"御苑生メイ": "person", "竹子社": "label_alias",
+			"鈴木達央": "person",
+			"sim":  "label", "巨乳": "person_alias",
+		},
+		vocab: map[string]struct{}{"巨乳": {}},
+	}
 	cases := []struct{ in, reason string }{
 		{"2024", "number"},
 		{"123", "number"},
@@ -30,6 +38,10 @@ func TestBgmJunk(t *testing.T) {
 		{"disc 3", "disc"},
 		{"avantgarde", "label"},
 		{"ディーゼルマイン", "label"},
+		{"御苑生メイ", "person"},
+		{"竹子社", "label_alias"},
+		{"鈴木 達央", "person"},
+		{"sim", ""},
 		{"百合", ""},
 		{"r18", ""},
 		{"18x", ""},

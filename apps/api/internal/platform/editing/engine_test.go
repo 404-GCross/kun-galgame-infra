@@ -80,7 +80,7 @@ func TestMain(m *testing.M) {
 func cleanTables(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
-		"edit_proposal_amendment", "edit_proposal", "edit_revision", "edit_test_widget",
+		"edit_proposal_amendment", "edit_proposal", "edit_revision", "edit_suppressed_row", "edit_test_widget",
 	} {
 		if err := testDB.Exec("TRUNCATE " + table + " RESTART IDENTITY CASCADE").Error; err != nil {
 			t.Fatalf("truncate %s: %v", table, err)

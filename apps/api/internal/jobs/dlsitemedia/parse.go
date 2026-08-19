@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+// Work-level provisional stamp for brand-new rows only (OnConflict DoNothing);
+// sync-image-grades refines machine-source rows to per-image grades nightly.
 func ageToSexual(age string) int16 {
 	switch strings.TrimSpace(age) {
 	case "3":

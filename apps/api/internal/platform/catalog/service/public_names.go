@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 )
 
@@ -14,6 +15,9 @@ type aliasSource struct {
 	ownerCol     string
 	ownerTable   string
 	ownerNameCol string
+	// live is the row-level suppression predicate, correlated on alias "a", and
+	// empty for the families whose alias list is not a registered edit field yet.
+	live string
 }
 
 var (
@@ -24,6 +28,7 @@ var (
 	characterAliasSource = aliasSource{
 		table: "catalog_character_alias", ownerCol: "character_id",
 		ownerTable: "catalog_character", ownerNameCol: "display_name",
+		live: editspec.NotSuppressedCharacterAliasSQL("a"),
 	}
 	creditNameAliasSource = aliasSource{
 		table: "catalog_name_alias", ownerCol: "credit_name_id",
@@ -53,15 +58,19 @@ func (s *PublicService) entityAliasesBatch(ctx context.Context, src aliasSource,
 	if len(ownerIDs) == 0 {
 		return out, nil
 	}
+	live := ""
+	if src.live != "" {
+		live = " AND " + src.live
+	}
 	q := fmt.Sprintf(`
 		SELECT a.%s AS owner_id, a.name, a.lang, a.kind, a.provenance,
 		       a.is_primary_for_locale AS is_primary,
 		       (a.name = o.%s) AS is_display
 		FROM %s a
 		JOIN %s o ON o.id = a.%s
-		WHERE a.%s IN ? AND a.kind <> ?
+		WHERE a.%s IN ? AND a.kind <> ?%s
 		ORDER BY a.name, a.id`,
-		src.ownerCol, src.ownerNameCol, src.table, src.ownerTable, src.ownerCol, src.ownerCol)
+		src.ownerCol, src.ownerNameCol, src.table, src.ownerTable, src.ownerCol, src.ownerCol, live)
 
 	var rows []struct {
 		OwnerID    int64  `gorm:"column:owner_id"`

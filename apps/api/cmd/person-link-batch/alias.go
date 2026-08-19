@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
@@ -51,7 +52,9 @@ func loadCoCreditPairs(db *gorm.DB) (map[[2]int64]bool, error) {
 		  AND EXISTS (
 		    SELECT 1 FROM catalog_credit x
 		    JOIN catalog_credit y ON y.work_id = x.work_id
-		    WHERE x.credit_name_id = c.a_id AND y.credit_name_id = c.b_id)`,
+		    WHERE x.credit_name_id = c.a_id AND y.credit_name_id = c.b_id
+		      AND `+editspec.NotSuppressedCreditSQL("x")+`
+		      AND `+editspec.NotSuppressedCreditSQL("y")+`)`,
 		model.EntityTypeCreditName, model.CandidateReasonAliasDeclared, model.CandidateStatusPending,
 	).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load co-credit pairs: %w", err)
