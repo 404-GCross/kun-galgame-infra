@@ -33,7 +33,7 @@ import (
 
 func main() {
 	dsn := flag.String("dsn", "", "catalog DSN (REQUIRED)")
-	mode := flag.String("mode", "census", "census | source | kanji | auto | apply-csv | reclassify-forum-mt | series-audit")
+	mode := flag.String("mode", "census", "census | source | kanji | auto | export-batches | apply-csv | reclassify-forum-mt | series-audit")
 	source := flag.String("source", "", "--mode source: bgm | vndb")
 	apply := flag.Bool("apply", false, "write (default: dry — counts + samples)")
 	idsFile := flag.String("ids-file", "", "--mode reclassify-forum-mt: file of forum galgame ids, one per line")
@@ -91,6 +91,16 @@ func main() {
 			os.Exit(2)
 		}
 		err = runApplyCSV(ctx, db, *in, *apply, *limit, *samples)
+	case "export-batches":
+		if *out == "" {
+			slog.Error("--mode export-batches requires --out (the JSONL path)")
+			os.Exit(2)
+		}
+		var opts autoOpts
+		opts, err = autoOptsFrom(*out, *limit, *batchSize, *shard, *excludeIDs, *delayMS, *modelName)
+		if err == nil {
+			err = runExportBatches(ctx, db, opts)
+		}
 	case "auto":
 		if *out == "" {
 			slog.Error("--mode auto requires --out (the review CSV path)")

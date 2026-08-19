@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 
+	"api/internal/platform/catalog/model"
+
 	"gorm.io/gorm"
 )
 
@@ -168,48 +170,67 @@ func groupRank(g []int64, rank map[int64]int) int {
 // the candidates — including the works that are NOT candidates, which is the
 // point: a series whose first two entries were translated years ago is exactly
 // the context the third one needs.
+//
+// The map is keyed by the CANDIDATE each title is context for, because that is
+// the only key buildBatches ever looks up. The first version keyed it by the
+// related work holding the title, so a translated non-candidate sibling — the
+// headline case above — never reached any batch; the export test caught it
+// before the lane's first prod run.
 func loadKnownZhTitles(ctx context.Context, db *gorm.DB, workIDs []int64) (map[int64][]string, error) {
 	out := map[int64][]string{}
 	if len(workIDs) == 0 {
 		return out, nil
 	}
 	var rows []struct {
-		WorkID int64  `gorm:"column:work_id"`
-		JaT    string `gorm:"column:ja_title"`
-		ZhT    string `gorm:"column:zh_title"`
+		CandID  int64   `gorm:"column:cand_id"`
+		JaT     string  `gorm:"column:ja_title"`
+		ZhT     string  `gorm:"column:zh_title"`
+		Prov    int16   `gorm:"column:provenance"`
+		SrcHash *string `gorm:"column:src_hash"`
 	}
 	err := db.WithContext(ctx).Raw(`
 		WITH related AS (
-			SELECT DISTINCT m2.work_id AS id
+			SELECT m1.work_id AS cand, m2.work_id AS id
 			FROM catalog_series_member m1
 			JOIN catalog_series_member m2 ON m2.series_id = m1.series_id
 			WHERE m1.work_id IN ?
 			UNION
-			SELECT DISTINCT CASE WHEN r.a_work_id IN ? THEN r.b_work_id ELSE r.a_work_id END AS id
+			SELECT r.a_work_id AS cand, r.b_work_id AS id
 			FROM catalog_work_relation r
 			JOIN catalog_relation_type rt ON rt.id = r.relation_type_id
-			WHERE rt.key IN ('sequel_of','fandisc_of','same_series')
-			  AND (r.a_work_id IN ? OR r.b_work_id IN ?)
+			WHERE rt.key IN ('sequel_of','fandisc_of','same_series') AND r.a_work_id IN ?
+			UNION
+			SELECT r.b_work_id AS cand, r.a_work_id AS id
+			FROM catalog_work_relation r
+			JOIN catalog_relation_type rt ON rt.id = r.relation_type_id
+			WHERE rt.key IN ('sequel_of','fandisc_of','same_series') AND r.b_work_id IN ?
 		)
-		SELECT rel.id AS work_id,
+		SELECT rel.cand AS cand_id,
 			COALESCE((SELECT t.title FROM catalog_work_title t
 			           WHERE t.work_id = rel.id AND (t.lang = 'ja' OR t.lang LIKE 'ja-%')
 			             AND t.kind <= 1 ORDER BY t.kind, t.id LIMIT 1), '') AS ja_title,
-			t.title AS zh_title
+			t.title AS zh_title, t.provenance, t.src_hash
 		FROM related rel
 		JOIN catalog_work_title t ON t.work_id = rel.id AND t.lang LIKE 'zh%' AND t.kind <= 1
 		JOIN catalog_work w ON w.id = rel.id AND w.deleted_at IS NULL
-		ORDER BY rel.id, t.provenance, t.kind, t.id`,
-		workIDs, workIDs, workIDs, workIDs).Scan(&rows).Error
+		ORDER BY rel.cand, t.provenance, t.kind, t.id`,
+		workIDs, workIDs, workIDs).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("load known zh titles: %w", err)
 	}
 	for _, r := range rows {
+		// A machine title whose src_hash no longer matches its ja title is about
+		// to be retranslated; letting it into the context would anchor the fresh
+		// translation on the very output being replaced.
+		if r.Prov == model.WorkTitleProvenanceMachine &&
+			(r.SrcHash == nil || *r.SrcHash != hashSource(cleanTitle(r.JaT))) {
+			continue
+		}
 		line := r.ZhT
 		if r.JaT != "" {
 			line = r.JaT + " → " + r.ZhT
 		}
-		out[r.WorkID] = append(out[r.WorkID], line)
+		out[r.CandID] = append(out[r.CandID], line)
 	}
 	return out, nil
 }

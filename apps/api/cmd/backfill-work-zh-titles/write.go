@@ -82,19 +82,19 @@ type applyRow struct {
 	Model   string
 }
 
-func readAcceptedCSV(path string) ([]applyRow, error) {
+func readAcceptedCSV(path string) ([]applyRow, int, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer f.Close()
 	r := csv.NewReader(f)
 	recs, err := r.ReadAll()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(recs) == 0 {
-		return nil, fmt.Errorf("%s: empty", path)
+		return nil, 0, fmt.Errorf("%s: empty", path)
 	}
 	idx := map[string]int{}
 	for i, h := range recs[0] {
@@ -102,37 +102,48 @@ func readAcceptedCSV(path string) ([]applyRow, error) {
 	}
 	for _, want := range []string{"work_id", "src_hash", "proposed_zh", "model"} {
 		if _, ok := idx[want]; !ok {
-			return nil, fmt.Errorf("%s: missing column %q", path, want)
+			return nil, 0, fmt.Errorf("%s: missing column %q", path, want)
 		}
 	}
+	jaCol, hasJa := idx["ja_title"]
 	out := make([]applyRow, 0, len(recs)-1)
+	gateRefused := 0
 	for i, rec := range recs[1:] {
 		zh := cleanTitle(rec[idx["proposed_zh"]])
 		if zh == "" {
 			continue
 		}
+		// An external lane's proposals do not pass through gateOutput on their
+		// way here, so re-assert the deterministic gates at the door whenever
+		// the CSV carries the source title to gate against.
+		if hasJa {
+			if v := gateOutput(cleanTitle(rec[jaCol]), zh); v != verdictAccept {
+				gateRefused++
+				continue
+			}
+		}
 		id, err := strconv.ParseInt(rec[idx["work_id"]], 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("%s line %d: bad work_id: %w", path, i+2, err)
+			return nil, 0, fmt.Errorf("%s line %d: bad work_id: %w", path, i+2, err)
 		}
 		out = append(out, applyRow{
 			WorkID: id, ZhTitle: zh,
 			SrcHash: rec[idx["src_hash"]], Model: rec[idx["model"]],
 		})
 	}
-	return out, nil
+	return out, gateRefused, nil
 }
 
 func runApplyCSV(ctx context.Context, db *gorm.DB, path string, apply bool, limit, samples int) error {
-	rows, err := readAcceptedCSV(path)
+	rows, gateRefused, err := readAcceptedCSV(path)
 	if err != nil {
 		return err
 	}
 	if limit > 0 && limit < len(rows) {
 		rows = rows[:limit]
 	}
-	fmt.Printf("\n=== backfill-work-zh-titles apply-csv %s (%s) ===\naccepted_rows=%d\n",
-		path, modeLabel(apply), len(rows))
+	fmt.Printf("\n=== backfill-work-zh-titles apply-csv %s (%s) ===\naccepted_rows=%d refused_gate=%d\n",
+		path, modeLabel(apply), len(rows), gateRefused)
 	for i, r := range rows {
 		if i >= samples {
 			break
