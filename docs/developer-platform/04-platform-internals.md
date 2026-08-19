@@ -22,8 +22,20 @@ DevNSFWAllowed bool   `gorm:"not null;default:false" json:"dev_nsfw_allowed"`
 // 限流/配额(0 = 用 tier 默认值,见 03-auth-and-tiers.md §7)
 DevRatePerMin  int    `gorm:"not null;default:0" json:"dev_rate_per_min"`
 DevQuotaDaily  int    `gorm:"not null;default:0" json:"dev_quota_daily"`
+
+// --- 应用审批流(2026-08-18,见 02 §3.10)---
+// DevReviewStatus: approved | pending | declined。存量行迁移时全量回填
+// approved(它们都是在"创建无条件自助"年代建的);OAuth 控制台建的一方
+// client 不认识这两列,写进去是空串——空串**刻意 fail-open**,判据一律写
+// 成 status ∈ {pending, declined},绝不写 status != 'approved'。
+DevReviewStatus string `gorm:"size:20;not null" json:"dev_review_status"`
+// 拒绝理由,原样回执给申请人;rune 计数 ≤2000(= maxScopeAppMessageLen)。
+// 用 text 而非 varchar(n):2000 个汉字装不进按字符计的短 varchar 的直觉里
+// 反复出错,text 让长度只由服务端那一个 rune 判据说了算。
+DevReviewNote   string `gorm:"type:text" json:"dev_review_note,omitempty"`
 ```
 > scope 直接复用既有 `AllowedScopes` + `CheckScope`,不另起字段。
+> 两列由 `devapi.AddOAuthClientDevColumns` 的 raw SQL 加(`ADD COLUMN … NOT NULL DEFAULT 'approved'` 完成回填后 `DROP DEFAULT`),与既有 `dev_*` 列同一模式、同一函数,**必须在 AutoMigrate 之前跑**。
 
 ### 5.2 新表 `developer_api_keys`
 
@@ -66,6 +78,26 @@ type DeveloperAPIUsage struct {
 > `face` 已是**一等列**(粒度 = (client, key, face, day)),门户能出"按面"曲线;`key_id 0` 是应用级汇总哨兵(不用可空 key_id,避开唯一索引的 NULLs-distinct 语义)。`status_4xx/5xx` 显式列名——GORM 命名策略把 `Status4xx` 蛇形化成 `status4xx`(数字前不加下划线),读写两侧都用 `status_4xx`。
 
 > **留存**:本表只增不减,`prune-developer-usage` 每日 job 删除 `day < 今天−400 天` 的行(400 为拍板值,常量 `DeveloperUsageRetentionDays`)。跨副本单飞由 jobs runner 的按 job 名 advisory lock 提供。
+
+### 5.4 新表 `devapi_policy_overrides`(平台策略矩阵,2026-08-18)
+
+```go
+type PolicyOverride struct {
+    ID          uint      `gorm:"primaryKey"`
+    Capability  string    `gorm:"size:64;not null;uniqueIndex"` // app.create | app.manage | key.mint | scope.apply
+    Mode        string    `gorm:"size:20;not null"`             // self_service | approval | disabled
+    SetByUserID uint      `gorm:"not null"`
+    CreatedAt   time.Time
+    UpdatedAt   time.Time
+}
+func (PolicyOverride) TableName() string { return "devapi_policy_overrides" }
+```
+
+- **没有行 = 代码默认**(`devapi.capabilities` 注册表里每个 capability 自带 `Default`,全部为 `self_service`);删行 = 回到默认。语义镜像 `role_permission_overrides`。
+- **不建独立 audit 表**:`SetByUserID` + `UpdatedAt` 就是最后写者记录,策略只有四行、只有一个写者角色(`ren`),再加一张表是记账开销大于信息量。
+- **不用 GORM `default:` 标签**(零值陷阱)。
+- **读路径不上缓存**:门户与管理台的策略读是低 QPS 的人机操作,service 方法内直接一行 DB 查即可;上 Distributor/Redis 那套会给一个每天变零次的值加一层失效面。
+- 语义与端点见 [02 §3.10](./02-public-api.md);写路由的权限是 ren-only 的 `devapi.policy_manage`(不可委派,见 `docs/auth/04` §2.3)。
 
 > **迁移**:以上列 + 表都在 `kun_galgame_infra` → `go run ./cmd/migrate`(部署不自动跑,见 [07 §14](./07-migration-and-ops.md))。
 

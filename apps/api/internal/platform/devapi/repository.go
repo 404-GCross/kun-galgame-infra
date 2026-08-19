@@ -141,15 +141,6 @@ func (r *Repository) GetApp(ctx context.Context, clientID string) (*siteModel.OA
 	return &app, nil
 }
 
-func (r *Repository) ListDevApps(ctx context.Context) ([]siteModel.OAuthClient, error) {
-	var apps []siteModel.OAuthClient
-	err := r.db.WithContext(ctx).
-		Where("dev_enabled = ?", true).
-		Order("name ASC").
-		Find(&apps).Error
-	return apps, err
-}
-
 func (r *Repository) UpdateAppDevConfig(ctx context.Context, clientID string, fields map[string]any) error {
 	return r.UpdateAppFields(ctx, clientID, fields)
 }
@@ -203,6 +194,73 @@ func (r *Repository) CountActiveKeysByClient(ctx context.Context, clientID strin
 		Where("client_id = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)", clientID, now).
 		Count(&n).Error
 	return n, err
+}
+
+const (
+	KeyStateActive  = "active"
+	KeyStateRevoked = "revoked"
+	KeyStateExpired = "expired"
+	KeyStateAll     = "all"
+)
+
+type KeyListFilter struct {
+	ClientID string
+	State    string
+	Page     int
+	Limit    int
+}
+
+type AdminKeyRow struct {
+	DeveloperAPIKey
+	AppName     string `gorm:"column:app_name"`
+	OwnerUserID *uint  `gorm:"column:owner_user_id"`
+}
+
+// ListAllKeys is the cross-application key inventory behind the console's
+// global key page; the per-application list stays ListKeysByClient.
+func (r *Repository) ListAllKeys(ctx context.Context, f KeyListFilter, now time.Time) ([]AdminKeyRow, int64, error) {
+	scoped := func() *gorm.DB {
+		q := r.db.WithContext(ctx).
+			Table("developer_api_keys AS k").
+			Joins("JOIN oauth_clients AS c ON c.id = k.client_id")
+		if f.ClientID != "" {
+			q = q.Where("k.client_id = ?", f.ClientID)
+		}
+		switch f.State {
+		case KeyStateActive:
+			q = q.Where("k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > ?)", now)
+		case KeyStateRevoked:
+			q = q.Where("k.revoked_at IS NOT NULL")
+		case KeyStateExpired:
+			q = q.Where("k.revoked_at IS NULL AND k.expires_at IS NOT NULL AND k.expires_at <= ?", now)
+		}
+		return q
+	}
+
+	var total int64
+	if err := scoped().Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var rows []AdminKeyRow
+	err := scoped().
+		Select("k.*, c.name AS app_name, c.owner_user_id AS owner_user_id").
+		Order("k.created_at DESC, k.id DESC").
+		Offset((f.Page - 1) * f.Limit).
+		Limit(f.Limit).
+		Scan(&rows).Error
+	return rows, total, err
+}
+
+func (k *DeveloperAPIKey) State(now time.Time) string {
+	switch {
+	case k.RevokedAt != nil:
+		return KeyStateRevoked
+	case k.ExpiresAt != nil && !k.ExpiresAt.After(now):
+		return KeyStateExpired
+	default:
+		return KeyStateActive
+	}
 }
 
 type OwnerActiveKey struct {

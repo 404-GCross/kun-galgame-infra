@@ -9,7 +9,7 @@ import (
 // Models returns the developer-platform models for AutoMigrate registration in
 // cmd/migrate (the developer-platform tables in kun_galgame_infra).
 func Models() []any {
-	return []any{&DeveloperAPIKey{}, &DeveloperAPIUsage{}, &ScopeApplication{}}
+	return []any{&DeveloperAPIKey{}, &DeveloperAPIUsage{}, &ScopeApplication{}, &PolicyOverride{}}
 }
 
 // AddOAuthClientDevColumns adds the developer-platform columns to an existing
@@ -46,6 +46,17 @@ func AddOAuthClientDevColumns(db *gorm.DB) error {
 		`ALTER TABLE oauth_clients ALTER COLUMN dev_rate_per_min DROP DEFAULT`,
 		`ALTER TABLE oauth_clients ADD COLUMN IF NOT EXISTS dev_quota_daily bigint NOT NULL DEFAULT 0`,
 		`ALTER TABLE oauth_clients ALTER COLUMN dev_quota_daily DROP DEFAULT`,
+
+		// 2026-08-18, the app-approval flow. Every row that already exists was
+		// created when creation was unconditionally self-service, so the
+		// temporary DEFAULT backfills them all to 'approved' — anything else
+		// would retroactively suspend live third-party applications. The
+		// DEFAULT is then dropped, and rows inserted by the OAuth console
+		// (which does not know these columns) land '' — read as approved by
+		// appAwaitsReview, deliberately fail-open for first-party clients.
+		`ALTER TABLE oauth_clients ADD COLUMN IF NOT EXISTS dev_review_status varchar(20) NOT NULL DEFAULT 'approved'`,
+		`ALTER TABLE oauth_clients ALTER COLUMN dev_review_status DROP DEFAULT`,
+		`ALTER TABLE oauth_clients ADD COLUMN IF NOT EXISTS dev_review_note text`,
 	}
 	for _, s := range stmts {
 		if err := db.Exec(s).Error; err != nil {

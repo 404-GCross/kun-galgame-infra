@@ -47,6 +47,13 @@ func (s *AdminService) UpdateAppConfig(ctx context.Context, clientID string, cfg
 	}
 	if cfg.DevEnabled != nil {
 		fields["dev_enabled"] = *cfg.DevEnabled
+		// The console's enable path is itself an approval: without this a row
+		// enabled straight from the app list would stay 'pending' and its owner
+		// would still be refused a key on a live application.
+		if *cfg.DevEnabled {
+			fields["dev_review_status"] = AppReviewApproved
+			fields["dev_review_note"] = ""
+		}
 	}
 	if cfg.DevTier != nil {
 		if !validTier(*cfg.DevTier) {
@@ -69,8 +76,8 @@ func (s *AdminService) UpdateAppConfig(ctx context.Context, clientID string, cfg
 	return s.repo.GetApp(ctx, clientID)
 }
 
-func (s *AdminService) ListApps(ctx context.Context) ([]AppView, error) {
-	apps, err := s.repo.ListDevApps(ctx)
+func (s *AdminService) ListApps(ctx context.Context, filter string) ([]AppView, error) {
+	apps, err := s.repo.ListAppsByFilter(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +119,10 @@ func (s *AdminService) MintKey(ctx context.Context, clientID string, in MintKeyI
 
 func (s *AdminService) ListKeys(ctx context.Context, clientID string) ([]DeveloperAPIKey, error) {
 	return s.repo.ListKeysByClient(ctx, clientID)
+}
+
+func (s *AdminService) ListAllKeys(ctx context.Context, f KeyListFilter) ([]AdminKeyRow, int64, error) {
+	return s.repo.ListAllKeys(ctx, f, time.Now())
 }
 
 func (s *AdminService) RotateKey(ctx context.Context, keyID, createdBy uint) (*DeveloperAPIKey, string, error) {
