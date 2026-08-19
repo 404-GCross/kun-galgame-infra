@@ -2,13 +2,35 @@ package main
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
 )
+
+// pgInt64Array binds an id list as ONE postgres array parameter. A bare slice
+// makes GORM explode it into per-element parameters, and the full MT pool
+// (176k works × 4 placeholders) blew pgx's 65,535-parameter ceiling on the
+// first real-size run — the tests' small pools never reached it.
+type pgInt64Array []int64
+
+func (a pgInt64Array) Value() (driver.Value, error) {
+	var sb strings.Builder
+	sb.WriteByte('{')
+	for i, v := range a {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(strconv.FormatInt(v, 10))
+	}
+	sb.WriteByte('}')
+	return sb.String(), nil
+}
 
 // A title is the one field where the neighbours matter: 「ロマンス」and its
 // fandisc must not end up as 「浪漫」and 「罗曼史」. So the MT lane batches by
@@ -29,19 +51,20 @@ func loadSeriesEdges(ctx context.Context, db *gorm.DB, workIDs []int64) ([]sibli
 	if len(workIDs) == 0 {
 		return nil, nil
 	}
+	ids := pgInt64Array(workIDs)
 	var edges []siblingEdge
 	err := db.WithContext(ctx).Raw(`
 		SELECT m1.work_id AS a, m2.work_id AS b
 		FROM catalog_series_member m1
 		JOIN catalog_series_member m2 ON m2.series_id = m1.series_id AND m2.work_id > m1.work_id
-		WHERE m1.work_id IN ? AND m2.work_id IN ?
+		WHERE m1.work_id = ANY(?::bigint[]) AND m2.work_id = ANY(?::bigint[])
 		UNION
 		SELECT least(r.a_work_id, r.b_work_id) AS a, greatest(r.a_work_id, r.b_work_id) AS b
 		FROM catalog_work_relation r
 		JOIN catalog_relation_type rt ON rt.id = r.relation_type_id
 		WHERE rt.key IN ('sequel_of','fandisc_of','same_series')
-		  AND r.a_work_id IN ? AND r.b_work_id IN ?`,
-		workIDs, workIDs, workIDs, workIDs).Scan(&edges).Error
+		  AND r.a_work_id = ANY(?::bigint[]) AND r.b_work_id = ANY(?::bigint[])`,
+		ids, ids, ids, ids).Scan(&edges).Error
 	if err != nil {
 		return nil, fmt.Errorf("load series edges: %w", err)
 	}
@@ -188,22 +211,23 @@ func loadKnownZhTitles(ctx context.Context, db *gorm.DB, workIDs []int64) (map[i
 		Prov    int16   `gorm:"column:provenance"`
 		SrcHash *string `gorm:"column:src_hash"`
 	}
+	ids := pgInt64Array(workIDs)
 	err := db.WithContext(ctx).Raw(`
 		WITH related AS (
 			SELECT m1.work_id AS cand, m2.work_id AS id
 			FROM catalog_series_member m1
 			JOIN catalog_series_member m2 ON m2.series_id = m1.series_id
-			WHERE m1.work_id IN ?
+			WHERE m1.work_id = ANY(?::bigint[])
 			UNION
 			SELECT r.a_work_id AS cand, r.b_work_id AS id
 			FROM catalog_work_relation r
 			JOIN catalog_relation_type rt ON rt.id = r.relation_type_id
-			WHERE rt.key IN ('sequel_of','fandisc_of','same_series') AND r.a_work_id IN ?
+			WHERE rt.key IN ('sequel_of','fandisc_of','same_series') AND r.a_work_id = ANY(?::bigint[])
 			UNION
 			SELECT r.b_work_id AS cand, r.a_work_id AS id
 			FROM catalog_work_relation r
 			JOIN catalog_relation_type rt ON rt.id = r.relation_type_id
-			WHERE rt.key IN ('sequel_of','fandisc_of','same_series') AND r.b_work_id IN ?
+			WHERE rt.key IN ('sequel_of','fandisc_of','same_series') AND r.b_work_id = ANY(?::bigint[])
 		)
 		SELECT rel.cand AS cand_id,
 			COALESCE((SELECT t.title FROM catalog_work_title t
@@ -214,7 +238,7 @@ func loadKnownZhTitles(ctx context.Context, db *gorm.DB, workIDs []int64) (map[i
 		JOIN catalog_work_title t ON t.work_id = rel.id AND t.lang LIKE 'zh%' AND t.kind <= 1
 		JOIN catalog_work w ON w.id = rel.id AND w.deleted_at IS NULL
 		ORDER BY rel.cand, t.provenance, t.kind, t.id`,
-		workIDs, workIDs, workIDs).Scan(&rows).Error
+		ids, ids, ids).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("load known zh titles: %w", err)
 	}
