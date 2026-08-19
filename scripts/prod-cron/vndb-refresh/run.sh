@@ -157,7 +157,7 @@ run() {
 # slower but bounded. Remove once the compose sets shm_size on postgres.
 DSNSH='U="${KUN_CATALOG_PG_USER:-$KUN_PG_USER}"; P="${KUN_CATALOG_PG_PASSWORD:-$KUN_PG_PASSWORD}"; B="host=127.0.0.1 port=5432 user=$U password=$P sslmode=disable options='"'"'-c max_parallel_workers_per_gather=0'"'"'"; CAT="$B dbname=kun_catalog"; EG="$B dbname=erogamescape"; DL="$B dbname=dlsite"'
 
-# 4. Re-stage the 28 src_vndb tables plus vn_vote_stats (env-config tool, no --dsn).
+# 4. Re-stage the 29 src_vndb tables plus vn_vote_stats (env-config tool, no --dsn).
 run ingest-vndb --dump-dir /w/dump/db --votes-file /w/votes.gz
 
 # 5. Resurrection tripwire, BEFORE any Gold write.
